@@ -3,71 +3,52 @@ name: Build Oli APK
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
-  build-apk:
+  apk:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - name: Unzip the project
+        run: |
+          unzip -q Oli_GPT_PIPES_clean.zip
+          ls oli
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: 21
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
+      - uses: android-actions/setup-android@v3
 
-      - name: Extract Oli project
+      - name: Install dependencies and run the game tests
+        working-directory: oli
         run: |
-          mkdir -p project
-          unzip -q Oli_GPT_PIPES_clean.zip -d project
+          npm ci
+          npm test
 
-      - name: Find project root
+      - name: Copy the web game into the Android project
+        working-directory: oli
         run: |
-          echo "Project contents:"
-          find project -maxdepth 3 -type f | head -100
+          node build-www.js
+          npx cap sync android
 
-      - name: Install dependencies
-        working-directory: project
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          elif [ -f package.json ]; then
-            npm install
-          fi
-
-      - name: Build web files
-        working-directory: project
-        run: |
-          if [ -f package.json ]; then
-            npm run build --if-present
-          fi
-
-      - name: Sync Capacitor
-        working-directory: project
-        run: |
-          if [ -d android ]; then
-            npx cap sync android || true
-          fi
-
-      - name: Build Android APK
-        working-directory: project/android
+      - name: Build the APK
+        working-directory: oli/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload Oli APK
-        uses: actions/upload-artifact@v4
+      - name: Name the APK
+        run: cp oli/android/app/build/outputs/apk/debug/app-debug.apk Oli.apk
+
+      - uses: actions/upload-artifact@v4
         with:
           name: Oli-apk
-          path: project/android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          path: Oli.apk
