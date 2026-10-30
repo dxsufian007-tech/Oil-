@@ -48,11 +48,11 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   const recStart = () => ev("window.__rec = { t: [], b: [], tip: [] }; let last = performance.now(); const f = now => { const r = window.__rec; if (!r) return; r.t.push(now - last); last = now; r.b.push(window.__v2.ui.b); const d = window.__v2.view.tipDraw; r.tip.push(d ? [d.x, d.y] : null); requestAnimationFrame(f); }; requestAnimationFrame(f); return 1;");
   const recStop = () => ev('const r = window.__rec; window.__rec = null; return r;');
   // a drag through Android input: DOWN at a, `n` MOVE steps along the points, (optionally) UP at the end
-  const motion = (pts, n, release) => { const cmds = [], P0 = D(pts[0]); cmds.push('input motionevent DOWN ' + P0.x + ' ' + P0.y);
+  const motion = (pts, n, release) => { lastStart = pts[0]; const cmds = [], P0 = D(pts[0]); cmds.push('input motionevent DOWN ' + P0.x + ' ' + P0.y);
     for (let i = 1; i < pts.length; i++) { const a = D(pts[i - 1]), b = D(pts[i]); for (let j = 1; j <= n; j++) cmds.push('input motionevent MOVE ' + Math.round(a.x + (b.x - a.x) * j / n) + ' ' + Math.round(a.y + (b.y - a.y) * j / n)); }
     if (release) { const e = D(pts[pts.length - 1]); cmds.push('input motionevent UP ' + e.x + ' ' + e.y); } adbShell(cmds); };
   const upAt = p => { const e = D(p); adbShell(['input motionevent UP ' + e.x + ' ' + e.y]); };
-  const away = async () => { const e = D({ x: 24, y: 220 }); adbShell(['input motionevent MOVE ' + e.x + ' ' + e.y, 'input motionevent UP ' + e.x + ' ' + e.y]); await sleep(400); };
+  let lastStart = null; const away = async () => { const e = D(lastStart); adbShell(['input motionevent MOVE ' + e.x + ' ' + e.y, 'input motionevent MOVE ' + e.x + ' ' + e.y, 'input motionevent UP ' + e.x + ' ' + e.y]); await sleep(400); };   // cancel = bring the pipe back to its start
   const shot = name => { try { fs.writeFileSync('results/' + name + '.png', execSync('adb exec-out screencap -p')); } catch (e) {} };
 
   await center(X + 7, Y + 4, .8); await ev("window.__v2.setTool('pipe', 0); return 1;"); await sleep(600);
@@ -75,9 +75,27 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
 
   // 5: invalid connections
   motion([await css('W'), await css('A')], 8, true); await sleep(700); s = await st(); check('5. duplicate well -> tank A refused', s.lines === 1, 'pipes ' + s.lines + ' reason ' + s.reason);
-  // 6: invalid release puts the pipe back
-  const c0 = (await st()).cash; motion([await css('C1'), await cssT(X + 22, Y - 4)], 8, true); await sleep(700); s = await st();
-  check('6. invalid release returns the pipe (nothing built, no preview, nothing attached)', s.lines === 1 && !s.a && !s.drag && s.prev === 0 && c0 - s.cash < 50, JSON.stringify({ a: s.a, prev: s.prev, lines: s.lines }));
+  // A: release on free ground with a clear path builds an OPEN pipe (valid); then D: extend it from its open end
+  await center(X + 12, Y + 3, .8); await sleep(300);
+  motion([await css('C1'), await cssT(X + 18, Y + 2)], 8, true); await sleep(800); s = await st();
+  const op = await ev("const g = window.__v2.game, L = g.lines[g.lines.length - 1]; return { a: L.a, b: L.b, state: L.state, len: L.len, id: L.id };");
+  check('A. tank -> open pipe (released on free ground) is built, state OPEN', s.lines === 2 && op.state === 'OPEN', JSON.stringify(op));
+  const oe = await ev("const L = window.__v2.game.lines[window.__v2.game.lines.length - 1], id = L.a[0] === 'E' ? L.a : L.b, k = +id.slice(1); return { x: k % 140, y: (k / 140) | 0 };");
+  motion([await cssT(oe.x, oe.y), await cssT(oe.x + 3, oe.y)], 8, true); await sleep(800); s = await st();
+  const ex = await ev("const g = window.__v2.game, L = g.lines[g.lines.length - 1]; return { a: L.a, b: L.b, state: L.state };");
+  check('D. drag from the open end continues the pipe', s.lines === 3 && (ex.a[0] === 'J' || ex.b[0] === 'J') && (await valid()).length === 0, JSON.stringify(ex));
+  // G: delete the middle piece: the rest stays, the cut ends become OPEN
+  const del = await ev("const g = window.__v2.game, L = g.lines.find(q => q.id === " + op.id + "); for (const k of L.cells.slice()) g.removeAt(k % 140, (k / 140) | 0); return { n: g.lines.length, open: g.lines.filter(q => q.state === 'OPEN').length, bad: g.validateNetwork().length };");
+  check('G. deleting a pipe in the middle keeps the others; cut ends become OPEN', del.n === 2 && del.open >= 1 && del.bad === 0, JSON.stringify(del));
+  await ev("const g = window.__v2.game; for (const L of g.lines.slice(1)) for (const k of L.cells.slice()) g.removeAt(k % 140, (k / 140) | 0); return 1;");
+  await center(X + 7, Y + 4, .8); await sleep(300);
+  // 6: cancel = drag out and back onto the start
+  const c0 = (await st()).cash; motion([await css('C1'), await cssT(X + 18, Y + 2), await css('C1')], 8, true); await sleep(700); s = await st();
+  check('6. dragged out and back onto the start: nothing built, no preview, nothing attached', s.lines === 1 && !s.a && !s.drag && s.prev === 0 && c0 - s.cash < 50, JSON.stringify({ a: s.a, prev: s.prev, lines: s.lines }));
+  // full map: zoom out until the whole map is on the screen
+  const fm = await ev("const v = window.__v2, c = v.view.cam, w = v.camApi.s2w(c.width / 2, c.height / 2); v.camApi.setZoomAt(.01, c.width / 2, c.height / 2, w.x, w.y); const B = v.view.bounds, a = v.camApi.s2w(0, 0), b = v.camApi.s2w(c.width, c.height); return { z: c.zoom, fits: (b.x - a.x >= B.w - 1) || (b.y - a.y >= B.h - 1) };");
+  shot('map-full'); check('map: zooming out shows the whole map', fm.fits && fm.z < .2, 'zoom ' + fm.z.toFixed(3));
+  await center(X + 7, Y + 4, .8); await sleep(300);
 
   // 3: two targets side by side
   for (const [to, other] of [['C1', 'C2'], ['C2', 'C1']]) { motion([await css('B'), await css(to)], 10, false); await sleep(700); s = await st(); shot('3-' + to); await away();
