@@ -4,6 +4,12 @@ name: Android test (real Android system)
 # Results (report, screenshots, logcat) are published on the branch android-test.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/android/**', '.github/workflows/android-test.yml']
+  workflow_run:
+    workflows: ['Build Oli APK']
+    types: [completed]
 
 permissions:
   contents: write
