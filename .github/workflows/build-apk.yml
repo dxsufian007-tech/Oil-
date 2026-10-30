@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -24,12 +27,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-
-      - name: Show the preinstalled Android SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls "$ANDROID_HOME/platforms" || true
-          ls "$ANDROID_HOME/build-tools" || true
 
       - name: Install dependencies and run the game tests
         working-directory: oli
@@ -56,3 +53,15 @@ jobs:
         with:
           name: Oli-apk
           path: Oli.apk
+
+      - name: Also publish the APK on a branch called apk-build
+        run: |
+          mkdir -p /tmp/out && cp Oli.apk /tmp/out/Oli.apk
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout --orphan apk-build
+          git rm -rf --quiet .
+          cp /tmp/out/Oli.apk .
+          git add Oli.apk
+          git commit -q -m "Oli APK build"
+          git push -f origin apk-build
