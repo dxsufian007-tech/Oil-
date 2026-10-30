@@ -56,6 +56,7 @@ jobs:
         run: |
           enc() { sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g' "$1" | head -c 3800; }
           [ -f results/report.txt ] && echo "::notice title=report::$(enc results/report.txt)" || echo "::notice title=report::no report.txt"
+          [ -f results/touch.txt ] && echo "::notice title=touch report::$(enc results/touch.txt)" || echo "::notice title=touch report::no touch.txt"
           [ -f results/crash.txt ] && echo "::notice title=crash::$(enc results/crash.txt)" || true
           [ -s results/logcat-errors.txt ] && echo "::notice title=logcat errors::$(head -40 results/logcat-errors.txt > /tmp/le.txt; enc /tmp/le.txt)" || echo "::notice title=logcat errors::none"
           [ -f results/targets.json ] && echo "::notice title=webview targets::$(enc results/targets.json)" || true
