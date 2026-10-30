@@ -1,0 +1,73 @@
+name: Build Oli APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Extract Oli project
+        run: |
+          mkdir -p project
+          unzip -q Oli_GPT_PIPES_clean.zip -d project
+
+      - name: Find project root
+        run: |
+          echo "Project contents:"
+          find project -maxdepth 3 -type f | head -100
+
+      - name: Install dependencies
+        working-directory: project
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          elif [ -f package.json ]; then
+            npm install
+          fi
+
+      - name: Build web files
+        working-directory: project
+        run: |
+          if [ -f package.json ]; then
+            npm run build --if-present
+          fi
+
+      - name: Sync Capacitor
+        working-directory: project
+        run: |
+          if [ -d android ]; then
+            npx cap sync android || true
+          fi
+
+      - name: Build Android APK
+        working-directory: project/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload Oli APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Oli-apk
+          path: project/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
