@@ -21,12 +21,13 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   const env = await ev("return { ua: navigator.userAgent, dpr: devicePixelRatio, w: innerWidth, h: innerHeight, renderer: window.__v2.view.scene.game.renderer.type === 2 ? 'WebGL' : 'Canvas', gl: (() => { try { const g = window.__v2.view.scene.game.renderer.gl; const d = g && g.getExtension('WEBGL_debug_renderer_info'); return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : (g ? g.getParameter(g.RENDERER) : 'none'); } catch (e) { return 'n/a'; } })() };");
   console.log('ENV ' + JSON.stringify(env));
 
+  const shot = name => { try { fs.writeFileSync('results/' + name + '.png', execSync('adb exec-out screencap -p')); } catch (e) {} };
   // calibration: one real Android tap at a known device pixel -> where the WebView sees it (status bar / insets offset)
   await ev("window.__lt = null; document.addEventListener('pointerdown', e => { window.__lt = { x: e.clientX, y: e.clientY }; }, true); return 1;");
   const scr = sh('adb shell wm size').match(/(\d+)x(\d+)/), SW = +scr[1], SH = +scr[2];
   const cx = Math.round(SW / 2), cy = Math.round(SH * .45);
   let lt = null; for (let i = 0; i < 8 && !lt; i++) { adbShell(['input tap ' + cx + ' ' + cy]); await sleep(1000); lt = await ev('return window.__lt;'); }   // the app may still be starting: retry
-  if (!lt) { console.log('FAIL calibration: no Android tap reached the WebView'); process.exit(0); }
+  if (!lt) { shot('nocal'); try { console.log('DIAG focus: ' + sh('adb shell dumpsys window | grep -E "mCurrentFocus|mFocusedApp"').replace(/\n/g, ' | ')); } catch (e) {} console.log('FAIL calibration: no Android tap reached the WebView'); process.exit(0); }
   const dpr = env.dpr;
   const off = { x: cx / dpr - lt.x, y: cy / dpr - lt.y };
   console.log('CAL device ' + SW + 'x' + SH + ' dpr ' + dpr + ' offset css ' + JSON.stringify(off));
@@ -54,7 +55,6 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
     if (release) { const e = D(pts[pts.length - 1]); cmds.push('input motionevent UP ' + e.x + ' ' + e.y); } adbShell(cmds); };
   const upAt = p => { const e = D(p); adbShell(['input motionevent UP ' + e.x + ' ' + e.y]); };
   let lastStart = null; const away = async () => { const e = D(lastStart); adbShell(['input motionevent MOVE ' + e.x + ' ' + e.y, 'input motionevent MOVE ' + e.x + ' ' + e.y, 'input motionevent UP ' + e.x + ' ' + e.y]); await sleep(400); };   // cancel = bring the pipe back to its start
-  const shot = name => { try { fs.writeFileSync('results/' + name + '.png', execSync('adb exec-out screencap -p')); } catch (e) {} };
 
   await center(X + 7, Y + 4, .8); await ev("window.__v2.setTool('pipe', 0); return 1;"); await sleep(600);
 

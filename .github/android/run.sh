@@ -11,6 +11,9 @@ adb install -r Oli.apk
 adb logcat -c
 adb shell am start -n com.oli.oilgame/.MainActivity
 sleep 15
+adb shell input keyevent KEYCODE_WAKEUP || true
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS || true   # a system dialog on top would swallow the touches
+sleep 2
 PID=$(adb shell pidof com.oli.oilgame | tr -d '\r')
 echo "app pid: $PID"
 adb forward tcp:9222 localabstract:webview_devtools_remote_$PID

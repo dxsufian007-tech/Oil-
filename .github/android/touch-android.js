@@ -22,16 +22,28 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   const useDev = m => { mt = m; const max = n => +((m.body.match(new RegExp(n + '\\s*:.*?max (\\d+)')) || [])[1] || 0); MX = max('ABS_MT_POSITION_X'); MY = max('ABS_MT_POSITION_Y'); hasP = /ABS_MT_PRESSURE/.test(m.body); DEV = m.dev; };
   const ax = x => Math.round(x * (MX + 1) / SW), ay = y => Math.round(y * (MY + 1) / SH);
   let nextId = 100; const down = new Map();       // slot -> tracking id
-  // one "frame" of finger changes -> sendevent lines ending in SYN_REPORT. f = [{ slot, x, y } | { slot, up: true }] in DEVICE px
-  const frame = f => { const L = [], e = (t, c, v) => L.push('sendevent ' + DEV + ' ' + t + ' ' + c + ' ' + v);
-    const wasEmpty = down.size === 0;
+  // one "frame" of finger changes -> [type, code, value] events ending in SYN_REPORT. f = [{ slot, x, y } | { slot, up: true }] in DEVICE px
+  const frameEv = f => { const L = [], e = (t, c, v) => L.push([t, c, v]); const wasEmpty = down.size === 0;
     for (const q of f) { e(3, 47, q.slot);
-      if (q.up) { e(3, 57, 4294967295); down.delete(q.slot); continue; }
-      if (!down.has(q.slot)) { const id = nextId++; down.set(q.slot, id); e(3, 57, id); if (hasP) e(3, 58, 60); }
+      if (q.up) { e(3, 57, -1); down.delete(q.slot); continue; }
+      if (!down.has(q.slot)) { const id = nextId++; down.set(q.slot, id); e(3, 57, id); if (hasP) e(3, 58, 50 + (id % 7)); }
       e(3, 53, ax(q.x)); e(3, 54, ay(q.y)); }
     if (wasEmpty && down.size) e(1, 330, 1); if (!down.size) e(1, 330, 0);
     e(0, 0, 0); return L; };
-  const send = frames => { const L = []; for (const f of frames) L.push(...frame(f)); for (let i = 0; i < L.length; i += 120) sh('adb shell "' + L.slice(i, i + 120).join('; ') + '"'); };
+  // two ways to put several fingers on Android: the emulator's own touch injection (console "event send", the emulated device itself)
+  // or writing the kernel input device (sendevent). Whichever reaches the app is used for the two-finger tests.
+  let multi = null;
+  const sendM = frames => {
+    if (multi === 'emu') { for (const f of frames) sh('adb emu event send ' + frameEv(f).map(([t, c, v]) => t + ':' + c + ':' + v).join(' ')); return; }
+    const L = []; for (const f of frames) for (const [t, c, v] of frameEv(f)) L.push('sendevent ' + DEV + ' ' + t + ' ' + c + ' ' + (v < 0 ? 4294967295 : v));
+    for (let i = 0; i < L.length; i += 120) sh('adb shell "' + L.slice(i, i + 120).join('; ') + '"'); };
+  // one finger: Android's input command (input motionevent DOWN / MOVE / UP), the same path the pipe tests use
+  let s0down = false;
+  const sendS = frames => { const L = []; for (const f of frames) for (const q of f) { if (q.slot !== 0) throw new Error('sendS is one finger only');
+    if (q.up) { L.push('input motionevent UP ' + (sendS.last ? sendS.last.x + ' ' + sendS.last.y : '0 0')); s0down = false; continue; }
+    L.push('input motionevent ' + (s0down ? 'MOVE ' : 'DOWN ') + q.x + ' ' + q.y); s0down = true; sendS.last = q; }
+    for (let i = 0; i < L.length; i += 40) sh('adb shell "' + L.slice(i, i + 40).join('; ') + '"'); };
+  const send = sendS;
 
   // ---- the WebView
   const targets = await CDP.List({ port: 9222 }); const t = targets.find(x => x.type === 'page'); if (!t) { console.log('FAIL TOUCH no WebView page'); process.exit(0); }
@@ -42,15 +54,18 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   // calibration with this very device: where does a touch at a device pixel land in the page (status bar / insets)
   await ev("window.__lt = null; document.addEventListener('pointerdown', e => { window.__lt = { x: e.clientX, y: e.clientY }; }, true); window.__v2.setTool(null); window.__v2.select(null); return 1;");
   const cx = Math.round(SW / 2), cy = Math.round(SH * .5); let lt = null;
-  const order = mts.slice().sort((a, b) => (/_1$|multi_touch$/.test(b.name) ? 1 : 0) - (/_1$|multi_touch$/.test(a.name) ? 1 : 0));
-  for (const m of order) { useDev(m); down.clear(); try { send([[{ slot: 0, x: cx, y: cy }], [{ slot: 0, up: true }]]); } catch (e) { console.log('TOUCHDEV ' + m.dev + ' not writable: ' + String(e.message).slice(0, 120)); continue; } await sleep(700); lt = await ev('return window.__lt;'); if (lt) break; }
-  if (!lt) {   // diagnostics: what the kernel device receives, what Android's input system thinks of the device, who we are
-    useDev(order[0]); down.clear();
-    try { console.log('DIAG id: ' + sh('adb shell id').trim()); } catch (e) {}
-    try { const L = frame([{ slot: 0, x: cx, y: cy }]).concat(frame([{ slot: 0, up: true }])); console.log('DIAG getevent: ' + sh('adb shell "(getevent -lt ' + DEV + ' > /data/local/tmp/ge.txt &) ; sleep 1; ' + L.join('; ') + '; sleep 1; pkill getevent; cat /data/local/tmp/ge.txt"').slice(0, 1200)); } catch (e) { console.log('DIAG getevent failed ' + e.message.slice(0, 200)); }
-    try { const d = sh('adb shell dumpsys input'); const i = d.indexOf(order[0].name); console.log('DIAG dumpsys: ' + d.slice(Math.max(0, i - 200), i + 1500).replace(/\n\s*/g, ' | ')); } catch (e) {}
-    console.log('FAIL TOUCH none of the multi-touch devices reaches the WebView'); process.exit(0); }
-  console.log('TOUCHDEV using ' + DEV + ' (' + mt.name + ') x 0..' + MX + ' y 0..' + MY + ' pressure ' + hasP);
+  try { sh('adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS'); } catch (e) {}
+  for (let i = 0; i < 8 && !lt; i++) { sendS([[{ slot: 0, x: cx, y: cy }], [{ slot: 0, up: true }]]); await sleep(900); lt = await ev('return window.__lt;'); }
+  if (!lt) { try { fs.writeFileSync('results/touch-nocal.png', execSync('adb exec-out screencap -p')); console.log('DIAG focus: ' + sh('adb shell dumpsys window | grep -E "mCurrentFocus|mFocusedApp"').replace(/\n/g, ' | ')); } catch (e) {} console.log('FAIL TOUCH no Android touch reached the WebView (screenshot touch-nocal.png)'); process.exit(0); }
+  // which multi-touch path reaches the app: probe with a fresh point each time (identical values would be filtered as "no change")
+  const probe = async (i) => { await ev('window.__lt = null; return 1;'); try { sendM([[{ slot: 0, x: cx + 7 * i, y: cy + 5 * i }], [{ slot: 0, up: true }]]); } catch (e) { return 'error ' + String(e.message).split('\n')[0].slice(0, 100); } await sleep(800); return await ev('return window.__lt;'); };
+  const order = mts.slice().sort((a, b) => (/_1$/.test(b.name) ? 1 : 0) - (/_1$/.test(a.name) ? 1 : 0));
+  useDev(order[0]); multi = 'emu'; let r = await probe(1); console.log('TOUCHPROBE emu (' + DEV + ' range): ' + JSON.stringify(r));
+  if (!(r && r.x != null)) { multi = 'sendevent'; for (let i = 0; i < order.length; i++) { useDev(order[i]); down.clear(); r = await probe(i + 2); console.log('TOUCHPROBE sendevent ' + DEV + ' ' + order[i].name + ': ' + JSON.stringify(r)); if (r && r.x != null) break; } }
+  if (!(r && r.x != null)) { multi = null; console.log('TOUCH two-finger input could not be injected on this emulator: pinch tests are NOT run here'); }
+  else console.log('TOUCH two-finger input via ' + multi + ' (' + DEV + ')');
+  await ev("window.__lt = null; return 1;"); for (let i = 0; i < 3 && !(await ev('return window.__lt;')); i++) { sendS([[{ slot: 0, x: cx, y: cy }], [{ slot: 0, up: true }]]); await sleep(700); }
+  lt = await ev('return window.__lt;') || lt;
   const off = { x: cx / dpr - lt.x, y: cy / dpr - lt.y }; console.log('TOUCHCAL dpr ' + dpr + ' offset css ' + JSON.stringify(off));
   const D = p => ({ x: Math.round((p.x + off.x) * dpr), y: Math.round((p.y + off.y) * dpr) });     // page css px -> device px
   const C = d => ({ x: d.x / dpr - off.x, y: d.y / dpr - off.y });                                // device px -> page css px (where the finger really is)
@@ -76,19 +91,22 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
     check('PAN at zoom ' + z + ': nothing moves after lifting', c1.x === c2.x && c1.y === c2.y, JSON.stringify([c1, c2]));
   }
   // 2. PAN -> PINCH -> PAN with two real fingers
+  if (!multi) check('PINCH on Android (two fingers)', false, 'two-finger input could not be injected on the emulator; checked in the browser only');
+  else {
   await center(1, 70, 44); await sleep(200);
-  const a0 = D({ x: 140, y: 420 }); send([[{ slot: 0, ...a0 }], [{ slot: 0, x: a0.x + 30, y: a0.y }], [{ slot: 0, x: a0.x + 60, y: a0.y }]]); await sleep(200);
-  const a1 = { x: a0.x + 60, y: a0.y }, cA = await cam(); const b0 = D({ x: 300, y: 480 }); send([[{ slot: 1, ...b0 }]]); await sleep(250); const cB = await cam(), sp = await state();
+  const a0 = D({ x: 140, y: 420 }); sendM([[{ slot: 0, ...a0 }], [{ slot: 0, x: a0.x + 30, y: a0.y }], [{ slot: 0, x: a0.x + 60, y: a0.y }]]); await sleep(200);
+  const a1 = { x: a0.x + 60, y: a0.y }, cA = await cam(); const b0 = D({ x: 300, y: 480 }); sendM([[{ slot: 1, ...b0 }]]); await sleep(250); const cB = await cam(), sp = await state();
   check('PAN -> PINCH: the second finger does not move the camera', cA.x === cB.x && cA.y === cB.y && cA.z === cB.z && sp === 'PINCH', 'state ' + sp);
   const m0 = { x: (a1.x + b0.x) / 2, y: (a1.y + b0.y) / 2 }, wm = await w(C(m0)); let drift = 0; const zs = [];
-  for (let i = 1; i <= 6; i++) { const a = { x: a1.x - 25 * i, y: a1.y - 15 * i }, b = { x: b0.x + 25 * i, y: b0.y + 15 * i }; send([[{ slot: 0, ...a }, { slot: 1, ...b }]]); await sleep(150); const c = await cam(); zs.push(c.z.toFixed(2)); drift = Math.max(drift, dist(await w(C({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })), wm) * c.z); }
+  for (let i = 1; i <= 6; i++) { const a = { x: a1.x - 25 * i, y: a1.y - 15 * i }, b = { x: b0.x + 25 * i, y: b0.y + 15 * i }; sendM([[{ slot: 0, ...a }, { slot: 1, ...b }]]); await sleep(150); const c = await cam(); zs.push(c.z.toFixed(2)); drift = Math.max(drift, dist(await w(C({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })), wm) * c.z); }
   check('PINCH zooms about the midpoint of the two fingers', +zs[5] > 1.2 && drift < 1.5, 'zoom ' + zs.join(' ') + ', midpoint drift ' + drift.toFixed(2) + ' css px');
-  const aE = { x: a1.x - 150, y: a1.y - 90 }; const cL = await cam(); send([[{ slot: 1, up: true }]]); await sleep(250); const cL2 = await cam(), sp2 = await state();
+  const aE = { x: a1.x - 150, y: a1.y - 90 }; const cL = await cam(); sendM([[{ slot: 1, up: true }]]); await sleep(250); const cL2 = await cam(), sp2 = await state();
   check('PINCH -> PAN: lifting the second finger does not move the camera', cL.x === cL2.x && cL.y === cL2.y && sp2 === 'PAN', 'state ' + sp2);
-  const wa = await w(C(aE)); let dr2 = 0; for (let i = 1; i <= 4; i++) { const q = { x: aE.x + 40 * i, y: aE.y + 25 * i }; send([[{ slot: 0, ...q }]]); await sleep(120); dr2 = Math.max(dr2, dist(await w(C(q)), wa) * cL2.z); }
-  send([[{ slot: 0, up: true }]]); await sleep(400);
+  const wa = await w(C(aE)); let dr2 = 0; for (let i = 1; i <= 4; i++) { const q = { x: aE.x + 40 * i, y: aE.y + 25 * i }; sendM([[{ slot: 0, ...q }]]); await sleep(120); dr2 = Math.max(dr2, dist(await w(C(q)), wa) * cL2.z); }
+  sendM([[{ slot: 0, up: true }]]); await sleep(400);
   check('PINCH -> PAN: the remaining finger pans 1:1 from where it is', dr2 < 1.0, 'drift ' + dr2.toFixed(3) + ' css px');
   check('PINCH: no tap fired afterwards', (await ev('return window.__v2.ui.sel;')) === null, '');
+  }
   // 3. map edge
   await center(1, 0, 0); await sleep(200); const e0 = D({ x: 100, y: 300 }); send([[{ slot: 0, ...e0 }]]); const eds = [];
   for (let i = 1; i <= 8; i++) { send([[{ slot: 0, x: e0.x + 60 * i, y: e0.y + 60 * i }]]); await sleep(100); eds.push(await cam()); }
