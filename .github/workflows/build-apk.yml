@@ -57,6 +57,12 @@ jobs:
       - name: Name the APK
         run: cp oli/android/app/build/outputs/apk/debug/app-debug.apk Oli.apk
 
+      - name: Check the APK is signed with the fixed Oli key (otherwise phones refuse the update)
+        run: |
+          SIGNER=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)apksigner
+          $SIGNER verify --print-certs Oli.apk | tee /tmp/certs.txt
+          grep -qi "SHA-256 digest: 3f5e924227aef8c5d1783ae6677db8b9b0a36a1c7b086b457133e6a4375e1aaf" /tmp/certs.txt || { echo "APK is NOT signed with the fixed key"; exit 1; }
+
       - uses: actions/upload-artifact@v4
         with:
           name: Oli-apk
