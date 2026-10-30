@@ -47,14 +47,16 @@ jobs:
 
       - name: Publish the results on the branch android-test
         if: always()
+        env:
+          TOKEN: ${{ github.token }}
         run: |
-          mkdir -p /tmp/res && cp -r results/* /tmp/res/ 2>/dev/null || true
+          set -x
+          ls -la results || true
+          mkdir -p /tmp/pub/results && cp -r results/. /tmp/pub/results/ 2>/dev/null || echo "no results folder" > /tmp/pub/results/missing.txt
+          cd /tmp/pub
+          git init -q -b android-test
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git checkout --orphan android-test
-          git rm -rf --quiet .
-          rm -rf node_modules results Oli.apk
-          cp -r /tmp/res results
-          git add results
+          git add -A
           git commit -q -m "Android test results"
-          git push -f origin android-test
+          git push -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" android-test
