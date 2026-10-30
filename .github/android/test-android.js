@@ -11,7 +11,7 @@ const results = []; let fails = 0;
 const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + name + (info ? '  — ' + info : '')); };
 
 (async () => {
-  const targets = await CDP.List({ port: 9222 });   // (same list curl printed) const t = targets.find(x => x.type === 'page'); if (!t) { console.log('FAIL no WebView page'); process.exit(0); }
+  const targets = await CDP.List({ port: 9222 }); const t = targets.find(x => x.type === 'page'); if (!t) { console.log('FAIL no WebView page'); process.exit(0); }
   const client = await CDP({ port: 9222, target: t, local: true });   // local: the WebView does not serve the protocol description const { Runtime, Page } = client; await Runtime.enable();
   const errors = [];
   Runtime.exceptionThrown(e => errors.push('exception: ' + (e.exceptionDetails.exception && e.exceptionDetails.exception.description || e.exceptionDetails.text)));
