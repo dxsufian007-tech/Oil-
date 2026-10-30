@@ -44,7 +44,12 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   const cx = Math.round(SW / 2), cy = Math.round(SH * .5); let lt = null;
   const order = mts.slice().sort((a, b) => (/_1$|multi_touch$/.test(b.name) ? 1 : 0) - (/_1$|multi_touch$/.test(a.name) ? 1 : 0));
   for (const m of order) { useDev(m); down.clear(); try { send([[{ slot: 0, x: cx, y: cy }], [{ slot: 0, up: true }]]); } catch (e) { console.log('TOUCHDEV ' + m.dev + ' not writable: ' + String(e.message).slice(0, 120)); continue; } await sleep(700); lt = await ev('return window.__lt;'); if (lt) break; }
-  if (!lt) { console.log('FAIL TOUCH none of the multi-touch devices reaches the WebView'); process.exit(0); }
+  if (!lt) {   // diagnostics: what the kernel device receives, what Android's input system thinks of the device, who we are
+    useDev(order[0]); down.clear();
+    try { console.log('DIAG id: ' + sh('adb shell id').trim()); } catch (e) {}
+    try { const L = frame([{ slot: 0, x: cx, y: cy }]).concat(frame([{ slot: 0, up: true }])); console.log('DIAG getevent: ' + sh('adb shell "(getevent -lt ' + DEV + ' > /data/local/tmp/ge.txt &) ; sleep 1; ' + L.join('; ') + '; sleep 1; pkill getevent; cat /data/local/tmp/ge.txt"').slice(0, 1200)); } catch (e) { console.log('DIAG getevent failed ' + e.message.slice(0, 200)); }
+    try { const d = sh('adb shell dumpsys input'); const i = d.indexOf(order[0].name); console.log('DIAG dumpsys: ' + d.slice(Math.max(0, i - 200), i + 1500).replace(/\n\s*/g, ' | ')); } catch (e) {}
+    console.log('FAIL TOUCH none of the multi-touch devices reaches the WebView'); process.exit(0); }
   console.log('TOUCHDEV using ' + DEV + ' (' + mt.name + ') x 0..' + MX + ' y 0..' + MY + ' pressure ' + hasP);
   const off = { x: cx / dpr - lt.x, y: cy / dpr - lt.y }; console.log('TOUCHCAL dpr ' + dpr + ' offset css ' + JSON.stringify(off));
   const D = p => ({ x: Math.round((p.x + off.x) * dpr), y: Math.round((p.y + off.y) * dpr) });     // page css px -> device px

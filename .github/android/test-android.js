@@ -25,8 +25,9 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   await ev("window.__lt = null; document.addEventListener('pointerdown', e => { window.__lt = { x: e.clientX, y: e.clientY }; }, true); return 1;");
   const scr = sh('adb shell wm size').match(/(\d+)x(\d+)/), SW = +scr[1], SH = +scr[2];
   const cx = Math.round(SW / 2), cy = Math.round(SH * .45);
-  adbShell(['input tap ' + cx + ' ' + cy]); await sleep(800);
-  const lt = await ev('return window.__lt;'); const dpr = env.dpr;
+  let lt = null; for (let i = 0; i < 8 && !lt; i++) { adbShell(['input tap ' + cx + ' ' + cy]); await sleep(1000); lt = await ev('return window.__lt;'); }   // the app may still be starting: retry
+  if (!lt) { console.log('FAIL calibration: no Android tap reached the WebView'); process.exit(0); }
+  const dpr = env.dpr;
   const off = { x: cx / dpr - lt.x, y: cy / dpr - lt.y };
   console.log('CAL device ' + SW + 'x' + SH + ' dpr ' + dpr + ' offset css ' + JSON.stringify(off));
   const D = p => ({ x: Math.round((p.x + off.x) * dpr), y: Math.round((p.y + off.y) * dpr) });   // WebView css px -> device px
