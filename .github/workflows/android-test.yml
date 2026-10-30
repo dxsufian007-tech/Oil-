@@ -1,0 +1,60 @@
+name: Android test (real Android system)
+
+# Installs the latest Oli.apk (branch apk-build) on an Android 14 system and drives it with Android's own touch input.
+# Results (report, screenshots, logcat) are published on the branch android-test.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get the latest APK
+        run: |
+          git fetch origin apk-build
+          git show origin/apk-build:Oli.apk > Oli.apk
+          ls -l Oli.apk
+
+      - name: Allow the emulator to use hardware virtualisation
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: DevTools client
+        run: npm install --no-save chrome-remote-interface@0.33.2
+
+      - name: Run the test on Android 14
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash .github/android/run.sh
+
+      - name: Publish the results on the branch android-test
+        if: always()
+        run: |
+          mkdir -p /tmp/res && cp -r results/* /tmp/res/ 2>/dev/null || true
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout --orphan android-test
+          git rm -rf --quiet .
+          rm -rf node_modules results Oli.apk
+          cp -r /tmp/res results
+          git add results
+          git commit -q -m "Android test results"
+          git push -f origin android-test
