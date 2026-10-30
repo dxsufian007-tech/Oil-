@@ -97,9 +97,17 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   const a0 = D({ x: 140, y: 420 }); sendM([[{ slot: 0, ...a0 }], [{ slot: 0, x: a0.x + 30, y: a0.y }], [{ slot: 0, x: a0.x + 60, y: a0.y }]]); await sleep(200);
   const a1 = { x: a0.x + 60, y: a0.y }, cA = await cam(); const b0 = D({ x: 300, y: 480 }); sendM([[{ slot: 1, ...b0 }]]); await sleep(250); const cB = await cam(), sp = await state();
   check('PAN -> PINCH: the second finger does not move the camera', cA.x === cB.x && cA.y === cB.y && cA.z === cB.z && sp === 'PINCH', 'state ' + sp);
-  const m0 = { x: (a1.x + b0.x) / 2, y: (a1.y + b0.y) / 2 }, wm = await w(C(m0)); let drift = 0; const zs = [];
-  for (let i = 1; i <= 6; i++) { const a = { x: a1.x - 25 * i, y: a1.y - 15 * i }, b = { x: b0.x + 25 * i, y: b0.y + 15 * i }; sendM([[{ slot: 0, ...a }, { slot: 1, ...b }]]); await sleep(150); const c = await cam(); zs.push(c.z.toFixed(2)); drift = Math.max(drift, dist(await w(C({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })), wm) * c.z); }
-  check('PINCH zooms about the midpoint of the two fingers', +zs[5] > 1.2 && drift < 1.5, 'zoom ' + zs.join(' ') + ', midpoint drift ' + drift.toFixed(2) + ' css px');
+  const m0 = { x: (a1.x + b0.x) / 2, y: (a1.y + b0.y) / 2 }, wm = await w(C(m0)); let drift = 0; const zs = [], rows = [];
+  // what the APP saw: the two active Phaser pointers (their midpoint is what the controller zooms about)
+  const seen = () => ev('const ps = window.__v2.view.scene.input.manager.pointers.filter(p => p.isDown); return ps.map(p => ({ x: p.x, y: p.y }));');
+  const wm2 = await (async () => { const s2 = await seen(); return s2.length === 2 ? await w({ x: (s2[0].x + s2[1].x) / 2, y: (s2[0].y + s2[1].y) / 2 }) : null; })(); let driftApp = 0, offs = 0;
+  for (let i = 1; i <= 6; i++) { const a = { x: a1.x - 25 * i, y: a1.y - 15 * i }, b = { x: b0.x + 25 * i, y: b0.y + 15 * i }; sendM([[{ slot: 0, ...a }, { slot: 1, ...b }]]); await sleep(200); const c = await cam(); zs.push(c.z.toFixed(2));
+    const d1 = dist(await w(C({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })), wm) * c.z; drift = Math.max(drift, d1);
+    const s2 = await seen(); if (s2.length === 2 && wm2) { const mid = { x: (s2[0].x + s2[1].x) / 2, y: (s2[0].y + s2[1].y) / 2 }; driftApp = Math.max(driftApp, dist(await w(mid), wm2) * c.z); const ia = C(a), ib = C(b); offs = Math.max(offs, Math.min(dist(s2[0], ia) + dist(s2[1], ib), dist(s2[0], ib) + dist(s2[1], ia)) / 2); }
+    rows.push(d1.toFixed(2)); }
+  console.log('PINCHDIAG drift per step (vs the points sent) ' + rows.join(' ') + ' | vs the points the app received: ' + driftApp.toFixed(3) + ' | largest gap between a sent and a received finger position: ' + offs.toFixed(2) + ' css px');
+  check('PINCH: the world point under the two fingers (as the app receives them) stays under them', driftApp < 1.0, 'drift ' + driftApp.toFixed(3) + ' css px; zoom ' + zs.join(' '));
+  check('PINCH zooms in as the fingers spread', +zs[5] > 1.2, 'zoom ' + zs.join(' ') + ', drift vs the points sent ' + drift.toFixed(2) + ' css px (see PINCHDIAG)');
   const aE = { x: a1.x - 150, y: a1.y - 90 }; const cL = await cam(); sendM([[{ slot: 1, up: true }]]); await sleep(250); const cL2 = await cam(), sp2 = await state();
   check('PINCH -> PAN: lifting the second finger does not move the camera', cL.x === cL2.x && cL.y === cL2.y && sp2 === 'PAN', 'state ' + sp2);
   const wa = await w(C(aE)); let dr2 = 0; for (let i = 1; i <= 4; i++) { const q = { x: aE.x + 40 * i, y: aE.y + 25 * i }; sendM([[{ slot: 0, ...q }]]); await sleep(120); dr2 = Math.max(dr2, dist(await w(C(q)), wa) * cL2.z); }
