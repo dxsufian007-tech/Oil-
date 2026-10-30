@@ -81,6 +81,7 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   const op = await ev("const g = window.__v2.game, L = g.lines[g.lines.length - 1]; return { a: L.a, b: L.b, state: L.state, len: L.len, id: L.id };");
   check('A. tank -> open pipe (released on free ground) is built, state OPEN', s.lines === 2 && op.state === 'OPEN', JSON.stringify(op));
   const oe = await ev("const L = window.__v2.game.lines[window.__v2.game.lines.length - 1], id = L.a[0] === 'E' ? L.a : L.b, k = +id.slice(1); return { x: k % 140, y: (k / 140) | 0 };");
+  await center(oe.x + 1.5, oe.y, .8); await sleep(300);     // the camera never moves during a pipe drag (v33): the open end and its target must both be on screen
   motion([await cssT(oe.x, oe.y), await cssT(oe.x + 3, oe.y)], 8, true); await sleep(800); s = await st();
   const ex = await ev("const g = window.__v2.game, L = g.lines[g.lines.length - 1]; return { a: L.a, b: L.b, state: L.state };");
   check('D. drag from the open end continues the pipe', s.lines === 3 && (ex.a[0] === 'J' || ex.b[0] === 'J') && (await valid()).length === 0, JSON.stringify(ex));

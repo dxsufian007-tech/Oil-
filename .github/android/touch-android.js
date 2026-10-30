@@ -13,13 +13,14 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   // ---- the multi-touch input device and its coordinate range
   const gp = sh('adb shell getevent -lp');
   const blocks = gp.split(/add device \d+: /).slice(1).map(b => ({ dev: b.split('\n')[0].trim(), body: b }));
-  const mt = blocks.find(b => /ABS_MT_POSITION_X/.test(b.body) && /ABS_MT_SLOT/.test(b.body));
-  if (!mt) { console.log('FAIL TOUCH no multi-touch input device found\n' + gp.slice(0, 1500)); process.exit(0); }
-  const max = n => +((mt.body.match(new RegExp(n + '\\s*:.*?max (\\d+)')) || [])[1] || 0);
-  const MX = max('ABS_MT_POSITION_X'), MY = max('ABS_MT_POSITION_Y'), hasP = /ABS_MT_PRESSURE/.test(mt.body);
+  // every multi-touch device (the emulator has one per possible display); the one that reaches the app is found by a calibration tap below
+  const mts = blocks.filter(b => /ABS_MT_POSITION_X/.test(b.body) && /ABS_MT_SLOT/.test(b.body)).map(b => ({ dev: b.dev, name: ((b.body.match(/name:\s*"([^"]*)"/) || [])[1] || ''), body: b.body }));
+  if (!mts.length) { console.log('FAIL TOUCH no multi-touch input device found\n' + gp.slice(0, 1500)); process.exit(0); }
   const scr = sh('adb shell wm size').match(/(\d+)x(\d+)/), SW = +scr[1], SH = +scr[2];
-  console.log('TOUCHDEV ' + mt.dev + ' x 0..' + MX + ' y 0..' + MY + ' screen ' + SW + 'x' + SH + ' pressure ' + hasP);
-  const DEV = mt.dev, ax = x => Math.round(x * (MX + 1) / SW), ay = y => Math.round(y * (MY + 1) / SH);
+  console.log('TOUCHDEVS ' + mts.map(m => m.dev + ' ' + m.name).join(' | ') + ' · screen ' + SW + 'x' + SH);
+  let mt = null, MX = 0, MY = 0, hasP = false, DEV = '';
+  const useDev = m => { mt = m; const max = n => +((m.body.match(new RegExp(n + '\\s*:.*?max (\\d+)')) || [])[1] || 0); MX = max('ABS_MT_POSITION_X'); MY = max('ABS_MT_POSITION_Y'); hasP = /ABS_MT_PRESSURE/.test(m.body); DEV = m.dev; };
+  const ax = x => Math.round(x * (MX + 1) / SW), ay = y => Math.round(y * (MY + 1) / SH);
   let nextId = 100; const down = new Map();       // slot -> tracking id
   // one "frame" of finger changes -> sendevent lines ending in SYN_REPORT. f = [{ slot, x, y } | { slot, up: true }] in DEVICE px
   const frame = f => { const L = [], e = (t, c, v) => L.push('sendevent ' + DEV + ' ' + t + ' ' + c + ' ' + v);
@@ -40,8 +41,11 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   const dpr = await ev('return devicePixelRatio;');
   // calibration with this very device: where does a touch at a device pixel land in the page (status bar / insets)
   await ev("window.__lt = null; document.addEventListener('pointerdown', e => { window.__lt = { x: e.clientX, y: e.clientY }; }, true); window.__v2.setTool(null); window.__v2.select(null); return 1;");
-  const cx = Math.round(SW / 2), cy = Math.round(SH * .5); send([[{ slot: 0, x: cx, y: cy }], [{ slot: 0, up: true }]]); await sleep(700);
-  const lt = await ev('return window.__lt;'); if (!lt) { console.log('FAIL TOUCH the touch device does not reach the WebView'); process.exit(0); }
+  const cx = Math.round(SW / 2), cy = Math.round(SH * .5); let lt = null;
+  const order = mts.slice().sort((a, b) => (/_1$|multi_touch$/.test(b.name) ? 1 : 0) - (/_1$|multi_touch$/.test(a.name) ? 1 : 0));
+  for (const m of order) { useDev(m); down.clear(); try { send([[{ slot: 0, x: cx, y: cy }], [{ slot: 0, up: true }]]); } catch (e) { console.log('TOUCHDEV ' + m.dev + ' not writable: ' + String(e.message).slice(0, 120)); continue; } await sleep(700); lt = await ev('return window.__lt;'); if (lt) break; }
+  if (!lt) { console.log('FAIL TOUCH none of the multi-touch devices reaches the WebView'); process.exit(0); }
+  console.log('TOUCHDEV using ' + DEV + ' (' + mt.name + ') x 0..' + MX + ' y 0..' + MY + ' pressure ' + hasP);
   const off = { x: cx / dpr - lt.x, y: cy / dpr - lt.y }; console.log('TOUCHCAL dpr ' + dpr + ' offset css ' + JSON.stringify(off));
   const D = p => ({ x: Math.round((p.x + off.x) * dpr), y: Math.round((p.y + off.y) * dpr) });     // page css px -> device px
   const C = d => ({ x: d.x / dpr - off.x, y: d.y / dpr - off.y });                                // device px -> page css px (where the finger really is)
