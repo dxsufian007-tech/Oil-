@@ -40,6 +40,14 @@ jobs:
           node build-www.js
           npx cap sync android
 
+      - name: Use the same signing key every time and raise the version number (so each APK installs as an update)
+        run: |
+          mkdir -p ~/.android
+          cp .github/signing/debug.keystore ~/.android/debug.keystore
+          sed -i "s/versionCode [0-9]*/versionCode $((100 + ${{ github.run_number }}))/" oli/android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.${{ github.run_number }}\"/" oli/android/app/build.gradle
+          grep -n "versionCode\|versionName" oli/android/app/build.gradle
+
       - name: Build the APK
         working-directory: oli/android
         run: |
