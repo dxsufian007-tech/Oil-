@@ -263,7 +263,10 @@
   function placeSprite(s, type, x, y, b) {
     const src = s.texture.getSourceImage(), ar = src.height / src.width;
     if (type === 'tank') { const dw = [138, 154, 166][clamp(((b && b.level) || 1) - 1, 0, 2)], dh = dw * ar, gx = (x - y) * 32, gy = (x + y + 2) * 16 + 5; s.setDisplaySize(dw, dh).setOrigin(.5, (dh - dw * .22) / dh).setPosition(gx, gy).setDepth(10 + gy); }
-    else if (type === 'pump') { const dw = 112, dh = dw * ar, p = tc(x, y); s.setDisplaySize(dw, dh).setOrigin(.5, (dh - 26) / dh).setPosition(p.x, p.y).setDepth(10 + p.y); }
+    else if (type === 'pump') {                                                 // inline pump: the pipe axis of the picture passes exactly through the tile centre (origin = that point), 2x texture shown at half size
+      const P = (window.ART && ART.pump) || {}, flip = s.texture.key === 'pumpY', ox = (P.px != null ? (flip ? P.w - P.px : P.px) / P.w : .5), oy = P.py != null ? P.py / P.h : .6, p = tc(x, y);
+      s.setDisplaySize(src.width / 2, src.height / 2).setOrigin(ox, oy).setPosition(p.x, p.y).setDepth(10 + p.y + 52);   // above the pipe pieces on both sides (they are drawn at 26 + their y), so the pump body covers them and the pipes continue from its flanges
+    }
     else { const dw = { large: 118, medium: 108 }[b && b.kind] || 96, dh = dw * ar, p = tc(x, y), gy = p.y + 6; s.setDisplaySize(dw, dh).setOrigin(.5, (dh - dw * .2) / dh).setPosition(p.x, gy).setDepth(10 + gy); }
   }
   // one tile's piece: dark outline, steel body, light top line. Butt ends: pieces meet on a straight part, end to end, with no seam; inside a curve the joins are filled.
@@ -779,7 +782,7 @@
   $('#b-build').addEventListener('click', () => { const on = !$('#b-build').classList.contains('on'); $('#b-build').classList.toggle('on', on); $('#buildmenu').hidden = !on; if (!on) setTool(null); else select(null); });
   $$('#buildmenu button').forEach(b => b.addEventListener('click', () => { const t = b.dataset.tool, pt = t === 'pipe' ? +b.dataset.ptype : null; if (ui.tool === t && (t !== 'pipe' || pt === ui.ptype)) return; setTool(t, pt); $('#b-build').classList.add('on'); $('#buildmenu').hidden = false; }));
   $$('#buildmenu [data-cost]').forEach(e => { const k = e.dataset.cost; e.textContent = k === 'well' ? T('من ') + money(CFG.WELL_KINDS.small.cost) : k === 'pipe' ? money(CFG.COST.pipe) + T('/قطعة') : k === 'pipeMain' ? money(CFG.COST.pipeMain) + T('/قطعة') : money(CFG.COST[k]); });
-  $$('#buildmenu i[data-art]').forEach(i => { const a = window.ART && ART.spr[i.dataset.art]; if (a) i.style.backgroundImage = 'url(' + a.src + ')'; });
+  $$('#buildmenu i[data-art]').forEach(i => { const k = i.dataset.art, a = window.ART && (ART.spr[k] || (k === 'pumpX' && ART.pump && { src: ART.pump.x })); if (a) i.style.backgroundImage = 'url(' + a.src + ')'; });
   $('#cf-ok').addEventListener('click', confirmAction);
   $('#cf-no').addEventListener('click', () => { cancel(); if (ui.tool !== 'pipe') { /* keep the tool so the player can tap another spot */ } });
   $('#pn-close').addEventListener('click', () => select(null));

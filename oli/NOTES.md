@@ -55,3 +55,14 @@ Pump curve per level: `H(Q) = H0 − k·Q²` [m], `k = H0 / Qmax²` (so H(Qmax) 
 **UI**: pump tool in the build menu; tap a pump → status, flow, pressure in/out, boost, head, operating cost + on/off, flip, upgrade; tap a pipe → flow, capacity, utilisation, pressure in/out/loss + add valve / open / partial / closed / upgrade pipe; warnings bar (tap → opens the thing). The panel DOM is only rewritten when its text changes (it used to be rewritten 4×/s, which could drop a finger that was pressing a button).
 
 **Known limitations**: no valve opening slider (three discrete positions); pump has no separate "cavitation" model; HIGH PRESSURE cannot occur without a pump by design; emulator frame rate is not representative.
+
+### Pump picture (v35) — inline pipeline pump
+
+Source: the pump image supplied by the project owner (white background; used only as the source, the in-game sprite is transparent). Not a third-party asset.
+How it was made (visual only; no Core / physics / network / save change):
+- Background removed (flood fill from the border + soft alpha edge, colour de-contaminated), so the sprite has a transparent background and a soft ground shadow.
+- **The source picture is not geometrically consistent**: its pump flanges lie on an axis of slope ≈0.16 while the pipes on its two sides lie on slope ≈0.33. The game's pipes are 2:1 (slope 0.5). The sprite is built on the axis through the *centres of the pump's own flanges*, sheared vertically (verticals stay vertical) so that axis is exactly 2:1, and cut with two planes parallel to the tile edge (u = X + 2Y = const) at the outer faces of the two end flanges. Raised parts (motor, gauge, handwheel) are kept whole.
+- `ART.pump` = `{ w, h, px, py, x, y }`: 2x texture, `(px, py)` is the point of the pipe axis in the middle of the pump. In `placeSprite` the sprite origin is that point, placed on the pump's tile centre — the same point the pipe pieces on both sides pass through — and shown at half size. `y` is the mirror image (pipe along the map's y axis). Depth is above the pipe pieces on both sides, so the pump covers them and the pipe continues out of its flanges.
+- Pump length ≈ 2.7 tiles along the pipe, pipe diameter inside it ≈ a branch pipe; the flanges (a little wider than a main pipe) hide the join to a main pipe.
+- Check: `test-v2-pump-art.js` + `check-pump-art.py` build main/branch pipes along x and y (and a flipped pump), screenshot at 2 zooms and verify no ground-coloured gap on the axis within ±2.2 tiles of the pump.
+- Not possible / not done: a pump cannot be dragged (like wells and tanks it has no move tool in the Core; it is removed and placed again); flipping the direction does not mirror the picture (the picture is symmetric enough along the axis; direction is shown in the panel).
