@@ -61,6 +61,7 @@
     'يوجد أنبوب في هذا المكان': 'There is a pipe here',
     'يلامس أنبوبًا فيتصل به بالخطأ: ضعه عند طرف أنبوب مفتوح أو ابتعد': 'It touches a pipe and would join it by accident: place it at an open pipe end or move away',
     'التكلفة': 'Cost', 'الرصيد': 'Balance', 'ملتصق بأقرب مكان صالح': 'snapped to the nearest valid spot',
+    'قرب الحد': 'Near limit', 'مسدود': 'Blocked', 'ضغط مرتفع': 'High pressure', 'ضغط منخفض': 'Low pressure', 'الاتصال': 'Connection', 'القطر': 'Diameter', 'اضغط مع الاستمرار على نقطة الاتصال ثم اسحب الأنبوب إلى وجهته': 'Press and hold a connection point, then drag the pipe to its destination',
     'لا يمكن البناء على الماء': 'You cannot build on water',
     'أرض صخرية: لا يمكن البناء هنا': 'Rocky ground: you cannot build here',
     'هذه المنطقة مقفلة': 'This area is locked',

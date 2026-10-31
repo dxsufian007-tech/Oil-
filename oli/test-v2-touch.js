@@ -88,12 +88,18 @@ let pass = 0; const log = m => { pass++; console.log('ok   ' + m); };
   const cp0 = await cam(); await TE('touchStart', [{ ...wS, id: 1 }]); await fr(); assert.strictEqual(await state(), 'PIPE_DRAG');
   for (let i = 1; i <= 6; i++) { await TE('touchMove', [{ x: wS.x + (5 - wS.x) * i / 6, y: wS.y, id: 1 }]); await fr(); }
   await wait(900); for (let i = 0; i < 5; i++) { await TE('touchMove', [{ x: 5 + (i % 2), y: wS.y, id: 1 }]); await fr(); }
-  await TE('touchMove', [{ x: 5, y: wS.y, id: 1 }, { x: 300, y: 300, id: 2 }]); await fr(); for (let i = 0; i < 3; i++) { await TE('touchMove', [{ x: 5, y: wS.y, id: 1 }, { x: 300 + 30 * i, y: 300 + 20 * i, id: 2 }]); await fr(); }
-  await TE('touchEnd', [{ x: 300, y: 300, id: 2 }]); await fr(); assert.strictEqual(await state(), 'PIPE_DRAG', 'a second finger does not break the pipe drag');
-  for (let i = 1; i <= 8; i++) { await TE('touchMove', [{ x: 5 + (tS.x - 5) * i / 8, y: wS.y + (tS.y - wS.y) * i / 8, id: 1 }]); await fr(); }
+  const nLines = await G(() => window.__v2.game.lines.length), cpA = await cam();
+  await TE('touchMove', [{ x: 5, y: wS.y, id: 1 }, { x: 300, y: 300, id: 2 }]); await fr(); assert.strictEqual(await state(), 'PINCH', 'Phase C: a second finger drops the pipe drag and becomes a pinch');
+  assert.strictEqual(await G(() => window.__v2.ui.dragging), false); const cpB = await cam(); assert(cpA.x === cpB.x && cpA.y === cpB.y && cpA.z === cpB.z, 'the second finger arriving moved the camera');
+  await TE('touchEnd', [{ x: 300, y: 300, id: 2 }]); await fr(); await TE('touchEnd', [{ x: 5, y: wS.y, id: 1 }]); await fr(); await wait(200);
+  assert.strictEqual(await G(() => window.__v2.game.lines.length), nLines, 'a second-finger transition never builds a pipe'); assert.strictEqual(await G(() => window.__v2.game.s.cash <= window.__v2.game.s.cash), true);
+  // a fresh drag: nothing was left over; this one builds on release
+  await center(.9, X + 5, Y + 3); await G(() => { window.__v2.cancel(); window.__v2.setTool('pipe', 0); }); await fr(); const cp0b = await cam();
+  await TE('touchStart', [{ ...wS, id: 1 }]); await fr(); assert.strictEqual(await state(), 'PIPE_DRAG');
+  for (let i = 1; i <= 8; i++) { await TE('touchMove', [{ x: wS.x + (tS.x - wS.x) * i / 8, y: wS.y + (tS.y - wS.y) * i / 8, id: 1 }]); await fr(); }
   const cp1 = await cam(); const lines0 = await G(() => window.__v2.game.lines.length); await TE('touchEnd', [{ ...tS, id: 1 }]); await fr(); const lines1 = await G(() => window.__v2.game.lines.length);
-  assert(cp0.x === cp1.x && cp0.y === cp1.y && cp0.z === cp1.z, 'the camera moved during a pipe drag'); assert.strictEqual(lines1, lines0 + 1, 'pipe built');
-  log('PIPE_DRAG: camera unchanged for the whole drag (finger rested 1 s at the screen edge, a 2nd finger came and went); the pipe was built on release');
+  assert(cp0b.x === cp1.x && cp0b.y === cp1.y && cp0b.z === cp1.z, 'the camera moved during a pipe drag'); assert.strictEqual(lines1, lines0 + 1, 'pipe built');
+  log('PIPE_DRAG: camera unchanged for the whole drag; a 2nd finger drops the pipe (PINCH, nothing built, camera still); a fresh drag builds on release');
   // a 2nd finger right at the start of a pipe drag (nothing moved yet) = the player wants to zoom: drag cancelled, PINCH
   await TE('touchStart', [{ ...wS, id: 1 }]); await fr(); await TE('touchStart', [{ ...wS, id: 1 }, { x: wS.x + 120, y: wS.y + 60, id: 2 }]); await fr();
   assert.strictEqual(await state(), 'PINCH'); assert.strictEqual(await G(() => !!window.__v2.ui.dragging), false); await TE('touchEnd', [{ ...wS, id: 1 }, { x: 0, y: 0, id: 2 }]); await fr();

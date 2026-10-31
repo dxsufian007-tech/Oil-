@@ -228,6 +228,10 @@
         const f = (t - this.buildFx.t0) / 700, geo = this.geoms && this.geoms.find(q => q.line.id === this.buildFx.id);
         if (f >= 1 || !geo) this.buildFx = null; else { const p = pointAt(geo, geo.len * f); g.fillStyle(0xfff3c4, 1 - f * .5); g.fillCircle(p.x, p.y - 2, 9); g.fillStyle(0xffb41f, .9); g.fillCircle(p.x, p.y - 2, 5); }
       }
+      if (ui.tool === 'pipe' && !ui.dragging) {                                 // Phase C: the connections a pipe can be grabbed from (visual point; the touch area is larger: pickNode)
+        const pu = .5 + .5 * Math.sin(t / 260); if (!this.sp0 || t - this.sp0 > 400) { this.sp0 = t; this.startPts = game.pipeStartPoints(); }     // refreshed a few times a second, not per frame
+        for (const sp of this.startPts || []) { const c = tc(sp.x, sp.y), big = sp.kind === 'well' || sp.kind === 'tank' || sp.kind === 'pump'; g.lineStyle(2.5, sp.kind === 'junction' ? 0xffffff : 0xffb74d, .45 + .45 * pu); g.strokeEllipse(c.x, c.y - (big ? 14 : 0), big ? 44 + 6 * pu : 28 + 4 * pu, big ? 22 + 3 * pu : 14 + 2 * pu); g.fillStyle(0xffb74d, .9).fillCircle(c.x, c.y - (big ? 14 : 0), 4); }
+      }
       if (ui.dragging && view.tip) {                                            // the pipe end: follows the finger, and eases onto the target once acquired (visual only)
         const geo = this.previewGeom, r = ui.route, ok = r && r.ok, col = ok ? 0x2fd27a : r && r.free && r.clear ? 0xffd27a : 0xff5a4f;
         const goal = ok && geo && geo.pts.length ? geo.pts[geo.pts.length - 1] : view.tip;
@@ -241,6 +245,8 @@
         if (geo && geo.pts.length && !ok) { const e = geo.pts[geo.pts.length - 1]; g.lineStyle(3, col, .8); g.lineBetween(e.x, e.y, d.x, d.y); }
         if (ok) { g.lineStyle(2, 0x2fd27a, .6); g.lineBetween(view.tip.x, view.tip.y, d.x, d.y); }          // a thin tether from the finger to the connection it is attracted to
         g.fillStyle(col, .35); g.fillCircle(d.x, d.y, ok ? 11 : 15); g.lineStyle(3, col, .95); g.strokeCircle(d.x, d.y, ok ? 11 : 15);
+        if (!ok && !(r && r.free && r.clear)) { g.lineStyle(4, 0xff5a4f, 1); g.lineBetween(d.x - 7, d.y - 7, d.x + 7, d.y + 7); g.lineBetween(d.x - 7, d.y + 7, d.x + 7, d.y - 7); }      // invalid: a cross, not only a colour
+        else if (ok) { g.lineStyle(4, 0x2fd27a, 1); g.beginPath().moveTo(d.x - 6, d.y).lineTo(d.x - 2, d.y + 5).lineTo(d.x + 7, d.y - 6).strokePath(); }     // valid target: a check mark
         if (view.bad && view.bad.n) { const q = nodePoint(view.bad.n); g.lineStyle(2, 0xff5a4f, .55); g.strokeEllipse(q.x, q.y, 46, 23); }
         if (ok && ui.b) { const n = game.nodeById(ui.b); if (n) { const q = nodePoint(n), pu = .5 + .5 * Math.sin(t / 140); g.lineStyle(2.5, 0x2fd27a, .5 + .4 * pu); g.strokeEllipse(q.x, q.y, n.kind === 'b' ? 92 + 8 * pu : 40 + 6 * pu, n.kind === 'b' ? 46 + 4 * pu : 20 + 3 * pu); } }
       }
@@ -415,10 +421,10 @@
       }
       if (ptr.size === 2) {
         if (touch.state === TOUCH.PAN) return startPinch();
-        if (touch.state === TOUCH.PIPE_DRAG && !g.moved) { pipeDragEnd(true); return startPinch(); }
+        if (touch.state === TOUCH.PIPE_DRAG) { pipeDragEnd(true); return startPinch(); }       // Phase C: a 2nd finger always drops the pipe (nothing is built) and becomes a pinch
         if (touch.state === TOUCH.BUILDING_DRAG && !g.moved) { if (g.kind === 'move') moveEnd(true); else { ui.pending = g.before; showGhost(); updateConfirm(); } return startPinch(); }
       }
-      // a third finger, or a second one during a drag that already moved: ignored
+      // a third finger, or a second one during a building drag that already moved: ignored
     });
     scene.input.on('pointermove', p => {
       const q = ptr.get(p.id); if (!q || !p.isDown) return;
@@ -532,7 +538,7 @@
       if (ui.b !== m.target.id) { view.scene.flash = { id: m.target.id, t0: view.scene.time.now }; buzz(12); }     // target acquired: a short pulse (and a tiny vibration)
       ui.b = m.target.id; ui.route = m.route;                                      // the route auto-completes to the exact node
     } else { ui.b = null; ui.route = freeRoute(ui.a, cell); }
-    drawPreview(); liveLabel();
+    drawPreview(); liveLabel(); updateConfirm();
   }
   // the pipe from the start node toward a plain tile (not a node yet): cheap judge only (no network rebuild), shown so the pipe follows the finger
   function freeRoute(aId, cell) {
@@ -637,22 +643,21 @@
     else if (n && n.kind === 'j') { const L = game.lineAt(n.k); select(L ? { kind: 'line', id: L.id, k: n.k } : null); }
     else select(null);
   }
+  /* Phase C: a pipe is built by HOLD + DRAG + RELEASE only (no tap-start / tap-end). A plain tap with the pipe tool lights the connection that was touched
+     and says how to use it; nothing is started, nothing is paid. */
   function tapPipe(cell, w, p) {
     const n = pickNode(cell, w, p);
     if (!n) return toast(why('pickNode'), 'bad');
-    view.scene.flash = { id: n.id, t0: view.scene.time.now };                  // short highlight on the tapped node
-    if (!ui.a) { ui.a = n.id; ui.b = null; ui.route = null; toast(T('البداية: ') + nodeName(n) + T('. الآن اضغط على نقطة الوصول')); updateHint(); return; }
-    if (n.id === ui.a && !ui.b) return cancel();
-    if (n.id === ui.b) return;                                                  // the same destination again changes nothing; only ✓ builds
-    ui.b = n.id; ui.route = game.routeNodes(ui.a, ui.b, ui.ptype);             // routing happens HERE (on a tap), never per frame
-    drawPreview(); updateConfirm(); updateHint();
-    if (!ui.route.ok) toast(why(ui.route.reason), 'bad'); else if (game.s.cash < ui.route.cost) toast(why('cash'), 'bad');
+    view.scene.flash = { id: n.id, t0: view.scene.time.now };
+    setHint(T('اضغط مع الاستمرار على نقطة الاتصال ثم اسحب الأنبوب إلى وجهته'));
   }
   function drawPreview() {
     const g = view.scene.prevG; g.clear(); const r = ui.route; if (!r || !r.cells || !r.cells.length || !routeCells(r).length) return;
     const geo = pipeGeom(routeCells(r), r.a, r.b), ok = r.ok && game.s.cash >= r.cost, sc = ui.ptype ? 1.3 : 1, col = ok ? 0x2fd27a : r.free && r.clear ? 0xffd27a : 0xff5a4f;
     view.scene.previewGeom = geo;
-    for (const pc of geo.pieces) drawPiece(g, pc, sc, col, 1);
+    const bad = !ok && !(r.free && r.clear);
+    for (const pc of geo.pieces) drawPiece(g, pc, sc, col, bad ? .45 : 1);
+    if (bad && geo.pts.length) { const e = geo.pts[geo.pts.length - 1]; g.lineStyle(4, 0xff5a4f, 1); g.lineBetween(e.x - 9, e.y - 9, e.x + 9, e.y + 9); g.lineBetween(e.x - 9, e.y + 9, e.x + 9, e.y - 9); }
   }
   function showGhost() {
     const sc = view.scene; if (sc.ghost) { sc.ghost.destroy(); sc.ghost = null; } if (sc.placeG) sc.placeG.clear();
@@ -675,8 +680,14 @@
   function updateConfirm() {
     const box = $('#confirm'); let txt = '', ok = false;
     if (ui.tool === 'pipe') {
-      if (!ui.a || ui.dragging) { box.hidden = true; return; }
-      const r = ui.route; txt = !r ? T('اسحب الأنبوب إلى وجهته') : r.free && r.clear ? T('اسحب الأنبوب حتى يصل إلى خزان أو أنبوب أو مضخة') : r.ok && game.s.cash < r.cost ? why('cash') : why(r.reason); ok = false;
+      if (!ui.a) { box.hidden = true; return; }
+      const r = ui.route;
+      if (ui.dragging) {                                                       // Phase C: live cost while the pipe is being dragged (changes with every route change)
+        const cash = game.s.cash; box.hidden = false; $('#cf-ok').hidden = true;
+        if (r && r.cells && r.cells.length && (r.ok || (r.free && r.clear))) { const ok2 = cash >= r.cost; box.dataset.ok = ok2 && r.ok ? '1' : '0'; $('#cf-text').textContent = T('أنبوب') + ' · ' + r.fresh.length + T(' قطعة · ') + T('التكلفة') + ' ' + money(r.cost) + ' · ' + T('الرصيد') + ' ' + money(cash) + (ok2 ? ' ← ' + money(cash - r.cost) : ' · ' + why('cash')); }
+        else { box.dataset.ok = '0'; $('#cf-text').textContent = r && r.reason && r.reason !== 'needTarget' ? why(r.reason) : T('اسحب الأنبوب إلى وجهته'); }
+        return;
+      } txt = !r ? T('اسحب الأنبوب إلى وجهته') : r.free && r.clear ? T('اسحب الأنبوب حتى يصل إلى خزان أو أنبوب أو مضخة') : r.ok && game.s.cash < r.cost ? why('cash') : why(r.reason); ok = false;
       box.hidden = false; box.dataset.ok = '0'; $('#cf-text').textContent = txt; $('#cf-ok').hidden = true; return;
     }
     $('#cf-ok').hidden = false;
@@ -733,7 +744,7 @@
       const on = i.currentFlow > 0.05, vk = valveTile(L, s.k), vh = vk != null && game.valve[vk] ? game.valveHyd(vk) : null, up = game.pipeUpgradeInfo(L.cells[0]);
       rows = [[T('من'), nm(i.from || L.a)], [T('إلى'), nm(i.to || L.b)], [T('التدفق'), i.currentFlow.toFixed(1) + T(' برميل/د')], [T('السعة'), i.capacity.toFixed(0) + T(' برميل/د')], [T('الاستخدام'), Math.round(i.usage * 100) + '% · ' + lv, 'u-' + i.usageLevel],
         [T('ضغط الدخول'), bar(i.pressureIn)], [T('ضغط الخروج'), bar(i.pressureOut)], [T('فقد الضغط'), bar(i.pressureLoss)],
-        [T('الحالة'), { OPEN: T('طرف مفتوح'), CONNECTED: T('متصل'), BUILDING: T('قيد البناء'), INVALID: T('غير صالح') }[i.state] || i.state], [T('الطول'), Math.round(i.length) + T(' م · ') + L.cells.length + T(' قطعة')]];
+        [T('الحالة'), PST()[game.pipeStatus(L, i)], 'ps-' + game.pipeStatus(L, i).toLowerCase()], [T('الاتصال'), { OPEN: T('طرف مفتوح'), CONNECTED: T('متصل'), BUILDING: T('قيد البناء'), INVALID: T('غير صالح') }[i.state] || i.state], [T('الطول'), Math.round(i.length) + T(' م · ') + L.cells.length + T(' قطعة')], [T('القطر'), Math.round(i.diameter * 1000) + ' mm']];
       if (vh) rows.push([T('الصمام'), VST()[vh.status] || vh.status, 'v-' + vh.status.toLowerCase()], [T('تدفق الصمام'), vh.flow.toFixed(1) + T(' برميل/د')], [T('ضغط قبل الصمام'), bar(vh.pressureBefore)], [T('ضغط بعد الصمام'), bar(vh.pressureAfter)]);
       btns = [];
       if (up && !up.maxed) btns.push(['pipeUp', T('ترقية الأنبوب') + ' · ' + money(up.cost)]);
@@ -753,6 +764,7 @@
     p.hidden = false;
   }
   const pumpStateText = () => ({ OFF: T('متوقفة'), STARTING: T('تبدأ'), RUNNING: T('تعمل'), STARVED: T('جائعة (بلا نفط)'), OVERLOAD: T('حمل زائد'), STOPPED: T('واقفة (لا مكان للنفط)') });
+  const PST = () => ({ NORMAL: T('طبيعي'), BUSY: T('مشغول'), NEAR_LIMIT: T('قرب الحد'), BOTTLENECK: T('اختناق'), BLOCKED: T('مسدود'), HIGH_PRESSURE: T('ضغط مرتفع'), LOW_PRESSURE: T('ضغط منخفض') });
   const VST = () => ({ OPEN: T('مفتوح'), PARTIAL: T('جزئي'), CLOSED: T('مغلق'), MOVING: T('يتحرك') });
   // the tile a valve goes on: the tapped tile if it is a plain pipe tile of this line, else the middle one
   function valveTile(L, k) { const ok = q => q != null && game.pipe[q] && !game.occ[q]; if (ok(k) && L.cells.includes(k)) return k; const m = L.cells[L.cells.length >> 1]; return ok(m) ? m : null; }

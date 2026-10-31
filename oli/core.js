@@ -1827,6 +1827,26 @@
     }
     /* ================= Phase 2: pump states, pipe states, valves, warnings (read the solver; never change its physics) ================= */
     utilLevel(u) { const U = HC.UTIL; return !(u >= U.BUSY) ? 'normal' : u < U.HIGH ? 'busy' : u < U.BOTTLENECK ? 'high' : 'bottleneck'; }
+    /* Phase C: the one operating status of a pipe, read from numbers the solver already produced (no invented values):
+       BLOCKED (a closed valve on it) > BOTTLENECK (utilisation) > HIGH_PRESSURE (above the warning limit) > NEAR_LIMIT (utilisation 'high')
+       > LOW_PRESSURE (a well of its network is held back by pressure) > BUSY > NORMAL. `h` = lineHyd(L, k). */
+    pipeStatus(L, h) {
+      for (const k of L.cells) if (this.valve[k] === 3 && this.pipe[k]) return 'BLOCKED';
+      if (h.usageLevel === 'bottleneck') return 'BOTTLENECK';
+      if (Math.max(h.pressureIn, h.pressureOut) > HC.WARN.P_HIGH) return 'HIGH_PRESSURE';
+      if (h.usageLevel === 'high') return 'NEAR_LIMIT';                                // a pipe near its limit is the cause of any pressure trouble behind it, so it is named first
+      const c = this.net.comps[this.net.compOf[L.cells[0]]];
+      if (c && h.currentFlow > 0.05 && this.warnings.some(w => w.code === 'LOW_PRESSURE' && c.wells.some(q => q.id === w.id))) return 'LOW_PRESSURE';
+      return h.usageLevel === 'busy' ? 'BUSY' : 'NORMAL';
+    }
+    /* Phase C: where a player may grab a new pipe - every building that still has a free side, every open pipe end and every junction.
+       Read-only, a few dozen entries; used to light the connection points when the pipe tool is armed. */
+    pipeStartPoints() {
+      const out = [], seen = new Set();
+      for (const b of this.buildings) { const n = { id: 'B' + b.id, kind: 'b', b, x: b.x, y: b.y }; if (this.nodePorts(n).length) { const [fw, fh] = this.footprintOf(b.type); out.push({ id: n.id, kind: b.type, x: b.x + (fw - 1) / 2, y: b.y + (fh - 1) / 2 }); } }
+      for (const L of this.lines) for (const e of [L.a, L.b]) { if (!e || (e[0] !== 'E' && e[0] !== 'J') || seen.has(e)) continue; seen.add(e); const k = +e.slice(1); if (!this.pipe[k]) continue; out.push({ id: 'J' + k, kind: e[0] === 'E' ? 'open' : 'junction', x: k % W, y: (k / W) | 0 }); }
+      return out;
+    }
     // the pressure in a part of the network where nothing flows: no flow means no friction, so it equals what pushes on it - the strongest
     // working well's reservoir pressure (a shut-in well), else the back-pressure of its tanks; nothing connected -> 0
     staticPressure(k) {
