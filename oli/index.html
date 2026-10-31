@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ar" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Oli</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-well" viewBox="0 0 24 24"><path d="M3 21h18M7 21l5-13 5 13M12 8 5 5.5M12 8l7 2.5M19 10.5V15M9 17h6"/></symbol>
+    <symbol id="i-pipe" viewBox="0 0 24 24"><path d="M3 8h9v8h9M3 6v4M21 14v4"/></symbol>
+    <symbol id="i-tank" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></symbol>
+    <symbol id="i-market" viewBox="0 0 24 24"><path d="M5 20V11M11 20V5M17 20v-6M22 20V9"/></symbol>
+    <symbol id="i-build" viewBox="0 0 24 24"><path d="M3 21l9-9M10 4l3-1 8 8-1 3-4 1-7-7z"/></symbol>
+    <symbol id="i-select" viewBox="0 0 24 24"><path d="M6 3l13 8-6 1.8L10.5 19z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l6 6M10.5 8v5M8 10.5h5"/></symbol>
+    <symbol id="i-erase" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-cash" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3c4 5 6 8 6 11a6 6 0 0 1-12 0c0-3 2-6 6-11z"/></symbol>
+    <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3 17l5-6 4 4 8-9M15 6h5v5"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><path d="M10.3 2.5h3.4l.5 2.4c.6.2 1.1.5 1.6.9l2.3-.8 1.7 3-1.8 1.6c.1.6.1 1.2 0 1.8l1.8 1.6-1.7 3-2.3-.8c-.5.4-1 .7-1.6.9l-.5 2.4h-3.4l-.5-2.4c-.6-.2-1.1-.5-1.6-.9l-2.3.8-1.7-3 1.8-1.6a5 5 0 0 1 0-1.8L4.2 8l1.7-3 2.3.8c.5-.4 1-.7 1.6-.9z"/><circle cx="12" cy="10.5" r="2.6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l5 5 9-11"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14"/></symbol>
+    <symbol id="i-pump" viewBox="0 0 24 24"><path d="M2 14h5M17 14h5"/><circle cx="12" cy="14" r="5"/><path d="M12 9V5M9.5 5h5M9.5 14l2 2 3-4"/></symbol>
+    <symbol id="i-flip" viewBox="0 0 24 24"><path d="M4 9h13l-3-3M20 15H7l3 3"/></symbol>
+  </defs>
+</svg>
+
+<div id="app">
+  <canvas id="view" aria-label="Oil field map"></canvas>
+
+  <header id="hud">
+    <div class="stat" id="st-cash"><svg class="ic"><use href="#i-cash"/></svg><div><small data-i18n="cash"></small><b id="v-cash">$10,000</b></div></div>
+    <div class="stat" id="st-oil"><svg class="ic"><use href="#i-drop"/></svg><div><small data-i18n="oil"></small><b id="v-oil">0 <i data-i18n="bbl"></i></b></div></div>
+    <div class="stat" id="st-store"><svg class="ic"><use href="#i-tank"/></svg><div><small data-i18n="storage"></small><b id="v-store">0%</b></div></div>
+    <button class="stat" id="st-price" type="button"><svg class="ic"><use href="#i-trend"/></svg><div><small data-i18n="price"></small><b id="v-price">$70.0 <i data-i18n="perBbl"></i></b></div></button>
+  </header>
+
+  <div id="topright">
+    <canvas id="mini" aria-label="Minimap"></canvas>
+    <div class="rbtns">
+      <button class="round" id="btn-speed" type="button" data-i18n-label="speedBtn"><b>1×</b></button>
+      <button class="round" id="btn-settings" type="button" data-i18n-label="menu"><svg class="ic"><use href="#i-gear"/></svg></button>
+    </div>
+  </div>
+
+  <nav id="toolbar">
+    <button class="tool active" data-tool="select" type="button"><svg class="ic"><use href="#i-select"/></svg><span data-i18n="select"></span></button>
+    <button class="tool" id="btn-build" type="button"><svg class="ic"><use href="#i-build"/></svg><span data-i18n="build"></span></button>
+    <button class="tool" id="btn-regions" type="button"><svg class="ic"><use href="#i-map"/></svg><span data-i18n="regions"></span></button>
+    <button class="tool market" id="btn-market" type="button"><svg class="ic"><use href="#i-market"/></svg><span data-i18n="market"></span></button>
+  </nav>
+
+  <div id="buildmenu" hidden>
+    <button class="tool" data-tool="well" type="button"><svg class="ic"><use href="#i-well"/></svg><span data-i18n="n.well"></span><em data-cost="well"></em></button>
+    <button class="tool pipe-tool" data-tool="pipe" data-pipe-type="sub" type="button"><svg class="ic"><use href="#i-pipe"/></svg><span data-i18n="n.pipeSubS"></span><em data-cost="pipe"></em></button>
+    <button class="tool pipe-tool" data-tool="pipe" data-pipe-type="main" type="button"><svg class="ic"><use href="#i-pipe"/></svg><span data-i18n="n.pipeMainS"></span><em data-cost="pipeMain"></em></button>
+    <button class="tool" data-tool="tank" type="button"><svg class="ic"><use href="#i-tank"/></svg><span data-i18n="n.tank"></span><em data-cost="tank"></em></button>
+    <button class="tool" data-tool="pump" type="button"><svg class="ic"><use href="#i-pump"/></svg><span data-i18n="n.pumpS"></span><em data-cost="pump"></em></button>
+    <button class="tool" data-tool="explore" type="button"><svg class="ic"><use href="#i-search"/></svg><span data-i18n="n.explore"></span><em data-cost="explore"></em></button>
+    <button class="tool" data-tool="erase" type="button"><svg class="ic"><use href="#i-erase"/></svg><span data-i18n="erase"></span></button>
+  </div>
+
+  <div id="dock">
+    <div id="kinds" class="chips" hidden><button type="button" data-k="small"></button><button type="button" data-k="medium"></button><button type="button" data-k="large"></button></div>
+    <div id="coach" hidden><span class="cn"></span><span class="ct"></span><button class="cskip" type="button" data-i18n="co.skip"></button></div>
+    <div id="hint"></div>
+    <div id="confirm" hidden>
+      <span id="confirm-text"></span>
+      <button class="btn ghost small" id="confirm-flip" type="button" hidden data-i18n-label="flip"><svg class="ic"><use href="#i-flip"/></svg></button>
+      <button class="btn green small" id="confirm-ok" type="button" data-i18n-label="confirm"><svg class="ic"><use href="#i-check"/></svg></button>
+      <button class="btn ghost small" id="confirm-no" type="button" data-i18n-label="cancel"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+  </div>
+
+  <aside id="panel" hidden></aside>
+
+  <section id="market" class="modal" hidden>
+    <div class="card" role="dialog">
+      <header class="mh"><h2 data-i18n="m.title"></h2><button class="x" id="mk-close" type="button" data-i18n-label="close"><svg class="ic"><use href="#i-close"/></svg></button></header>
+      <nav class="mtabs" id="mtabs"><button type="button" data-tab="trade" class="on" data-i18n="tab.trade"></button><button type="button" data-tab="orders" data-i18n="tab.orders"></button><button type="button" data-tab="comp" data-i18n="tab.comp"></button></nav>
+      <div class="evstrip" id="mk-event" hidden></div>
+      <div class="pane" data-pane="orders" hidden><div id="od-box"></div></div>
+      <div class="pane" data-pane="comp" hidden><div id="cp-box"></div></div>
+      <div class="mgrid" data-pane="trade">
+        <div class="mchart">
+          <div class="pricebig"><small data-i18n="m.current"></small><div><b id="mk-price">$70.0</b><span data-i18n="perBbl"></span></div></div>
+          <div class="trendrow">
+            <div><small data-i18n="m.prev"></small><b id="mk-prev">$70.0</b></div>
+            <div><small data-i18n="m.delta"></small><b id="mk-delta">+$0.0</b></div>
+            <div><small data-i18n="m.trend"></small><b id="mk-trend" class="badge flat"></b></div>
+          </div>
+          <dl class="mstats">
+            <div><dt data-i18n="m.change"></dt><dd id="mk-chg">0%</dd></div>
+            <div><dt data-i18n="m.high"></dt><dd id="mk-hi">$0</dd></div>
+            <div><dt data-i18n="m.low"></dt><dd id="mk-lo">$0</dd></div>
+          </dl>
+          <dl class="mstats econ" id="econ">
+            <div><dt data-i18n="m.stored"></dt><dd id="ec-oil">0</dd></div>
+            <div><dt data-i18n="m.cash"></dt><dd id="ec-cash">$0</dd></div>
+            <div><dt data-i18n="m.profit"></dt><dd id="ec-profit">$0</dd></div>
+            <div><dt data-i18n="m.revenueTot"></dt><dd id="ec-rev">$0</dd></div>
+            <div><dt data-i18n="m.opcost"></dt><dd id="ec-cost">$0</dd></div>
+            <div><dt data-i18n="m.costRate"></dt><dd id="ec-rate">$0</dd></div>
+            <div><dt data-i18n="m.quality"></dt><dd id="ec-q">—</dd></div>
+            <div><dt data-i18n="m.extra"></dt><dd id="ec-extra">$0</dd></div>
+            <div><dt data-i18n="m.capex"></dt><dd id="ec-capex">$0</dd></div>
+          </dl>
+          <div class="owed" id="ec-owed" hidden></div>
+          <canvas id="mk-chart" aria-label="Oil price chart"></canvas>
+        </div>
+        <div class="opts">
+          <article class="opt spot">
+            <h3 data-i18n="m.spot"></h3>
+            <p data-i18n="m.spotDesc"></p>
+            <label class="rng"><span><span data-i18n="m.amount"></span> <b id="sp-amt">0</b></span><input type="range" id="sp-range" min="0" max="0" value="0" step="1"></label>
+            <div class="chips" id="sp-chips"><button type="button" data-n="100">100</button><button type="button" data-n="250">250</button><button type="button" data-n="500">500</button><button type="button" data-n="all" data-i18n="m.all"></button></div>
+            <div class="line"><span data-i18n="m.revenue"></span><b id="sp-rev">$0</b></div>
+            <div class="warn" id="sp-warn" hidden></div>
+            <button class="btn green" id="sp-go" type="button" data-i18n="m.sell"></button>
+          </article>
+          <article class="opt fut">
+            <h3 data-i18n="m.fut"></h3>
+            <p data-i18n="m.futDesc"></p>
+            <label class="rng"><span><span data-i18n="m.amount"></span> <b id="fu-amt">0</b></span><input type="range" id="fu-range" min="0" max="0" value="0" step="1"></label>
+            <div class="chips" id="fu-dur"></div>
+            <div class="line"><span data-i18n="m.contractPrice"></span><b id="fu-price">$0</b></div>
+            <div class="line"><span data-i18n="m.vsNow"></span><b id="fu-edge">0%</b></div>
+            <div class="line"><span data-i18n="m.expected"></span><b id="fu-rev">$0</b></div>
+            <div class="line"><span data-i18n="m.avail"></span><b id="fu-avail">0</b></div>
+            <button class="btn orange" id="fu-go" type="button" data-i18n="m.create"></button>
+          </article>
+          <article class="opt wait">
+            <h3 data-i18n="m.wait"></h3>
+            <p data-i18n="m.waitDesc"></p>
+            <div class="line row"><span data-i18n="m.stockValue"></span><b id="wt-val">$0</b></div>
+            <div class="line row"><span data-i18n="m.waitCost"></span><b id="wt-cost">$0</b></div>
+            <div class="line"><span data-i18n="m.alert"></span>
+              <span class="step"><button type="button" id="al-dn">−</button><b id="al-val"></b><button type="button" id="al-up">+</button></span>
+            </div>
+            <button class="btn blue" id="wt-go" type="button" data-i18n="m.waitBtn"></button>
+          </article>
+        </div>
+        <div class="mlist">
+          <h3 data-i18n="m.contracts"></h3>
+          <ul id="contracts" class="clist"></ul>
+          <h3 data-i18n="m.finished"></h3>
+          <ul id="finished" class="clist"></ul>
+        </div>
+        <div class="mlist">
+          <h3 data-i18n="m.recent"></h3>
+          <ul id="activity" class="alist"></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="regions" class="modal" hidden>
+    <div class="card" role="dialog">
+      <header class="mh"><h2 data-i18n="r.title"></h2><button class="x" id="rg-close" type="button" data-i18n-label="close"><svg class="ic"><use href="#i-close"/></svg></button></header>
+      <p class="rgnote" data-i18n="r.note"></p>
+      <ul id="rg-list" class="rglist"></ul>
+    </div>
+  </section>
+
+  <div id="evbanner" hidden></div>
+
+  <section id="settings" class="modal" hidden>
+    <div class="card small" role="dialog">
+      <header class="mh"><h2 data-i18n="menu"></h2><button class="x" id="st-close" type="button" data-i18n-label="close"><svg class="ic"><use href="#i-close"/></svg></button></header>
+      <div class="srow"><span data-i18n="s.language"></span>
+        <div class="chips" id="langs"><button type="button" data-l="ar">العربية</button><button type="button" data-l="en">English</button></div>
+      </div>
+      <div class="srow"><span data-i18n="s.speed"></span>
+        <div class="chips" id="speed">
+          <button type="button" data-s="0" data-i18n="s.pause"></button><button type="button" data-s="1">1×</button><button type="button" data-s="3">3×</button><button type="button" data-s="10">10×</button>
+        </div>
+      </div>
+      <div class="srow"><span data-i18n="s.confirmBuild"></span>
+        <div class="chips" id="confirmopt"><button type="button" data-c="1" data-i18n="s.on"></button><button type="button" data-c="0" data-i18n="s.off"></button></div>
+      </div>
+      <div class="srow"><span data-i18n="s.saveNote"></span><button class="btn ghost small" id="st-save" type="button" data-i18n="s.saveNow"></button></div>
+      <div class="srow"><span id="st-reset-note"></span><button class="btn red small" id="st-reset" type="button" data-i18n="s.reset"></button></div>
+      <div class="help">
+        <b data-i18n="s.controls"></b>
+        <p data-i18n="s.help1"></p>
+        <p data-i18n="s.help2"></p>
+      </div>
+    </div>
+  </section>
+
+  <div id="toasts" aria-live="polite"></div>
+</div>
+
+<script src="core.js"></script>
+<script src="art.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

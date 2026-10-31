@@ -1,0 +1,60 @@
+name: Build Android APK
+
+# Builds the Oli game into an installable Android app (APK).
+# Run it from the Actions tab (Run workflow), or it runs on every push to the branches below.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master, android-apk]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies and run the game tests
+        run: |
+          npm ci
+          npm test
+
+      - name: Copy the web game into the Android project
+        run: |
+          node build-www.js
+          npx cap sync android
+
+      - name: Build the APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Oli.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Oli-apk
+          path: Oli.apk
+
+      - name: Publish the APK as a release (easy download link)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete apk-latest --yes --cleanup-tag || true
+          gh release create apk-latest Oli.apk \
+            --title "Oli (Android APK)" \
+            --notes "Download Oli.apk on your Android phone and open it to install. Built from commit ${GITHUB_SHA::7}."

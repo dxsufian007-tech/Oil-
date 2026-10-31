@@ -1,0 +1,87 @@
+/* Oli v2 language: the game is written in Arabic; this is the English for every text the player sees.
+   T(s) returns the English when English is chosen (preferences saved on the device), else the Arabic. */
+(() => {
+  let prefs = {};
+  try { prefs = JSON.parse(localStorage.getItem('oli2-prefs') || '{}') || {}; } catch (e) { prefs = {}; }
+  const EN = {
+    'اسحب الأنبوب إلى خزان أو أنبوب أو مضخة، ثم ارفع إصبعك': 'Drag the pipe to a tank, pipe or pump, then lift your finger',
+    'ارفع إصبعك للتوصيل بـ': 'Lift to connect to the ',
+    ' قطعة · ': ' pieces · ',
+    'ارفع لبناء أنبوب بطرف مفتوح · ': 'Lift to build a pipe with an open end · ',
+    ' — أو اسحب نحو خزان/أنبوب': ' — or drag to a tank / pipe',
+    'أُلغي الأنبوب': 'Pipe cancelled',
+    'تم بناء الأنبوب · ': 'Pipe built · ',
+    'المس بئراً أو خزاناً أو أنبوباً واسحب أنبوباً جديداً': 'Touch a well, tank or pipe and drag a new pipe',
+    'أنبوب بطرف مفتوح · ': 'Pipe with an open end · ',
+    ' · يمكن إكماله لاحقاً من طرفه': ' · you can continue it later from its end',
+    'لم يُبنَ شيء: الأنبوب قصير جداً': 'Nothing built: the pipe is too short',
+    'أنبوب': 'pipe', 'بئر': 'well', 'خزان': 'tank', 'مضخة': 'pump',
+    'المكان مشغول بمنشأة أخرى': 'This spot is taken by another facility',
+    'المبنى يتداخل مع منشأة أخرى': 'The building overlaps another facility',
+    'يوجد أنبوب في هذا المكان': 'There is a pipe here',
+    'لا يمكن البناء على الماء': 'You cannot build on water',
+    'أرض صخرية: لا يمكن البناء هنا': 'Rocky ground: you cannot build here',
+    'هذه المنطقة مقفلة': 'This area is locked',
+    'خارج حدود الخريطة': 'Outside the map',
+    'المبنى يخرج عن حدود الخريطة': 'The building goes past the edge of the map',
+    'الآبار تُبنى فقط على أرض فيها نفط (البقع الداكنة)': 'Wells can only go on ground with oil (the dark patches)',
+    'لا يوجد نفط في هذه الأرض': 'There is no oil in this ground',
+    'نفد النفط في هذه الأرض': 'The oil here has run out',
+    'النقد غير كافٍ': 'Not enough cash',
+    'اختر نقطة وصول مختلفة عن نقطة البداية': 'Pick a destination different from the start',
+    'هاتان النقطتان متصلتان بأنبوب أصلاً': 'These two points are already joined by a pipe',
+    'نقطتا الاتصال غير متوافقتين': 'These connection points are not compatible',
+    'متصلان أصلاً عبر الشبكة نفسها (اتصال ثانٍ يصنع حلقة مكررة)': 'Already joined through the same network (a second link would make a loop)',
+    'لا توجد نقطة اتصال متاحة في هذا المبنى (كل جوانبه مشغولة): اختر أحد أنابيبه': 'No free connection on this building (every side is taken): pick one of its pipes',
+    'لا يوجد مسار صالح بين هاتين النقطتين': 'No valid route between these points',
+    'المسار مسدود بمبنى': 'The route is blocked by a building',
+    'المسار مسدود بأنبوب آخر': 'The route is blocked by another pipe',
+    'المسار مسدود: يلامس شبكة أخرى': 'The route is blocked: it touches another network',
+    'المسار مسدود عند نقطة الوصول': 'The route is blocked at the destination',
+    'المسار مسدود: المضخة تتصل من طرفيها فقط': 'The route is blocked: a pump connects only at its two ends',
+    'لم يُبنَ الأنبوب: نهايته لا تطابق نقطة الاتصال (لم يُخصم شيء)': 'Pipe not built: its end does not match the connection point (nothing charged)',
+    'لا يوجد شيء هنا': 'There is nothing here',
+    'المضخة تُبنى فوق أنبوب': 'A pump is built on a pipe',
+    'لا يوجد نفط في الخزانات للبيع': 'There is no oil in the tanks to sell',
+    'اضغط على بئر أو خزان أو مضخة أو أنبوب': 'Touch a well, tank, pump or pipe',
+    'تعذّر التنفيذ (': 'Not possible (',
+    'البداية: ': 'Start: ',
+    '. الآن اضغط على نقطة الوصول': '. Now touch the destination',
+    'اسحب الأنبوب إلى وجهته': 'Drag the pipe to where it should go',
+    'اسحب الأنبوب حتى يصل إلى خزان أو أنبوب أو مضخة': 'Drag the pipe until it reaches a tank, pipe or pump',
+    'تم البناء · ': 'Built · ',
+    'بئر نفط': 'Oil well', 'الإنتاج': 'Production', ' برميل/د': ' bbl/min', 'متصل بخزان': 'Linked to a tank', 'نعم': 'Yes', 'لا': 'No',
+    'الضغط': 'Pressure', 'الحالة': 'Status', 'الكمية': 'Amount', ' برميل': ' bbl', 'السعة': 'Capacity', 'الامتلاء': 'Fill', 'المستوى': 'Level',
+    'التدفق': 'Flow', 'تعمل': 'Running', 'إزالة': 'Remove', 'وصلة': 'junction', 'نهاية مفتوحة': 'open end', 'أنبوب ': 'Pipe ', 'رئيسي': 'main', 'فرعي': 'branch',
+    'من': 'From', 'إلى': 'To', 'طرف مفتوح': 'Open end', 'متصل': 'Connected', 'قيد البناء': 'Being built', 'غير صالح': 'Invalid', 'الطول': 'Length',
+    ' م · ': ' m · ', ' قطعة': ' pieces', 'إزالة الأنبوب': 'Remove pipe', 'تمت الإزالة · استرجاع ': 'Removed · refund ', 'أُزيل الأنبوب · استرجاع ': 'Pipe removed · refund ',
+    'المس بئراً أو خزاناً أو مضخة أو أنبوباً واسحب. للإلغاء: أرجع الأنبوب إلى بدايته وارفع': 'Touch a well, tank, pump or pipe and drag. To cancel: bring the pipe back to its start and lift',
+    'المس الخريطة واسحب البئر إلى البقع الداكنة (أرض فيها نفط)': 'Touch the map and drag the well onto a dark patch (ground with oil)',
+    'المس الخريطة واسحب المبنى إلى مكانه': 'Touch the map and drag the building into place',
+    'من ': 'from ', '/قطعة': '/piece', 'لا توجد منشآت بعد': 'No facilities yet',
+    'بدأت لعبة جديدة': 'A new game has started', 'بيع ': 'Sold ', ' برميل · +': ' bbl · +',
+    'النقد': 'Cash', 'النفط': 'Oil', 'سعر البرميل': 'Oil price', 'الإعدادات': 'Settings',
+    'أنبوب فرعي': 'Branch pipe', 'أنبوب رئيسي': 'Main pipe', 'بناء': 'Build', 'بيع النفط': 'Sell oil', 'تركيز': 'Focus', 'إغلاق': 'Close', 'تأكيد': 'Confirm', 'إلغاء': 'Cancel',
+    'الأصوات': 'Sound', 'الموسيقى': 'Music', 'الاهتزاز': 'Vibration', 'اللغة': 'Language', 'جودة الرسوم': 'Graphics quality',
+    'تشغيل': 'On', 'إيقاف': 'Off', 'العربية': 'العربية', 'تلقائي': 'Auto', 'منخفضة': 'Low', 'متوسطة': 'Medium', 'عالية': 'High',
+    'إعادة اللعبة من البداية': 'Restart the game', 'إعادة اللعبة؟': 'Restart the game?',
+    'سيُحذف كل ما بنيته وتبدأ من جديد. لا يمكن التراجع.': 'Everything you built will be removed and you start over. This cannot be undone.',
+    'نعم، ابدأ من جديد': 'Yes, start over', 'تم حفظ الإعداد': 'Setting saved',
+    'الإنتاج الممكن': 'Production', 'التدفق الحالي': 'Current flow', 'ضغط المكمن': 'Reservoir pressure', 'ضغط رأس البئر': 'Wellhead pressure',
+    'المخزون': 'Inventory', 'الضغط الخلفي': 'Back pressure', 'التدفق الداخل': 'Current inflow', 'الاستخدام': 'Usage', 'فقد الضغط': 'Pressure loss',
+    'طبيعي': 'normal', 'تم نقل المبنى': 'Building moved', 'لا يمكن نقل هذا المبنى': 'This building cannot be moved', 'تحذير': 'warning', 'اختناق شديد': 'severe bottleneck', ' بار': ' bar'
+  };
+  const lang = prefs.lang === 'en' ? 'en' : 'ar';
+  const T = s => lang === 'en' && Object.prototype.hasOwnProperty.call(EN, s) ? EN[s] : s;
+  window.OliLang = { lang, prefs, T, EN };
+  window.T = T;
+  // the page itself (static texts) in the chosen language, before anything is drawn
+  const apply = () => {
+    document.documentElement.lang = lang; document.documentElement.dir = lang === 'en' ? 'ltr' : 'rtl';
+    if (lang !== 'en') return;
+    const walk = n => { for (const c of n.childNodes) { if (c.nodeType === 3) { const t = c.nodeValue.trim(); if (t && EN[t] != null) c.nodeValue = c.nodeValue.replace(t, EN[t]); } else if (c.nodeType === 1 && c.tagName !== 'SCRIPT') walk(c); } };
+    walk(document.body);
+    document.querySelectorAll('[aria-label]').forEach(e => { const v = e.getAttribute('aria-label'); if (EN[v] != null) e.setAttribute('aria-label', EN[v]); });
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply); else apply();
+})();

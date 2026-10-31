@@ -1,0 +1,13 @@
+/* Fonts bundled with the game so it works offline (Cairo for Arabic, Chakra Petch and Barlow for numbers and Latin text). */
+@font-face { font-family: 'Cairo'; font-style: normal; font-display: swap; font-weight: 500; src: url(fonts/cairo-arabic-500-normal.woff2) format('woff2'); unicode-range: None; }
+@font-face { font-family: 'Cairo'; font-style: normal; font-display: swap; font-weight: 600; src: url(fonts/cairo-arabic-600-normal.woff2) format('woff2'); unicode-range: None; }
+@font-face { font-family: 'Cairo'; font-style: normal; font-display: swap; font-weight: 700; src: url(fonts/cairo-arabic-700-normal.woff2) format('woff2'); unicode-range: None; }
+@font-face { font-family: 'Cairo'; font-style: normal; font-display: swap; font-weight: 500; src: url(fonts/cairo-latin-500-normal.woff2) format('woff2'); unicode-range: None; }
+@font-face { font-family: 'Cairo'; font-style: normal; font-display: swap; font-weight: 600; src: url(fonts/cairo-latin-600-normal.woff2) format('woff2'); unicode-range: None; }
+@font-face { font-family: 'Cairo'; font-style: normal; font-display: swap; font-weight: 700; src: url(fonts/cairo-latin-700-normal.woff2) format('woff2'); unicode-range: None; }
+@font-face { font-family: 'Chakra Petch'; font-style: normal; font-display: swap; font-weight: 500; src: url(fonts/chakra-petch-latin-500-normal.woff2) format('woff2'); unicode-range: None; }
+@font-face { font-family: 'Chakra Petch'; font-style: normal; font-display: swap; font-weight: 600; src: url(fonts/chakra-petch-latin-600-normal.woff2) format('woff2'); unicode-range: None; }
+@font-face { font-family: 'Chakra Petch'; font-style: normal; font-display: swap; font-weight: 700; src: url(fonts/chakra-petch-latin-700-normal.woff2) format('woff2'); unicode-range: None; }
+@font-face { font-family: 'Barlow'; font-style: normal; font-display: swap; font-weight: 400; src: url(fonts/barlow-latin-400-normal.woff2) format('woff2'); unicode-range: None; }
+@font-face { font-family: 'Barlow'; font-style: normal; font-display: swap; font-weight: 500; src: url(fonts/barlow-latin-500-normal.woff2) format('woff2'); unicode-range: None; }
+@font-face { font-family: 'Barlow'; font-style: normal; font-display: swap; font-weight: 600; src: url(fonts/barlow-latin-600-normal.woff2) format('woff2'); unicode-range: None; }

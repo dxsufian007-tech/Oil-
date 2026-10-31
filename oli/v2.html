@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d1620">
+<title>Oli</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="v2.css">
+</head>
+<body>
+<div id="world"></div>
+
+<header id="hud">
+  <div class="stat"><small>النقد</small><b id="h-cash">$0</b></div>
+  <div class="stat"><small>النفط</small><b id="h-oil">0</b></div>
+  <div class="stat"><small>سعر البرميل</small><b id="h-price">$0</b></div>
+</header>
+
+<div id="hint" hidden></div>
+<div id="toast" hidden></div>
+
+<section id="panel" hidden>
+  <div class="ph"><h3 id="pn-title"></h3><button class="x" id="pn-close" type="button" aria-label="إغلاق">✕</button></div>
+  <ul id="pn-rows"></ul>
+  <div class="pbtns" id="pn-btns"></div>
+</section>
+
+<section id="settings" hidden>
+  <div class="ph"><h3>الإعدادات</h3><button class="x" id="st-close" type="button" aria-label="إغلاق">✕</button></div>
+  <div class="row"><span>الأصوات</span><div class="chips" data-pref="sound"><button type="button" data-v="1">تشغيل</button><button type="button" data-v="0">إيقاف</button></div></div>
+  <div class="row"><span>الموسيقى</span><div class="chips" data-pref="music"><button type="button" data-v="1">تشغيل</button><button type="button" data-v="0">إيقاف</button></div></div>
+  <div class="row"><span>الاهتزاز</span><div class="chips" data-pref="vib"><button type="button" data-v="1">تشغيل</button><button type="button" data-v="0">إيقاف</button></div></div>
+  <div class="row"><span>اللغة</span><div class="chips" data-pref="lang"><button type="button" data-v="ar">العربية</button><button type="button" data-v="en">English</button></div></div>
+  <div class="row col"><span>جودة الرسوم</span><div class="chips" data-pref="gfx"><button type="button" data-v="auto">تلقائي</button><button type="button" data-v="low">منخفضة</button><button type="button" data-v="medium">متوسطة</button><button type="button" data-v="high">عالية</button></div></div>
+  <div class="pbtns"><button type="button" id="st-reset" class="danger">إعادة اللعبة من البداية</button></div>
+</section>
+
+<div id="dialog" hidden>
+  <div class="box">
+    <h3>إعادة اللعبة؟</h3>
+    <p>سيُحذف كل ما بنيته وتبدأ من جديد. لا يمكن التراجع.</p>
+    <div class="pbtns"><button type="button" id="dl-yes" class="danger">نعم، ابدأ من جديد</button><button type="button" id="dl-no">إلغاء</button></div>
+  </div>
+</div>
+
+<div id="confirm" hidden>
+  <span id="cf-text"></span>
+  <button id="cf-ok" class="ok" type="button" aria-label="تأكيد">✓</button>
+  <button id="cf-no" class="no" type="button" aria-label="إلغاء">✕</button>
+</div>
+
+<nav id="buildmenu" hidden>
+  <button type="button" data-tool="well"><i data-art="wellS2"></i><span>بئر</span><em data-cost="well"></em></button>
+  <button type="button" data-tool="tank"><i data-art="tank1"></i><span>خزان</span><em data-cost="tank"></em></button>
+  <button type="button" data-tool="pipe" data-ptype="0"><i data-art="pipeX"></i><span>أنبوب فرعي</span><em data-cost="pipe"></em></button>
+  <button type="button" data-tool="pipe" data-ptype="1"><i data-art="pipeX" class="big"></i><span>أنبوب رئيسي</span><em data-cost="pipeMain"></em></button>
+</nav>
+
+<nav id="bar">
+  <button type="button" id="b-build"><span>🔧</span>بناء</button>
+  <button type="button" id="b-sell"><span>💰</span>بيع النفط</button>
+  <button type="button" id="b-focus" class="small"><span>🎯</span>تركيز</button>
+  <button type="button" id="b-settings" class="small" aria-label="الإعدادات"><span>⚙️</span>الإعدادات</button>
+</nav>
+
+<script src="phaser.min.js"></script>
+<script src="v2-lang.js"></script>
+<script src="core.js"></script>
+<script src="art.js"></script>
+<script src="v2.js"></script>
+</body>
+</html>

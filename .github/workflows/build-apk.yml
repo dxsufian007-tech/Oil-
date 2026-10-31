@@ -14,11 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unzip the project
-        run: |
-          unzip -q Oli_GPT_PIPES_clean.zip
-          ls oli
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22

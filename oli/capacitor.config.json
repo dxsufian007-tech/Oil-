@@ -1,0 +1,7 @@
+{
+  "appId": "com.oli.oilgame",
+  "appName": "Oli",
+  "webDir": "www",
+  "backgroundColor": "#093756",
+  "android": { "allowMixedContent": false }
+}
