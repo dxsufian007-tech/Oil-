@@ -57,12 +57,12 @@ const log = m => console.log('ok   ' + m);
   const pk = await A(o => { const g = window.__v2.game, L = g.lines.find(q => q.id === o.L3), k = L.cells[Math.floor(L.cells.length / 2)]; return { x: k % 140, y: (k / 140) | 0 }; }, L0);
   await tap(await sT(pk.x, pk.y)); let p = await panel();
   const lh = await A(o => { const v = window.__v2; return v.game.lineHyd(v.game.lines.find(q => q.id === o.L3), v.ui.sel && v.ui.sel.k); }, L0);
-  for (const k of ['من', 'إلى', 'التدفق', 'الاستخدام', 'الضغط', 'فقد الضغط']) assert(k in p.rows, 'pipe panel row ' + k + ': ' + JSON.stringify(p));
-  assert(/^أنبوب فرعي #/.test(p.title) && p.rows['التدفق'].includes(' / ' + lh.capacity.toFixed(0)) && p.rows['الضغط'].includes('→') && lh.pressureIn > lh.pressureOut && lh.pressureLoss > 0, JSON.stringify([p, lh]));
+  for (const k of ['من', 'إلى', 'التدفق', 'السعة', 'الاستخدام', 'ضغط الدخول', 'ضغط الخروج', 'فقد الضغط']) assert(k in p.rows, 'pipe panel row ' + k + ': ' + JSON.stringify(p));
+  assert(/^أنبوب فرعي #/.test(p.title) && p.rows['السعة'].includes(lh.capacity.toFixed(0)) && p.rows['ضغط الدخول'] !== p.rows['ضغط الخروج'] && lh.pressureIn > lh.pressureOut && lh.pressureLoss > 0, JSON.stringify([p, lh]));
   await page.screenshot({ path: `${OUT}/p1-panel-pipe.png` }); log('pipe panel: ' + p.title + ' · ' + Object.entries(p.rows).map(r => r.join(' ')).join(' | '));
   // bottleneck colour on a pipe used >= 90%
   await A(o => { const g = window.__v2.game, w = g.buildings.find(b => b.id === o.V); w.kind = 'large'; w.level = 3; g.hyd.dirty = true; for (let i = 0; i < 300; i++) g.step(.1); window.__v2.renderPanel(); }, L0);
-  p = await panel(); assert(p.cls.includes('u-critical') && /اختناق شديد/.test(p.rows['الاستخدام']), JSON.stringify(p)); await page.screenshot({ path: `${OUT}/p1-panel-bottleneck.png` }); log('pipe at its limit: usage ' + p.rows['الاستخدام'] + ' (shown in red)');
+  p = await panel(); assert(p.cls.includes('u-bottleneck') && /اختناق/.test(p.rows['الاستخدام']), JSON.stringify(p)); await page.screenshot({ path: `${OUT}/p1-panel-bottleneck.png` }); log('pipe at its limit: usage ' + p.rows['الاستخدام'] + ' (shown in red)');
   await tap(await sT(X + 0.5, Y + 0.5, -14)); p = await panel();
   for (const k of ['الإنتاج الممكن', 'التدفق الحالي', 'ضغط المكمن', 'ضغط رأس البئر']) assert(k in p.rows, 'well row ' + k + JSON.stringify(p)); assert(/بار/.test(p.rows['ضغط المكمن']));
   await page.screenshot({ path: `${OUT}/p1-panel-well.png` }); log('well panel: ' + Object.entries(p.rows).map(r => r.join(' ')).join(' | '));

@@ -50,5 +50,6 @@ adb shell wm size | tee results/screen.txt
 adb shell getprop ro.build.version.release | tee results/android-version.txt
 runTest test-android.js report
 runTest touch-android.js touch
+runTest phase2-android.js phase2
 grep -E "Capacitor/Console|chromium" results/logcat.txt | grep -iE " E |error|exception|webgl|gl_" > results/logcat-errors.txt || true
 exit 0

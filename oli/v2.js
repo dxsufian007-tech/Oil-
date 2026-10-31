@@ -211,6 +211,16 @@
         if (ui.a && ui.a[0] === 'J') ring(g, kc(+ui.a.slice(1)), 0xffb41f, .95);
         if (ui.b) { const n = game.nodeById(ui.b); if (n) n.kind === 'b' ? footprint(n.b && n.b, n.b, ui.route && ui.route.ok ? 0x2fd27a : 0xff5a4f, .95) : ring(g, kc(n.k), ui.route && ui.route.ok ? 0x2fd27a : 0xff5a4f, .95); }
       }
+      if (game.vlist && game.vlist.size) for (const k of game.vlist) {                // valve marks: colour = the valve's real state
+        if (!game.pipe[k]) continue; const v = game.valve[k], p = kc(k), col = v === 3 ? 0xff5a4f : v === 2 ? 0xffb41f : 0x2fd27a, open = game.valvePos[k];
+        g.fillStyle(0x0d1620, .95); g.fillRect(p.x - 8, p.y - 12, 16, 16); g.lineStyle(2, col, 1); g.strokeRect(p.x - 8, p.y - 12, 16, 16);
+        g.fillStyle(col, 1); g.fillRect(p.x - 5, p.y - 9, 10, Math.max(2, 10 * (1 - open) + 2));
+      }
+      for (const b of game.buildings) if (b.type === 'pump') {                      // pump status dot: from pumpStep's state
+        const p = tc(b.x, b.y), st = b.state, col = st === 'RUNNING' ? 0x2fd27a : st === 'STARTING' ? 0xffd84a : st === 'OVERLOAD' ? 0xff5a4f : st === 'STARVED' ? 0xffb41f : 0x8a98a8;
+        g.fillStyle(0x0d1620, .95); g.fillCircle(p.x, p.y - 44, 7); g.fillStyle(col, 1); g.fillCircle(p.x, p.y - 44, 5);
+      }
+      if (ui.sel && ui.sel.kind === 'line' && ui.sel.k != null && game.valve[ui.sel.k]) ring(g, kc(ui.sel.k), 0x7cd7ff, .95);
       if (ui.sel && ui.sel.kind === 'b') { const b = game.buildings.find(q => q.id === ui.sel.id); if (b) footprint(g, b, 0x7cd7ff, .95); }
       if (ui.sel && ui.sel.kind === 'line' && this.geoms) { const geo = this.geoms.find(q => q.line.id === ui.sel.id); if (geo) { g.lineStyle(4, 0x7cd7ff, .9); g.strokePoints(geo.pts, false, false); } }
       if (this.buildFx) {                                                        // construction: a light runs along the new pipe once
@@ -669,30 +679,91 @@
       const b = game.buildings.find(q => q.id === s.id); if (!b) { ui.sel = null; p.hidden = true; return; }
       if (b.type === 'well') { const h = game.wellHyd(b); title = T('بئر نفط'); rows = [[T('الإنتاج الممكن'), h.productionPotential.toFixed(1) + T(' برميل/د')], [T('التدفق الحالي'), h.currentFlow.toFixed(1) + T(' برميل/د')], [T('ضغط المكمن'), bar(h.reservoirPressure)], [T('ضغط رأس البئر'), bar(h.wellHeadPressure)], [T('متصل بخزان'), game.isWellConnected(b) ? T('نعم') : T('لا')], [T('الحالة'), Math.round((b.condition || 0) * 100) + '%']]; }
       else if (b.type === 'tank') { const h = game.tankHyd(b); title = T('خزان'); rows = [[T('المخزون'), num(h.inventory) + T(' برميل')], [T('السعة'), num(h.capacity) + T(' برميل')], [T('الامتلاء'), Math.round(h.fillRatio * 100) + '%'], [T('الضغط الخلفي'), bar(h.backPressure)], [T('التدفق الداخل'), h.currentInflow.toFixed(1) + T(' برميل/د')], [T('المستوى'), b.level]]; }
-      else { title = T('مضخة'); rows = [[T('التدفق'), (b.flow || 0).toFixed(1)], [T('تعمل'), b.enabled !== false ? T('نعم') : T('لا')]]; }
+      else if (b.type === 'pump') {
+        const h = game.pumpHyd(b), SL = pumpStateText();
+        title = T('مضخة') + ' #' + b.id;
+        rows = [[T('الحالة'), SL[h.state] || h.state, 'p-' + h.state.toLowerCase()], [T('التدفق'), h.flow.toFixed(1) + ' / ' + h.maxFlow.toFixed(0) + T(' برميل/د')], [T('ضغط الدخول'), bar(h.pressureIn)], [T('ضغط الخروج'), bar(h.pressureOut)],
+          [T('دفع الضغط'), '+' + bar(h.boost)], [T('رأس المضخة'), h.head.toFixed(0) + ' / ' + h.headMax.toFixed(0) + T(' م')], [T('تكلفة التشغيل'), '$' + h.costPerMin.toFixed(2) + T('/د') + ' · ' + h.kw.toFixed(0) + ' kW'], [T('التكلفة الإجمالية'), '$' + h.costTotal.toFixed(1)]];
+        btns = [['pumpToggle', h.enabled ? T('إيقاف') : T('تشغيل')], ['pumpFlip', T('عكس الاتجاه')], ['remove', T('إزالة'), 'danger']];
+        if (b.level < game.maxLevel(b)) btns.splice(2, 0, ['pumpUp', T('ترقية') + ' · ' + money(game.upgradeCost(b))]);
+        $('#pn-title').textContent = title; paintPanel(rows, btns); return;
+      }
       btns = [['remove', T('إزالة'), 'danger']];
     } else if (s.kind === 'line') {
       const L = game.lines.find(q => q.id === s.id); if (!L) { ui.sel = null; p.hidden = true; return; }
-      const i = game.lineHyd(L, s.k), nm = id => id[0] === 'B' ? nodeName(game.nodeById(id)) : id[0] === 'J' ? T('وصلة') : T('نهاية مفتوحة'), lv = { normal: T('طبيعي'), warning: T('تحذير'), critical: T('اختناق شديد') }[i.usageLevel];
+      const i = game.lineHyd(L, s.k), nm = id => id[0] === 'B' ? nodeName(game.nodeById(id)) : id[0] === 'J' ? T('وصلة') : T('نهاية مفتوحة'), lv = { normal: T('طبيعي'), busy: T('مشغول'), high: T('مرتفع'), bottleneck: T('اختناق') }[i.usageLevel];
       title = (L.type ? T('أنبوب رئيسي') : T('أنبوب فرعي')) + ' #' + L.id;
-      rows = [[T('من'), nm(i.from || L.a)], [T('إلى'), nm(i.to || L.b)], [T('التدفق'), i.currentFlow.toFixed(1) + ' / ' + i.capacity.toFixed(0) + T(' برميل/د')], [T('الاستخدام'), Math.round(i.usage * 100) + '% · ' + lv, 'u-' + i.usageLevel],
-        [T('الضغط'), i.currentFlow > 0 ? i.pressureIn.toFixed(1) + ' → ' + bar(i.pressureOut) : '—'], [T('فقد الضغط'), bar(i.pressureLoss)],
+      const on = i.currentFlow > 0.05, vk = valveTile(L, s.k), vh = vk != null && game.valve[vk] ? game.valveHyd(vk) : null, up = game.pipeUpgradeInfo(L.cells[0]);
+      rows = [[T('من'), nm(i.from || L.a)], [T('إلى'), nm(i.to || L.b)], [T('التدفق'), i.currentFlow.toFixed(1) + T(' برميل/د')], [T('السعة'), i.capacity.toFixed(0) + T(' برميل/د')], [T('الاستخدام'), Math.round(i.usage * 100) + '% · ' + lv, 'u-' + i.usageLevel],
+        [T('ضغط الدخول'), bar(i.pressureIn)], [T('ضغط الخروج'), bar(i.pressureOut)], [T('فقد الضغط'), bar(i.pressureLoss)],
         [T('الحالة'), { OPEN: T('طرف مفتوح'), CONNECTED: T('متصل'), BUILDING: T('قيد البناء'), INVALID: T('غير صالح') }[i.state] || i.state], [T('الطول'), Math.round(i.length) + T(' م · ') + L.cells.length + T(' قطعة')]];
-      btns = [['removeLine', T('إزالة الأنبوب'), 'danger']];
+      if (vh) rows.push([T('الصمام'), VST()[vh.status] || vh.status, 'v-' + vh.status.toLowerCase()], [T('تدفق الصمام'), vh.flow.toFixed(1) + T(' برميل/د')], [T('ضغط قبل الصمام'), bar(vh.pressureBefore)], [T('ضغط بعد الصمام'), bar(vh.pressureAfter)]);
+      btns = [];
+      if (up && !up.maxed) btns.push(['pipeUp', T('ترقية الأنبوب') + ' · ' + money(up.cost)]);
+      if (vk != null) { if (!vh) btns.push(['valveAdd', T('إضافة صمام') + ' · ' + money(CFG.COST.valve)]); else btns.push(['valve1', VST().OPEN, game.valve[vk] === 1 ? 'on' : ''], ['valve2', VST().PARTIAL, game.valve[vk] === 2 ? 'on' : ''], ['valve3', VST().CLOSED, game.valve[vk] === 3 ? 'on' : ''], ['valve0', T('إزالة الصمام')]); }
+      btns.push(['removeLine', T('إزالة الأنبوب'), 'danger']);
     }
-    $('#pn-title').textContent = title; $('#pn-rows').innerHTML = rows.map(r => '<li' + (r[2] ? ' class="' + r[2] + '"' : '') + '><small>' + r[0] + '</small><b>' + r[1] + '</b></li>').join('');
-    $('#pn-btns').innerHTML = btns.map(b => '<button type="button" class="' + (b[2] || '') + '" data-act="' + b[0] + '">' + b[1] + '</button>').join(''); p.hidden = false;
+    $('#pn-title').textContent = title; paintPanel(rows, btns);
   }
+  /* The panel is refreshed 4x a second with live numbers. The DOM is only rewritten when the text really changed - a button that is replaced
+     while a finger is on it would lose the touch (no click), so buttons are left alone unless the set of buttons changed. */
+  let panelRows = '', panelBtns = '';
+  function paintPanel(rows, btns) {
+    const p = $('#panel'), r = rows.map(r => '<li' + (r[2] ? ' class="' + r[2] + '"' : '') + '><small>' + r[0] + '</small><b>' + r[1] + '</b></li>').join(''),
+      b = btns.map(b => '<button type="button" class="' + (b[2] || '') + '" data-act="' + b[0] + '">' + b[1] + '</button>').join('');
+    if (r !== panelRows) { panelRows = r; $('#pn-rows').innerHTML = r; }
+    if (b !== panelBtns) { panelBtns = b; $('#pn-btns').innerHTML = b; }
+    p.hidden = false;
+  }
+  const pumpStateText = () => ({ OFF: T('متوقفة'), STARTING: T('تبدأ'), RUNNING: T('تعمل'), STARVED: T('جائعة (بلا نفط)'), OVERLOAD: T('حمل زائد'), STOPPED: T('واقفة (لا مكان للنفط)') });
+  const VST = () => ({ OPEN: T('مفتوح'), PARTIAL: T('جزئي'), CLOSED: T('مغلق'), MOVING: T('يتحرك') });
+  // the tile a valve goes on: the tapped tile if it is a plain pipe tile of this line, else the middle one
+  function valveTile(L, k) { const ok = q => q != null && game.pipe[q] && !game.occ[q]; if (ok(k) && L.cells.includes(k)) return k; const m = L.cells[L.cells.length >> 1]; return ok(m) ? m : null; }
   function panelAct(a) {
     const s = ui.sel; if (!s) return;
     if (a === 'remove') { const b = game.buildings.find(q => q.id === s.id); if (b) { const r = game.removeAt(b.x, b.y); toast(T('تمت الإزالة · استرجاع ') + money(r.refund || 0)); } }
+    if (a === 'pumpToggle') { const b = game.buildings.find(q => q.id === s.id); if (b) game.setPumpEnabled(b, b.enabled === false); renderPanel(); save(); return; }
+    if (a === 'pumpFlip') { const b = game.buildings.find(q => q.id === s.id); if (b) game.flipPump(b); renderPanel(); save(); return; }
+    if (a === 'pumpUp') { const b = game.buildings.find(q => q.id === s.id), r = b && game.upgrade ? game.upgrade(b) : { ok: false, reason: 'nothing' }; if (!r.ok) toast(why(r.reason), 'bad'); renderPanel(); save(); return; }
+    if (a === 'pipeUp') { const L = game.lines.find(q => q.id === s.id), r = L ? game.upgradePipes(L.cells[0]) : { ok: false, reason: 'nothing' }; toast(r.ok ? T('تمت ترقية الأنبوب · ') + money(r.cost) : why(r.reason), r.ok ? 'good' : 'bad'); renderPanel(); save(); return; }
+    if (a === 'valveAdd' || /^valve[0-3]$/.test(a)) {
+      const L = game.lines.find(q => q.id === s.id), vk = L ? valveTile(L, s.k) : null; if (vk == null) return;
+      const r = game.setValve(vk, a === 'valveAdd' ? 1 : +a.slice(5)); if (!r.ok) toast(why(r.reason), 'bad'); else if (a === 'valveAdd') toast(T('أُضيف صمام · ') + money(r.cost || 0), 'good');
+      renderPanel(); save(); return;
+    }
     if (a === 'removeLine') { const L = game.lines.find(q => q.id === s.id); if (L) { let ref = 0; for (const k of L.cells.slice()) { const r = game.removeAt(k % W, (k / W) | 0); ref += r.refund || 0; } toast(T('أُزيل الأنبوب · استرجاع ') + money(ref)); } }
     select(null); save();
   }
   function refreshHud() {
     $('#h-cash').textContent = money(game.s.cash); $('#h-oil').textContent = num(game.oilTotal()) + T(' برميل'); $('#h-price').textContent = money(game.s.price);
-    $$('#buildmenu button').forEach(b => { const c = b.dataset.tool === 'well' ? CFG.WELL_KINDS.small.cost : b.dataset.tool === 'tank' ? CFG.COST.tank : b.dataset.ptype === '1' ? CFG.COST.pipeMain : CFG.COST.pipe; b.classList.toggle('poor', game.s.cash < c); });
+    $$('#buildmenu button').forEach(b => { const c = b.dataset.tool === 'well' ? CFG.WELL_KINDS.small.cost : b.dataset.tool === 'tank' ? CFG.COST.tank : b.dataset.tool === 'pump' ? CFG.COST.pump : b.dataset.ptype === '1' ? CFG.COST.pipeMain : CFG.COST.pipe; b.classList.toggle('poor', game.s.cash < c); });
+    paintWarnings();
     if (ui.sel) renderPanel();
+  }
+  /* warning bar: exactly game.warnings (set by the simulation after each solve); the DOM is only touched when the list changes */
+  let warnSig = '';
+  function warnText(w) {
+    const pc = v => Math.round((v || 0) * 100) + '%';
+    switch (w.code) {
+      case 'BOTTLENECK': return T('اختناق: أنبوب #') + w.id + ' · ' + pc(w.value);
+      case 'HIGH_PRESSURE': return T('ضغط عالٍ: ') + bar(w.value);
+      case 'LOW_PRESSURE': return T('ضغط منخفض: البئر #') + w.id + T(' يعطي ') + pc(w.value) + T(' من طاقته');
+      case 'PUMP_STARVED': return T('مضخة #') + w.id + T(' جائعة: لا يصلها نفط');
+      case 'TANK_BACKPRESSURE': return T('ضغط خلفي: خزان #') + w.id + ' · ' + bar(w.value);
+      case 'VALVE_CLOSED': return T('صمام مغلق على الأنبوب #') + w.id;
+    }
+    return w.code;
+  }
+  function paintWarnings() {
+    const arr = game.warnings || [], sig = arr.map(w => w.code + w.id + (w.value != null ? Math.round(w.value * 20) : '')).join('|');
+    if (sig === warnSig) return; warnSig = sig;
+    const el = $('#warns'); el.hidden = !arr.length;
+    el.innerHTML = arr.slice(0, 3).map((w, i) => '<button type="button" class="w-' + w.code.toLowerCase() + '" data-w="' + i + '">' + warnText(w) + '</button>').join('') + (arr.length > 3 ? '<span>+' + (arr.length - 3) + '</span>' : '');
+  }
+  function warnTap(i) {
+    const w = (game.warnings || [])[i]; if (!w) return;
+    if (w.kind === 'line' || w.kind === 'valve') select({ kind: 'line', id: w.id, k: w.k });
+    else if (w.kind === 'b') select({ kind: 'b', id: w.id });
   }
   function updateHint() {
     const h = $('#hint'); let s = '';
@@ -712,6 +783,7 @@
   $('#cf-ok').addEventListener('click', confirmAction);
   $('#cf-no').addEventListener('click', () => { cancel(); if (ui.tool !== 'pipe') { /* keep the tool so the player can tap another spot */ } });
   $('#pn-close').addEventListener('click', () => select(null));
+  $('#warns').addEventListener('click', e => { const b = e.target.closest('[data-w]'); if (b) warnTap(+b.dataset.w); });
   $('#pn-btns').addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b) panelAct(b.dataset.act); });
   // Focus: glide (never teleport) to the selected building / pipe, or else to the facility nearest the screen centre
   function focusTarget() {

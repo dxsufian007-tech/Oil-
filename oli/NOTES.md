@@ -26,3 +26,32 @@ Left exactly as they were in the move (candidates for a later cleanup, not done 
 - `oli/.github/workflows/android.yml` — an old workflow inside the project folder; GitHub ignores it (only the root `.github` counts).
 - Old files: `game.js`, `game.js.orig`, `index.html`, `style.css` (the pre-Phaser version), `*.bak.js`, `*-dbg.js` tests, `tests-retired/`.
 - `build-apk.yml` still copies `.github/signing/debug.keystore` to `~/.android/`; the APK is actually signed by `signingConfigs.oli` in `oli/android/app/build.gradle` (`oli-debug.keystore`), and CI checks that certificate.
+
+## Phase 2 — advanced hydraulics & control (v35)
+
+Everything below is computed by the one solver in `core.js`; the UI only reads it (`pumpHyd`, `valveHyd`, `lineHyd`, `game.warnings`). The network is re-solved only on a change (`hy.dirty`) or every `SOLVE_DT` = 0.2 s, never per render frame; pump/line states and warnings are refreshed after each solve (or every `STATE_DT` = 0.5 s).
+
+**Units** — flow bbl/min (converted with `BBL_MIN` to m³/s inside the physics), pressure bar (`BAR` = 1e5 Pa), head m, ρ = 850 kg/m³, g = 9.81 m/s², power kW, cost $.
+Pump curve per level: `H(Q) = H0 − k·Q²` [m], `k = H0 / Qmax²` (so H(Qmax) = 0), `ΔP = ρ·g·H` [Pa] → bar, `H0 = H0_BAR·1e5 / (ρ·g)`. Test "Units" checks `ρ·g·H0 = H0_BAR`. Boost = ΔP(Q) × spin (0..1, spin-up). Power `kW = ΔP·Q / efficiency`, cost `kW × OPEX.pumpKwMin ($/kW/min) × time`. The pump boost is a pressure *source* inside the solver: with the pump OFF it is 0 and the downstream pressure/flow fall (test 1–3 and the full scenario).
+
+**Pump states** (`pumpStep`, measured quantities only):
+| state | condition |
+|---|---|
+| OFF | switched off by the player, or still being built — boost 0, 0 kW |
+| STARTING | on, oil flowing (> 0.05 bbl/min), rotor speed < 97% |
+| RUNNING | on, oil flowing, speed ≥ 97%, flow < 98% of Qmax |
+| OVERLOAD | oil flowing at ≥ 98% of Qmax (head ≈ 0, flow capped by the pump) |
+| STARVED | on, no flow, a tank *with room* is reachable around the pump, and no working well supplies it (or it was in use and the oil stopped) — nothing to pump, 0 kW |
+| STOPPED | on, no flow, and nothing explains it by missing oil: tanks full / outlet cut off by a closed valve |
+
+**Valves**: OPEN / PARTIAL / CLOSED. PARTIAL is real: the solver already uses a loss coefficient `K = 0.2 + 30·((1−o)/o)²` with the animated opening `o` (VALVE_POS 1 / 0.35 / 0), so flow drops (test 19: 29.9 → 17.5 bbl/min). CLOSED cuts the network (`vblock`): flow through it is exactly 0, the part behind it is shut-in (static pressure of the reservoir), the tank side shows its back-pressure, the tank stops growing and the well stops producing.
+
+**Pipe utilisation** = actual flow / capacity: < 60% normal, 60–80% busy, 80–95% high, > 95% bottleneck — stored on each line (`L.util`, `L.status`) in the game state. Without a pump a small pipe is often *pressure*-limited (high, not bottleneck, and the well warns LOW PRESSURE); adding a pump lifts the flow until the pipe's own capacity is the limit (BOTTLENECK) — the player's fix is a bigger pipe, a second path, a pump, or the valve.
+
+**Warnings** (`game.warnings`, each from a simulation condition): BOTTLENECK (line util > 95%), HIGH_PRESSURE (a pipe above `WARN.P_HIGH` = 30 bar — above the strongest reservoir, 24 bar, so only a pump can cause it), LOW_PRESSURE (pressure-limited well delivering < `LOW_FLOW` = 60% of its potential), PUMP_STARVED (state above), TANK_BACKPRESSURE (tank ≥ `TANK_FILL` = 80% full while a pressure-limited well feeds it; back-pressure there is 6.1 bar), VALVE_CLOSED (a closed valve that cuts a producing well off from storage).
+
+**Save/Load**: pump `enabled`, `level`, `dir`, `runTime`, `costTotal`; valve states (existing `valves`). State is re-derived after load.
+
+**UI**: pump tool in the build menu; tap a pump → status, flow, pressure in/out, boost, head, operating cost + on/off, flip, upgrade; tap a pipe → flow, capacity, utilisation, pressure in/out/loss + add valve / open / partial / closed / upgrade pipe; warnings bar (tap → opens the thing). The panel DOM is only rewritten when its text changes (it used to be rewritten 4×/s, which could drop a finger that was pressing a button).
+
+**Known limitations**: no valve opening slider (three discrete positions); pump has no separate "cavitation" model; HIGH PRESSURE cannot occur without a pump by design; emulator frame rate is not representative.

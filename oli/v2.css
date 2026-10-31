@@ -78,10 +78,26 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; }
 #dialog .box { background: var(--card); border: 1px solid var(--red); border-radius: 16px; padding: 16px; max-width: 360px; width: 100%; }
 #dialog h3 { margin: 0 0 8px; } #dialog p { margin: 0 0 14px; line-height: 1.6; color: var(--muted); }
 #dialog .pbtns { display: flex; gap: 8px; } #dialog .pbtns button { flex: 1; min-height: 48px; border-radius: 12px; background: #2a3a4c; font-weight: 700; } #dialog .pbtns .danger { background: #7a2a31; }
-#panel li.u-warning { background: rgba(255, 180, 31, .18); }
-#panel li.u-critical { background: rgba(255, 90, 79, .22); }
+#panel li.u-busy { background: rgba(255, 216, 74, .14); }
+#panel li.u-high { background: rgba(255, 180, 31, .22); }
+#panel li.u-bottleneck { background: rgba(255, 90, 79, .28); }
+#panel li.p-running, #panel li.v-open { background: rgba(47, 210, 122, .16); }
+#panel li.p-starved, #panel li.p-starting, #panel li.v-partial, #panel li.v-moving { background: rgba(255, 180, 31, .2); }
+#panel li.p-overload, #panel li.v-closed { background: rgba(255, 90, 79, .24); }
+#panel .pbtns { flex-wrap: wrap; }
+#panel .pbtns button { min-width: 22%; }
+#panel .pbtns button.on { background: #1f6b8f; }
+#warns { position: fixed; top: calc(max(8px, env(safe-area-inset-top)) + 72px); left: 8px; right: 8px; display: flex; flex-direction: column; gap: 4px; z-index: 5; pointer-events: none; }
+#warns button { pointer-events: auto; text-align: start; min-height: 32px; padding: 4px 10px; border-radius: 10px; background: rgba(255, 180, 31, .92); color: #1a1205; font-size: 13px; font-weight: 700; }
+#warns button.w-bottleneck, #warns button.w-high_pressure, #warns button.w-valve_closed { background: rgba(255, 90, 79, .92); color: #fff; }
+#warns span { color: var(--muted); font-size: 12px; }
 /* info rows: label and value on one line, so the longer Phase-1 panels stay as short as the old ones */
 #panel ul { gap: 4px; margin: 6px 0; }
 #panel li { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: 6px; padding: 4px 8px; }
 #panel li small { display: inline; }
 #panel li b { font-size: 13px; }
+/* Phase 2: the panel has more numbers and buttons - buttons come first (always reachable), numbers scroll below them */
+#panel { display: flex; flex-direction: column; max-height: 56vh; }
+#panel .ph { order: 0; } #panel .pbtns { order: 1; margin: 6px 0 2px; } #panel ul { order: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; overflow: auto; }
+#panel .pbtns button { min-height: 40px; font-size: 13px; padding: 0 6px; }
+#panel li { padding: 3px 8px; } #panel li small { font-size: 10px; } #panel li b { font-size: 12px; }
