@@ -5,25 +5,29 @@
  */
 (function () {
   'use strict';
-  const WP = window.__wp, B = OliBuildings, A = OliBuildingArt, world = WP.world, ctx = WP.ctx, cam = WP.cam, hooks = WP.hooks, CFG = OliWorld.CONFIG, cv = document.getElementById('c');
-  const ts = B.fromWorld(world), STORE = new B.BuildingStore(ts, { cash: 150000 }), pipes = new Set(), WW = world.W, PIPE_COST = 10, SAVE_KEY = 'oli-lab-v1';
+  const WP = window.__wp, B = OliBuildings, I = OliIndustry, BC = OliBuildingConfig, A = OliBuildingArt, world = WP.world, ctx = WP.ctx, cam = WP.cam, hooks = WP.hooks, CFG = OliWorld.CONFIG, cv = document.getElementById('c');
+  const ts = B.fromWorld(world), START_CASH = 2e9, STORE = new B.BuildingStore(ts, { cash: START_CASH }), pipes = new I.PipeNet(world.W), SIM = new I.Sim(STORE, pipes), WW = world.W, SAVE_KEY = 'oli-lab-v2';
   const $ = id => document.getElementById(id), fmt$ = n => '$' + Math.round(n).toLocaleString('en-US');
-  const CAT = { EXTRACTION: '#d9962b', PIPE_NETWORK: '#4f8fc0', STORAGE: '#9aa7b3', PROCESSING: '#6faa7d', COMPANY: '#b9825a' };
+  const CAT = { EXTRACTION: '#d9962b', PIPELINE: '#4f8fc0', CRUDE_STORAGE: '#8f9aa6', PROCESSING: '#6faa7d', PRODUCT_STORAGE: '#c86a5a' }, SECTIONS = ['EXTRACTION', 'PIPELINE', 'CRUDE STORAGE', 'PROCESSING', 'PRODUCT STORAGE'], STCOL = { RUNNING: '#8dffb0', READY: '#cfd8e3', OFFLINE: '#9aa4ae', UNDER_CONSTRUCTION: '#f0be28', DEPLETED: '#ff9a3a', BLOCKED: '#ff8a80', NO_INPUT: '#ffd27a', NO_OUTPUT: '#ffd27a', LOW_PRESSURE: '#ffd27a', HIGH_PRESSURE: '#ff9a3a', OVER_CAPACITY: '#ff9a3a', MAINTENANCE: '#8fc4ff', DAMAGED: '#ff6a5a' };
   const REASON = { outside: 'Outside the map', water: 'Cannot build on water', terrain: 'Wrong terrain for this building', slope: 'Ground is too steep', overlap: 'Overlaps another building', tooClose: 'Too close to another plant (keep 1 tile free)',
-    needsZone: 'Needs the refinery zone', noOilField: 'Needs an oil field you can drill', notDrillable: 'This field is not ready to drill', depleted: 'This field is depleted', alreadyBuilt: 'Only one of these is allowed', needsWell: 'Place it right next to an oil well',
+    needsZone: 'Needs the refinery zone', invalidProduct: 'INVALID PRODUCT CONNECTION', noRoute: 'No free route for the pipe (water, buildings or other pipes in the way)', portTaken: 'That port already has a pipe', portRoles: 'A pipe must join an OUTPUT to an INPUT', noPort: 'Start and end on building ports', sameBuilding: 'Pick a different building', noOilField: 'Needs an oil field you can drill', notDrillable: 'This field is not ready to drill', depleted: 'This field is depleted', alreadyBuilt: 'Only one of these is allowed', needsWell: 'Place it right next to an oil well',
     wellHasJack: 'This well already has a pump jack', connectionBlocked: 'A pipe connection is blocked', notLoaded: 'Loading this part of the world…', cash: 'Not enough cash', unknownBuilding: 'Unknown building' };
   const state = { drag: null, pending: null, sel: null, pipeTool: false, pipeDrag: null, demo: null, toast: '', toastAt: 0, rot: {}, lastTile: null };
   let animUntil = 0;
 
   /* ------------------------------------------------------------ palette */
-  const pal = $('pal');
-  for (const id of B.ORDER) {
+  const pal = $('pal'), tabs = $('tabs'); let section = SECTIONS[0];
+  const fmtC = d => d.type === 'well' ? '$250k–1.5M' : fmt$(d.cost).replace(/,000,000$/, 'M').replace(/(\d),(\d{3}),(\d{3})$/, (m, a, b2) => a + '.' + b2[0] + 'M').replace(/,000$/, 'k');
+  function chipFor(id) {
     const d = B.DEFS[id], b = document.createElement('button'); b.className = 'chip'; b.dataset.def = id; b.style.setProperty('--cat', CAT[d.category]);
     const c = document.createElement('canvas'), W = 76, H = 50; c.width = W * 2; c.height = H * 2; c.style.width = W + 'px'; c.style.height = H + 'px'; b.appendChild(c);
-    const g = c.getContext('2d'), [fw, fh] = d.footprint, zz = Math.min(.5, 70 / ((fw + fh) * 32), 40 / ((fw + fh) * 16 + 52));
+    const g = c.getContext('2d'), [fw, fh] = d.footprint, zz = Math.min(.5, 70 / ((fw + fh) * 32), 40 / ((fw + fh) * 16 + 70));
     g.scale(2, 2); A.draw(g, d.visual, { ox: W / 2 + (fh - fw) * 16 * zz, oy: H - 6 - (fw + fh) * 16 * zz, z: zz, r: 0, w: fw, h: fh, t: .4, fill: .6, state: 'OPERATIONAL' });
-    const s = document.createElement('span'); s.textContent = d.name; b.appendChild(s); const q = document.createElement('i'); q.textContent = fmt$(d.cost) + ' · ' + fw + '×' + fh; b.appendChild(q); pal.appendChild(b);
+    const s = document.createElement('span'); s.textContent = d.name.replace(' (small)', ' S').replace(' (medium)', ' M').replace(' (large)', ' L').replace('Gas / LPG Sphere', 'Gas/LPG Tank'); b.appendChild(s); const q = document.createElement('i'); q.textContent = fmtC(d) + ' · ' + fw + '×' + fh; b.appendChild(q); return b;
   }
+  function showSection(sec) { section = sec; pal.innerHTML = ''; for (const id of B.ORDER) if (B.DEFS[id].section === sec) pal.appendChild(chipFor(id)); pal.scrollLeft = 0; for (const t of tabs.children) t.classList.toggle('on', t.dataset.sec === sec); }
+  for (const sec of SECTIONS) { const t = document.createElement('button'); t.textContent = sec; t.dataset.sec = sec; t.onclick = () => showSection(sec); tabs.appendChild(t); }
+  showSection(SECTIONS[0]);
   function toast(m) { state.toast = m; state.toastAt = performance.now(); const t = $('toast'); t.textContent = m; t.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => { t.style.opacity = 0; }, 2600); }
 
   /* ------------------------------------------------------------ geometry helpers */
@@ -60,11 +64,11 @@
   }
   function moveDrag(e) {
     const g = state.drag; if (!g) return; const a = g.from === 'ghost' ? { x: Math.round(WP.toTile(e.clientX, e.clientY - (g.touch ? 58 : 0)).x - g.grab.x), y: Math.round(WP.toTile(e.clientX, e.clientY - (g.touch ? 58 : 0)).y - g.grab.y) } : anchorFor(g.def, g.r, e.clientX, e.clientY, g.touch);
-    g.over = e.clientY > innerHeight - 100; if (a.x === g.rawX && a.y === g.rawY) { WP.markDirty(); return; } g.rawX = a.x; g.rawY = a.y; g.x = a.x; g.y = a.y; evaluate(g); WP.markDirty();
+    g.over = e.clientY > innerHeight - 140; if (a.x === g.rawX && a.y === g.rawY) { WP.markDirty(); return; } g.rawX = a.x; g.rawY = a.y; g.x = a.x; g.y = a.y; evaluate(g); WP.markDirty();
   }
   function endDrag(e) {
     const g = state.drag; state.drag = null; if (!g) return;
-    if (g.over || e.clientY > innerHeight - 100) { state.pending = null; hideBar(); toast('Cancelled'); WP.markDirty(); return; }
+    if (g.over || e.clientY > innerHeight - 140) { state.pending = null; hideBar(); toast('Cancelled'); WP.markDirty(); return; }
     state.pending = { def: g.def, x: g.x, y: g.y, r: g.r, verdict: g.verdict, snapped: g.snapped, aligned: g.aligned }; showBar(); WP.markDirty();
   }
   function cancelAll(silent) { state.drag = null; state.pending = null; state.pipeDrag = null; hideBar(); if (!silent) toast('Cancelled'); WP.markDirty(); }
@@ -96,20 +100,31 @@
   }
 
   /* ------------------------------------------------------------ existing buildings: panel, demolish */
+  const M = n => n >= 1e6 ? '$' + (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + 'M' : n >= 1e3 ? '$' + Math.round(n / 1e3) + 'k' : '$' + n;
   function showDefinition(id) {
-    const d = B.DEFS[id], req = [d.requires.oilField ? 'on a drillable oil field' : '', d.requires.adjacentTo ? 'right next to an oil well' : '', d.zone ? 'inside the ' + d.zone.toLowerCase() + ' zone' : '', d.requires.unique ? 'only one allowed' : ''].filter(Boolean);
-    $('info').innerHTML = '<h4>' + d.name + ' <span class="k">' + d.category.replace('_', ' ') + '</span></h4><span class="k">' + d.footprint.join('×') + ' tiles · ' + fmt$(d.cost) + ' · build ' + d.buildTime + ' s · upkeep ' + fmt$(d.maintenanceCost) + '/day · ' + d.capacity.value + ' ' + d.capacity.unit
-      + '<br>Terrain: ' + d.allowedTerrain.map(t => CFG.TERRAIN[t].label).join(', ') + (req.length ? '<br>Needs: ' + req.join(', ') : '') + '</span><div class="k" style="margin-top:6px">Drag it onto the map.</div>';
+    const d = B.DEFS[id], req = [d.requires.oilField ? 'on a drillable oil field' : '', d.zone ? 'inside the ' + d.zone.toLowerCase() + ' zone' : ''].filter(Boolean), ports = d.connections.filter(c => c.kind === 'pipe' && !c.reserved).map(c => c.id.replace(/_/g, ' ').toLowerCase() + (c.product && c.product !== '*' ? ' (' + BC.PRODUCT_LABEL[c.product].toLowerCase() + ')' : '')).join(', ');
+    $('info').innerHTML = '<h4>' + d.name + ' <span class="k">' + d.section + '</span></h4><span class="k">' + d.footprint.join('×') + ' tiles · build ' + (d.type === 'well' ? '$250k–1.5M' : M(d.cost)) + ' · runs ' + M(d.operatingCost) + '/day · upkeep ' + M(d.maintenanceCost) + '/day · ' + d.capacity.value.toLocaleString('en-US') + ' ' + d.capacity.unit
+      + '<br>Ports: ' + ports + (d.safetyZone ? '<br>Safety zone: ' + d.safetyZone + ' tile' : '') + (req.length ? '<br>Needs: ' + req.join(', ') : '') + '</span><div class="k" style="margin-top:6px">Drag it onto the map.</div>';
   }
+  let showAll = false;
   function showBuilding(id) {
-    const i = STORE.info(id, pipes); if (!i) return; state.sel = id; const b = STORE.get(id), lk = STORE.links(pipes).filter(l => l.from === id || l.to === id);
-    const name = x => B.DEFS[STORE.get(x).d].name;
-    $('info').innerHTML = '<h4>' + i.name + ' <span class="k">#' + id + '</span></h4><table class="kv"><tr><td>Status</td><td>' + i.status.replace('_', ' ').toLowerCase() + '</td></tr><tr><td>Capacity</td><td>' + i.capacity + '</td></tr><tr><td>Input</td><td>' + i.input + '</td></tr><tr><td>Output</td><td>' + i.output
-      + '</td></tr><tr><td>Condition</td><td>' + i.condition + '</td></tr><tr><td>Maintenance</td><td>' + i.maintenance + '</td></tr><tr><td>Connected pipes</td><td>' + i.connectedPipes + (lk.length ? ' · ' + lk.map(l => (l.from === id ? '→ ' + name(l.to) : '← ' + name(l.from))).join(', ') : '') + '</td></tr>'
-      + (i.field ? '<tr><td>Oil field</td><td>' + i.field + '</td></tr>' : '') + '</table><div class="row"><button id="bDemo">Demolish…</button></div>'; WP.markDirty();
+    const b = STORE.get(id); if (!b) return; state.sel = id; const d = B.DEFS[b.d], st = SIM.status(b), ind = SIM.indicators(b), warn = SIM.warnings(b), list = showAll ? ind.list : ind.list.slice(0, ind.top);
+    const lv = d.type === 'tank' ? SIM.levelStateOf(b) : d.type === 'gas' ? SIM.gasSafetyOf(b) : null;
+    let h = '<h4>' + d.name + ' <span class="k">#' + id + '</span> <span class="st" style="color:' + (STCOL[st] || '#fff') + '">● ' + st.replace(/_/g, ' ') + '</span></h4>';
+    h += '<table class="kv">' + list.filter(i => i.k !== 'Status').map(i => '<tr><td>' + i.k + '</td><td>' + (typeof i.v === 'number' ? i.v.toLocaleString('en-US') : i.v) + (i.u ? ' ' + i.u : '') + '</td></tr>').join('') + '</table>';
+    if (warn.length) h += '<div class="k" style="color:#ffb066">⚠ ' + warn.map(w => w.replace(/_/g, ' ')).join(' · ') + '</div>';
+    if (showAll) h += '<div class="k">Product: ' + (d.product ? BC.PRODUCT_LABEL[d.product] : 'carries the line product') + ' · runs ' + M(d.operatingCost) + '/day · upkeep ' + M(d.maintenanceCost) + '/day · level ' + (b.lv || 1) + '</div>';
+    h += '<div class="row">' + (ind.list.length > ind.top ? '<button id="bMore">' + (showAll ? 'Less' : 'Details') + '</button>' : '') + (d.type === 'valve' ? '<button id="bValve">Valve: ' + b.s.mode.toLowerCase() + '</button>' : '') + (d.type === 'refinery' ? '<button id="bLimit">Limit ' + Math.round(b.s.opLimit * 100) + '%</button>' : '') + '<button id="bDemo">Demolish…</button></div>';
+    $('info').innerHTML = h; WP.markDirty();
+  }
+  function showPipe(x, y) {
+    const i = SIM.pipeInfo(x, y); if (!i) return; $('info').innerHTML = '<h4>Pipeline #' + i.id + ' <span class="st" style="color:' + (STCOL[i.status] || '#fff') + '">● ' + i.status.replace(/_/g, ' ') + '</span></h4><table class="kv"><tr><td>Product</td><td>' + (BC.PRODUCT_LABEL[i.product] || i.product) + '</td></tr><tr><td>Diameter</td><td>' + i.diameter + ' in</td></tr><tr><td>Length</td><td>' + i.length + ' m</td></tr><tr><td>Capacity</td><td>' + i.capacity.toLocaleString('en-US') + ' bbl/day</td></tr><tr><td>Current flow</td><td>' + i.currentFlow.toLocaleString('en-US') + ' bbl/day</td></tr><tr><td>Pressure</td><td>' + i.pressure + ' / max ' + i.maxPressure + ' psi</td></tr></table>';
   }
   $('info').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
+    if (b.id === 'bMore') { showAll = !showAll; showBuilding(state.sel); return; }
+    if (b.id === 'bValve') { const v = STORE.get(state.sel), order = ['OPEN', 'PARTIAL', 'CLOSED']; const nx = order[(order.indexOf(v.s.mode) + 1) % 3]; SIM.setValve(v, nx, .5); save(); showBuilding(state.sel); return; }
+    if (b.id === 'bLimit') { const v = STORE.get(state.sel); v.s.opLimit = v.s.opLimit > .99 ? .75 : v.s.opLimit > .74 ? .5 : 1; save(); showBuilding(state.sel); return; }
     if (b.id === 'bDemo') { const plan = STORE.demolishPlan(state.sel, pipes); state.demo = { id: state.sel, step: 1, plan };
       $('info').innerHTML = '<h4>Demolish ' + plan.name + '?</h4><span class="k">You get back ' + fmt$(plan.refund) + '. ' + (plan.dependents.length ? 'A linked pump jack will lose its well. ' : '') + '</span><div class="row"><button id="bDemoYes" class="danger">Yes, demolish</button><button id="bDemoNo">Keep it</button></div>'; }
     else if (b.id === 'bDemoNo') { state.demo = null; showBuilding(state.sel); }
@@ -119,37 +134,33 @@
   });
   hooks.tap = (px, py) => {
     if (state.pending || state.drag) return false;
-    const t = WP.toTile(px, py), b = STORE.at(Math.floor(t.x), Math.floor(t.y)); if (b) { showBuilding(b.id); return true; }
+    const t = WP.toTile(px, py), b = STORE.at(Math.floor(t.x), Math.floor(t.y)); if (b) { showBuilding(b.id); return true; } if (pipes.lineAt(Math.floor(t.x), Math.floor(t.y))) { showPipe(Math.floor(t.x), Math.floor(t.y)); return true; }
     const near = STORE.query(Math.floor(t.x) - 1, Math.floor(t.y) - 1, Math.floor(t.x) + 1, Math.floor(t.y) + 1)[0]; if (near && cam.z < .5) { showBuilding(near.id); return true; }
     if (state.sel) { state.sel = null; WP.markDirty(); } return false;
   };
 
-  /* ------------------------------------------------------------ pipe tool (lab layer: tiles only, to show that ports are real attachment points) */
-  $('tPipe').onclick = () => { state.pipeTool = !state.pipeTool; $('tPipe').classList.toggle('on', state.pipeTool); toast(state.pipeTool ? 'Pipe tool: drag from a port to another port. Switch it off to pan.' : 'Pipe tool off'); };
+  /* ------------------------------------------------------------ pipe tool: drag from a port to a port; the planner validates product, roles, route and cash and returns ONE verdict */
+  let dia = BC.PIPE_DEFAULT; const DIAS = Object.keys(BC.PIPES).map(Number);
+  $('tPipe').onclick = () => { state.pipeTool = !state.pipeTool; $('tPipe').classList.toggle('on', state.pipeTool); toast(state.pipeTool ? 'Pipe tool: drag from one port to another. Switch it off to pan.' : 'Pipe tool off'); };
+  $('tDia').onclick = () => { dia = DIAS[(DIAS.indexOf(dia) + 1) % DIAS.length]; $('tDia').textContent = dia + '"'; const s = BC.PIPES[dia]; toast(dia + '" pipe · ' + s.capacity.toLocaleString('en-US') + ' bbl/day · ' + fmt$(s.cost) + '/tile'); };
   function portNear(t) {
-    let best = null, bd = 2.6; for (const b of STORE.query(Math.floor(t.x) - 4, Math.floor(t.y) - 4, Math.floor(t.x) + 4, Math.floor(t.y) + 4)) for (const p of B.worldPoints(b)) { if (p.kind !== 'pipe' || p.reserved) continue; const d = Math.hypot(p.ax + .5 - t.x, p.ay + .5 - t.y); if (d < bd) { bd = d; best = p; } }
-    return best ? [best.ax, best.ay] : [Math.floor(t.x), Math.floor(t.y)];
+    let best = null, bd = 2.6; for (const b of STORE.query(Math.floor(t.x) - 4, Math.floor(t.y) - 4, Math.floor(t.x) + 4, Math.floor(t.y) + 4)) for (const p of B.worldPoints(b)) { if (p.kind !== 'pipe' || p.reserved) continue; const d = Math.hypot(p.ax + .5 - t.x, p.ay + .5 - t.y); if (d < bd) { bd = d; best = { b: b.id, port: p.id, ax: p.ax, ay: p.ay, product: p.product, role: p.role }; } }
+    return best;
   }
-  function lpath(a, b, horizFirst) {
-    const o = [], dx = Math.sign(b[0] - a[0]), dy = Math.sign(b[1] - a[1]); let x = a[0], y = a[1]; o.push([x, y]);
-    const sX = () => { while (x !== b[0]) { x += dx; o.push([x, y]); } }, sY = () => { while (y !== b[1]) { y += dy; o.push([x, y]); } };
-    if (horizFirst) { sX(); sY(); } else { sY(); sX(); } return o;
-  }
-  function pipePath(a, b) { const h = lpath(a, b, true), v = lpath(a, b, false), bad = p => p.filter(([x, y]) => !pipeOk([x, y]) && !pipes.has(B.key(WW, x, y))).length; return bad(h) <= bad(v) ? h : v; }
-  function pipeOk([x, y]) { if (x < 0 || y < 0 || x >= world.W || y >= world.H) return false; const t = ts.tile(x, y); return !!t && ts.terrain[t.terrain].buildable && !STORE.at(x, y); }
-  function startPipe(e) { const t = WP.toTile(e.clientX, e.clientY), a = portNear(t); state.pipeDrag = { a, b: a, pid: e.pointerId }; WP.markDirty();
-    const mv = ev => { if (ev.pointerId !== state.pipeDrag.pid) return; state.pipeDrag.b = portNear(WP.toTile(ev.clientX, ev.clientY)); WP.markDirty(); };
-    const up = ev => { if (ev.pointerId !== state.pipeDrag.pid) return; window.removeEventListener('pointermove', mv, true); window.removeEventListener('pointerup', up, true); const d = state.pipeDrag; state.pipeDrag = null; commitPipe(d.a, d.b); };
+  function planFor(a, b) { if (!a || !b) return null; return I.planPipe(STORE, pipes, ts, { b: a.b, port: a.port }, { b: b.b, port: b.port }, dia, { ignoreCash: true }); }
+  function startPipe(e) { const t = WP.toTile(e.clientX, e.clientY), a = portNear(t); if (!a) { toast(REASON.noPort); return; } state.pipeDrag = { a, b: null, pid: e.pointerId, cur: t, v: null }; WP.markDirty();
+    const mv = ev => { if (ev.pointerId !== state.pipeDrag.pid) return; const d = state.pipeDrag; d.cur = WP.toTile(ev.clientX, ev.clientY); const nb = portNear(d.cur); d.b = nb && nb.b !== d.a.b ? nb : null; d.v = planFor(d.a, d.b); WP.markDirty(); };
+    const up = ev => { if (ev.pointerId !== state.pipeDrag.pid) return; window.removeEventListener('pointermove', mv, true); window.removeEventListener('pointerup', up, true); const d = state.pipeDrag; state.pipeDrag = null; WP.markDirty(); if (!d.b) { toast('Drop on another building port'); return; } commitPipe(d.a, d.b); };
     window.addEventListener('pointermove', mv, true); window.addEventListener('pointerup', up, true); }
   function commitPipe(a, b) {
-    const path = pipePath(a, b), fresh = path.filter(([x, y]) => !pipes.has(B.key(WW, x, y))); if (!path.every(pipeOk) && !path.every(([x, y]) => pipes.has(B.key(WW, x, y)) || pipeOk([x, y]))) { toast('Pipe blocked: water, a building or unloaded ground'); WP.markDirty(); return; }
-    const cost = fresh.length * PIPE_COST; if (cost > STORE.cash) { toast('Not enough cash for the pipe'); return; } for (const [x, y] of fresh) pipes.add(B.key(WW, x, y)); STORE.cash -= cost; toast('Pipe laid · ' + fresh.length + ' tiles · −' + fmt$(cost)); save(); updateCash(); if (state.sel) showBuilding(state.sel); WP.markDirty();
+    const r = I.layPipe(STORE, pipes, ts, { b: a.b, port: a.port }, { b: b.b, port: b.port }, dia, {}); if (!r.ok) { toast(r.state === 'UNAFFORDABLE' ? 'Not enough cash for the pipe' : REASON[r.reason] || r.reason); WP.markDirty(); return r; }
+    toast((r.product === '*' ? 'Pipe' : BC.PRODUCT_LABEL[r.product] + ' pipe') + ' laid · ' + r.path.length + ' tiles · −' + fmt$(r.cost)); save(); updateCash(); if (state.sel) showBuilding(state.sel); WP.markDirty(); return r;
   }
 
   /* ------------------------------------------------------------ drawing */
   const sx = WP.sx, sy = WP.sy;
   function diamondPath(x, y, w, h) { ctx.beginPath(); ctx.moveTo(sx(x, y), sy(x, y)); ctx.lineTo(sx(x + w, y), sy(x + w, y)); ctx.lineTo(sx(x + w, y + h), sy(x + w, y + h)); ctx.lineTo(sx(x, y + h), sy(x, y + h)); ctx.closePath(); }
-  function tankFill(b) { return .35 + .3 * Math.sin(b.id * 1.7); }
+  function tankFill(b) { const d = B.DEFS[b.d]; return b.s && b.s.vol != null ? b.s.vol / d.capacity.value : 0; }
   function drawBuildings(lv, vb) {
     const now = performance.now() / 1000, list = STORE.query(Math.floor(vb.x0) - 2, Math.floor(vb.y0) - 2, Math.ceil(vb.x1) + 2, Math.ceil(vb.y1) + 2); let anim = false;
     list.sort((p, q) => { const a = B.dimsOf(B.DEFS[p.d], p.r), c = B.dimsOf(B.DEFS[q.d], q.r); return (p.x + a[0] + p.y + a[1]) - (q.x + c[0] + q.y + c[1]); });
@@ -159,24 +170,30 @@
       const d = B.DEFS[b.d], [w, h] = B.dimsOf(d, b.r);
       if (lv === 'FAR' || cam.z < .12) { diamondPath(b.x, b.y, w, h); ctx.fillStyle = CAT[d.category]; ctx.fill(); ctx.strokeStyle = 'rgba(20,16,10,.7)'; ctx.lineWidth = 1; ctx.stroke(); continue; }
       A.draw(ctx, d.visual, { ox: sx(b.x, b.y), oy: sy(b.x, b.y), z: cam.z, r: b.r, w: d.footprint[0], h: d.footprint[1], t: now, fill: tankFill(b), state: b.st });
-      if (b.d === 'pump_jack' || b.d === 'refinery' || b.d === 'power') anim = true;
+      if (d.type === 'refinery' && b.s && b.s._in > 0) anim = true;
       if (b.id === state.sel) { diamondPath(b.x, b.y, w, h); ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2.2; ctx.setLineDash([7, 4]); ctx.stroke(); ctx.setLineDash([]); drawPorts(b, true); }
     }
     if (anim && cam.z >= .3) { animUntil = performance.now() + 140; setTimeout(() => WP.markDirty(), 120); }
   }
   function drawPipes(vb) {
-    ctx.lineCap = 'round'; const wd = Math.max(2, 7 * cam.z), seg = (x0, y0, x1, y1) => { ctx.beginPath(); ctx.moveTo(sx(x0 + .5, y0 + .5), sy(x0 + .5, y0 + .5)); ctx.lineTo(sx(x1 + .5, y1 + .5), sy(x1 + .5, y1 + .5)); ctx.stroke(); };
-    const tiles = []; for (const k of pipes) { const x = k % WW, y = (k / WW) | 0; if (x >= vb.x0 - 2 && x <= vb.x1 + 2 && y >= vb.y0 - 2 && y <= vb.y1 + 2) tiles.push([x, y, k]); }
-    ctx.strokeStyle = 'rgba(30,26,20,.55)'; ctx.lineWidth = wd + 3 * cam.z; for (const [x, y] of tiles) { if (pipes.has(B.key(WW, x + 1, y))) seg(x, y, x + 1, y); if (pipes.has(B.key(WW, x, y + 1))) seg(x, y, x, y + 1); seg(x, y, x, y); }
-    ctx.strokeStyle = '#7f8a96'; ctx.lineWidth = wd; for (const [x, y] of tiles) { if (pipes.has(B.key(WW, x + 1, y))) seg(x, y, x + 1, y); if (pipes.has(B.key(WW, x, y + 1))) seg(x, y, x, y + 1); seg(x, y, x, y); }
-    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = Math.max(1, wd * .3); for (const [x, y] of tiles) { if (pipes.has(B.key(WW, x + 1, y))) seg(x, y, x + 1, y); if (pipes.has(B.key(WW, x, y + 1))) seg(x, y, x, y + 1); }
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; const view = [vb.x0 - 3, vb.y0 - 3, vb.x1 + 3, vb.y1 + 3];
+    for (const L of pipes.lines.values()) {
+      const P = L.path; if (!P.length) continue; let vis = false; for (const q of P) if (q[0] >= view[0] && q[0] <= view[2] && q[1] >= view[1] && q[1] <= view[3]) { vis = true; break; } if (!vis) continue;
+      const wd = Math.max(2, (4 + L.dia / 5) * cam.z), col = L.product === '*' ? '#7f8a96' : BC.PRODUCT_COLOR[L.product], path = () => { ctx.beginPath(); P.forEach((q, i) => i ? ctx.lineTo(sx(q[0] + .5, q[1] + .5), sy(q[0] + .5, q[1] + .5)) : ctx.moveTo(sx(q[0] + .5, q[1] + .5), sy(q[0] + .5, q[1] + .5))); ctx.stroke(); };
+      ctx.strokeStyle = 'rgba(30,26,20,.6)'; ctx.lineWidth = wd + 3 * cam.z; path(); ctx.strokeStyle = L.product === 'CRUDE' ? '#4a3a2c' : col; ctx.lineWidth = wd; path();
+      if ((L.flow || 0) > 1) { ctx.setLineDash([5 * cam.z + 2, 9 * cam.z + 4]); ctx.lineDashOffset = -(performance.now() / 60 % 100); ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = Math.max(1, wd * .35); path(); ctx.setLineDash([]); animUntil = performance.now() + 200; }
+      if (L.over || L.hiP) { ctx.strokeStyle = 'rgba(255,110,60,.9)'; ctx.lineWidth = Math.max(1.2, wd * .3); path(); }
+    }
   }
   function drawPorts(b, selected) {                                                // little arrows on the access tile: blue = in, orange = out, white = both
     for (const p of B.worldPoints(b)) { if (p.kind !== 'pipe' && !selected) continue; const x = sx(p.ax + .5, p.ay + .5), y = sy(p.ax + .5, p.ay + .5), r = Math.max(3, 6 * cam.z); ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = p.reserved ? 'rgba(200,200,200,.5)' : p.role === 'in' ? '#4aa3ff' : p.role === 'out' ? '#ff9a3a' : '#f1f1f1'; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1; ctx.stroke(); }
   }
   hooks.afterOverlays = (lv, vb) => drawBuildings(lv, vb);
   hooks.top = (lv, vb) => {
-    const g = state.drag || state.pending; if (state.pipeDrag) { const pd = state.pipeDrag, path = pipePath(pd.a, pd.b), good = path.every(([x, y]) => pipeOk([x, y]) || pipes.has(B.key(WW, x, y))); ctx.fillStyle = good ? 'rgba(80,220,120,.55)' : 'rgba(240,70,60,.55)'; for (const [x, y] of path) { diamondPath(x, y, 1, 1); ctx.fill(); } }
+    const g = state.drag || state.pending; if (state.pipeDrag) { const pd = state.pipeDrag, v = pd.v, good = v && v.ok; const path = v && v.path ? v.path : null;
+      if (path) { ctx.fillStyle = good ? 'rgba(80,220,120,.55)' : 'rgba(240,70,60,.55)'; for (const [x, y] of path) { diamondPath(x, y, 1, 1); ctx.fill(); } }
+      const mk2 = (p, c) => { if (!p) return; ctx.beginPath(); ctx.arc(sx(p.ax + .5, p.ay + .5), sy(p.ax + .5, p.ay + .5), Math.max(5, 9 * cam.z), 0, 7); ctx.fillStyle = c; ctx.fill(); }; mk2(pd.a, '#ffd24a'); mk2(pd.b, good ? '#6dff9a' : '#ff8a80');
+      const msg = pd.b ? (good ? (v.product === '*' ? 'Pipe' : BC.PRODUCT_LABEL[v.product]) + ' · ' + v.path.length + ' tiles · ' + fmt$(v.cost) : (REASON[v.reason] || v.reason)) : 'Drag to a port'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center'; const X = sx(pd.cur.x, pd.cur.y), Y = sy(pd.cur.x, pd.cur.y) - 26; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,16,.9)'; ctx.strokeText(msg, X, Y); ctx.fillStyle = pd.b ? (good ? '#8dffb0' : '#ff9a8a') : '#fff'; ctx.fillText(msg, X, Y); }
     if (!g) return; const d = B.DEFS[g.def], v = g.verdict, [w, h] = dims(g.def, g.r), ok = v && v.ok, loading = v && v.state === 'LOADING';
     const col = loading ? 'rgba(180,180,190,.45)' : ok ? 'rgba(80,220,120,.38)' : 'rgba(240,70,60,.42)', edge = loading ? '#c9c9d2' : ok ? '#6dff9a' : '#ff8a80';
     diamondPath(g.x, g.y, w, h); ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = edge; ctx.lineWidth = 2.4; ctx.stroke();
@@ -192,40 +209,53 @@
 
   /* ------------------------------------------------------------ cash, save / load, keys, test handle */
   function updateCash() { $('cash').textContent = fmt$(STORE.cash); }
-  function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, store: STORE.toJSON(), pipes: [...pipes], cash: STORE.cash })); } catch (_) { } }
+  function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash })); } catch (_) { } }
+  function swapNet(n2) { pipes.clear(); pipes.lines = n2.lines; pipes.at = n2.at; pipes.nextId = n2.nextId; for (const k of n2) pipes.add(k); pipes.rev++; }
   function load() {
     let raw = null; try { raw = localStorage.getItem(SAVE_KEY); } catch (_) { } if (!raw) return { loaded: 0, from: 'none' };
-    let d; try { d = JSON.parse(raw); } catch (_) { return { loaded: 0, from: 'corrupt' }; }
-    const r = B.BuildingStore.fromJSON(ts, d.store); STORE.items = r.store.items; STORE.occ = r.store.occ; STORE.bucket = r.store.bucket; STORE.nextId = r.store.nextId; STORE.time = r.store.time; STORE.cash = d.cash == null ? STORE.cash : d.cash; pipes.clear(); for (const k of d.pipes || []) pipes.add(k); updateCash(); WP.markDirty(); return { loaded: r.report.loaded, dropped: r.report.dropped, from: 'localStorage' };
+    let d; try { d = JSON.parse(raw); } catch (_) { return { loaded: 0, from: 'corrupt' }; } if (!d || d.v !== 2) return { loaded: 0, from: 'oldFormat' };
+    const r = B.BuildingStore.fromJSON(ts, d.store); STORE.items = r.store.items; STORE.occ = r.store.occ; STORE.bucket = r.store.bucket; STORE.nextId = r.store.nextId; STORE.time = r.store.time; STORE.rev = (STORE.rev | 0) + 1; STORE.cash = d.cash == null ? STORE.cash : d.cash;
+    swapNet(I.PipeNet.fromJSON(WW, d.net)); updateCash(); WP.markDirty(); return { loaded: r.report.loaded, dropped: r.report.dropped, from: 'save', lines: pipes.lines.size };
   }
-  function reset() { STORE.items.clear(); STORE.occ.clear(); STORE.bucket.clear(); STORE.nextId = 1; STORE.cash = 150000; pipes.clear(); state.sel = null; state.pending = null; hideBar(); save(); updateCash(); WP.markDirty(); }
-  $('tSave').onclick = () => { save(); toast('Saved · ' + STORE.items.size + ' buildings'); };
+  function reset() { STORE.items.clear(); STORE.occ.clear(); STORE.bucket.clear(); STORE.nextId = 1; STORE.rev = (STORE.rev | 0) + 1; STORE.cash = START_CASH; swapNet(new I.PipeNet(WW)); state.sel = null; state.pending = null; hideBar(); save(); updateCash(); WP.markDirty(); }
+  $('tSave').onclick = () => { save(); toast('Saved · ' + STORE.items.size + ' buildings · ' + pipes.lines.size + ' pipelines'); };
   $('tLoad').onclick = () => { const r = load(); toast(r.loaded ? 'Loaded ' + r.loaded + ' buildings' : 'Nothing saved yet'); };
   $('tReset').onclick = () => { if (confirm('Remove every building?')) { reset(); toast('Cleared'); } };
   window.addEventListener('keydown', e => { if (e.key === 'Escape') cancelAll(); else if ((e.key === 'r' || e.key === 'R')) { if (state.drag) { const g = state.drag; g.r = (g.r + 1) & 3; state.rot[g.def] = g.r; evaluate(g); WP.markDirty(); } else rotatePending(); } else if (e.key === 'Enter' && state.pending && state.pending.verdict.ok) confirmBuild(); });
   $('tFields').onclick = () => { const sr = world.regions.find(r => r.starter), f = world.regionSites(sr.id).filter(s => s.kind === 'FIELD' && (world.stateOf(s.id) === 'DRILLABLE' || world.stateOf(s.id) === 'PRODUCING'))[0]; if (f) WP.goto(f.x, f.y, .75); };
   $('tRef').onclick = () => { const sr = world.regions.find(r => r.starter), z = world.refineryZones(sr.id)[0]; if (z) WP.goto(z.x + z.w / 2, z.y + z.h / 2, .5); };
 
-  /* a coherent demo compound for screenshots and device checks: wells + jacks on the field, a gathering line to a pump station and tanks, and a processing site with the refinery in its zone */
+  /* the full Phase 2 chain for screenshots, tests and device checks:  OIL FIELD -> 3 WELLS -> JUNCTION -> PUMP -> PIPE -> SEPARATOR -> CRUDE STORAGE -> REFINERY -> GASOLINE / DIESEL / JET / GAS storage */
   const until = async fn => { for (let i = 0; i < 600; i++) { await new Promise(r => setTimeout(r, 100)); if (fn()) return true; } return false; };
   const settle = async () => { await new Promise(r => setTimeout(r, 450)); await until(() => WP.idle()); };
-  async function buildDemo() {
-    reset(); STORE.cash = 1e8; const sr = world.regions.find(r => r.starter), fld = world.regionSites(sr.id).find(q => q.kind === 'FIELD' && (world.stateOf(q.id) === 'DRILLABLE' || world.stateOf(q.id) === 'PRODUCING')); if (!fld) return { ok: false, reason: 'noField' };
-    const put = (def, x, y, r, rad) => { const sn = STORE.snap(def, Math.round(x), Math.round(y), r || 0, { radius: rad == null ? 5 : rad, ignoreCash: true }); if (!sn) return null; const res = STORE.place(def, sn.x, sn.y, sn.r, { instant: true }); return res.ok ? res.building : null; };
-    const fx = Math.round(fld.x), fy = Math.round(fld.y), out = {}, wells = []; WP.goto(fx + 4, fy + 4, .3); await settle();
-    for (const [dx, dy] of [[-4, -3], [0, -4], [4, -1], [-3, 2]]) { const w = put('oil_well', fx + dx, fy + dy, 0, 3); if (w) { wells.push(w); const j = [[1, 0, 0], [-2, 0, 0], [0, 1, 1], [0, -1, 1]].map(([a, b, r]) => STORE.validate('pump_jack', w.x + a, w.y + b, r, { ignoreCash: true })).findIndex(v => v.ok); if (j >= 0) { const o = [[1, 0, 0], [-2, 0, 0], [0, 1, 1], [0, -1, 1]][j]; STORE.place('pump_jack', w.x + o[0], w.y + o[1], o[2], { instant: true }); } } }
-    out.wells = wells.length; const jn = put('junction', fx, fy + 7, 0, 4), vs = put('valve_station', fx + 3, fy + 7, 0, 4), ps = put('pump_station', fx + 6, fy + 6, 0, 4), t1 = put('oil_tank', fx + 11, fy + 6, 0, 4), t2 = put('oil_tank', fx + 11, fy + 10, 0, 5);
-    const lay = (a, b) => { if (!a || !b) return; const pa = B.worldPoints(a).filter(p => p.kind === 'pipe' && !p.reserved), pb = B.worldPoints(b).filter(p => p.kind === 'pipe' && !p.reserved); let best = null; for (const p of pa) if (p.role !== 'in') for (const q of pb) if (q.role !== 'out') { const d = Math.abs(p.ax - q.ax) + Math.abs(p.ay - q.ay); if (!best || d < best.d) best = { d, p, q }; } if (best) { const path = pipePath([best.p.ax, best.p.ay], [best.q.ax, best.q.ay]); if (path.every(pipeOk) || path.every(([x, y]) => pipeOk([x, y]) || pipes.has(B.key(WW, x, y)))) for (const [x, y] of path) pipes.add(B.key(WW, x, y)); } };
-    for (const w of wells) lay(w, jn); lay(jn, vs); lay(vs, ps); lay(ps, t1); lay(ps, t2);
-    const z = world.refineryZones(sr.id)[0]; if (z) { WP.goto(z.x + 14, z.y + 12, .3); await settle(); const rf = put('refinery', z.x + 16, z.y + 8, 0, 6); out.refinery = !!rf; put('large_tank', z.x + 3, z.y + 4, 0, 4); put('separator', z.x + 3, z.y + 12, 0, 4); const pp = put('processing_plant', z.x + 16, z.y + 22, 0, 5); put('control_center', z.x - 8, z.y + 2, 0, 5); put('maintenance', z.x - 8, z.y + 10, 0, 5); put('power', z.x + 26, z.y + 24, 0, 5); put('warehouse', z.x - 8, z.y + 16, 0, 5); }
-    for (const b of STORE.list()) b.st = 'OPERATIONAL'; out.total = STORE.list().length; out.pipeTiles = pipes.size; save(); updateCash(); WP.markDirty(); return Object.assign({ ok: true }, out);
+  function connect(a, b, o) {
+    o = o || {}; const pa = B.worldPoints(a).filter(p => p.kind === 'pipe' && !p.reserved && p.role !== 'in' && (!o.ap || p.id === o.ap)), pb = B.worldPoints(b).filter(p => p.kind === 'pipe' && !p.reserved && p.role !== 'out' && (!o.bp || p.id === o.bp)), c = [];
+    for (const p of pa) for (const q of pb) c.push({ p, q, d: Math.abs(p.ax - q.ax) + Math.abs(p.ay - q.ay) }); c.sort((x, y) => x.d - y.d);
+    for (const { p, q } of c) { const r = I.layPipe(STORE, pipes, ts, { b: a.id, port: p.id }, { b: b.id, port: q.id }, o.dia || 16, { ignoreCash: true }); if (r.ok) return r; if (r.reason === 'invalidProduct') continue; }
+    return null;
   }
-  $('tDemo').onclick = async () => { toast('Building the demo compound…'); const r = await buildDemo(); toast(r.ok ? 'Demo compound: ' + r.total + ' buildings' : 'Demo needs a drillable field'); };
+  async function buildDemo() {
+    reset(); STORE.cash = 5e9; const sr = world.regions.find(r => r.starter), fld = world.regionSites(sr.id).find(q => q.kind === 'FIELD' && (world.stateOf(q.id) === 'DRILLABLE' || world.stateOf(q.id) === 'PRODUCING')); if (!fld) return { ok: false, reason: 'noField' };
+    const put = (def, x, y, rad) => { const sn = STORE.snap(def, Math.round(x), Math.round(y), 0, { radius: rad == null ? 5 : rad, ignoreCash: true }); if (!sn) return null; const res = STORE.place(def, sn.x, sn.y, sn.r, { instant: true }); return res.ok ? res.building : null; };
+    const fx = Math.round(fld.x), fy = Math.round(fld.y), out = { failed: [] }, z = world.refineryZones(sr.id)[0]; WP.goto(fx + 10, fy + 2, .3); await settle();
+    const w = [put('oil_well', fx - 3, fy - 4, 3), put('oil_well', fx - 3, fy, 3), put('oil_well', fx - 3, fy + 4, 3)].filter(Boolean), jn = put('junction', fx + 3, fy, 4), pu = put('pump_station_l', fx + 8, fy - 1, 4), sp = put('separator', fx + 16, fy - 2, 4), ct = put('crude_tank_m', fx + 26, fy - 1, 5);
+    const names = { w, jn, pu, sp, ct }; for (const k of Object.keys(names)) if (!names[k] || (Array.isArray(names[k]) && !names[k].length)) out.failed.push(k); out.wells = w.length;
+    let rf = null, tg, td, tj, tl; if (z) { WP.goto(z.x + 14, z.y + 9, .3); await settle(); rf = put('refinery_m', z.x + 4, z.y + 5, 6); tg = put('gasoline_tank_m', z.x + 20, z.y + 1, 5); td = put('diesel_tank_m', z.x + 20, z.y + 6, 5); tj = put('jet_tank_m', z.x + 20, z.y + 11, 5); tl = put('gas_sphere_m', z.x + 12, z.y + 14, 5); }
+    for (const [k, v] of Object.entries({ rf, tg, td, tj, tl })) if (!v) out.failed.push(k);
+    const link = (a, b, o, nm) => { if (!a || !b) { out.failed.push(nm); return null; } const r = connect(a, b, o); if (!r) out.failed.push(nm); return r; };
+    w.forEach((x, i) => link(x, jn, { bp: ['PORT_N', 'PORT_W', 'PORT_S'][i] }, 'well' + i)); link(jn, pu, { ap: 'PORT_E', bp: 'INPUT' }, 'jn-pump'); link(pu, sp, { ap: 'OUTPUT', bp: 'MIXTURE_IN' }, 'pump-sep'); link(sp, ct, { ap: 'OIL_OUT', bp: 'INPUT_W' }, 'sep-tank');
+    WP.goto((fx + (z ? z.x : fx)) / 2, (fy + (z ? z.y : fy)) / 2, .2); await settle();
+    link(ct, rf, { ap: 'OUTPUT_E', bp: 'CRUDE_IN', dia: 24 }, 'tank-ref'); link(rf, tg, { ap: 'GASOLINE_OUT', bp: 'INPUT_W' }, 'ref-gasoline'); link(rf, td, { ap: 'DIESEL_OUT', bp: 'INPUT_W' }, 'ref-diesel'); link(rf, tj, { ap: 'JET_OUT', bp: 'INPUT_W' }, 'ref-jet'); link(rf, tl, { ap: 'GAS_OUT', bp: 'INPUT_N' }, 'ref-gas');
+    out.total = STORE.list().length; out.pipelines = pipes.lines.size; out.pipeTiles = pipes.size; out.chain = { well: w[0] && w[0].id, junction: jn && jn.id, pump: pu && pu.id, separator: sp && sp.id, crude: ct && ct.id, refinery: rf && rf.id, gasoline: tg && tg.id, diesel: td && td.id, jet: tj && tj.id, gas: tl && tl.id };
+    out.ok = !out.failed.length; save(); updateCash(); WP.markDirty(); return out;
+  }
+  $('tDemo').onclick = async () => { toast('Building the full oil chain…'); const r = await buildDemo(); toast(r.ok ? 'Oil chain built: ' + r.total + ' buildings · ' + r.pipelines + ' pipelines' : 'Demo incomplete: ' + (r.failed || [r.reason]).join(', ')); };
 
-  const tick = setInterval(() => { STORE.tick(1); WP.markDirty(); }, 1000);
-  window.__lab = { buildDemo, store: STORE, pipes, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, anchorFor, pipePath, commitPipe, updateCash,
-    ready: () => true };
+  /* simulation clock: construction by time, flow every 500 ms (one game day = SIM.dayRealSeconds s); nothing runs when there is nothing to simulate */
+  const tick = setInterval(() => {
+    if (!STORE.items.size) return; STORE.tick(1); SIM.step(.5 / BC.SIM.dayRealSeconds * (state.speed || 1)); const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag) showBuilding(sel.id); WP.markDirty();
+  }, 500);
+  window.__lab = { buildDemo, store: STORE, pipes, sim: SIM, I, BC, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, showPipe, anchorFor, commitPipe, planFor, portNear, connect, updateCash, showSection, setDia: d => { dia = d; }, ready: () => true };
   updateCash();
-  // restore the previous session once the demo discovery states exist (wells need drillable fields)
   const wait = setInterval(() => { if (WP.idle && WP.idle()) { clearInterval(wait); const r = load(); window.__lab.restored = r; if (r.loaded) toast('Restored ' + r.loaded + ' buildings'); WP.markDirty(); } }, 200);
 })();

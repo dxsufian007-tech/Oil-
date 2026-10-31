@@ -87,26 +87,6 @@
       for (const k of [.55, 1.0, 1.45, 1.9]) { const t = 1 - k / 2.3, a = .5 + (.18 - .5) * t, b = .5 + (.82 - .5) * t; p.line(a, a, k, b, a, k, '#49545f', 1); p.line(b, a, k, b, b, k, '#49545f', 1); }
       p.box(.4, .4, .6, .6, 2.3, 2.42, C.rust); p.dot(.5, .5, 2.5, 3, C.yellow);
     },
-    pump_jack(p, o) {                                                             // 2x1: skid, gearbox, Samson post, nodding walking beam with horsehead, counterweight
-      const t = (o.t || 0) * 1.6, nod = Math.sin(t) * .13;
-      p.box(.05, .1, 1.95, .9, 0, .08, '#8a8070'); p.box(.12, .3, .62, .7, .08, .55, C.blue, { top: '#5d96c2' }); p.cyl(.37, .5, .17, .08, .62, '#2d6a96');
-      p.line(1.0, .5, .08, 1.0, .3, .95, '#37424d', 2.2); p.line(1.0, .5, .08, 1.0, .7, .95, '#37424d', 2.2); p.line(1.0, .5, .08, 1.0, .5, 1.0, '#37424d', 2.6);
-      const px = 1.0, hh = .98;                                                   // pivot; beam tilts with the nodding
-      p.line(px - .62, .5, hh - nod, px + .5, .5, hh + nod * .9, '#d3a52a', 5.2, { bias: 1 });
-      p.line(px + .5, .5, hh + nod * .9, px + .75, .5, hh + nod * .9 - .28, '#d3a52a', 6.5, { bias: 1 }); p.dot(px + .75, .5, hh + nod * .9 - .3, 4.5, '#b88c1f');
-      p.line(px + .73, .5, hh + nod * .9 - .3, px + .73, .5, .1, '#2f3942', 1.2);                         // polished-rod line down to the wellhead
-      p.box(px - .78, .38, px - .56, .62, hh - nod - .26, hh - nod - .02, '#c4512f', { k: 1 });                // counterweight
-      p.line(.37, .5, .5, px - .66, .5, hh - nod - .12, '#2f3942', 1.4); p.cyl(1.73, .5, .06, 0, .1, C.dark); p.dot(1.73, .5, .12, 3, C.steel);
-    },
-    pump_station(p, o) {                                                          // 2x2: pad, pump house, two blue pump/motor sets, pipe stubs to the W and E ports
-      p.flat(.03, .03, 1.97, 1.97, 0, C.pad); p.box(.45, .1, 1.55, .72, 0, .62, C.cream, { top: C.roof });
-      p.box(.55, .02, .85, .1, .1, .5, C.dark); p.box(1.15, .02, 1.45, .1, .1, .5, C.dark);
-      p.hcyl(.35, 1.25, 1.3, 'u', .15, .12, C.blue); p.hcyl(.35, 1.7, 1.3, 'u', .13, .1, C.steel);
-      p.box(.2, 1.1, .5, 1.9, 0, .35, C.dark); p.box(1.55, 1.1, 1.8, 1.9, 0, .35, '#37424d');
-      p.line(0, .25, .3, .45, .25, .3, C.pipe, 4.2); p.line(1.55, .25, .3, 2, .25, .3, C.pipe, 4.2); p.dot(0, .25, .3, 3.4, C.yellow); p.dot(2, .25, .3, 3.4, C.yellow);
-      p.line(.8, .75, .62, .8, 1.25, .3, C.pipe, 2.2); p.line(1.2, .75, .62, 1.2, 1.25, .3, C.pipe, 2.2);
-      p.dot(1.5, .72, .66, 2, o.state === 'UNDER_CONSTRUCTION' ? C.yellow : C.green);
-    },
     junction(p, o) {                                                              // 1x1: cross manifold, four flange collars, central valve wheel
       p.flat(.06, .06, .94, .94, 0, '#8c8272'); p.line(0, .5, .2, 1, .5, .2, C.pipe, 5.4); p.line(.5, 0, .2, .5, 1, .2, C.pipe, 5.4);
       for (const [a, b] of [[.14, .5], [.86, .5], [.5, .14], [.5, .86]]) p.dot(a, b, .2, 3.8, C.yellow);
@@ -120,19 +100,6 @@
       p.line(.28, .5, 1.12, .72, .5, 1.12, open === 2 ? '#8a3b2a' : C.red, 3.4, { bias: 1 }); p.cyl(.5, .5, .22, 1.08, 1.14, open === 2 ? '#8a3b2a' : C.red);
       p.dot(.8, .28, .42, 2.6, open === 2 ? '#e0584a' : open === 1 ? C.yellow : C.green);
     },
-    oil_tank(p, o) {                                                              // 2x2: white cylindrical tank, band, dome roof, ladder, level strip
-      p.flat(.02, .02, 1.98, 1.98, 0, C.pad); p.cyl(1, 1, .9, 0, 1.15, C.white, { top: '#d6d1c4', band: '#c4512f', bandAt: .62 });
-      p.cyl(1, 1, .5, 1.15, 1.3, '#d6d1c4'); p.line(1.58, .55, 0, 1.58, .55, 1.15, '#37424d', 1.4); for (let k = 1; k < 7; k++) p.line(1.52, .5 + k * .005, k * .16, 1.64, .6, k * .16, '#37424d', .9);
-      const f = Math.max(0, Math.min(1, o.fill == null ? .5 : o.fill)); p.quad(.42, 1.86, 0, .42, 1.86, 1.0, 'rgba(25,30,35,.55)', 99); p.quad(.42, 1.86, 0, .42, 1.86, 1.0 * f, '#d8962a', 99.1);
-      p.line(.3, 1.0, 1.28, .02, 1.0, 1.28, C.pipe, 1.4);
-    },
-    large_tank(p, o) {                                                            // 3x3: broad floating-roof tank, wind girder, spiral stair, foam dam, manifold
-      p.flat(.02, .02, 2.98, 2.98, 0, '#a59c8a'); p.cyl(1.5, 1.5, 1.38, 0, .16, '#b9ae9a');
-      p.cyl(1.5, 1.5, 1.28, .16, 1.75, '#c9d1d8', { top: '#9ba5ae', band: '#3f7fb0', bandAt: .55 }); p.cyl(1.5, 1.5, 1.18, 1.75, 1.8, '#7d8892'); p.cyl(1.5, 1.5, 1.32, 1.5, 1.56, '#5e6a75');
-      for (let k = 0; k < 14; k++) { const a = k / 14 * 5.4, u = 1.5 + Math.cos(a - 1.2) * 1.3, v = 1.5 + Math.sin(a - 1.2) * 1.3; p.line(u, v, .16 + k / 14 * 1.55, 1.5 + Math.cos(a + .1 - 1.2) * 1.3, 1.5 + Math.sin(a + .1 - 1.2) * 1.3, .16 + (k + 1) / 14 * 1.55, '#37424d', 1.1); }
-      const f = Math.max(0, Math.min(1, o.fill == null ? .5 : o.fill)); p.quad(.5, 2.78, .1, 1.1, 2.9, .1, 'rgba(0,0,0,0)', 99); p.line(.45, 2.95, .1, .45, 2.95, 1.6, 'rgba(25,30,35,.65)', 5); p.line(.45, 2.95, .1, .45, 2.95, .1 + 1.5 * f, '#d8962a', 5, { bias: .3 });
-      p.line(2.9, 1.5, .26, 3, 1.5, .26, C.pipe, 4.4); p.line(1.5, 2.9, .26, 1.5, 3, .26, C.pipe, 4.4); p.dot(1.5, 1.5, 1.95, 3, C.yellow);
-    },
     separator(p, o) {                                                             // 4x3: two horizontal vessels on saddles, tall gas scrubber, catwalk, pipework
       p.flat(.03, .03, 3.97, 2.97, 0, C.pad); p.hcyl(.4, .85, 3.0, 'u', .34, .38, '#6a9a73'); p.hcyl(.4, 1.9, 3.0, 'u', .28, .34, '#5a8a66');
       for (const u of [.8, 2.2, 3.2]) { p.box(u - .06, .6, u + .06, 1.2, 0, .4, C.dark); p.box(u - .06, 1.7, u + .06, 2.2, 0, .36, C.dark); }
@@ -141,61 +108,67 @@
       p.box(.4, 1.45, 3.3, 1.65, 1.0, 1.04, '#c4c9ce'); for (const u of [.5, 1.5, 2.5, 3.2]) p.line(u, 1.45, 1.0, u, 1.45, 1.35, C.yellow, 1.2);
       p.dot(.5, .5, .5, 2.5, C.green);
     },
-    processing_plant(p, o) {                                                      // 5x4: pipe rack, three vertical vessels, heater with stack, control cabin
-      p.flat(.03, .03, 4.97, 3.97, 0, C.pad); p.box(.3, 1.7, 4.4, 2.1, .9, .98, '#9aa3ab');
-      for (const u of [.6, 1.6, 2.6, 3.6, 4.3]) p.box(u - .05, 1.8, u + .05, 2.0, 0, .9, C.dark);
-      p.cyl(1.0, .8, .5, 0, 2.3, '#b9c3cc', { top: '#cbd4db', band: '#c4512f', bandAt: .4 }); p.cyl(2.2, .75, .38, 0, 1.8, '#a7b2bc'); p.cyl(3.2, .85, .42, 0, 2.0, '#b2bcc6', { band: '#3f7fb0', bandAt: .6 });
-      p.box(3.5, 2.4, 4.7, 3.6, 0, .85, '#a9553a', { top: '#7a4630' }); p.cyl(4.1, 3.0, .16, .85, 2.6, '#6e625a'); p.dot(4.1, 3.0, 2.7, 3, '#ff9a3a');
-      p.box(.3, 2.8, 1.5, 3.7, 0, .6, C.cream, { top: C.roof }); p.box(.5, 3.7, .9, 3.74, .15, .45, C.glass);
-      for (const [a, b] of [[1.0, .8], [2.2, .75], [3.2, .85]]) p.line(a, b, 1.9, a, 1.9, .95, C.pipe, 2.4);
-      p.line(0, 1.5, .35, .3, 1.5, .35, C.pipe, 4.4); p.line(4.7, 1.2, .35, 5, 1.2, .35, C.pipe, 4.4); p.line(1.6, 2.1, .45, 3.5, 3.0, .45, C.pipe, 2.4);
+    pump_station(p, o) {                                                          // 2x2 / 3x2: pad, pump house, one motor+pump set per footprint column, suction/discharge stubs on the W and E ports
+      const W = o.w, H = o.h, big = W > 2; p.flat(.03, .03, W - .03, H - .03, 0, C.pad); p.box(.45, .08, W - .45, .7, 0, .62, C.cream, { top: C.roof });
+      for (let i = 0; i < W - 1; i++) { const u = .75 + i * (W - 1.5) / Math.max(1, W - 2) * (W > 2 ? 1 : 0) + (W > 2 ? 0 : .25); p.box(u - .3, H - .75, u + .3, H - .2, 0, .34, C.dark); p.hcyl(u - .45, H - .48, .9, 'u', .14, .12, i % 2 ? C.steel : C.blue); p.dot(u, H - .48, .5, 2.2, C.green); }
+      p.line(0, .5, .3, .45, .5, .3, C.pipe, 4.4); p.line(W - .45, .5, .3, W, .5, .3, C.pipe, 4.4); p.dot(0, .5, .3, 3.4, C.yellow); p.dot(W, .5, .3, 3.4, C.yellow);
+      p.line(.8, .7, .62, .8, H - .5, .3, C.pipe, 2.2); p.line(W - .8, .7, .62, W - .8, H - .5, .3, C.pipe, 2.2);
+      if (big) { p.cyl(W - .4, H - .4, .17, 0, 1.0, '#7b8792'); p.dot(W - .4, H - .4, 1.05, 2.4, C.red); }
+      p.dot(W - .55, .72, .66, 2, o.state === 'UNDER_CONSTRUCTION' ? C.yellow : C.green);
     },
-    refinery(p, o) {                                                              // 8x6: distillation columns, furnace + stack, product spheres/tanks, long pipe racks, flare, cooling tower
-      p.flat(.03, .03, 7.97, 5.97, 0, '#a39a88'); p.flat(.2, 2.4, 7.8, 3.2, 0, '#8d8574', -.6);
-      const t = o.t || 0;
-      p.cyl(1.3, 1.2, .5, 0, 3.1, '#c3ccd4', { top: '#d3dbe1', band: '#c4512f', bandAt: .5 }); p.cyl(2.5, 1.0, .38, 0, 2.5, '#b2bcc6'); p.cyl(3.5, 1.3, .3, 0, 1.9, '#a8b3be');
-      for (const [u, v, hh] of [[1.3, 1.2, 3.1], [2.5, 1.0, 2.5]]) p.cyl(u, v, .08, hh, hh + .3, C.dark);
-      p.box(4.5, .5, 6.2, 1.9, 0, 1.0, '#a9553a', { top: '#7a4630' }); p.cyl(5.35, 1.2, .24, 1.0, 3.2, '#6e625a'); p.dot(5.35, 1.2, 3.3, 3.4, 'rgba(255,150,60,' + (.7 + .3 * Math.sin(t * 5)) + ')');
-      p.box(.4, 2.55, 7.6, 2.85, 1.3, 1.38, '#9aa3ab'); for (let u = .6; u < 7.6; u += 1.1) p.box(u - .05, 2.6, u + .05, 2.8, 0, 1.3, C.dark);
-      p.box(.4, 2.58, 7.6, 2.66, 1.38, 1.5, C.pipe, { k: .9 });
-      for (const [u, v] of [[1.0, 4.3], [2.3, 4.3], [3.6, 4.3]]) p.cyl(u, v, .56, 0, 1.0, C.white, { top: '#d6d1c4', band: C.red, bandAt: .6 });
-      p.sphere(5.0, 4.5, .62, 0, '#d2c7ae'); p.sphere(6.5, 4.5, .62, 0, '#cbd3d9'); p.box(6.8, 3.5, 7.8, 5.7, 0, .7, C.cream, { top: C.roof });
-      p.cyl(.6, 5.0, .06, 0, 3.4, '#4d5660'); p.dot(.6, 5.0, 3.55, 3.4 + Math.sin(t * 9) * .7, 'rgba(255,170,50,.95)'); p.dot(.6, 5.0, 3.85, 2 + Math.sin(t * 7 + 1), 'rgba(255,230,120,.9)');
-      p.box(3.8, 5.2, 4.6, 5.8, 0, .8, '#8fa8b8', { top: '#6c8798' });
-      p.line(4.2, 1.9, .5, 4.2, 4.4, .5, C.pipe, 3.2); p.line(0, 1.2, .4, .4, 1.2, .4, C.pipe, 5); p.line(0, 1.6, .4, .4, 1.6, .4, C.pipe, 5); p.line(7.7, 1.2, .45, 8, 1.2, .45, C.pipe, 4.4);
+    crude_tank(p, o) {                                                            // NxN: dark steel external-floating-roof crude tank, wind girder, spiral stair, foam dam, gauge strip
+      const W = o.w, H = o.h, cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 * .92, hh = .62 + .2 * W, f = Math.max(0, Math.min(1, o.fill == null ? .5 : o.fill));
+      p.flat(.03, .03, W - .03, H - .03, 0, '#a59c8a'); p.cyl(cx, cy, R * 1.06, 0, .14, '#b9ae9a');
+      p.cyl(cx, cy, R, .14, hh, '#6f7a84', { top: '#4a545d', band: '#262b31', bandAt: .72 }); p.cyl(cx, cy, R * .95, hh - .04 - (1 - f) * .22, hh - .0, '#555f69'); p.cyl(cx, cy, R * 1.03, hh * .62, hh * .66, '#4a545d');
+      const n = 8 + W * 3; for (let k = 0; k < n; k++) { const a0 = k / n * 5.2 - 1.2, a1 = (k + 1) / n * 5.2 - 1.2; p.line(cx + Math.cos(a0) * R * 1.02, cy + Math.sin(a0) * R * 1.02, .14 + k / n * (hh - .14), cx + Math.cos(a1) * R * 1.02, cy + Math.sin(a1) * R * 1.02, .14 + (k + 1) / n * (hh - .14), '#37424d', 1.1); }
+      p.line(.35, H - .2, .1, .35, H - .2, hh, 'rgba(25,30,35,.65)', 4); p.line(.35, H - .2, .1, .35, H - .2, .1 + (hh - .1) * f, '#d8962a', 4, { bias: .3 });
+      p.line(W - .05, cy, .24, W + 0, cy, .24, C.pipe, 4.4); p.line(cx, H - .05, .24, cx, H, .24, C.pipe, 4.4); p.dot(cx, cy, hh + .02, 2.4, C.yellow);
     },
-    control_center(p, o) {                                                        // 4x3: two-storey admin building, glass band, roof units, radio mast + dish, parking
-      p.flat(.03, .03, 3.97, 2.97, 0, '#a6a090'); p.flat(.2, 2.15, 3.8, 2.85, 0, '#7e7a70', -.5);
-      p.box(.35, .3, 3.35, 1.8, 0, 1.55, '#e1dccd', { top: '#8a9099', side: '#e1dccd' }); p.box(.35, .3, 3.35, 1.8, .55, .95, '#5d93b4', { top: '#5d93b4', k: .97 });
-      p.box(.35, .3, 3.35, 1.8, 1.55, 1.62, '#6f7780'); p.box(.6, .5, 1.1, .95, 1.62, 1.95, '#8d99a6'); p.box(1.6, .55, 2.0, .9, 1.62, 1.88, '#8d99a6');
-      p.line(3.05, .6, 1.62, 3.05, .6, 3.5, '#37424d', 1.6); p.line(3.05, .6, 3.5, 3.05, .6, 3.62, C.red, 2.6); for (const k of [2.2, 2.8]) p.line(2.85, .6, k, 3.25, .6, k, '#37424d', 1.1);
-      p.cyl(2.55, 1.2, .32, 1.62, 1.72, '#d8dde1'); p.line(2.55, 1.2, 1.7, 2.9, 1.0, 2.1, '#cfd6db', 1.8);
-      p.box(1.4, 1.8, 2.2, 2.0, 0, .3, C.glass); p.box(.5, 2.4, 1.3, 2.7, 0, .28, C.red); p.box(1.5, 2.4, 2.3, 2.7, 0, .28, C.steel); p.box(2.5, 2.4, 3.3, 2.7, 0, .28, '#d8d3c4');
+    gasoline_tank(p, o) {                                                         // NxN: white cylindrical tank, red product band, domed (geodesic-style) fixed roof, rooftop vent, stairs
+      const W = o.w, H = o.h, cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 * .9, hh = .55 + .17 * W, f = Math.max(0, Math.min(1, o.fill == null ? .5 : o.fill));
+      p.flat(.03, .03, W - .03, H - .03, 0, C.pad); p.box(.08, .08, W - .08, .16, 0, .1, '#8e8878'); p.box(.08, H - .16, W - .08, H - .08, 0, .1, '#8e8878'); p.box(.08, .08, .16, H - .08, 0, .1, '#8e8878'); p.box(W - .16, .08, W - .08, H - .08, 0, .1, '#8e8878');
+      p.cyl(cx, cy, R, 0, hh, C.white, { top: '#e8e3d6', band: '#d6463a', bandAt: .46 }); p.sphere(cx, cy, R * .78, hh - .12, '#e4dfd2'); p.cyl(cx, cy, .08, hh + R * .78, hh + R * .78 + .18, C.dark);
+      for (let k = 1; k < 8; k++) p.line(W - .22, .5 + k * .02, k * hh / 8, W - .12, .62, k * hh / 8, '#37424d', .9); p.line(W - .2, .5, 0, W - .2, .5, hh, '#37424d', 1.4);
+      p.quad(.45, H - .08, 0, .45, H - .08, hh, 'rgba(25,30,35,.5)', 99); p.quad(.45, H - .08, 0, .45, H - .08, hh * f, '#e0584a', 99.1);
     },
-    maintenance(p, o) {                                                           // 3x2: workshop with sawtooth roof, three bay doors, gantry crane, service truck, drums
-      p.flat(.03, .03, 2.97, 1.97, 0, '#a09886'); p.box(.2, .15, 2.1, 1.0, 0, .8, '#b9a98a', { top: '#7a6e5a' });
-      for (let k = 0; k < 4; k++) { const u0 = .2 + k * .475; p.quad(u0, .15, .8, u0, 1.0, .8, C.roof); p.quad(u0, .15, .8, u0 + .475, .15, 1.05, '#8f9aa4'); p.quad(u0, 1.0, .8, u0 + .475, 1.0, 1.05, '#8f9aa4'); }
-      for (const u of [.4, 1.0, 1.6]) p.quad(u, 1.0, 0, u + .36, 1.0, .55, '#586b7a');
-      p.line(.2, 1.15, 1.25, 2.1, 1.15, 1.25, '#e2b32c', 3.2); p.line(.2, 1.15, 0, .2, 1.15, 1.25, '#37424d', 1.8); p.line(2.1, 1.15, 0, 2.1, 1.15, 1.25, '#37424d', 1.8); p.line(1.2, 1.15, 1.25, 1.2, 1.15, .7, '#37424d', 1.2); p.dot(1.2, 1.15, .66, 2.4, C.red);
-      p.box(2.25, .9, 2.85, 1.3, 0, .32, '#c8962a'); p.box(2.25, .9, 2.45, 1.3, .32, .55, '#d8dde1'); p.dot(2.3, 1.35, .05, 2.2, C.dark); p.dot(2.8, 1.35, .05, 2.2, C.dark);
-      for (const [a, b] of [[.35, 1.55], [.6, 1.62], [.85, 1.5]]) p.cyl(a, b, .1, 0, .26, '#3f7fb0');
+    diesel_tank(p, o) {                                                           // NxN: sand-yellow tank with stepped cone roof, yellow safety stripes, pump house and fire-water riser
+      const W = o.w, H = o.h, cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 * .88, hh = .55 + .17 * W, f = Math.max(0, Math.min(1, o.fill == null ? .5 : o.fill));
+      p.flat(.03, .03, W - .03, H - .03, 0, C.pad); p.cyl(cx, cy, R, 0, hh, '#d8c47c', { top: '#bda760', band: '#8a6a1c', bandAt: .3 }); p.cyl(cx, cy, R * .86, hh, hh + .12, '#c9b46a'); p.cyl(cx, cy, R * .6, hh + .12, hh + .24, '#b9a45c'); p.cyl(cx, cy, R * .3, hh + .24, hh + .36, '#a9954f');
+      for (let k = 0; k < 5; k++) { const a = k / 5 * 6.28; p.line(cx + Math.cos(a) * R * .98, cy + Math.sin(a) * R * .98, 0, cx + Math.cos(a) * R * .98, cy + Math.sin(a) * R * .98, hh, 'rgba(60,45,10,.5)', 1.2); }
+      p.box(.12, .12, .62, .52, 0, .36, C.cream, { top: C.roof }); p.line(.37, .52, .3, .37, cy - R * .2, .3, C.pipe, 2.4); p.line(W - .2, H - .2, 0, W - .2, H - .2, hh * 1.05, C.red, 1.8); p.dot(W - .2, H - .2, hh * 1.05 + .02, 2.2, C.red);
+      p.quad(.45, H - .08, 0, .45, H - .08, hh, 'rgba(25,30,35,.5)', 99); p.quad(.45, H - .08, 0, .45, H - .08, hh * f, '#e2b32c', 99.1);
     },
-    power(p, o) {                                                                 // 3x3: generator halls, two exhaust stacks, radiator fans (spinning), transformer yard with insulators
-      const t = o.t || 0; p.flat(.03, .03, 2.97, 2.97, 0, '#9d9686');
-      p.box(.2, .2, 1.9, 1.15, 0, .85, '#6a8aa2', { top: '#4d6475' }); p.box(.2, 1.3, 1.9, 2.25, 0, .85, '#6a8aa2', { top: '#4d6475' });
-      for (const v of [.55, 1.65]) p.cyl(2.0, v, .17, .85, 2.5, '#58626b');
-      for (const v of [.7, 1.8]) { p.cyl(.75, v, .22, .85, .95, '#404a54'); p.line(.75 - .2 * Math.cos(t * 12), v, .93, .75 + .2 * Math.cos(t * 12), v, .93, '#c8d0d6', 1.4, { bias: 1 }); p.line(.75, v - .2 * Math.sin(t * 12), .93, .75, v + .2 * Math.sin(t * 12), .93, '#c8d0d6', 1.4, { bias: 1 }); }
-      for (const [u, v] of [[2.35, 2.3], [2.65, 2.3], [2.35, 2.65], [2.65, 2.65]]) { p.box(u - .1, v - .1, u + .1, v + .1, 0, .38, '#5f6a73'); p.line(u, v, .38, u, v, .62, '#d9ccb0', 3); }
-      p.line(2.2, 2.2, .7, 2.9, 2.2, .7, '#2f3942', 1); p.dot(1.95, .6, 2.55, 3, 'rgba(210,215,220,.7)'); p.dot(1.9, 1.7, 2.55, 3.4, 'rgba(210,215,220,.55)');
+    jet_tank(p, o) {                                                              // NxN: bank of horizontal "bullet" tanks on saddles with a shared manifold and a blue-white fuel marking (different shape from every vertical tank)
+      const W = o.w, H = o.h, rows = Math.max(1, Math.floor((H - .5) / .9)), len = W - .9, rad = Math.min(.36, (H - .5) / rows / 2.3), f = Math.max(0, Math.min(1, o.fill == null ? .5 : o.fill));
+      p.flat(.03, .03, W - .03, H - .03, 0, C.pad); p.box(.12, .12, W - .12, H - .12, 0, .06, '#8f8a7b');
+      for (let i = 0; i < rows; i++) { const v = .55 + i * ((H - 1.1) / Math.max(1, rows - 1)) * (rows > 1 ? 1 : 0) + (rows > 1 ? 0 : (H - 1.1) / 2); const u0 = .45;
+        for (const u of [u0 + .25, u0 + len - .25]) p.box(u - .06, v - rad, u + .06, v + rad, 0, rad * .9, C.dark); p.hcyl(u0, v, len, 'u', rad, rad * .55, '#cfe0ee'); p.hcyl(u0 + len * .46, v, len * .08, 'u', rad * 1.03, rad * .55, '#4aa3ff');
+        p.dot(u0 + len * .5, v, rad * 2.6, 2, C.steel); p.line(u0 + len * .5, v, rad * 2.2, u0 + len * .5, H - .3, rad * 2.2, C.pipe, 1.8); }
+      p.line(.3, H - .3, .4, W - .3, H - .3, .4, C.pipe, 3.4); p.dot(W - .3, H - .3, .45, 2.8, C.yellow); p.quad(.2, H - .1, 0, .2, H - .1, .8, 'rgba(25,30,35,.5)', 99); p.quad(.2, H - .1, 0, .2, H - .1, .8 * f, '#4aa3ff', 99.1);
     },
-    warehouse(p, o) {                                                             // 3x2: long gable-roofed shed, roller doors, loading dock, containers and pallets
-      p.flat(.03, .03, 2.97, 1.97, 0, '#a5a090'); p.box(.2, .15, 2.2, 1.15, 0, .62, '#d9d3c1', { top: '#7c8892' });
-      p.quad(.2, .15, .62, 2.2, .15, .62, '#d9d3c1'); p.quad(.2, .65, .98, 2.2, .65, .98, '#aeb9c2', 20); p.quad(.2, .15, .62, .2, .65, .98, '#aeb9c2'); p.quad(.2, 1.15, .62, .2, .65, .98, '#aeb9c2');
-      p.quad(2.2, .15, .62, 2.2, .65, .98, '#9aa5ae'); p.quad(2.2, 1.15, .62, 2.2, .65, .98, '#9aa5ae');
-      for (const u of [.4, 1.0, 1.6]) p.quad(u, 1.15, 0, u + .45, 1.15, .45, '#6a7b88');
-      p.box(.2, 1.15, 2.2, 1.4, 0, .16, '#9b9486');
-      p.box(2.35, .3, 2.9, .65, 0, .3, '#c4512f'); p.box(2.35, .75, 2.9, 1.1, 0, .3, '#3f7fb0'); p.box(2.4, .4, 2.85, .6, .3, .6, '#e2b32c');
-      for (const [a, b] of [[.4, 1.62], [.8, 1.68], [1.2, 1.62]]) p.box(a, b, a + .3, b + .24, 0, .12, '#a77b46');
+    gas_sphere(p, o) {                                                            // pressure storage: white-green spheres on leg rings with braced columns, access ladder, relief stack, pressure gauge dot
+      const W = o.w, H = o.h, f = Math.max(0, Math.min(1, o.fill == null ? .5 : o.fill)); p.flat(.03, .03, W - .03, H - .03, 0, '#a09886');
+      const sp = W <= 2 ? [[1, 1, .62]] : W === 3 ? [[.95, .95, .6], [2.05, 2.05, .6]] : [[1.1, 1.1, .62], [2.9, 1.1, .62], [2.0, 2.9, .62]];
+      for (const [u, v, r] of sp) {
+        const lh = .35; for (let k = 0; k < 6; k++) { const a = k / 6 * 6.28; p.line(u + Math.cos(a) * r * .8, v + Math.sin(a) * r * .8, 0, u + Math.cos(a) * r * .86, v + Math.sin(a) * r * .86, lh + .1, '#59636d', 1.9); }
+        p.cyl(u, v, r * .95, .0, .06, '#8e8878'); p.sphere(u, v, r, lh, '#dfece0'); p.line(u + r * .9, v, lh + r * .2, u + r * .9, v, lh + r * 1.9, '#37424d', 1.3); p.cyl(u, v, .05, lh + r * 2, lh + r * 2 + .26, C.dark); p.dot(u, v, lh + r * 2 + .3, 2.8, f > .85 ? '#e0584a' : f > .6 ? C.yellow : C.green);
+      }
+      p.line(.2, H - .2, .2, W - .2, H - .2, .2, C.pipe, 3.2); p.dot(W - .2, H - .2, .24, 2.6, C.yellow);
+    },
+    refinery(p, o) {                                                              // 6x5 .. 12x9: a whole industrial complex.  Distillation towers, furnace + stack, pipe racks, product tank farm, spheres, cooling tower, flare, control house.  Size adds more of each.
+      const W = o.w, H = o.h, t = o.t || 0, towers = Math.max(1, Math.round((W - 3) / 2.2)), farm = Math.max(2, Math.round(W / 1.7));
+      p.flat(.03, .03, W - .03, H - .03, 0, '#a39a88'); p.flat(.25, H * .46, W - .25, H * .46 + .75, 0, '#8d8574', -.6);
+      for (let i = 0; i < towers; i++) { const u = 1.1 + i * ((W * .56 - 1.1) / Math.max(1, towers - 1)) * (towers > 1 ? 1 : 0), v = 1.0 + (i % 2) * .5, h1 = 2.9 - i * .25 + (W > 9 ? .5 : 0);
+        p.cyl(u, v, .4 + (i === 0 ? .1 : 0), 0, h1, '#c3ccd4', { top: '#d3dbe1', band: i % 2 ? '#3f7fb0' : '#c4512f', bandAt: .5 }); p.cyl(u, v, .08, h1, h1 + .3, C.dark); for (let k = 1; k < 5; k++) p.line(u + .42, v, k * h1 / 5, u + .62, v, k * h1 / 5, C.pipe, 1.4); }
+      const fu = W * .66, fv = .55; p.box(fu, fv, fu + 1.5, fv + 1.2, 0, .9, '#a9553a', { top: '#7a4630' }); p.cyl(fu + .75, fv + .6, .22, .9, 3.0, '#6e625a'); p.dot(fu + .75, fv + .6, 3.1, 3.2, 'rgba(255,150,60,' + (.7 + .3 * Math.sin(t * 5)) + ')');
+      p.box(.35, H * .46 + .1, W - .35, H * .46 + .4, 1.2, 1.28, '#9aa3ab'); for (let u = .6; u < W - .5; u += 1.1) p.box(u - .05, H * .46 + .15, u + .05, H * .46 + .35, 0, 1.2, C.dark); p.box(.35, H * .46 + .14, W - .35, H * .46 + .22, 1.28, 1.4, C.pipe, { k: .9 });
+      const row = H - 1.2; for (let i = 0; i < farm; i++) { const u = .9 + i * ((W * .62 - .9) / Math.max(1, farm - 1)); p.cyl(u, row, .5, 0, .95, i % 3 === 0 ? C.white : i % 3 === 1 ? '#d8c47c' : '#cfe0ee', { top: '#d6d1c4', band: [C.red, '#8a6a1c', '#4aa3ff'][i % 3], bandAt: .6 }); }
+      const sph = Math.max(1, Math.round(W / 4)); for (let i = 0; i < sph; i++) p.sphere(W * .68 + i * 1.3, H - 1.3, .55, 0, i % 2 ? '#cbd3d9' : '#dfece0');
+      p.box(W - 1.5, H * .46 + 1.0, W - .35, H - .35, 0, .7, C.cream, { top: C.roof });
+      const ft = .65, ct = W > 7 ? 2 : 1; for (let i = 0; i < ct; i++) { p.box(.4 + i * 1.5, H * .46 + .95, 1.7 + i * 1.5, H * .46 + 1.65, 0, .7, '#8fa8b8', { top: '#6c8798' }); p.line(1.05 + i * 1.5, H * .46 + 1.3, .72, 1.05 + i * 1.5 + .35 * Math.cos(t * 12), H * .46 + 1.3 + .35 * Math.sin(t * 12), .74, '#dfe5e9', 1.6, { bias: 1 }); }
+      p.cyl(.5, .5, .06, 0, 3.7, '#4d5660'); p.dot(.5, .5, 3.85, 3.4 + Math.sin(t * 9) * .7, 'rgba(255,170,50,.95)'); p.dot(.5, .5, 4.15, 2 + Math.sin(t * 7 + 1), 'rgba(255,230,120,.9)');
+      for (const [u, v] of [[.18, H * .5], [W - .18, 1.5], [W - .18, 2.5], [W - .18, 3.5]]) p.dot(u, v, .3, 2.6, C.yellow);
+      p.line(0, Math.floor(H / 2) + .5, .4, .5, Math.floor(H / 2) + .5, .4, C.pipe, 5); p.line(W - 1, 1.5, .5, W, 1.5, .5, C.pipe, 4.4); p.line(W - 1, 2.5, .5, W, 2.5, .5, C.pipe, 4.4); p.line(W - 1, 3.5, .5, W, 3.5, .5, C.pipe, 4.4);
     }
   };
 

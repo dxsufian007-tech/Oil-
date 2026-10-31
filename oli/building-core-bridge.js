@@ -7,7 +7,7 @@
   else root.OliCoreBridge = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
-  const MAP = { oil_well: 'well', oil_tank: 'tank', pump_station: null /* core 'pump' is a 1x1 in-line pump, a different machine: see CONFLICT 2 */ };
+  const MAP = { oil_well: 'well', crude_tank_s: 'tank', pump_station_s: null /* core 'pump' is a 1x1 in-line pump, a different machine: see CONFLICT 2 */ };
   const SIDE_OF = { 0: 0, 1: 1, 2: 2, 3: 3 };                                  // both use 0 east, 1 west, 2 south, 3 north
   // compare a registry definition with core.js: footprint, and the SET of (role, side) ports of an unrotated building at a given anchor
   function compare(def, game, coreType) {
