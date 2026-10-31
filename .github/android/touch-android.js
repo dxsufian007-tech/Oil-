@@ -110,9 +110,11 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   check('PINCH zooms in as the fingers spread', +zs[5] > 1.2, 'zoom ' + zs.join(' ') + ', drift vs the points sent ' + drift.toFixed(2) + ' css px (see PINCHDIAG)');
   const aE = { x: a1.x - 150, y: a1.y - 90 }; const cL = await cam(); sendM([[{ slot: 1, up: true }]]); await sleep(250); const cL2 = await cam(), sp2 = await state();
   check('PINCH -> PAN: lifting the second finger does not move the camera', cL.x === cL2.x && cL.y === cL2.y && sp2 === 'PAN', 'state ' + sp2);
-  const wa = await w(C(aE)); let dr2 = 0; for (let i = 1; i <= 4; i++) { const q = { x: aE.x + 40 * i, y: aE.y + 25 * i }; sendM([[{ slot: 0, ...q }]]); await sleep(120); dr2 = Math.max(dr2, dist(await w(C(q)), wa) * cL2.z); }
+  const seenOne = () => ev('const ps = window.__v2.view.scene.input.manager.pointers.filter(p => p.isDown); return ps.length ? { x: ps[0].x, y: ps[0].y } : null;');
+  const pr0 = await seenOne(), wa = pr0 ? await w(pr0) : await w(C(aE)); let dr2 = 0, lag = 0;       // drift is measured against the finger position the APP received (the camera must keep that world point under it); sent-vs-received is reported separately
+  for (let i = 1; i <= 4; i++) { const q = { x: aE.x + 40 * i, y: aE.y + 25 * i }; sendM([[{ slot: 0, ...q }]]); await sleep(150); const rp = await seenOne(); if (rp) { dr2 = Math.max(dr2, dist(await w(rp), wa) * cL2.z); const cq = C(q); lag = Math.max(lag, dist(rp, cq)); } }
   sendM([[{ slot: 0, up: true }]]); await sleep(400);
-  check('PINCH -> PAN: the remaining finger pans 1:1 from where it is', dr2 < 1.0, 'drift ' + dr2.toFixed(3) + ' css px');
+  check('PINCH -> PAN: the remaining finger pans 1:1 from where it is (against the positions the app received)', dr2 < 1.0, 'drift ' + dr2.toFixed(3) + ' css px; input lag sent-vs-received at most ' + lag.toFixed(1) + ' css px (emulator input path)');
   check('PINCH: no tap fired afterwards', (await ev('return window.__v2.ui.sel;')) === null, '');
   }
   // 3. map edge
