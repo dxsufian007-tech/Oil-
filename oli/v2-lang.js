@@ -50,6 +50,7 @@
     'ارفع لبناء أنبوب بطرف مفتوح · ': 'Lift to build a pipe with an open end · ',
     ' — أو اسحب نحو خزان/أنبوب': ' — or drag to a tank / pipe',
     'أُلغي الأنبوب': 'Pipe cancelled',
+    ' ساعة': ' h', ' دقيقة': ' min', '، الحد الأقصى 24 ساعة': ', 24 h maximum', 'أثناء غيابك (': 'While you were away (', ') · النفط المخزّن ': ') · stored oil ', ' · المال ': ' · cash ',
     'تم بناء الأنبوب · ': 'Pipe built · ',
     'المس بئراً أو خزاناً أو أنبوباً واسحب أنبوباً جديداً': 'Touch a well, tank or pipe and drag a new pipe',
     'أنبوب بطرف مفتوح · ': 'Pipe with an open end · ',
