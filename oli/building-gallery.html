@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>Oli building gallery</title><style>body{margin:0;background:#2a2f36}canvas{display:block}</style><canvas id="c"></canvas>
+<script src="worldmap.js"></script><script src="buildings.js"></script><script src="building-art.js"></script>
+<script>
+const B = OliBuildings, A = OliBuildingArt, cv = document.getElementById('c'), ctx = cv.getContext('2d'), qs = new URLSearchParams(location.search);
+const rots = qs.get('rot') ? [+qs.get('rot')] : [0, 1, 2, 3], Z = +qs.get('z') || 0.62, CW = 380 * Z / .62 * (qs.get('rot') ? 1 : 1), RH = 330 * Z / .62;
+cv.width = rots.length === 1 ? 4 * CW : 4 * CW; cv.height = Math.ceil(B.ORDER.length / 4) * RH * (rots.length === 1 ? 1 : 1) + 30;
+ctx.fillStyle = '#c9ad78'; ctx.fillRect(0, 0, cv.width, cv.height);
+B.ORDER.forEach((id, i) => { const d = B.DEFS[id], col = i % 4, row = Math.floor(i / 4), r = rots[0];
+  const [w, h] = B.dimsOf(d, r), ox = col * CW + CW / 2 + (h - w) * 16 * Z * 0, oy = row * RH + RH * .38 - (w + h) * 8 * Z;
+  // origin is the north corner of the (rotated) footprint diamond, so it is centred by shifting by (h-w)*32z/2
+  A.draw(ctx, d.visual, { ox: col * CW + CW / 2 + (h - w) * 16 * Z, oy: row * RH + RH * .45 - (w + h) * 8 * Z, z: Z, r, w: d.footprint[0], h: d.footprint[1], t: 0.5, fill: .6, state: 'OPERATIONAL' });
+  ctx.fillStyle = '#1b1f24'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(d.name + '  ' + d.footprint.join('×') + '  rot ' + r * 90 + '°', col * CW + CW / 2, row * RH + RH - 10);
+});
+window.done = true;
+</script>
