@@ -179,8 +179,10 @@
     }
     if (lv === 'CLOSE') decorate(b);
     overlays(lv, b);
+    if (hooks.afterOverlays) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); hooks.afterOverlays(lv, b); }
     if (ui.scale) drawScaleChart();
     if (ui.probe && lv !== 'FAR') { const p = ui.probe, f = CFG.FACILITIES[ui.facility]; diamond(p.x, p.y, f.fp[0], f.fp[1], p.res.ok ? 'rgba(80,220,120,.45)' : 'rgba(240,70,60,.45)', p.res.ok ? '#6dff9a' : '#ff6b60', 2); if (!p.res.ok) { const cx = sx(p.x + f.fp[0] / 2, p.y + f.fp[1] / 2), cy = sy(p.x + f.fp[0] / 2, p.y + f.fp[1] / 2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(cx - 7, cy - 7); ctx.lineTo(cx + 7, cy + 7); ctx.moveTo(cx + 7, cy - 7); ctx.lineTo(cx - 7, cy + 7); ctx.stroke(); } }
+    if (hooks.top) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); hooks.top(lv, b); }
     hud.textContent = lv + '  zoom ' + cam.z.toFixed(3) + '  view ' + Math.round(b.x1 - b.x0) + ' tiles  images ' + stats.imgs + ' · jobs ' + pendingJobs() + '  world ' + world.W + '×' + world.H + ' tiles = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' km (' + world.scale().toFixed(1) + '× the current map)';
     document.querySelectorAll('[data-z]').forEach(e => e.classList.toggle('on', e.dataset.z === lv));
     if (missingHi) { dirty = true; }
@@ -198,7 +200,9 @@
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); pinch = null; });
   cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, cam.z * Math.exp(-e.deltaY * .0015)); }, { passive: false });
 
+  const hooks = {};                                           // Phase 2 hooks (building lab): afterOverlays(lv,b) draws buildings, top(lv,b) draws the ghost, tap(px,py) returns true when it used the tap
   function tap(px, py) {
+    if (hooks.tap && hooks.tap(px, py)) return;
     const t = toTile(px, py), x = Math.floor(t.x), y = Math.floor(t.y); if (!world.inb(x, y)) return;
     let hit = null; for (const s of world.sitesNear(x, y, 3)) { const vi = world.visibleInfo(s.id), ind = vi && vi.indicator, cxs = ind ? ind.x : s.x, cys = ind ? ind.y : s.y, rad = ind ? ind.r : s.radius; if ((vi || ui.dev) && Math.hypot(cxs - t.x, cys - t.y) <= rad + 1) { hit = s; break; } }
     const tl = world.tile(x, y); if (!tl) { wantImg((x / C) | 0, (y / C) | 0, 1); document.getElementById('info').textContent = 'Loading this part of the world…'; return; } const res = world.canBuildAt(ui.facility, x, y); ui.probe = { x, y, res }; ui.sel = hit ? hit.id : null; dirty = true; showInfo(tl, res, hit);
@@ -229,7 +233,7 @@
   const ft = []; let lastT = 0; stats.dprChanges = 0;
   function adapt(now) { if (lastT && dirty) { ft.push(now - lastT); if (ft.length >= 12) { const m = ft.slice().sort((a, b) => a - b)[6]; ft.length = 0; if (m > 34 && DPR > 0.76 && !qs.get('fixdpr')) { DPR = Math.max(0.75, DPR * 0.72); stats.dprChanges++; resize(); } } } lastT = dirty ? now : 0; }
   function loop(now) { adapt(now); if (dirty) { const t = performance.now(); draw(); stats.lastDraw = performance.now() - t; } requestAnimationFrame(loop); }
-  window.__wp = { dpr: () => DPR, setDpr(v) { DPR = v; resize(); }, world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.imgs, genLeft: () => (demoDone && !ovQueue.length ? 0 : 1) + (busy.img || busy.reg ? 1 : 0), idle: () => pendingJobs() === 0 && demoDone, pending: pendingJobs, draw, toTile, sx, sy, hiLeft: () => missingHi };
+  window.__wp = { hooks, ctx, bounds, markDirty: () => { dirty = true; }, VW: () => VW, VH: () => VH, dpr: () => DPR, setDpr(v) { DPR = v; resize(); }, world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.imgs, genLeft: () => (demoDone && !ovQueue.length ? 0 : 1) + (busy.img || busy.reg ? 1 : 0), idle: () => pendingJobs() === 0 && demoDone, pending: pendingJobs, draw, toTile, sx, sy, hiLeft: () => missingHi };
   const sp = qs.get('x'); if (sp) { cam.x = +qs.get('x'); cam.y = +qs.get('y'); cam.z = clampZ(+qs.get('z') || .9); }
   if (qs.get('dev')) { ui.dev = true; document.getElementById('tDev').classList.add('on'); }
   if (qs.get('scale')) { ui.scale = true; document.getElementById('tScale').classList.add('on'); }

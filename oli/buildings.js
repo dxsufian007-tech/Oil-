@@ -170,7 +170,7 @@
       if (def.clearance) {                                                           // breathing room around big / dangerous plant: no other FOOTPRINT within `clearance` tiles
         const c = def.clearance; for (let j = -c; j < h + c; j++) for (let i = -c; i < w + c; i++) { if (i >= 0 && j >= 0 && i < w && j < h) continue; const o = this.occ.get(key(this.W, x + i, y + j)); if (o && o !== opts.ignoreId) return fail('CLEARANCE', 'tooClose', { at: [x + i, y + j], with: o }); }
       }
-      for (const o of this.items.values()) {                                         // the other way round: an existing plant needs room too
+      for (const o of this.query(x - 4, y - 4, x + w + 3, y + h + 3)) {            // the other way round: an existing plant needs room too (spatial query, not a scan of every building)
         if (o.id === opts.ignoreId) continue; const od = DEFS[o.d]; if (!od.clearance) continue; const [ow, oh] = dimsOf(od, o.r), c = od.clearance;
         if (x < o.x + ow + c && x + w > o.x - c && y < o.y + oh + c && y + h > o.y - c) return fail('CLEARANCE', 'tooClose', { with: o.id });
       }
