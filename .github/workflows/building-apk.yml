@@ -1,0 +1,113 @@
+name: Building lab APK + Android test
+
+# Only for the branch feature/building-system (Phase 2). Builds a SEPARATE app (Oli Build Lab, id com.oli.buildlab): the Phase 1 world with the building system on it. It installs next to the game
+# and never replaces it. The game's workflows (build-apk.yml / android-test.yml) and build-www.js are not touched. Results: branch building-apk-build (OliBuild.apk) and branch building-android-test.
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/building-system]
+    paths: ['oli/world*', 'oli/test-world*', 'oli/build*', 'oli/test-build*', '.github/workflows/building-apk.yml', '.github/android/building-*']
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install and run the world tests
+        working-directory: oli
+        run: |
+          npm ci
+          node test-world.js
+          node test-buildings.js
+          node test-buildings-core.js
+      - name: Package the preview page and make it a separate Android app
+        working-directory: oli
+        run: |
+          node build-www-map.js
+          sed -i 's/"appId": "com.oli.oilgame"/"appId": "com.oli.buildlab"/; s/"appName": "Oli"/"appName": "Oli Build Lab"/' capacitor.config.json
+          npx cap sync android
+          sed -i 's/applicationId "com.oli.oilgame"/applicationId "com.oli.buildlab"/' android/app/build.gradle
+          sed -i 's|<string name="app_name">Oli</string>|<string name="app_name">Oli Build Lab</string>|' android/app/src/main/res/values/strings.xml
+          grep -n "applicationId" android/app/build.gradle
+      - name: Same signing key as the game
+        run: |
+          mkdir -p ~/.android
+          cp .github/signing/debug.keystore ~/.android/debug.keystore
+          sed -i "s/versionCode [0-9]*/versionCode $((100 + ${{ github.run_number }}))/" oli/android/app/build.gradle
+      - name: Build the APK
+        working-directory: oli/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+      - run: cp oli/android/app/build/outputs/apk/debug/app-debug.apk OliBuild.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OliBuild-apk
+          path: OliBuild.apk
+      - name: Publish the APK on the branch building-apk-build
+        run: |
+          mkdir -p /tmp/out && cp OliBuild.apk /tmp/out/
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout --orphan building-apk-build
+          git rm -rf --quiet .
+          cp /tmp/out/OliBuild.apk .
+          git add OliBuild.apk
+          git commit -q -m "Oli Build Lab APK"
+          git push -f origin building-apk-build
+
+  android:
+    needs: apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get the APK
+        run: |
+          git fetch origin building-apk-build
+          git show origin/building-apk-build:OliBuild.apk > OliBuild.apk
+          ls -l OliBuild.apk
+      - name: Allow the emulator to use hardware virtualisation
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-save chrome-remote-interface@0.33.2
+      - name: Run the building lab on Android 14
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          heap-size: 576M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash .github/android/building-run.sh
+      - name: Publish the results on the branch building-android-test
+        if: always()
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/pub/results && cp -r results/. /tmp/pub/results/ 2>/dev/null || echo "no results folder" > /tmp/pub/results/missing.txt
+          cd /tmp/pub
+          git init -q -b building-android-test
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -q -m "Building Android test results"
+          git push -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" building-android-test
