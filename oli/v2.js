@@ -679,6 +679,7 @@
   }
   function updateConfirm() {
     const box = $('#confirm'); let txt = '', ok = false;
+    box.style.pointerEvents = ui.dragging ? 'none' : '';              // the live-cost bar must never swallow the finger that is dragging the pipe
     if (ui.tool === 'pipe') {
       if (!ui.a) { box.hidden = true; return; }
       const r = ui.route;

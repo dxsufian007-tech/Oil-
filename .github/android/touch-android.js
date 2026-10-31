@@ -219,6 +219,47 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
     }
     await ev('const v = window.__v2; v.select(null); v.cancel(); v.setTool(null); return 1;');
   }
+  // 9. PHASE C on the real Android input path: connection points, no tap-tap, hold + drag + release, live cost, camera locked, info panel, perf
+  {
+    await ev('const v = window.__v2; v.select(null); v.cancel(); v.setTool(null); return 1;');
+    const pair = await ev(`const g = window.__v2.game; for (let y = ${Y} + 8; y < ${Y} + 30; y++) for (let x = ${X} + 1; x < ${X} + 20; x++) if (g.canPlace('well', x, y).ok && g.canPlace('tank', x + 7, y).ok) { const w = g.place('well', x, y, 'large'), t = g.place('tank', x + 7, y); if (w.ok && t.ok) return { x, y, W: 'B' + w.building.id, T: 'B' + t.building.id }; } return null;`);
+    if (!pair) check('PHASE C: free pair of spots', false, 'none');
+    else {
+      await center(1, pair.x + 3.5, pair.y); await sleep(300);
+      const scr = id => ev(`const v = window.__v2, n = v.game.nodeById('${id}'), f = v.game.footprintOf(n.b.type), c = v.tc(n.b.x + (f[0] - 1) / 2, n.b.y + (f[1] - 1) / 2); return v.camApi.w2s(c.x, c.y - 8);`);
+      const SC = () => ev(`const v = window.__v2; return { state: v.touch.state, a: v.ui.a, b: v.ui.b, lines: v.game.lines.length, cash: v.game.s.cash, cf: !document.querySelector('#confirm').hidden ? document.querySelector('#cf-text').textContent : null, route: v.ui.route && { ok: v.ui.route.ok, cost: v.ui.route.cost } };`);
+      await ev("const v = window.__v2; v.setTool('pipe', 0); return 1;"); await sleep(900);
+      const pts = await ev('const s = window.__v2.view.scene; return s.startPts ? s.startPts.map(p => p.id) : [];');
+      check('PC1 pipe tool armed: the connection points are lit (wells / tanks / open ends)', pts.includes(pair.W) && pts.includes(pair.T), pts.length + ' points: ' + pts.slice(0, 6).join(','));
+      const ws = await scr(pair.W), ts = await scr(pair.T), n0 = (await SC()).lines;
+      send([[{ slot: 0, ...D(ws) }], [{ slot: 0, up: true }]]); await sleep(500); send([[{ slot: 0, ...D(ts) }], [{ slot: 0, up: true }]]); await sleep(500); const tt = await SC();
+      check('PC2 no two-tap construction: tap well, tap tank -> no pipe, nothing attached', tt.lines === n0 && tt.a === null, JSON.stringify(tt));
+      const c0 = await cam(), cash0 = (await SC()).cash, fr = [[{ slot: 0, ...D(ws) }]];
+      for (let i = 1; i <= 10; i++) fr.push([{ slot: 0, ...D({ x: ws.x + (ts.x - 28 - ws.x) * i / 10, y: ws.y + (ts.y - ws.y) * i / 10 }) }]); send(fr); await sleep(400);
+      const mid = await SC(), c1 = await cam();
+      check('PC3 hold + drag: state PIPE_DRAG, pipe attached to the well, target acquired, live cost bar with $, camera LOCKED', mid.state === 'PIPE_DRAG' && mid.a === pair.W && mid.b === pair.T && !!mid.route && mid.route.ok && /\$/.test(mid.cf || '') && c0.x === c1.x && c0.y === c1.y && c0.z === c1.z, JSON.stringify(mid));
+      try { fs.writeFileSync('results/phaseC-drag.png', execSync('adb exec-out screencap -p')); } catch (e) {}
+      send([[{ slot: 0, up: true }]]); await sleep(900); const fin = await SC();
+      check('PC4 release on the valid target builds exactly one pipe and charges the previewed cost; state IDLE', fin.lines === n0 + 1 && Math.abs((cash0 - fin.cash) - mid.route.cost) < 60 && fin.state === 'IDLE' && fin.a === null, 'pipes ' + n0 + '->' + fin.lines + ' charged ' + (cash0 - fin.cash).toFixed(0) + ' vs ' + mid.route.cost);
+      await ev('const v = window.__v2; v.cancel(); v.setTool(null); return 1;');
+      // second finger (only where multi-touch injection reaches the app): the pipe is dropped, nothing is built
+      if (multi) {
+        const nw = await ev(`const g = window.__v2.game; for (let y = ${Y} + 8; y < ${Y} + 30; y++) for (let x = ${X} + 1; x < ${X} + 20; x++) if (g.canPlace('well', x, y).ok && g.canPlace('tank', x + 7, y).ok) { const w = g.place('well', x, y, 'large'), t = g.place('tank', x + 7, y); if (w.ok && t.ok) return { x, y, W: 'B' + w.building.id, T: 'B' + t.building.id }; } return null;`);
+        if (nw) { await center(1, nw.x + 3.5, nw.y); await sleep(300); await ev("window.__v2.setTool('pipe', 0); return 1;"); await sleep(300); const w2 = await scr(nw.W), t2 = await scr(nw.T), l0 = (await SC()).lines;
+          sendM([[{ slot: 0, ...D(w2) }], [{ slot: 0, ...D({ x: w2.x + 30, y: w2.y + 10 }) }], [{ slot: 0, ...D({ x: ts.x, y: w2.y + 20 }) }]]); await sleep(250); const cA = await cam();
+          sendM([[{ slot: 0, ...D({ x: ts.x, y: w2.y + 20 }) }, { slot: 1, x: D({ x: 300, y: 600 }).x, y: D({ x: 300, y: 600 }).y }]]); await sleep(400); const sS = await SC(), cB = await cam();
+          sendM([[{ slot: 1, up: true }], [{ slot: 0, up: true }]]); await sleep(700); const sE = await SC();
+          check('PC5 second finger during a pipe drag: PINCH, camera still on arrival, nothing built when both lift', sS.state === 'PINCH' && cA.x === cB.x && cA.y === cB.y && sE.lines === l0, 'state ' + sS.state + ' pipes ' + l0 + '->' + sE.lines); }
+        await ev('const v = window.__v2; v.cancel(); v.setTool(null); return 1;');
+      } else console.log('PC5 second-finger check skipped: multi-touch injection unavailable on this emulator (reported, not counted)');
+      // pipe info panel from the app's own simulation
+      const info = await ev(`const v = window.__v2, g = v.game, L = g.lines[g.lines.length - 1]; v.select({ kind: 'line', id: L.id, k: L.cells[Math.floor(L.cells.length / 2)] }); const rows = [...document.querySelectorAll('#pn-rows li')].map(li => li.querySelector('small').textContent + ' ' + li.querySelector('b').textContent); const h = g.lineHyd(L, L.cells[Math.floor(L.cells.length / 2)]); const st = g.pipeStatus(L, h); v.select(null); return { rows, st, d: Math.round(h.diameter * 1000) };`);
+      check('PC6 pipe info panel shows diameter and an operating status from the simulation', info.rows.some(r => r.startsWith('القطر') && r.includes(String(info.d))) && info.rows.some(r => r.startsWith('الحالة')) && info.rows.length >= 10, info.rows.join(' | ').slice(0, 300) + ' [' + info.st + ']');
+      const perf = await ev(`const v = window.__v2; v.ui.a = '${pair.W}'; v.ui.dragging = true; v.ui.routeCache = new Map(); v.ui.dragKey = ''; const t0 = performance.now(); for (let i = 0; i < 200; i++) v.pipeDragMove({ x: 60 + (i * 7) % 250, y: 220 + (i * 13) % 300 }); const dm = (performance.now() - t0) / 200; v.ui.dragging = false; v.cancel(); return { dm };`);
+      check('PC7 performance on the Android WebView: a pointermove (target ranking + route + preview) stays cheap', perf.dm < 8, perf.dm.toFixed(3) + ' ms per move');
+    }
+    await ev('const v = window.__v2; v.select(null); v.cancel(); v.setTool(null); return 1;');
+  }
   const tr = await ev('return window.__v2.touch.log.slice();');
   const ok = new Set(['IDLE>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>IDLE', 'BUILDING_PLACEMENT>BUILDING_DRAG', 'BUILDING_DRAG>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>PAN', 'PAN>BUILDING_PLACEMENT', 'PINCH>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>PINCH', 'IDLE>PAN', 'IDLE>PIPE_DRAG', 'IDLE>BUILDING_DRAG', 'PAN>PINCH', 'PAN>IDLE', 'PINCH>PAN', 'PINCH>IDLE', 'PINCH>PINCH', 'PIPE_DRAG>IDLE', 'PIPE_DRAG>PINCH', 'BUILDING_DRAG>IDLE', 'BUILDING_DRAG>PINCH']);
   check('every state change was a legal one', tr.every(x => ok.has(x)), [...new Set(tr)].join(', '));
