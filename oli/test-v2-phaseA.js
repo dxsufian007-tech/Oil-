@@ -30,7 +30,7 @@ let pass = 0; const log = m => { pass++; console.log('ok   ' + m); };
   assert(L0, 'layout'); const { X, Y } = L0;
 
 
-  const OKSTATE = ['IDLE', 'PAN', 'PINCH', 'PIPE_DRAG', 'BUILDING_DRAG'];
+  const OKSTATE = ['IDLE', 'PAN', 'PINCH', 'PIPE_DRAG', 'BUILDING_DRAG', 'BUILDING_PLACEMENT'];
   const fingers = new Map();
   const all = () => [...fingers].map(([id, p]) => ({ x: p.x, y: p.y, id }));
   const down = async (id, x, y) => { fingers.set(id, { x, y }); await TE('touchStart', all()); };
@@ -82,7 +82,7 @@ let pass = 0; const log = m => { pass++; console.log('ok   ' + m); };
       const st0 = await state(); assert.strictEqual(st0, sc, 'precondition ' + st0);
       await cancelAll(); await settle(); const st1 = await state(), cs = await bounds();
       await G(() => { window.__v2.setTool(null); window.__v2.cancel && window.__v2.cancel(); });
-      assert.strictEqual(st1, 'IDLE', sc + ': after touchCancel the state is ' + st1); assert(cs.ok);
+      assert(['IDLE', 'BUILDING_PLACEMENT'].includes(st1) && (sc === 'BUILDING_DRAG' || st1 === 'IDLE'), sc + ': after touchCancel the state is ' + st1);   // a tool still armed = BUILDING_PLACEMENT (Phase B) assert(cs.ok);
       // the next gesture works normally
       await reset(1); const s = { x: 200, y: 400 }, w0 = await s2w(s); await down(1, s.x, s.y); await move(1, s.x + 50, s.y); await fr(); const w1 = await s2w({ x: s.x + 50, y: s.y }); await up(1); await settle();
       assert(dist(w0, w1) < 0.01 && await state() === 'IDLE', sc + ': next pan after cancel is broken');
@@ -138,7 +138,7 @@ let pass = 0; const log = m => { pass++; console.log('ok   ' + m); };
         prev = cs;
       }
       for (const id of [...fingers.keys()]) await up(id); fingers.clear(); await settle();
-      assert.strictEqual(await state(), 'IDLE', 'round ' + round + ': stuck in ' + await state());
+      assert(['IDLE', 'BUILDING_PLACEMENT'].includes(await state()), 'round ' + round + ': stuck in ' + await state());
       const diag = await G(() => { const v = window.__v2; const d = { sel: v.ui.sel && v.ui.sel.kind, tool: v.ui.tool, panel: !document.querySelector('#panel').hidden }; v.select(null); v.setTool(null); return d; }); await settle();   // taps in the fuzz may have opened the info panel (it covers the lower half of the screen)
       const s = { x: 200, y: 300 }, w0 = await s2w(s), c0 = await cam(); await down(1, s.x, s.y); await move(1, s.x + 33, s.y + 21); await fr(); const w1 = await s2w({ x: s.x + 33, y: s.y + 21 }); await up(1); await settle();
       const c1 = await cam(); const exp = await A(([x, y, dx, dy]) => { const v = window.__v2, c = v.view.cam, sx = c.scrollX, sy = c.scrollY; c.setScroll(x - dx / c.zoom, y - dy / c.zoom); v.camApi.clamp(); const r = [c.scrollX, c.scrollY]; c.setScroll(sx, sy); return r; }, [c0.x, c0.y, 33, 21]);

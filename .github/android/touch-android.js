@@ -188,7 +188,7 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
     await ev('window.__v2.select(null); return 1;');
   }
   const tr = await ev('return window.__v2.touch.log.slice();');
-  const ok = new Set(['IDLE>PAN', 'IDLE>PIPE_DRAG', 'IDLE>BUILDING_DRAG', 'PAN>PINCH', 'PAN>IDLE', 'PINCH>PAN', 'PINCH>IDLE', 'PINCH>PINCH', 'PIPE_DRAG>IDLE', 'PIPE_DRAG>PINCH', 'BUILDING_DRAG>IDLE', 'BUILDING_DRAG>PINCH']);
+  const ok = new Set(['IDLE>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>IDLE', 'BUILDING_PLACEMENT>BUILDING_DRAG', 'BUILDING_DRAG>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>PAN', 'PAN>BUILDING_PLACEMENT', 'PINCH>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>PINCH', 'IDLE>PAN', 'IDLE>PIPE_DRAG', 'IDLE>BUILDING_DRAG', 'PAN>PINCH', 'PAN>IDLE', 'PINCH>PAN', 'PINCH>IDLE', 'PINCH>PINCH', 'PIPE_DRAG>IDLE', 'PIPE_DRAG>PINCH', 'BUILDING_DRAG>IDLE', 'BUILDING_DRAG>PINCH']);
   check('every state change was a legal one', tr.every(x => ok.has(x)), [...new Set(tr)].join(', '));
   check('no JavaScript errors during the touch tests', errors.length === 0, errors.slice(0, 3).join(' | ') || 'none');
   try { fs.writeFileSync('results/touch.png', execSync('adb exec-out screencap -p')); } catch (e) {}

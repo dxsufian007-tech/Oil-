@@ -126,7 +126,7 @@ let pass = 0; const log = m => { pass++; console.log('ok   ' + m); };
   const dd = await cdp.send('Runtime.evaluate', { expression: 'document' }), dl = await cdp.send('DOMDebugger.getEventListeners', { objectId: dd.result.objectId });
   const touchy = l => /touch|pointer|mouse/.test(l.type), list = [...canv.listeners.filter(touchy).map(l => 'canvas:' + l.type), ...wl.listeners.filter(touchy).map(l => 'window:' + l.type), ...dl.listeners.filter(touchy).map(l => 'document:' + l.type)];
   const trans = await G(() => window.__v2.touch.log.slice());
-  const allowed = new Set(['IDLE>PAN', 'IDLE>PIPE_DRAG', 'IDLE>BUILDING_DRAG', 'PAN>PINCH', 'PAN>IDLE', 'PINCH>PAN', 'PINCH>IDLE', 'PINCH>PINCH', 'PIPE_DRAG>IDLE', 'PIPE_DRAG>PINCH', 'BUILDING_DRAG>IDLE', 'BUILDING_DRAG>PINCH']);
+  const allowed = new Set(['IDLE>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>IDLE', 'BUILDING_PLACEMENT>BUILDING_DRAG', 'BUILDING_DRAG>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>PAN', 'PAN>BUILDING_PLACEMENT', 'PINCH>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>PINCH', 'IDLE>PAN', 'IDLE>PIPE_DRAG', 'IDLE>BUILDING_DRAG', 'PAN>PINCH', 'PAN>IDLE', 'PINCH>PAN', 'PINCH>IDLE', 'PINCH>PINCH', 'PIPE_DRAG>IDLE', 'PIPE_DRAG>PINCH', 'BUILDING_DRAG>IDLE', 'BUILDING_DRAG>PINCH']);
   assert(trans.every(t => allowed.has(t)), 'unexpected transition: ' + trans.filter(t => !allowed.has(t)));
   log('ONE pipeline: touch/pointer/mouse listeners on the page = ' + (list.join(', ') || 'none') + ' (Phaser\'s own); every state change was a legal one (' + [...new Set(trans)].join(', ') + ')');
   assert.deepStrictEqual(errors, []);
