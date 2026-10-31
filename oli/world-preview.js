@@ -11,7 +11,7 @@
   const cv = document.getElementById('c'), ctx = cv.getContext('2d'), info = document.getElementById('info'), hud = document.getElementById('hud');
   const SR = world.regions.find(r => r.starter), cam = { x: SR.x0 + 160, y: SR.y0 + 160, z: 0.9 };
   const ui = { reg: true, zone: true, dev: false, heat: false, sel: null, facility: 'well', probe: null, scale: false };
-  let DPR = Math.min(2, window.devicePixelRatio || 1), VW = 0, VH = 0, dirty = true;
+  let DPR = Math.min(+qs.get('dpr') || 2, window.devicePixelRatio || 1), VW = 0, VH = 0, dirty = true;
   const level = () => world.levelForZoom(cam.z);
   const stats = { imgs: 0, regions: 0 };
 
@@ -162,7 +162,7 @@
   function draw() {
     dirty = false; const lv = level(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.lineJoin = 'round'; ctx.fillStyle = '#0c1015'; ctx.fillRect(0, 0, VW, VH);
     const b = bounds(), c0 = Math.max(0, Math.floor(b.x0 / C)), c1 = Math.min(CX - 1, Math.floor(b.x1 / C)), r0 = Math.max(0, Math.floor(b.y0 / C)), r1 = Math.min(CY - 1, Math.floor(b.y1 / C));
-    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; missingHi = 0;
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low'; missingHi = 0;
     if (!stats.firstDrawMs && ovStep < 99) stats.firstDrawMs = Math.round(performance.now());
     if (cam.z < 0.5) {                                  // the overview image as the backdrop (and the whole picture at FAR): only the visible part is drawn
       const z = cam.z, Xc = (cam.x - cam.y) * 32, Yc = (cam.x + cam.y) * 16, sc = z / OV_Z, ox = VW / 2 + (-OV_EX / OV_Z - Xc) * z, oy = VH / 2 + (0 - Yc) * z;
@@ -224,8 +224,11 @@
   tog('tReg', 'reg'); tog('tZone', 'zone'); tog('tDev', 'dev'); tog('tHeat', 'heat'); tog('tScale', 'scale');
   const fac = document.getElementById('fac'); for (const k in CFG.FACILITIES) fac.insertAdjacentHTML('beforeend', '<option value="' + k + '">' + k + ' ' + CFG.FACILITIES[k].fp.join('×') + '</option>'); fac.onchange = () => { ui.facility = fac.value; if (ui.probe) ui.probe.res = world.canBuildAt(ui.facility, ui.probe.x, ui.probe.y); dirty = true; };
 
-  function loop() { if (dirty) { const t = performance.now(); draw(); stats.lastDraw = performance.now() - t; } requestAnimationFrame(loop); }
-  window.__wp = { world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.imgs, genLeft: () => (demoDone && !ovQueue.length ? 0 : 1) + (busy.img || busy.reg ? 1 : 0), idle: () => pendingJobs() === 0 && demoDone, pending: pendingJobs, draw, toTile, sx, sy, hiLeft: () => missingHi };
+  // adaptive resolution: if real frames (not draw calls) are slow, the canvas resolution drops step by step (never below 0.75) so panning stays smooth on weak GPUs; it never goes up again within a session
+  const ft = []; let lastT = 0; stats.dprChanges = 0;
+  function adapt(now) { if (lastT && dirty) { ft.push(now - lastT); if (ft.length >= 12) { const m = ft.slice().sort((a, b) => a - b)[6]; ft.length = 0; if (m > 34 && DPR > 0.76 && !qs.get('fixdpr')) { DPR = Math.max(0.75, DPR * 0.72); stats.dprChanges++; resize(); } } } lastT = dirty ? now : 0; }
+  function loop(now) { adapt(now); if (dirty) { const t = performance.now(); draw(); stats.lastDraw = performance.now() - t; } requestAnimationFrame(loop); }
+  window.__wp = { dpr: () => DPR, setDpr(v) { DPR = v; resize(); }, world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.imgs, genLeft: () => (demoDone && !ovQueue.length ? 0 : 1) + (busy.img || busy.reg ? 1 : 0), idle: () => pendingJobs() === 0 && demoDone, pending: pendingJobs, draw, toTile, sx, sy, hiLeft: () => missingHi };
   const sp = qs.get('x'); if (sp) { cam.x = +qs.get('x'); cam.y = +qs.get('y'); cam.z = clampZ(+qs.get('z') || .9); }
   if (qs.get('dev')) { ui.dev = true; document.getElementById('tDev').classList.add('on'); }
   if (qs.get('scale')) { ui.scale = true; document.getElementById('tScale').classList.add('on'); }
