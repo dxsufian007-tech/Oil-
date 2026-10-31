@@ -4,7 +4,7 @@
   "description": "Oli - oil management game",
   "private": true,
   "scripts": {
-    "test": "node test-core.js && node test-p3.js && node test-p4.js && node test-p5.js && node test-p6.js && node test-p8.js && node test-p9.js && node test-p14.js && node test-p15.js && node test-p16.js && node test-pipe-types.js && node test-p22.js && node test-p23.js && node test-phase1.js && node test-phase2.js",
+    "test": "node test-core.js && node test-p3.js && node test-p4.js && node test-p5.js && node test-p6.js && node test-p8.js && node test-p9.js && node test-p14.js && node test-p15.js && node test-p16.js && node test-pipe-types.js && node test-p22.js && node test-p23.js && node test-phase1.js && node test-phase2.js && node test-phase2-final.js",
     "build:web": "node build-www.js",
     "android:sync": "node build-www.js && npx cap sync android"
   },

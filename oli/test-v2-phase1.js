@@ -1,7 +1,7 @@
 // Phase 1 on screen (real touch, phone): oil moves with the real currentFlow (Test 10), and the info panels of pipe / well / tank.
 const { chromium } = require('/tmp/legacy-pw.js');
 const assert = require('assert');
-const URL = process.argv[3] || 'file:///home/claude/oli/v2.html', OUT = process.argv[2] || '/tmp/oli-shots'; require('fs').mkdirSync(OUT, { recursive: true });
+const URL = process.argv[3] || 'file://' + __dirname + '/v2.html', OUT = process.argv[2] || '/tmp/oli-shots'; require('fs').mkdirSync(OUT, { recursive: true });
 const log = m => console.log('ok   ' + m);
 (async () => {
   const browser = await chromium.launch(), errors = [];

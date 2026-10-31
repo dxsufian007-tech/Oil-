@@ -50,6 +50,19 @@ const log = m => console.log('ok   ' + m);
   await page.screenshot({ path: `${OUT}/p2-pump-on.png` });
   log('2. pump panel: ' + Object.entries(p.rows).map(r => r.join(' ')).join(' | '));
 
+  // ---- 2b. phone-friendly: the pump is selected from several taps around its picture, and using the panel never moves the camera
+  const camNow = () => G(() => { const c = window.__v2.view.cam; return [c.scrollX, c.scrollY, c.zoom]; });
+  const oth = cell(IP + 6); let hit = 0, tries = 0;
+  for (const [dx, dy] of [[0, -10], [-22, -4], [22, -16], [-10, -26], [14, 4], [0, -34]]) {
+    await look(oth.x, oth.y); await tap(await sT(oth.x, oth.y)); const t1 = (await panel()).title; assert(!/^مضخة #/.test(t1), 'other tile first: ' + t1);
+    await look(pumpB.x, pumpB.y); const sp = await sT(pumpB.x, pumpB.y, 0); await tap({ x: sp.x + dx, y: sp.y + dy }); tries++; if (/^مضخة #/.test((await panel()).title)) hit++;
+  }
+  assert(hit >= 5, 'pump selectable from taps around its picture: ' + hit + '/' + tries); log('2b. pump selected by ' + hit + '/' + tries + ' taps around its picture (phone finger size)');
+  await look(pumpB.x, pumpB.y); await tap(await sT(pumpB.x, pumpB.y, -10)); const cam0 = await camNow();
+  for (const a of ['pumpToggle', 'pumpToggle']) { await tapEl('[data-act="' + a + '"]'); await wait(200); }
+  const cam1 = await camNow(); assert(cam0.every((v, i) => Math.abs(v - cam1[i]) < 1e-6), 'camera moved while using the pump panel: ' + cam0 + ' -> ' + cam1);
+  await A(id => { window.__v2.game.hyd.dirty = true; }, 0); await sim(10);
+  log('2c. camera unchanged while tapping the pump panel buttons: ' + cam0.map(v => v.toFixed(2)).join(','));
   // ---- 3. pump OFF through the panel button: boost disappears, the flow falls (not just a label)
   await tapEl('[data-act="pumpToggle"]'); await sim(40); await wait(300); p = await panel();
   const f2 = await flowAt(IA), ph2 = await A(id => { const g = window.__v2.game; return g.pumpHyd(g.buildings.find(b => b.id === id)); }, pumpB.id);

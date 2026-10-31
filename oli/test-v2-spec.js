@@ -1,7 +1,7 @@
 // Oli v2 - pipe system reference spec (cases A-L + full map), real touch on a phone. Core = the data, Phaser = the picture.
 const { chromium } = require('/tmp/legacy-pw.js');
 const assert = require('assert');
-const URL = process.argv[3] || 'file:///home/claude/oli/v2.html', OUT = process.argv[2] || '/tmp/oli-shots'; require('fs').mkdirSync(OUT, { recursive: true });
+const URL = process.argv[3] || 'file://' + __dirname + '/v2.html', OUT = process.argv[2] || '/tmp/oli-shots'; require('fs').mkdirSync(OUT, { recursive: true });
 const log = m => console.log('ok   ' + m);
 (async () => {
   const browser = await chromium.launch(), errors = [];
