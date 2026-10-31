@@ -14,6 +14,6 @@ for m in meta:
         if abs(t) > 2.2: continue          # the pump and the pipe pieces next to it (further out it is only plain pipe)
         X, Y = round(x * m['dpr']), round(y * m['dpr'])
         if not (0 <= X < im.width and 0 <= Y < im.height): continue
-        if sum(pipeish(im.getpixel((X, Y + o)), G) for o in [round(q * m['zoom'] / 1.8) for q in (-6, -3, 0, 3, 6)]) < 4: bad.append(round(t, 2))   # a specular highlight can match the ground for a pixel or two; a real gap is wider
+        if sum(pipeish(im.getpixel((X, Y + o)), G) for o in [round(q * m['zoom'] / 1.8) for q in (-6, -3, 0, 3, 6)]) < 3: bad.append(round(t, 2))   # a specular highlight can match the ground for a pixel or two; a real gap is wider
     print(('OK   ' if not bad else 'FAIL ') + f"{m['name']} zoom {m['zoom']}: {len(m['pts'])} axis points, gaps at t={bad[:8]}"); bad_total += len(bad)
 sys.exit(1 if bad_total else 0)

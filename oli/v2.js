@@ -260,12 +260,14 @@
     if (b.type === 'pump') return (b.dir || 0) < 2 ? 'pumpX' : 'pumpY';
     return b.kind === 'large' ? 'wellL' : b.kind === 'medium' ? 'wellM' : (b.id & 1) ? 'wellS2' : 'wellS';
   }
+  const PUMP_MAIN_SCALE = 1.2;
   function placeSprite(s, type, x, y, b) {
     const src = s.texture.getSourceImage(), ar = src.height / src.width;
     if (type === 'tank') { const dw = [138, 154, 166][clamp(((b && b.level) || 1) - 1, 0, 2)], dh = dw * ar, gx = (x - y) * 32, gy = (x + y + 2) * 16 + 5; s.setDisplaySize(dw, dh).setOrigin(.5, (dh - dw * .22) / dh).setPosition(gx, gy).setDepth(10 + gy); }
     else if (type === 'pump') {                                                 // inline pump: the pipe axis of the picture passes exactly through the tile centre (origin = that point), 2x texture shown at half size
       const P = (window.ART && ART.pump) || {}, flip = s.texture.key === 'pumpY', ox = (P.px != null ? (flip ? P.w - P.px : P.px) / P.w : .5), oy = P.py != null ? P.py / P.h : .6, p = tc(x, y);
-      s.setDisplaySize(src.width / 2, src.height / 2).setOrigin(ox, oy).setPosition(p.x, p.y).setDepth(10 + p.y + 52);   // above the pipe pieces on both sides (they are drawn at 26 + their y), so the pump body covers them and the pipes continue from its flanges
+      const pt = b && b.hadPipe ? b.hadPipe[2] : game.pipeType[idx(x, y)], f = pt ? PUMP_MAIN_SCALE : 1;      // on a main pipe the picture is a little bigger: its flanges then cover the join to the thicker pipe
+      s.setDisplaySize(src.width / 2 * f, src.height / 2 * f).setOrigin(ox, oy).setPosition(p.x, p.y).setDepth(10 + p.y + 52);   // above the pipe pieces on both sides (they are drawn at 26 + their y), so the pump body covers them and the pipes continue from its flanges
     }
     else { const dw = { large: 118, medium: 108 }[b && b.kind] || 96, dh = dw * ar, p = tc(x, y), gy = p.y + 6; s.setDisplaySize(dw, dh).setOrigin(.5, (dh - dw * .2) / dh).setPosition(p.x, gy).setDepth(10 + gy); }
   }
