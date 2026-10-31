@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Oli - World Preview</title>
+<style>
+:root{--bg:#10141a;--panel:#1b222c;--ink:#e8e2d2;--mut:#9aa3ad;--acc:#e6a13a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:13px system-ui,sans-serif;overflow:hidden;touch-action:none}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.bar{position:absolute;left:0;right:0;top:0;display:flex;flex-wrap:wrap;gap:6px;padding:8px;pointer-events:none}
+.bar>*{pointer-events:auto}
+button,select,input{font:inherit;color:var(--ink);background:var(--panel);border:1px solid #33404f;border-radius:8px;padding:8px 10px;min-height:38px}
+button.on{background:var(--acc);color:#222;border-color:var(--acc)}
+.panel{position:absolute;left:8px;right:8px;bottom:8px;min-height:64px;background:rgba(27,34,44,.94);border:1px solid #33404f;border-radius:12px;padding:10px 12px;max-height:44%;overflow:auto}
+.panel h4{margin:0 0 4px;font-size:14px}.panel .k{color:var(--mut)}
+.row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+#prog{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--panel);padding:14px 18px;border-radius:12px;border:1px solid #33404f}
+#hud{position:absolute;left:8px;right:8px;bottom:112px;text-align:right;color:var(--mut);font-size:11px;pointer-events:none}
+</style></head><body>
+<canvas id="c"></canvas>
+<div class="bar" id="bar">
+ <button data-z="FAR">Far</button><button data-z="MEDIUM">Medium</button><button data-z="CLOSE">Close</button>
+ <button id="tReg" class="on">Regions</button><button id="tZone" class="on">Refinery zones</button><button id="tDev">Geology (dev)</button><button id="tHeat">Oil odds (dev)</button>
+ <select id="fac"></select>
+</div>
+<div id="hud"></div>
+<div id="prog">Generating world…</div>
+<div class="panel" id="info">Tap the map: a tile shows terrain and whether the selected facility can be built there. Tap an oil field to inspect what the player may know.</div>
+<script src="worldmap.js"></script>
+<script src="world-preview.js"></script>
+</body></html>
