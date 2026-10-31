@@ -1,0 +1,11 @@
+10-31 20:24:39.000  4660  4707 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.oilgame/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+10-31 20:24:39.001  4660  4707 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+10-31 20:24:43.041  4660  4660 I Capacitor/Console: File: https://localhost/phaser.min.js - Line 1 - Msg: %c %c %c %c %c Phaser v3.80.1 (WebGL | Web Audio) %c https://phaser.io background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent
+10-31 20:25:50.842  6289  6324 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.oilgame/cache/WebView/Default/HTTP Cache/Code Cache/wasm: No such file or directory (2)
+10-31 20:25:50.842  6289  6324 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+10-31 20:25:50.842  6289  6324 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.oilgame/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+10-31 20:25:50.842  6289  6324 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+10-31 20:25:54.198  6289  6289 I Capacitor/Console: File: https://localhost/phaser.min.js - Line 1 - Msg: %c %c %c %c %c Phaser v3.80.1 (WebGL | Web Audio) %c https://phaser.io background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent
+10-31 20:27:20.133  7848  7904 E chromium: [ERROR:simple_version_upgrade.cc(152)] Failed to write a new fake index.
+10-31 20:27:20.133  7848  7893 E chromium: [ERROR:simple_version_upgrade.cc(152)] Failed to write a new fake index.
+10-31 20:27:22.388  7848  7848 I Capacitor/Console: File: https://localhost/phaser.min.js - Line 1 - Msg: %c %c %c %c %c Phaser v3.80.1 (WebGL | Web Audio) %c https://phaser.io background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent

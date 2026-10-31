@@ -1,0 +1,22 @@
+ENV {"ua":"Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36","dpr":2.625,"w":412,"h":866,"renderer":"WebGL","gl":"Android Emulator OpenGL ES Translator (Google SwiftShader)"}
+CAL device 1080x2400 dpr 2.625 offset css {"x":-0.000008719308027593797,"y":48.761884416852695}
+PASS 7. snap on reaching the target (tank A)  — {"b":"B2","ok":true,"reason":null}
+PASS 7. pipe end settled exactly on the connection point  — gap 0.00 px
+PASS 5. valid connection built on release (well -> tank A)  — pipes 1
+PASS 1. pipe end moved smoothly (max per drawn frame)  — max 23.7 world px per frame over 42 frames
+PERF frames during the drag: 42, median 83.3 ms (12 fps), 95th pct 150.0 ms
+PASS 8. no jumping to another target during the drag  — target sequence [null,"B2"]
+PASS 5. duplicate well -> tank A refused  — pipes 1 reason null
+PASS A. tank -> open pipe (released on free ground) is built, state OPEN  — {"a":"B5","b":"E3419","state":"OPEN","len":1380,"id":2}
+PASS D. drag from the open end continues the pipe  — {"a":"J3419","b":"E3422","state":"OPEN"}
+PASS G. deleting a pipe in the middle keeps the others; cut ends become OPEN  — {"n":2,"open":1,"bad":0}
+PASS 6. dragged out and back onto the start: nothing built, no preview, nothing attached  — {"a":null,"prev":0,"lines":1}
+PASS map: zooming out shows the whole map  — zoom 0.056
+PASS 3. two tanks side by side: aiming at C1 snaps to C1  — got B4
+PASS 3. two tanks side by side: aiming at C2 snaps to C2  — got B5
+PASS 4. tank behind the moving finger is not chosen  — target null
+PASS 2. slow drag (30 Android move events) reaches C2  — target B5
+PASS 2. very fast drag (1 move event) reaches C2  — target B5
+PASS 5. branch from the middle of the pipe to tank B builds a node  — pipes 2
+PASS 10. no JavaScript / WebGL / Canvas errors or warnings in the WebView  — none
+SUMMARY 18/18 PASS

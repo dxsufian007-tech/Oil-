@@ -1,0 +1,109 @@
+{
+ "env": {
+  "ua": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36",
+  "dpr": 2.625,
+  "w": 412,
+  "h": 866,
+  "renderer": "WebGL",
+  "gl": "Android Emulator OpenGL ES Translator (Google SwiftShader)"
+ },
+ "fails": 0,
+ "results": [
+  {
+   "name": "7. snap on reaching the target (tank A)",
+   "ok": true,
+   "info": "{\"b\":\"B2\",\"ok\":true,\"reason\":null}"
+  },
+  {
+   "name": "7. pipe end settled exactly on the connection point",
+   "ok": true,
+   "info": "gap 0.00 px"
+  },
+  {
+   "name": "5. valid connection built on release (well -> tank A)",
+   "ok": true,
+   "info": "pipes 1"
+  },
+  {
+   "name": "1. pipe end moved smoothly (max per drawn frame)",
+   "ok": true,
+   "info": "max 23.7 world px per frame over 42 frames"
+  },
+  {
+   "name": "8. no jumping to another target during the drag",
+   "ok": true,
+   "info": "target sequence [null,\"B2\"]"
+  },
+  {
+   "name": "5. duplicate well -> tank A refused",
+   "ok": true,
+   "info": "pipes 1 reason null"
+  },
+  {
+   "name": "A. tank -> open pipe (released on free ground) is built, state OPEN",
+   "ok": true,
+   "info": "{\"a\":\"B5\",\"b\":\"E3419\",\"state\":\"OPEN\",\"len\":1380,\"id\":2}"
+  },
+  {
+   "name": "D. drag from the open end continues the pipe",
+   "ok": true,
+   "info": "{\"a\":\"J3419\",\"b\":\"E3422\",\"state\":\"OPEN\"}"
+  },
+  {
+   "name": "G. deleting a pipe in the middle keeps the others; cut ends become OPEN",
+   "ok": true,
+   "info": "{\"n\":2,\"open\":1,\"bad\":0}"
+  },
+  {
+   "name": "6. dragged out and back onto the start: nothing built, no preview, nothing attached",
+   "ok": true,
+   "info": "{\"a\":null,\"prev\":0,\"lines\":1}"
+  },
+  {
+   "name": "map: zooming out shows the whole map",
+   "ok": true,
+   "info": "zoom 0.056"
+  },
+  {
+   "name": "3. two tanks side by side: aiming at C1 snaps to C1",
+   "ok": true,
+   "info": "got B4"
+  },
+  {
+   "name": "3. two tanks side by side: aiming at C2 snaps to C2",
+   "ok": true,
+   "info": "got B5"
+  },
+  {
+   "name": "4. tank behind the moving finger is not chosen",
+   "ok": true,
+   "info": "target null"
+  },
+  {
+   "name": "2. slow drag (30 Android move events) reaches C2",
+   "ok": true,
+   "info": "target B5"
+  },
+  {
+   "name": "2. very fast drag (1 move event) reaches C2",
+   "ok": true,
+   "info": "target B5"
+  },
+  {
+   "name": "5. branch from the middle of the pipe to tank B builds a node",
+   "ok": true,
+   "info": "pipes 2"
+  },
+  {
+   "name": "10. no JavaScript / WebGL / Canvas errors or warnings in the WebView",
+   "ok": true,
+   "info": "none"
+  }
+ ],
+ "perf": {
+  "frames": 42,
+  "medianMs": 83.33299999999872,
+  "p95Ms": 150,
+  "maxJump": 23.652541668077102
+ }
+}

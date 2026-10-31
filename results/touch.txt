@@ -1,0 +1,45 @@
+TOUCHDEVS /dev/input/event12 virtio_input_multi_touch_11 | /dev/input/event11 virtio_input_multi_touch_10 | /dev/input/event10 virtio_input_multi_touch_9 | /dev/input/event9 virtio_input_multi_touch_8 | /dev/input/event8 virtio_input_multi_touch_7 | /dev/input/event7 virtio_input_multi_touch_6 | /dev/input/event6 virtio_input_multi_touch_5 | /dev/input/event5 virtio_input_multi_touch_4 | /dev/input/event4 virtio_input_multi_touch_3 | /dev/input/event3 virtio_input_multi_touch_2 | /dev/input/event2 virtio_input_multi_touch_1 · screen 1080x2400
+TOUCHPROBE emu (/dev/input/event2 range): {"x":208.37611389160156,"y":410.2782897949219}
+TOUCH two-finger input via emu (/dev/input/event2)
+TOUCHCAL dpr 2.625 offset css {"x":-0.000008719308027593797,"y":48.76190621512279}
+PASS TOUCH PAN at zoom 0.5 follows the finger 1:1  — worst 0.039 css px (1 device px = 0.38)
+PASS TOUCH PAN at zoom 0.5: nothing moves after lifting  — [{"x":671.6401548245151,"y":1178.2103271642593,"z":0.5},{"x":671.6401548245151,"y":1178.2103271642593,"z":0.5}]
+PASS TOUCH PAN at zoom 1 follows the finger 1:1  — worst 0.039 css px (1 device px = 0.38)
+PASS TOUCH PAN at zoom 1: nothing moves after lifting  — [{"x":648.7724547315935,"y":1292.533737190528,"z":1},{"x":648.7724547315935,"y":1292.533737190528,"z":1}]
+PASS TOUCH PAN at zoom 1.5 follows the finger 1:1  — worst 0.039 css px (1 device px = 0.38)
+PASS TOUCH PAN at zoom 1.5: nothing moves after lifting  — [{"x":641.1498880339531,"y":1330.6415405326175,"z":1.5},{"x":641.1498880339531,"y":1330.6415405326175,"z":1.5}]
+PASS TOUCH PAN -> PINCH: the second finger does not move the camera  — state PINCH
+PINCHDIAG drift per step (vs the points sent) 3.26 3.67 4.08 4.49 4.90 4.90 | vs the points the app received: 0.000 | largest gap between a sent and a received finger position: 0.18 css px
+PASS TOUCH PINCH: the world point under the two fingers (as the app receives them) stays under them  — drift 0.000 css px; zoom 1.19 1.34 1.49 1.65 1.80 1.80
+PASS TOUCH PINCH zooms in as the fingers spread  — zoom 1.19 1.34 1.49 1.65 1.80 1.80, drift vs the points sent 4.90 css px (see PINCHDIAG)
+PASS TOUCH PINCH -> PAN: lifting the second finger does not move the camera  — state PAN
+PASS TOUCH PINCH -> PAN: the remaining finger pans 1:1 from where it is (against the positions the app received)  — drift 0.000 css px; input lag sent-vs-received at most 0.2 css px (emulator input path)
+PASS TOUCH PINCH: no tap fired afterwards
+PASS TOUCH EDGE: the view stays on the map, no jump, turning back moves at once  — max step 22.9, back 32.3
+PASS TOUCH PIPE_DRAG: camera unchanged, pipe built on release  — state PIPE_DRAG, pipes 0 -> 1
+PASS TOUCH BUILDING_DRAG (new tank): only the preview follows the finger, camera unchanged  — state BUILDING_DRAG preview {"x":54,"y":40}
+PASS TOUCH BUILDING_DRAG (selected tank): tap selects it, dragging moves it, camera unchanged  — {"selOk":true,"sM":"BUILDING_DRAG","from":{"x":51,"y":37},"to":{"x":51,"y":39,"problems":0}}
+PASS TOUCH DRAG ending on a tank does not select it (no click after a drag)
+PASS TOUCH LARGE FINGER: an 8 px wobble on a tank is still a tap (selects it)
+PASS TOUCH A 24 px move is a drag: the map moved exactly 24 px, nothing selected  — moved 24.01
+PASS TOUCH TAP AFTER DRAG: the drag selected nothing; the tap right after selects the tank once
+PASS TOUCH DRAG AFTER TAP: pans 1:1 (30,20 px), keeps the selection  — [{"x":593.9047546386719,"y":990.8571472167969,"z":1},{"x":563.7955945563792,"y":970.6600106314188,"z":1}]
+PASS TOUCH RAPID TOUCH SEQUENCE: 6 quick taps end IDLE and the next pan is 1:1  — state IDLE
+PASS TOUCH RAPID SECOND FINGER: touching and lifting a 2nd finger quickly does not move the camera or zoom; the first finger then pans exactly as far as the app received it  — state PAN, sent 30.0, app received 26.30, camera moved 26.30 css px
+PASS TOUCH RAPID FINGER RELEASE: both fingers lifted in consecutive frames -> IDLE  — state IDLE
+PASS TOUCH PB1 select a building: tank tool armed, state BUILDING_PLACEMENT, no preview yet  — {"state":"BUILDING_PLACEMENT","tool":"tank","pending":null,"ghost":false,"snapped":false,"n":4,"cash":9997155.133935263}
+PASS TOUCH PB2/PB3 preview appears under the finger and follows it to the tile; building not created yet  — {"state":"BUILDING_DRAG","tool":"tank","pending":{"x":55,"y":36},"ghost":true,"snapped":false,"n":4,"cash":9997154.348430106}
+PASS TOUCH PB14 camera stays LOCKED while the building is dragged  — cam 401.9,1070.9 -> 401.9,1070.9
+PASS TOUCH PB4/PB12 release on a valid tile builds exactly one tank and charges the previewed cost; tool released  — n 4->5 charged 1857 vs 1856
+PASS TOUCH PB5/PB9 invalid spot: preview stays, nothing built, nothing charged, tool stays armed, nothing attracts it  — {"state":"BUILDING_PLACEMENT","tool":"tank","pending":{"x":58,"y":39},"ghost":true,"snapped":false,"n":5,"cash":9995296.092974707}
+PASS TOUCH PB perf on Android WebView: placement check and snap search are cheap  — placement 0.0458 ms, snap 0.0997 ms
+PASS TOUCH PC1 pipe tool armed: the connection points are lit (wells / tanks / open ends)  — 4 points: B6,B11,B12,J5233
+PASS TOUCH PC2 no two-tap construction: tap well, tap tank -> no pipe, nothing attached  — {"state":"IDLE","a":null,"b":null,"lines":1,"cash":9989078.734667063,"cf":null,"route":null}
+PASS TOUCH PC3 hold + drag: state PIPE_DRAG, pipe attached to the well, target acquired, live cost bar with $, camera LOCKED  — {"W":"B11","T":"B12","ws":{"x":94.09524536132812,"y":369.1428527832031},"ts":{"x":318.0952453613281,"y":497.1428527832031},"state":"PIPE_DRAG","a":"B11","b":"B12","lines":1,"cash":9989078.219500368,"cf":"أنبوب · 7 قطعة · التكلفة $766 · الرصيد $9,989,078 ← $9,988,312","route":{"ok":true,"cost":766}}
+PASS TOUCH PC4 release on the valid target builds exactly one pipe and charges the previewed cost; state IDLE  — pipes 1->2 charged 767 vs 766
+PASS TOUCH PC5 second finger during a pipe drag: PINCH, camera still on arrival, nothing built when both lift  — state PINCH pipes 2->2
+PASS TOUCH PC6 pipe info panel shows diameter and an operating status from the simulation  — من بئر | إلى نهاية مفتوحة | التدفق 0.0 برميل/د | السعة 25 برميل/د | الاستخدام 0% · طبيعي | ضغط الدخول 24.0 بار | ضغط الخروج 24.0 بار | فقد الضغط 0.0 بار | الحالة طبيعي | الاتصال طرف مفتوح | الطول 720 م · 7 قطعة | القطر 180 mm [NORMAL]
+PASS TOUCH PC7 performance on the Android WebView: a pointermove (target ranking + route + preview) stays cheap  — 0.652 ms per move
+PASS TOUCH every state change was a legal one  — IDLE>PAN, PAN>IDLE, PAN>PINCH, PINCH>PAN, IDLE>BUILDING_PLACEMENT, BUILDING_PLACEMENT>BUILDING_DRAG, BUILDING_DRAG>BUILDING_PLACEMENT, BUILDING_PLACEMENT>IDLE, IDLE>PIPE_DRAG, PIPE_DRAG>IDLE, PIPE_DRAG>PINCH
+PASS TOUCH no JavaScript errors during the touch tests  — none
+TOUCH SUMMARY 39/39 PASS
