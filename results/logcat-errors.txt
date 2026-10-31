@@ -1,0 +1,9 @@
+10-31 20:59:06.266  3363  3572 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.mappreview/cache/WebView/Default/HTTP Cache/Code Cache/wasm: No such file or directory (2)
+10-31 20:59:06.266  3363  3572 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+10-31 20:59:06.266  3363  3579 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.mappreview/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+10-31 20:59:06.266  3363  3579 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+10-31 20:59:08.338  3363  3363 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+10-31 20:59:08.339  3363  3363 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+10-31 20:59:08.339  3363  3363 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+10-31 20:59:08.340  3363  3363 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+10-31 20:59:08.340  3363  3363 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')

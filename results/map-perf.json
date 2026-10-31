@@ -1,0 +1,226 @@
+{
+ "env": {
+  "ua": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36",
+  "dpr": 2.625,
+  "w": 412,
+  "h": 866,
+  "mem": 10
+ },
+ "generation": {
+  "ms": 8114,
+  "built": 1
+ },
+ "baseline": {
+  "fps": 19.2,
+  "p95": 122.80000000000291
+ },
+ "dprAfterWarmup": {
+  "dpr": 0.75,
+  "changes": 3
+ },
+ "far": {
+  "draw": {
+   "avg": 3.620000000000073,
+   "p95": 11.400000000008731,
+   "max": 18.80000000000291,
+   "level": "FAR"
+  },
+  "pan": {
+   "frames": 48,
+   "fps": 16,
+   "avg": 64.36041666666672,
+   "p95": 105.59999999999127,
+   "max": 203.59999999999127,
+   "long": 34
+  }
+ },
+ "probe_map-far": {
+  "non": 79,
+  "n": 561,
+  "w": 309,
+  "h": 649,
+  "lost": false
+ },
+ "far_regions": {
+  "draw": {
+   "avg": 1.6599999999998545,
+   "p95": 9.89999999999418,
+   "max": 12.89999999999418,
+   "level": "FAR"
+  },
+  "pan": {
+   "frames": 42,
+   "fps": 14,
+   "avg": 72.14285714285714,
+   "p95": 149.1999999999971,
+   "max": 159.59999999999127,
+   "long": 36
+  }
+ },
+ "probe_map-far_regions": {
+  "non": 561,
+  "n": 561,
+  "w": 309,
+  "h": 649,
+  "lost": false
+ },
+ "medium": {
+  "draw": {
+   "avg": 2.7200000000000726,
+   "p95": 8.5,
+   "max": 29.09999999999127,
+   "level": "MEDIUM"
+  },
+  "pan": {
+   "frames": 40,
+   "fps": 13.333333333333334,
+   "avg": 75.47000000000007,
+   "p95": 163.5,
+   "max": 184,
+   "long": 32
+  }
+ },
+ "probe_map-medium": {
+  "non": 561,
+  "n": 561,
+  "w": 309,
+  "h": 649,
+  "lost": false
+ },
+ "close": {
+  "draw": {
+   "avg": 2.3299999999999272,
+   "p95": 14.30000000000291,
+   "max": 18.89999999999418,
+   "level": "CLOSE"
+  },
+  "pan": {
+   "frames": 49,
+   "fps": 16.333333333333332,
+   "avg": 61.516326530612304,
+   "p95": 120.90000000000873,
+   "max": 179.10000000000582,
+   "long": 32
+  }
+ },
+ "probe_map-close": {
+  "non": 561,
+  "n": 561,
+  "w": 309,
+  "h": 649,
+  "lost": false
+ },
+ "longpan_medium": {
+  "all": {
+   "n": 140,
+   "fps": 17.4,
+   "p95": 101.3,
+   "max": 160.4,
+   "over50": 91
+  },
+  "per": {
+   "MEDIUM": {
+    "n": 141,
+    "fps": 17.6,
+    "p95": 92.2,
+    "max": 160.4,
+    "over50": 91
+   }
+  },
+  "built": 56,
+  "memDeltaMB": 0,
+  "cam": {
+   "x": 1564,
+   "y": 1063,
+   "z": 0.35
+  },
+  "name": "longpan_medium"
+ },
+ "longpan_close": {
+  "all": {
+   "n": 136,
+   "fps": 17,
+   "p95": 107.9,
+   "max": 186.7,
+   "over50": 89
+  },
+  "per": {
+   "CLOSE": {
+    "n": 137,
+    "fps": 17.1,
+    "p95": 107.9,
+    "max": 186.7,
+    "over50": 89
+   }
+  },
+  "built": 54,
+  "memDeltaMB": 0,
+  "cam": {
+   "x": 399,
+   "y": 300,
+   "z": 1
+  },
+  "name": "longpan_close"
+ },
+ "zoom_in_out": {
+  "all": {
+   "n": 160,
+   "fps": 15.8,
+   "p95": 106.5,
+   "max": 168.2,
+   "over50": 119
+  },
+  "per": {
+   "FAR": {
+    "n": 114,
+    "fps": 16,
+    "p95": 106.5,
+    "max": 168.2,
+    "over50": 81
+   },
+   "MEDIUM": {
+    "n": 33,
+    "fps": 16.4,
+    "p95": 120.8,
+    "max": 144.7,
+    "over50": 25
+   },
+   "CLOSE": {
+    "n": 14,
+    "fps": 14.5,
+    "p95": 95.4,
+    "max": 95.4,
+    "over50": 13
+   }
+  },
+  "built": 80,
+  "memDeltaMB": 0,
+  "cam": {
+   "x": 960,
+   "y": 640,
+   "z": 0.004
+  },
+  "name": "zoom_in_out"
+ },
+ "timing": {
+  "firstDrawMs": 3766,
+  "genDoneMs": 8114,
+  "chunks": 243,
+  "world": [
+   1920,
+   1280
+  ],
+  "scale": 199.4805194805195,
+  "regions": 24,
+  "cached": 144,
+  "sites": 76
+ },
+ "probe_map-scale-chart": {
+  "non": 561,
+  "n": 561,
+  "w": 309,
+  "h": 649,
+  "lost": false
+ },
+ "memoryMB": 10
+}

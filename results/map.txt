@@ -1,0 +1,22 @@
+PASS the preview page is running in the WebView
+ENV {"ua":"Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36","dpr":2.625,"w":412,"h":866,"mem":10}
+PASS overview + starter regions are computed in the workers  — ready 8114 ms after page start (software-rendered emulator), first images 1
+BASELINE blank full-screen canvas, no map: 19.2 fps, p95 123 ms (this is the emulator ceiling)
+canvas resolution after warm-up: {"dpr":0.75,"changes":3}
+canvas probe map-far: {"non":79,"n":561,"w":309,"h":649,"lost":false}
+PASS FAR: level is FAR, draw avg 3.6 ms (p95 11.4, max 18.8), panning 16 fps, frame p95 106 ms, max 204 ms, frames over 50 ms: 34
+canvas probe map-far_regions: {"non":561,"n":561,"w":309,"h":649,"lost":false}
+PASS FAR_REGIONS: level is FAR_REGIONS, draw avg 1.7 ms (p95 9.9, max 12.9), panning 14 fps, frame p95 149 ms, max 160 ms, frames over 50 ms: 36
+canvas probe map-medium: {"non":561,"n":561,"w":309,"h":649,"lost":false}
+PASS MEDIUM: level is MEDIUM, draw avg 2.7 ms (p95 8.5, max 29.1), panning 13 fps, frame p95 164 ms, max 184 ms, frames over 50 ms: 32
+canvas probe map-close: {"non":561,"n":561,"w":309,"h":649,"lost":false}
+PASS CLOSE: level is CLOSE, draw avg 2.3 ms (p95 14.3, max 18.9), panning 16 fps, frame p95 121 ms, max 179 ms, frames over 50 ms: 32
+PASS long pan at MEDIUM across the world (1564,1063): 17.4 fps, p95 101.3 ms, max 160.4 ms, frames > 50 ms: 91/140, detail images built 56, heap 0 MB
+PASS long pan at CLOSE (400 tiles): 17 fps, p95 107.9 ms, max 186.7 ms, frames > 50 ms: 89/136, detail images built 54, heap 0 MB
+PASS zoom out->in->out over the whole range, per level: {"FAR":"16fps/p95 106.5ms","MEDIUM":"16.4fps/p95 120.8ms","CLOSE":"14.5fps/p95 95.4ms"} · 15.8 fps, p95 106.5 ms, max 168.2 ms, frames > 50 ms: 119/160
+FAIL map first visible 3766 ms after page start; whole world 8114 ms; world 1920x1280 tiles = 199.5x the 140x88 map; 243 chunks, 24 regions, 76 oil sites
+canvas probe map-scale-chart: {"non":561,"n":561,"w":309,"h":649,"lost":false}
+PASS JS heap after the whole test: 10 MB
+PASS draw time stays interactive at every level (avg < 60 ms even on the software emulator)  — worst avg 3.6 ms
+PASS no JavaScript errors
+MAP SUMMARY 12/13 PASS
