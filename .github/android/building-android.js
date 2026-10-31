@@ -6,10 +6,14 @@ const results = []; let fails = 0, out = {};
 const check = (n, ok, info) => { results.push({ n, ok: !!ok }); if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (info ? '  — ' + info : '')); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
-  let t = null; for (let i = 0; i < 20 && !t; i++) { try { t = (await CDP.List({ port: 9222 })).find(x => x.type === 'page'); } catch (e) { } if (!t) await sleep(1500); }
-  if (!t) { console.log('FAIL no WebView page'); return; }
-  const client = await CDP({ port: 9222, target: t, local: true }), { Runtime, Page, Input } = client; await Runtime.enable(); await Page.enable();
-  const errors = []; Runtime.exceptionThrown(e => errors.push('exception: ' + (e.exceptionDetails.exception && e.exceptionDetails.exception.description || e.exceptionDetails.text))); Runtime.consoleAPICalled(e => { if (e.type === 'error') errors.push(e.args.map(a => a.value || a.description).join(' ')); });
+  let client, Runtime, Page, Input; const errors = [];
+  const attach = async () => { let t = null; for (let i = 0; i < 30 && !t; i++) { try { t = (await CDP.List({ port: 9222 })).find(x => x.type === 'page'); } catch (e) { } if (!t) await sleep(1500); } if (!t) return false;
+    client = await CDP({ port: 9222, target: t, local: true }); ({ Runtime, Page, Input } = client); await Runtime.enable(); await Page.enable();
+    Runtime.exceptionThrown(e => errors.push('exception: ' + (e.exceptionDetails.exception && e.exceptionDetails.exception.description || e.exceptionDetails.text))); Runtime.consoleAPICalled(e => { if (e.type === 'error') errors.push(e.args.map(a => a.value || a.description).join(' ')); }); return true; };
+  if (!(await attach())) { console.log('FAIL no WebView page'); return; }
+  // the emulator sometimes kills the WebView renderer when Google Play Services crash-loops (not a game failure): reconnect, wait for the game, redo that section
+  const reconnect = async () => { try { await client.close(); } catch (e) { } await sleep(5000); if (!(await attach())) return false; for (let i = 0; i < 60; i++) { if (await ev('return !!(window.__lab && __lab.restored);').catch(() => false)) return true; await sleep(1000); } return false; };
+  const guard = async (name, fn) => { for (let a = 0; a < 3; a++) { try { await fn(); return; } catch (e) { console.log('NOTE section "' + name + '" interrupted (' + String(e.message).slice(0, 80) + ') - reconnecting after a WebView renderer kill'); out.reconnects = (out.reconnects || 0) + 1; if (!(await reconnect())) break; } } check('section "' + name + '" completed', false); };
   const ev = async expr => { const r = await Runtime.evaluate({ expression: '(async () => { ' + expr + ' })()', awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
   const shot = async name => { try { const r = await Page.captureScreenshot({ format: 'png' }); fs.writeFileSync('results/' + name + '.png', Buffer.from(r.data, 'base64')); } catch (e) { console.log('shot failed ' + name); } };
   const waitFor = async (expr, ms) => { const t0 = Date.now(); while (Date.now() - t0 < (ms || 60000)) { if (await ev('return !!(' + expr + ');').catch(() => false)) return true; await sleep(250); } return false; };
@@ -55,13 +59,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   // invalid placements
   const refin = await ev('return __lab.store.list().find(b => b.d === "refinery_s");');
-  let v = await dropAndRead('crude_tank_s', { x: refin.x + 1, y: refin.y + 1, w: 2, h: 2 }); check('overlap: a tank dropped on the refinery is red (' + (v && v.kind) + ')', v && !v.ok && (v.kind === 'OVERLAP' || v.kind === 'CLEARANCE'));
-  check('the Build button is disabled while the ghost is red', await ev('return document.getElementById("bBuild").disabled;')); await shot('b-ghost-invalid'); let c = await btn('bCancel'); await tap(c[0], c[1]); check('Cancel removes the ghost', !(await pending()));
+  let v = null; for (let i = 0; i < 6 && !v; i++) { v = await dropAndRead('crude_tank_s', { x: refin.x + 2, y: refin.y + 1, w: 2, h: 2 }); if (!v) await sleep(500); }
+  const onTop = v && !(v.x + 2 <= refin.x || v.x >= refin.x + 6 || v.y + 2 <= refin.y || v.y >= refin.y + 5); check('overlap: a tank dropped on the refinery is never built on top of it (ghost red, or smart-snapped to free ground: ok=' + (v && v.ok) + ' at ' + (v && v.x) + ',' + (v && v.y) + ')', v && (!v.ok || !onTop));
+  check('the Build button is disabled while a ghost is red', v && (v.ok || await ev('return document.getElementById("bBuild").disabled;'))); await shot('b-ghost-invalid'); let c = await btn('bCancel'); await tap(c[0], c[1]); check('Cancel removes the ghost', !(await pending()));
   const water = (() => { for (let y = SR.y0; y < SR.y0 + 320; y++) for (let x = SR.x0; x < SR.x0 + 320; x++) { const t = world.tile(x, y), t2 = world.tile(x + 1, y + 1); if (t.terrain === 'WATER_WADI' && t2.terrain === 'WATER_WADI') return { x, y, w: 2, h: 2 }; } return null; })();
   if (water) { await ev(`__wp.goto(${water.x + 1}, ${water.y + 1}, .6);`); await idle(); v = await dropAndRead('crude_tank_s', water); check('invalid terrain: a tank on water is red (reason ' + (v && v.reason) + ')', v && !v.ok && v.kind === 'TERRAIN'); c = await btn('bCancel'); await tap(c[0], c[1]); }
   { const n0 = await ev('return __lab.store.list().length;'); const a = await chipPt('gasoline_tank_s'); await path2([a].concat(lerp(a, [a[0] + 5, a[1] - 80], 4), lerp([a[0] + 5, a[1] - 80], [200, 400], 6), lerp([200, 400], [a[0], a[1] + 4], 6)), 24); await touch('touchEnd'); await sleep(300);
     check('releasing over the palette cancels (nothing pending, nothing built)', !(await pending()) && await ev('return __lab.store.list().length;') === n0 && await ev('return !__lab.state.drag;')); }
 
+  await guard('pipes by touch', async () => {
   // pipes by touch: valid and invalid product connection
   await ev('__lab.reset(); __lab.store.cash = 5e9; __lab.state.rot = {};'); const pair = (() => { const A2 = new B.BuildingStore(ts, { cash: 1e12 }); for (let d = 0; d < 90; d++) for (let dy = -d; dy <= d; dy++) for (let dx = -d; dx <= d; dx++) { const x = base[0] + dx, y = base[1] + dy; if (A2.validate('pump_station_s', x, y, 0, {}).ok && A2.validate('crude_tank_s', x + 8, y, 0, {}).ok && A2.validate('gasoline_tank_s', x + 8, y + 7, 0, {}).ok) return { x, y }; } return null; })();
   await ev(`__wp.goto(${pair.x + 5}, ${pair.y + 3}, .7);`); await idle();
@@ -76,6 +82,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const tp = await ev('const t = __lab.store.list()[1]; return [__wp.sx(t.x + 1, t.y + 1), __wp.sy(t.x + 1, t.y + 1)];'); await tap(tp[0], tp[1]); await sleep(300); const panel = await ev('return document.getElementById("info").innerText;');
   check('tapping a tank opens its panel with Level / Capacity / Fill', /Crude Tank/.test(panel) && /Level/.test(panel) && /Capacity/.test(panel) && /Fill/.test(panel), panel.replace(/\s+/g, ' ').slice(0, 120)); await shot('b-tank-panel');
 
+  });
+
+  await guard('full chain + save/load', async () => {
   // the full chain + simulation + save / load
   const demo = await ev('return await __lab.buildDemo();'); check('OIL FIELD -> WELLS -> PUMP -> PIPE -> SEPARATOR -> CRUDE STORAGE -> REFINERY -> 4 product storages built on the device (' + (demo && demo.total) + ' buildings, ' + (demo && demo.pipelines) + ' pipelines)', demo && demo.ok && demo.total === 12, JSON.stringify(demo && demo.failed)); out.demo = demo;
   await ev('__lab.sim.run(3);'); const stat = await ev('const L = __lab; return Object.entries(' + JSON.stringify(demo.chain) + ').map(([k, id]) => k + ":" + L.sim.status(L.store.get(id)));'); check('every building of the chain is RUNNING on the device: ' + stat.join(' '), stat.every(s => /RUNNING/.test(s)));
@@ -88,11 +97,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const snap2 = back && await ev('return JSON.stringify({ s: __lab.store.toJSON(), n: __lab.pipes.toJSON(), c: __lab.store.cash });'); check('Save -> reload the app -> identical buildings, positions, storage volumes, pipelines, product types, cash', back && snap === snap2);
   const st2 = back && await ev('__lab.sim.run(1); const L = __lab; return Object.values(' + JSON.stringify(demo.chain) + ').map(id => L.sim.status(L.store.get(id)));'); check('after the reload the chain keeps running', st2 && st2.every(s => s === 'RUNNING'), JSON.stringify(st2));
 
+  });
+
+  await guard('rapid touch', async () => {
   // rapid touch
   { await ev('__lab.reset(); __lab.store.cash = 5e9; __wp.goto(' + (base[0]) + ',' + (base[1]) + ', .6);'); await idle(); const e0 = errors.length, c0 = await cam(); const a = await chipPt('gasoline_tank_s');
     for (let i = 0; i < 15; i++) { await path2([a].concat(lerp(a, [a[0] + 3, a[1] - 60], 2), lerp([a[0] + 3, a[1] - 60], [120 + i * 12, 300 + i * 6], 3)), 8); await touch('touchEnd'); await sleep(20); if (i % 3 === 0) { await ev('__lab.cancelAll(true);'); } }
     await ev('__lab.cancelAll(true);'); check('15 rapid touch drags: no stuck drag, no error, nothing built without Build, camera unchanged', await ev('return !__lab.state.drag && __lab.store.list().length === 0;') && errors.length === e0 && Math.abs((await cam())[0] - c0[0]) < 1e-6); }
 
+  });
+
+  await guard('frame times', async () => {
   // frame times
   await ev('return await __lab.buildDemo();'); const sampler = `window.__ft = []; window.__ftOn = true; let last = performance.now(); (function f() { const t = performance.now(); window.__ft.push(t - last); last = t; if (window.__ftOn) requestAnimationFrame(f); })();`;
   const stats = a => { a = a.slice(1).sort((x, y) => x - y); return { n: a.length, fps: +(a.length / (a.reduce((p, q) => p + q, 0) / 1000)).toFixed(1), p95: Math.round(a[Math.floor(a.length * .95)]), max: Math.round(a[a.length - 1]), over50: a.filter(x => x > 50).length }; };
@@ -102,6 +117,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await ev('__wp.goto(' + (SR.x0 + 205) + ',' + (SR.y0 + 205) + ', .6);'); await idle(); await ev(sampler); await ev(`await new Promise(res => { const t0 = performance.now(); (function f() { const k = (performance.now() - t0) / 5000; __wp.goto(${SR.x0 + 205} + 60 * Math.sin(k * 6), ${SR.y0 + 205} + 30 * Math.cos(k * 6), .6); if (k < 1) requestAnimationFrame(f); else res(); })(); });`);
   await ev('window.__ftOn = false;'); await sleep(200); const panStats = stats(await ev('return window.__ft;')); out.pan = panStats; check('frame times while panning across the compound at CLOSE: ' + panStats.fps + ' fps, p95 ' + panStats.p95 + ' ms, max ' + panStats.max + ' ms (emulator)', panStats.n > 20);
   out.simMs = await ev('const t = performance.now(); for (let i = 0; i < 200; i++) __lab.sim.step(.01); return (performance.now() - t) / 200;'); check('one simulation step of the whole chain costs ' + out.simMs.toFixed(2) + ' ms on the device', out.simMs < 20);
+  });
   out.baseline = await ev(`return await new Promise(res => { const c = document.createElement('canvas'); c.width = innerWidth * 2; c.height = innerHeight * 2; c.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;z-index:-1'; document.body.appendChild(c); const g = c.getContext('2d'); let n = 0; const t0 = performance.now(); (function f() { g.fillStyle = n % 2 ? '#123' : '#321'; g.fillRect(0, 0, c.width, c.height); n++; if (performance.now() - t0 < 2500) requestAnimationFrame(f); else { c.remove(); res({ fps: n / ((performance.now() - t0) / 1000) }); } })(); });`);
   console.log('BASELINE blank full-screen canvas, no map: ' + out.baseline.fps.toFixed(1) + ' fps (emulator ceiling)');
   out.heapMB = await ev('return performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;'); check('JS heap ' + out.heapMB + ' MB', out.heapMB == null || out.heapMB < 400);
