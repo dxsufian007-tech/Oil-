@@ -146,7 +146,15 @@
       SOLVE_DT: 0.2,                           // the network is re-solved at most this often (s) unless something changes
       HYST: 0.3, PATH_COST: 0.05,                               // bar a different tank must be better by before a well switches to it
       P_SUCTION: 1, SOLVER: { ITER: 40, TOL: 1e-4, DAMP: 0.9 },
-      P_MAX: 150                               // hard safety clamp for any pressure (bar)
+      P_MAX: 150,                              // hard safety clamp for any pressure (bar)
+      /* Phase 2: pipe utilisation bands (flow / capacity) and the thresholds behind the warnings */
+      UTIL: { BUSY: 0.6, HIGH: 0.8, BOTTLENECK: 0.95 },  // < BUSY normal | BUSY..HIGH busy | HIGH..BOTTLENECK high | >= BOTTLENECK bottleneck
+      WARN: { P_HIGH: 30, LOW_FLOW: 0.6, TANK_FILL: 0.8 },
+      /* Warning thresholds - each is derived from numbers already in this table, not invented:
+         P_HIGH 30 bar   - above the strongest reservoir (RES_BAR.large = 24 bar): a well alone can never make this, so HIGH PRESSURE means a pump is adding on top
+         LOW_FLOW 0.6    - a well pressure-limited below 60% of its potential (the same 60% where a pipe turns from Normal to Busy)
+         TANK_FILL 0.8   - back-pressure BASE + MAX*f^2 is 6.1 bar at 80% fill: more than 5 bar above an empty tank, i.e. the tank is pushing back clearly */
+      STATE_DT: 0.5                            // pipe states / warnings are refreshed after every solve, and at least this often (s)
     },
     /* Operating costs, in $ per MINUTE of game time (all easy to tune) */
     OPEX: {
@@ -1527,7 +1535,7 @@
     }
     hydSolve(wells) {
       const hy = this.hyd, net = this.net, now = this.s.time, F = hy.F, touched = hy.touched, ZERO = 0;
-      hy.clock = 0; hy.dirty = false; hy.solves++;
+      hy.clock = 0; hy.dirty = false; hy.solves++; hy.solved = true;
       // 1. choose a route for every well (lowest required pressure among tanks that have room, with hysteresis so it does not flap)
       const plans = [], keep = new Map(); for (const pl of hy.plans) keep.set(pl.w.id, pl);
       const used = new Set();
@@ -1690,6 +1698,9 @@
         b.boostNow = boost; b.kw = fin(boost * HC.BAR * Q / sp.eff / 1000);
       }
       for (const t of tanks) { const inst = t.inNow / Math.max(dt, 1e-9) * 60; t.inflow = (t.inflow || 0) + (inst - (t.inflow || 0)) * (1 - Math.exp(-dt / 1.5)); if (t.inflow < .01) t.inflow = 0; }
+      for (const b of pumps) this.pumpStep(b, dt);
+      hy.stateClock = (hy.stateClock || 0) + dt;
+      if (hy.solved || hy.stateClock >= HC.STATE_DT) { hy.solved = false; hy.stateClock = 0; this.updateNetState(); }
     }
 
     /* ---------- hydraulic read-only views ---------- */
@@ -1730,9 +1741,10 @@
       if (!dir) { const f = net.fnext[cells[cells.length - 1]], g = net.fnext[cells[0]]; if (f >= 0 && !inC.has(f)) dir = 1; else if (g >= 0 && !inC.has(g)) dir = -1; }
       const on = flow > 1e-3 && live, ord = dir < 0 ? own.slice().reverse() : own;
       let loss = 0; if (on) for (const k of own) loss += Math.max(0, fin(net.dpK[k]));
-      const pIn = on ? Math.max(0, fin(net.pressK[ord[0]])) : 0, usage = on && cap > 0 && cap < Infinity ? Math.min(1, flow / cap) : 0;
+      const st = on ? 0 : this.staticPressure(own[0]);
+      const pIn = on ? Math.max(0, fin(net.pressK[ord[0]])) : st, usage = on && cap > 0 && cap < Infinity ? Math.min(1, flow / cap) : 0;
       return Object.assign(base, { diameter: D, capacity: cap === Infinity ? 0 : cap, roughness: HC.ROUGH + (HC.ROUGH_WORN - HC.ROUGH) * (1 - cond),
-        currentFlow: on ? flow : 0, pressureIn: pIn, pressureOut: on ? Math.max(0, pIn - loss) : 0, pressureLoss: on ? Math.min(loss, pIn) : 0, usage, usageLevel: usage < 0.7 ? 'normal' : usage < 0.9 ? 'warning' : 'critical',
+        currentFlow: on ? flow : 0, pressureIn: pIn, pressureOut: on ? Math.max(0, pIn - loss) : st, static: !on, pressureLoss: on ? Math.min(loss, pIn) : 0, usage, usageLevel: this.utilLevel(usage),
         direction: on ? (dir || 1) : 0, from: on ? (dir < 0 ? bId : aId) : null, to: on ? (dir < 0 ? aId : bId) : null });
     }
     graphId(n) { return n.b != null ? 'B' + n.b : n.id; }          // graph node -> the same id the pipe entities use ('B<building>', 'J<tile>', 'E<tile>')
@@ -1754,6 +1766,80 @@
         return { id: e.id, a, b, tiles: e.tiles.length, from: h.from, to: h.to, flow: h.currentFlow, usage: h.usage }; });
       const paths = this.buildings.filter(b => b.type === 'well').map(w => { const pl = this.hyd.plans.find(p => p.w === w); return { well: w.id, tank: pl ? pl.r.tank.id : null, tiles: pl ? pl.r.path.slice() : [], flow: Math.max(0, fin(w.out)) }; });
       return { nodes, edges, paths };
+    }
+    /* ================= Phase 2: pump states, pipe states, valves, warnings (read the solver; never change its physics) ================= */
+    utilLevel(u) { const U = HC.UTIL; return !(u >= U.BUSY) ? 'normal' : u < U.HIGH ? 'busy' : u < U.BOTTLENECK ? 'high' : 'bottleneck'; }
+    // the pressure in a part of the network where nothing flows: no flow means no friction, so it equals what pushes on it - the strongest
+    // working well's reservoir pressure (a shut-in well), else the back-pressure of its tanks; nothing connected -> 0
+    staticPressure(k) {
+      const net = this.net, ci = k != null && k >= 0 ? net.compOf[k] : -1, c = ci >= 0 ? net.comps[ci] : null; if (!c) return 0;
+      const now = this.s.time; let p = 0;
+      for (const w of c.wells) if (!(w.ready > now) && !w.blocked) p = Math.max(p, this.resBar(w));
+      if (!p) for (const t of c.tanks) if (!(t.ready > now)) p = Math.max(p, Hyd.tankBack(t.amt / this.tankCap(t)));
+      return Math.min(HC.P_MAX, Math.max(0, fin(p)));
+    }
+    /* Pump state - each one is what the simulation is doing with it:
+       OFF       switched off by the player (or still being built): no boost, no power; oil may still pass through the casing (with its loss)
+       STARTING  switched on and in use, still spinning up: boost = curve x speed, power follows
+       RUNNING   in use at full speed: boost from H(Q) = H0 - kQ^2
+       OVERLOAD  flow at the pump's maximum: the head is ~0 and the pump caps the flow (elemCap)
+       STARVED   a tank with room is reachable but no oil reaches the pump inlet (no working well behind it): nothing to pump, no power
+       STOPPED   switched on but no tank with room behind it (outlet not connected / tanks full / pipe cut): spins down, no power */
+    pumpStep(b, dt) {
+      const sp = Hyd.pumpSpec(b.level), now = this.s.time, prev = b.state, ready = !(b.ready > now);
+      let st;
+      if (!ready || !b.enabled) st = 'OFF';
+      else if (b.used && b.flow > 0.05) st = b.flow >= sp.Qmax * 0.98 ? 'OVERLOAD' : b.spin < 0.97 ? 'STARTING' : 'RUNNING';
+      else {
+        const d = DIRV[b.dir || 0], k = idx(b.x, b.y), net = this.net, side = (dx, dy) => { const x = b.x + dx, y = b.y + dy; const ci = inb(x, y) ? net.compOf[idx(x, y)] : -1; return ci >= 0 ? net.comps[ci] : null; };
+        const out = side(d[0], d[1]), inn = side(-d[0], -d[1]), comps = new Set([out, inn, net.compOf[k] >= 0 ? net.comps[net.compOf[k]] : null].filter(Boolean));
+        let room = false, oil = false;
+        for (const c of comps) { for (const t of c.tanks) if (!(t.ready > now) && this.tankCap(t) - t.amt > 1e-6) room = true; for (const w of c.wells) if (!(w.ready > now) && !w.blocked && (w.r0 || 0) > 0) oil = true; }
+        st = room && (!oil || b.used) ? 'STARVED' : 'STOPPED';
+      }
+      if (st !== prev) { b.state = st; b.stateSince = now; this.events.push({ type: 'pumpState', id: b.id, from: prev || null, to: st }); }
+      if (b.flow > 0.05 && b.enabled && ready) b.runTime = (b.runTime || 0) + dt;
+      b.costTotal = (b.costTotal || 0) + Math.max(0, fin(b.kw)) * CFG.OPEX.pumpKwMin * dt / 60;      // the same $ the operating costs charge for it
+    }
+    pumpHyd(b) {
+      const n = this.pumpNet(b), flowing = (b.flow || 0) > 0.05, st = flowing ? 0 : this.staticPressure(idx(b.x, b.y));
+      const boost = Math.max(0, fin(b.boostNow || 0));
+      return { state: b.state || (b.enabled ? 'STOPPED' : 'OFF'), enabled: b.enabled !== false, flow: Math.max(0, fin(b.flow)), maxFlow: n.maxFlow,
+        pressureIn: flowing ? Math.max(0, fin(b.pIn)) : st, pressureOut: flowing ? Math.max(0, fin(b.pOut)) : st, boost, head: boost * HC.BAR / (HC.RHO * HC.G), headMax: Hyd.pumpSpec(b.level).H0,
+        kw: Math.max(0, fin(b.kw)), costPerMin: Math.max(0, fin(b.kw)) * CFG.OPEX.pumpKwMin, costTotal: b.costTotal || 0, runTime: b.runTime || 0, level: b.level, dir: b.dir || 0 };
+    }
+    /* a valve on pipe tile k: OPEN / PARTIAL / CLOSED (and MOVING while it travels), the flow through it, the pressure on both sides.
+       A closed valve cuts the network: each side then shows its own static pressure (the shut-in side, the tank side). */
+    valveHyd(k) {
+      const v = this.valve[k] | 0; if (!v || !this.pipe[k]) return null;
+      const tgt = HC.VALVE_POS[v - 1], pos = this.valvePos[k], net = this.net, flow = Math.max(0, fin(net.flowK[k]));
+      const status = Math.abs(tgt - pos) > 0.02 ? 'MOVING' : v === 3 ? 'CLOSED' : v === 2 ? 'PARTIAL' : 'OPEN';
+      if (flow > 1e-3) { const before = Math.max(0, fin(net.pressK[k])); return { k, state: v, status, opening: pos, flow, pressureBefore: before, pressureAfter: Math.max(0, before - Math.max(0, fin(net.dpK[k]))) }; }
+      const x = k % W, y = (k / W) | 0, sides = [];
+      for (let d = 0; d < 4; d++) { const nx = x + DIRV[d][0], ny = y + DIRV[d][1]; if (!inb(nx, ny)) continue; const nk = idx(nx, ny); if (net.compOf[nk] >= 0 && (this.pipe[nk] || this.occ[nk])) sides.push(nk); }
+      const ps = sides.map(nk => ({ p: this.staticPressure(nk), wells: (net.comps[net.compOf[nk]] || { wells: [] }).wells.length })).sort((a, b) => b.wells - a.wells || b.p - a.p);
+      return { k, state: v, status, opening: pos, flow: 0, pressureBefore: ps[0] ? ps[0].p : 0, pressureAfter: ps[1] ? ps[1].p : (v === 3 ? 0 : ps[0] ? ps[0].p : 0) };
+    }
+    /* Game state refreshed after each solve: every pipe's utilisation + status, and the warnings. Each warning names its cause in the
+       simulation and the thing it is about (so the UI can point at it); nothing is raised without that cause. */
+    updateNetState() {
+      const now = this.s.time, net = this.net, W_ = HC.WARN, out = [];
+      for (const L of this.lines) { const h = this.lineHyd(L); L.flowNow = h.currentFlow; L.util = h.usage; L.status = h.usageLevel; L.pIn = h.pressureIn; L.pOut = h.pressureOut;
+        if (h.usageLevel === 'bottleneck') out.push({ code: 'BOTTLENECK', kind: 'line', id: L.id, value: h.usage }); }
+      let hiK = -1, hiP = W_.P_HIGH; for (const L of this.lines) for (const k of L.cells) { const p = net.pressK[k]; if (p > hiP) { hiP = p; hiK = k; } }
+      if (hiK >= 0) { const L = this.lineAt(hiK); out.push({ code: 'HIGH_PRESSURE', kind: 'line', id: L ? L.id : null, k: hiK, value: hiP }); }
+      for (const b of this.buildings) {
+        if (b.type === 'well' && !(b.ready > now) && !b.blocked && b.target != null && b.lim === 'pressure' && (b.rate || 0) > 0 && (b.qt || 0) < W_.LOW_FLOW * b.rate) out.push({ code: 'LOW_PRESSURE', kind: 'b', id: b.id, value: (b.qt || 0) / b.rate });
+        else if (b.type === 'pump' && b.state === 'STARVED') out.push({ code: 'PUMP_STARVED', kind: 'b', id: b.id });
+        else if (b.type === 'tank' && !(b.ready > now)) { const f = b.amt / this.tankCap(b);
+          if (f >= W_.TANK_FILL && f < 1 && this.buildings.some(w => w.type === 'well' && w.target === b.id && w.lim === 'pressure')) out.push({ code: 'TANK_BACKPRESSURE', kind: 'b', id: b.id, value: Hyd.tankBack(f) }); }
+      }
+      if (this.vlist) for (const k of this.vlist) if (this.valve[k] === 3 && this.pipe[k]) {   // a closed valve that keeps oil from storage
+        const x = k % W, y = (k / W) | 0, cs = new Set(); for (let d = 0; d < 4; d++) { const nx = x + DIRV[d][0], ny = y + DIRV[d][1]; if (inb(nx, ny) && net.compOf[idx(nx, ny)] >= 0) cs.add(net.comps[net.compOf[idx(nx, ny)]]); }
+        const arr = [...cs], wells = arr.filter(c => c.wells.some(w => !(w.ready > now) && !w.blocked)), tanks = arr.filter(c => c.tanks.length);
+        if (wells.length && tanks.some(c => !wells.includes(c) || wells.length > 1)) out.push({ code: 'VALVE_CLOSED', kind: 'valve', k, id: this.lineAt(k) ? this.lineAt(k).id : null });
+      }
+      this.warnings = out;
     }
     pipeEdge(k) {
       const ed = this.net.edges.get(k), lvl = Math.max(1, this.pipeLvl[k]), f = this.net.flowK[k] || 0, o = {};
@@ -2193,7 +2279,7 @@
         areas: this.areas.map(a => [a.st, a.end, a.remaining]),
         valves: (() => { const out = []; for (let k = 0; k < this.valve.length; k++) if (this.valve[k] && this.pipe[k]) out.push([k, this.valve[k]]); return out; })(),
         pipeReady: (() => { const out = [], t = this.s.time; for (let k = 0; k < this.pipe.length; k++) if (this.pipe[k] && this.pipeReady[k] > t) out.push([k, +this.pipeReady[k].toFixed(2)]); return out; })(),
-        buildings: this.buildings.map(b => ({ id: b.id, type: b.type, x: b.x, y: b.y, level: b.level, amt: b.amt, invested: b.invested, kind: b.kind, pressure: b.pressure, condition: b.condition, quality: b.quality, area: b.area, qm: b.qm, built: b.built, ready: b.ready, dir: b.dir, enabled: b.enabled, hadPipe: b.hadPipe }))
+        buildings: this.buildings.map(b => ({ id: b.id, type: b.type, x: b.x, y: b.y, level: b.level, amt: b.amt, invested: b.invested, kind: b.kind, pressure: b.pressure, condition: b.condition, quality: b.quality, area: b.area, qm: b.qm, built: b.built, ready: b.ready, dir: b.dir, enabled: b.enabled, hadPipe: b.hadPipe, runTime: b.runTime, costTotal: b.costTotal }))
       };
     }
 
@@ -2228,7 +2314,7 @@
         this.fillOcc(b);
         b.level = clamp(Math.round(Number(b.level)) || 1, 1, CFG.MAX_LEVEL);
         if (b.type === 'tank') { b.amt = clamp(Number(b.amt) || 0, 0, this.tankCap(b)); b.qm = b.qm || 1; }
-        else if (b.type === 'pump') { b.level = clamp(b.level, 1, this.maxLevel(b)); b.dir = clamp(b.dir | 0, 0, 3); b.enabled = b.enabled !== false; b.spin = 0; b.flow = 0; b.kw = 0; b.boost = 0; b.pIn = 0; b.pOut = 0; b.qm = 1; b.amt = 0; }
+        else if (b.type === 'pump') { b.level = clamp(b.level, 1, this.maxLevel(b)); b.dir = clamp(b.dir | 0, 0, 3); b.enabled = b.enabled !== false; b.spin = 0; b.flow = 0; b.kw = 0; b.boost = 0; b.pIn = 0; b.pOut = 0; b.qm = 1; b.amt = 0; b.runTime = Math.max(0, fin(Number(b.runTime))); b.costTotal = Math.max(0, fin(Number(b.costTotal))); b.state = b.enabled ? 'STOPPED' : 'OFF'; }
         else {
           const a = this.areaAt(b.x, b.y);                      // saves from before exploration: the ground under a well counts as discovered
           if (a.st !== 2) { a.st = 2; if (a.kind === 'empty') { a.kind = 'small'; a.size = a.remaining = CFG.EXPLORE.SIZE.small; a.potential = CFG.EXPLORE.POTENTIAL.small; } }

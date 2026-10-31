@@ -68,10 +68,10 @@ let pass = 0; const done = m => { pass++; ok(m); };
   const { h, w, L } = line('large', 10, 0); run(h, 40, 'T3'); const p = h.lineHyd(L);
   assert(w.rate > p.capacity * 1.5, 'well can give more than the pipe carries');
   assert(p.currentFlow <= p.capacity + 1e-9 && p.currentFlow > p.capacity * 0.97, [p.currentFlow, p.capacity]);
-  assert.strictEqual(w.lim, 'capacity'); assert.strictEqual(p.usageLevel, 'critical');
-  const m = line('medium', 10, 0); run(m.h, 40, 'T3b'); const pm = m.h.lineHyd(m.L); assert.strictEqual(pm.usageLevel, 'warning', 'medium well on a branch pipe ~80%: ' + pm.usage);
+  assert.strictEqual(w.lim, 'capacity'); assert.strictEqual(p.usageLevel, 'bottleneck');     // Phase 2 bands: <60 normal, 60-80 busy, 80-95 high, >=95 bottleneck
+  const m = line('medium', 10, 0); run(m.h, 40, 'T3b'); const pm = m.h.lineHyd(m.L); assert.strictEqual(pm.usageLevel, 'high', 'medium well on a branch pipe ~82%: ' + pm.usage);
   const s = line('small', 10, 0); run(s.h, 40, 'T3c'); assert.strictEqual(s.h.lineHyd(s.L).usageLevel, 'normal');
-  done('Test 3: well ' + w.rate.toFixed(1) + ' bbl/min into a ' + p.capacity + ' bbl/min pipe -> ' + p.currentFlow.toFixed(1) + ' (usage ' + (p.usage * 100).toFixed(0) + '% critical); ' + (pm.usage * 100).toFixed(0) + '% -> warning; ' + (s.h.lineHyd(s.L).usage * 100).toFixed(0) + '% -> normal');
+  done('Test 3: well ' + w.rate.toFixed(1) + ' bbl/min into a ' + p.capacity + ' bbl/min pipe -> ' + p.currentFlow.toFixed(1) + ' (usage ' + (p.usage * 100).toFixed(0) + '% bottleneck); ' + (pm.usage * 100).toFixed(0) + '% -> high; ' + (s.h.lineHyd(s.L).usage * 100).toFixed(0) + '% -> normal');
 }
 // ---------- Test 4: a bigger diameter -> less resistance, more flow
 {
