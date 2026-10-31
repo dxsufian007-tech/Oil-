@@ -7,42 +7,68 @@
   'use strict';
   const OW = window.OliWorld, CFG = OW.CONFIG, qs = new URLSearchParams(location.search);
   const seed = qs.get('seed') ? +qs.get('seed') : 20260101;
-  const world = OW.createWorld({ seed }), C = CFG.CHUNK, CX = CFG.CHUNKS_X, CY = CFG.CHUNKS_Y;
+  const world = OW.createWorld({ seed, external: true }), C = CFG.CHUNK, CX = CFG.CHUNKS_X, CY = CFG.CHUNKS_Y;
   const cv = document.getElementById('c'), ctx = cv.getContext('2d'), info = document.getElementById('info'), hud = document.getElementById('hud');
   const SR = world.regions.find(r => r.starter), cam = { x: SR.x0 + 160, y: SR.y0 + 160, z: 0.9 };
   const ui = { reg: true, zone: true, dev: false, heat: false, sel: null, facility: 'well', probe: null, scale: false };
-  let DPR = Math.min(2, window.devicePixelRatio || 1), VW = 0, VH = 0, dirty = true, genQueue = [];
+  let DPR = Math.min(2, window.devicePixelRatio || 1), VW = 0, VH = 0, dirty = true;
   const level = () => world.levelForZoom(cam.z);
-  const stats = { chunksBuilt: 0, hiBuilt: 0, lastHiMs: 0, lastLoMs: 0 };
+  const stats = { imgs: 0, regions: 0 };
 
-  // ---- demo discovery state (starter region): a little of every state so the preview shows each look
-  (function demo() {
-    const all = world.regionSites(SR.id), f = all.filter(s => s.kind === 'FIELD'), d = all.filter(s => s.kind === 'DRY');
+  // ---- engines: the world is computed in Web Workers (images + overview in one, region data in another). Fallback (no Worker, or ?noworker): the same code on this thread, sliced with setTimeout.
+  const USE_WORKER = !!window.Worker && !qs.get('noworker');
+  function makeEngine(onReply) {
+    if (USE_WORKER) { const w = new Worker('world-worker.js'); w.onmessage = e => onReply(e.data); w.onerror = e => { stats.workerError = String(e.message || e); }; return { post: (m, tr) => w.postMessage(m, tr || []) }; }
+    const full = OW.createWorld({ seed }); let inited = true;
+    return { post: m => setTimeout(() => {
+      if (m.t === 'init') return onReply({ t: 'ready' });
+      if (m.t === 'overview') { const o = full.renderOverview(m.step); onReply({ t: 'overview', w: o.w, h: o.h, step: o.step, rgba: o.rgba }); }
+      else if (m.t === 'img') { const rgba = full.renderChunkRGBA(m.cx, m.cy, m.k), ch = full.exportChunk(m.cx, m.cy); onReply({ t: 'img', cx: m.cx, cy: m.cy, k: m.k, rgba, chunk: ch }); }
+      else if (m.t === 'region') onReply({ t: 'region', d: full.regionData(m.rid) });
+      else if (m.t === 'heat') { const n = 32, a = new Uint8ClampedArray(n * n * 4); for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const p = full.oilProbability(m.cx * 64 + i * 2, m.cy * 64 + j * 2), q = (j * n + i) * 4; a[q] = 255; a[q + 1] = 80 + 80 * (1 - p); a[q + 2] = 20; a[q + 3] = Math.min(210, p * 330); } onReply({ t: 'heat', cx: m.cx, cy: m.cy, rgba: a }); }
+    }, 0) };
+  }
+  // images (k px per tile): FAR chunk images 1 px/tile, MEDIUM 2, CLOSE 3 - small caches, built on demand
+  const lo = new Map(), hi = { 2: new Map(), 3: new Map() }, MAXC = { 1: 150, 2: 60, 3: 30 }, heat = new Map();
+  const imgOf = k => k === 1 ? lo : hi[k];
+  function toCanvas(rgba, w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0); return c; }
+  const OV_Z = 0.025, OV_W = Math.round((CFG.CHUNKS_X + CFG.CHUNKS_Y) * C * 32 * OV_Z), OV_H = Math.round((CFG.CHUNKS_X + CFG.CHUNKS_Y) * C * 16 * OV_Z), OV_EX = CFG.CHUNKS_Y * C * 32 * OV_Z;
+  const ov = document.createElement('canvas'); ov.width = OV_W; ov.height = OV_H; const ovg = ov.getContext('2d'); let ovStep = 99;
+  const need = new Map(), regNeed = new Set(), busy = { img: false, reg: false }, DEMO_REGIONS = [SR.id, SR.id - 6, SR.id - 1, SR.id + 1, SR.id + 6]; let demoDone = false, ready = { img: false, reg: false }, ovQueue = [16, 8, 4];
+  function onImg(m) {
+    if (m.t === 'ready') { ready.img = true; return; }
+    busy.img = false; dirty = true;
+    if (m.t === 'overview') { ovStep = m.step; const c = toCanvas(m.rgba, m.w, m.h); ovg.save(); ovg.setTransform(1, 0, 0, 1, 0, 0); ovg.clearRect(0, 0, OV_W, OV_H); ovg.setTransform(m.step * 32 * OV_Z, m.step * 16 * OV_Z, -m.step * 32 * OV_Z, m.step * 16 * OV_Z, OV_EX, 0); ovg.imageSmoothingEnabled = true; ovg.drawImage(c, 0, 0, m.w, m.h, 0, 0, m.w + .7, m.h + .7); ovg.restore(); stats.overviewMs = Math.round(performance.now()); }
+    else if (m.t === 'img') { const key = m.cy * CX + m.cx, mp = imgOf(m.k); mp.set(key, toCanvas(m.rgba, C * m.k, C * m.k)); while (mp.size > MAXC[m.k]) mp.delete(mp.keys().next().value); world.injectChunk(m.chunk); need.delete(m.k + ':' + key); stats.imgs++; stats.lastImgAt = performance.now(); }
+    else if (m.t === 'heat') { heat.set(m.cy * CX + m.cx, toCanvas(m.rgba, 32, 32)); need.delete('h:' + (m.cy * CX + m.cx)); }
+  }
+  function onReg(m) {
+    if (m.t === 'ready') { ready.reg = true; return; }
+    busy.reg = false; dirty = true; if (m.t === 'region') { world.injectRegion(m.d); regNeed.delete(m.d.rid); stats.regions++; if (!demoDone && DEMO_REGIONS.every(r => world.hasRegion(r))) { applyDemo(); } }
+  }
+  const imgEng = makeEngine(onImg), regEng = makeEngine(onReg); imgEng.post({ t: 'init', seed }); regEng.post({ t: 'init', seed });
+  for (const r of DEMO_REGIONS) regNeed.add(r);
+  function applyDemo() {                                   // a little of every discovery state in the starter region so the preview shows each look
+    demoDone = true; const all = world.regionSites(SR.id), f = all.filter(s => s.kind === 'FIELD'), d = all.filter(s => s.kind === 'DRY');
     f.forEach((s, i) => { if (i < 8) { world.discover(s.id); if (i < 6) { world.survey(s.id); if (i < 4) { world.makeDrillable(s.id); if (i < 3) world.startProducing(s.id); } } } });
     if (f[0]) { f[0].remainingReserve = 0; world.deplete(f[0].id); }
     d.slice(0, 2).forEach(s => { world.discover(s.id); world.survey(s.id); });
     for (const rid of [SR.id - 6, SR.id - 1, SR.id + 1, SR.id + 6]) world.regionSites(rid).filter(s => s.kind === 'FIELD').slice(0, 2).forEach(s => world.discover(s.id));
-  })();
-
-  // ---- images: k px per tile. FAR images are kept for the whole world (10 MB); MEDIUM / CLOSE images are cached for a few chunks only.
-  const lo = new Map(), hi = { 2: new Map(), 3: new Map() }, HI_MAX = { 2: 70, 3: 36 };
-  function toCanvas(rgba, n) { const c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d'); g.putImageData(new ImageData(rgba, n, n), 0, 0); return c; }
-  const OV_Z = 0.025, OV_W = Math.round((CFG.CHUNKS_X + CFG.CHUNKS_Y) * C * 32 * OV_Z), OV_H = Math.round((CFG.CHUNKS_X + CFG.CHUNKS_Y) * C * 16 * OV_Z), OV_EX = CFG.CHUNKS_Y * C * 32 * OV_Z;
-  const ov = document.createElement('canvas'); ov.width = OV_W; ov.height = OV_H; const ovg = ov.getContext('2d');
-  function getLo(cx, cy) { const k = cy * CX + cx; let b = lo.get(k); if (!b) { const t = performance.now(); b = toCanvas(world.renderChunkRGBA(cx, cy, 1), C); stats.lastLoMs = performance.now() - t; lo.set(k, b); stats.chunksBuilt++;
-      ovg.save(); ovg.setTransform(32 * OV_Z, 16 * OV_Z, -32 * OV_Z, 16 * OV_Z, (cx * C - cy * C) * 32 * OV_Z + OV_EX, (cx * C + cy * C) * 16 * OV_Z); ovg.imageSmoothingEnabled = true; ovg.drawImage(b, 0, 0, C, C, 0, 0, C + .7, C + .7); ovg.restore(); } return b; }
-  function getHi(cx, cy, kk) { const m = hi[kk], key = cy * CX + cx; let b = m.get(key); if (b) { m.delete(key); m.set(key, b); return b; } return null; }
-  function buildHi(cx, cy, kk) { const t = performance.now(), b = toCanvas(world.renderChunkRGBA(cx, cy, kk), C * kk), m = hi[kk]; m.set(cy * CX + cx, b); while (m.size > HI_MAX[kk]) m.delete(m.keys().next().value); stats.hiBuilt++; stats.lastHiMs = performance.now() - t; return b; }
-  const heat = new Map();
-  function getHeat(cx, cy) { const k = cy * CX + cx; let b = heat.get(k); if (!b) { b = document.createElement('canvas'); b.width = b.height = C / 2; const g = b.getContext('2d'), im = g.createImageData(C / 2, C / 2), d = im.data;
-      for (let j = 0; j < C / 2; j++) for (let i = 0; i < C / 2; i++) { const p = world.oilProbability(cx * C + i * 2, cy * C + j * 2), q = (j * C / 2 + i) * 4; d[q] = 255; d[q + 1] = 80 + 80 * (1 - p); d[q + 2] = 20; d[q + 3] = Math.min(210, p * 330); } g.putImageData(im, 0, 0); heat.set(k, b); } return b; }
-  for (let cy = 0; cy < CY; cy++) for (let cx = 0; cx < CX; cx++) genQueue.push([cx, cy]);
-  genQueue.sort((a, b) => Math.hypot(a[0] * C - cam.x, a[1] * C - cam.y) - Math.hypot(b[0] * C - cam.x, b[1] * C - cam.y));
-  function pump() {
-    const t0 = performance.now(); while (genQueue.length && performance.now() - t0 < 8) { const [cx, cy] = genQueue.shift(); getLo(cx, cy); dirty = true; }
-    const p = document.getElementById('prog'), done = stats.chunksBuilt; if (!genQueue.length && !stats.genDoneMs) stats.genDoneMs = Math.round(performance.now()); if (genQueue.length) { p.textContent = 'Generating world… ' + Math.round(100 * done / (CX * CY)) + '%'; p.style.display = done < 24 ? '' : 'none'; } else p.style.display = 'none';
-    requestAnimationFrame(pump);
+    stats.demoMs = Math.round(performance.now());
   }
+  function schedule() {                                    // one job at a time per engine, nearest to the screen centre first; the main thread only posts messages
+    if (ready.img && !busy.img) {
+      if (ovQueue.length) { busy.img = true; imgEng.post({ t: 'overview', step: ovQueue.shift() }); }
+      else { let best = null, bd = 1e12; for (const [k, v] of need) { const d = Math.hypot(v.cx * C + C / 2 - cam.x, v.cy * C + C / 2 - cam.y); if (d < bd) { bd = d; best = [k, v]; } } if (best) { busy.img = true; if (best[1].t === 'heat') imgEng.post({ t: 'heat', cx: best[1].cx, cy: best[1].cy }); else imgEng.post({ t: 'img', cx: best[1].cx, cy: best[1].cy, k: best[1].k }); } }
+    }
+    if (ready.reg && !busy.reg && regNeed.size) { let best = null, bd = 1e12; for (const r of regNeed) { const R = world.regions[r], d = Math.hypot(R.x0 + R.w / 2 - cam.x, R.y0 + R.h / 2 - cam.y) - (DEMO_REGIONS.includes(r) && !demoDone ? 1e6 : 0); if (d < bd) { bd = d; best = r; } } if (best != null) { busy.reg = true; regEng.post({ t: 'region', rid: best }); } }
+    if (!stats.genDoneMs && !ovQueue.length && !busy.img && demoDone) stats.genDoneMs = Math.round(performance.now());
+    const p = document.getElementById('prog'); p.style.display = (ovStep === 99) ? '' : 'none'; p.textContent = 'Preparing the world…';
+    requestAnimationFrame(schedule);
+  }
+  const wantImg = (cx, cy, k) => { const key = cy * CX + cx; if (!imgOf(k).has(key)) { need.set(k + ':' + key, { cx, cy, k }); return false; } return true; };
+  const wantRegion = rid => { if (!world.hasRegion(rid)) regNeed.add(rid); };
+  const pendingJobs = () => ovQueue.length + need.size + regNeed.size + (busy.img || busy.reg ? 1 : 0);
 
   // ---- camera / transforms
   const sx = (x, y) => VW / 2 + ((x - y) - (cam.x - cam.y)) * 32 * cam.z, sy = (x, y) => VH / 2 + ((x + y) - (cam.x + cam.y)) * 16 * cam.z;
@@ -62,7 +88,7 @@
   function decorate(b) {
     const z = cam.z; if (z < 0.6) return; const x0 = Math.max(0, Math.floor(b.x0)), x1 = Math.min(world.W - 1, Math.ceil(b.x1)), y0 = Math.max(0, Math.floor(b.y0)), y1 = Math.min(world.H - 1, Math.ceil(b.y1)); if ((x1 - x0) * (y1 - y0) > 9000) return;
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const h = OW.hash(seed + 5, x, y); if (h > 0.22) continue; const t = world.tile(x, y), jx = OW.hash(seed + 6, x, y) - .5, jy = OW.hash(seed + 7, x, y) - .5, px = sx(x + .5 + jx * .8, y + .5 + jy * .8), py = sy(x + .5 + jx * .8, y + .5 + jy * .8), s = 6 * z;
+      const h = OW.hash(seed + 5, x, y); if (h > 0.22) continue; const t = world.tile(x, y); if (!t) continue; const jx = OW.hash(seed + 6, x, y) - .5, jy = OW.hash(seed + 7, x, y) - .5, px = sx(x + .5 + jx * .8, y + .5 + jy * .8), py = sy(x + .5 + jx * .8, y + .5 + jy * .8), s = 6 * z;
       if (t.terrain === 'ROCKY_GROUND' || t.terrain === 'ROCKY_PLATEAU') { const big = h < .05; ctx.fillStyle = 'rgba(30,22,16,.28)'; ctx.beginPath(); ctx.ellipse(px + s * .3, py + s * .15, s * (big ? 1.5 : .9), s * (big ? .6 : .35), 0, 0, 7); ctx.fill(); ctx.fillStyle = big ? 'rgba(120,98,78,.95)' : 'rgba(140,114,90,.9)'; ctx.beginPath(); ctx.moveTo(px - s, py); ctx.lineTo(px - s * .35, py - s * (big ? 1.5 : .8)); ctx.lineTo(px + s * .6, py - s * (big ? 1.1 : .55)); ctx.lineTo(px + s, py); ctx.closePath(); ctx.fill(); ctx.fillStyle = 'rgba(255,240,220,.18)'; ctx.beginPath(); ctx.moveTo(px - s * .35, py - s * (big ? 1.5 : .8)); ctx.lineTo(px + s * .6, py - s * (big ? 1.1 : .55)); ctx.lineTo(px, py - s * .2); ctx.closePath(); ctx.fill(); }
       else if (t.terrain === 'SAND_DUNES') { ctx.strokeStyle = 'rgba(150,108,52,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(px, py + s * .5, s * 1.8, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
       else if (t.terrain === 'VALLEY') { ctx.strokeStyle = 'rgba(88,92,48,.8)'; ctx.lineWidth = 1; ctx.beginPath(); for (let q = -1; q <= 1; q++) { ctx.moveTo(px + q * s * .35, py); ctx.lineTo(px + q * s * .6, py - s * (.9 + q * q * -.2)); } ctx.stroke(); }
@@ -137,31 +163,28 @@
     dirty = false; const lv = level(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.lineJoin = 'round'; ctx.fillStyle = '#0c1015'; ctx.fillRect(0, 0, VW, VH);
     const b = bounds(), c0 = Math.max(0, Math.floor(b.x0 / C)), c1 = Math.min(CX - 1, Math.floor(b.x1 / C)), r0 = Math.max(0, Math.floor(b.y0 / C)), r1 = Math.min(CY - 1, Math.floor(b.y1 / C));
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; missingHi = 0;
-    if (cam.z < 0.06) { const z = cam.z, Xc = (cam.x - cam.y) * 32, Yc = (cam.x + cam.y) * 16; ctx.drawImage(ov, VW / 2 + (-OV_EX / OV_Z - Xc) * z, VH / 2 + (0 - Yc) * z, OV_W * z / OV_Z, OV_H * z / OV_Z); }
-    else {
-      const kk = lv === 'FAR' ? 1 : lv === 'MEDIUM' ? 2 : 3;
+    if (!stats.firstDrawMs && ovStep < 99) stats.firstDrawMs = Math.round(performance.now());
+    if (cam.z < 0.5) {                                  // the overview image as the backdrop (and the whole picture at FAR): only the visible part is drawn
+      const z = cam.z, Xc = (cam.x - cam.y) * 32, Yc = (cam.x + cam.y) * 16, sc = z / OV_Z, ox = VW / 2 + (-OV_EX / OV_Z - Xc) * z, oy = VH / 2 + (0 - Yc) * z;
+      let sx0 = Math.max(0, -ox / sc), sy0 = Math.max(0, -oy / sc), sx1 = Math.min(OV_W, (VW - ox) / sc), sy1 = Math.min(OV_H, (VH - oy) / sc);
+      if (sx1 > sx0 && sy1 > sy0) ctx.drawImage(ov, sx0, sy0, sx1 - sx0, sy1 - sy0, ox + sx0 * sc, oy + sy0 * sc, (sx1 - sx0) * sc, (sy1 - sy0) * sc);
+    }
+    if (cam.z >= 0.06) {
+      const kk = lv === 'FAR' ? 1 : lv === 'MEDIUM' ? 2 : 3, mp = imgOf(kk);
       for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) {
-        let bm = kk === 1 ? lo.get(cy * CX + cx) : getHi(cx, cy, kk), per = C; if (!bm && kk > 1) { missingHi++; bm = lo.get(cy * CX + cx); } if (!bm) continue;
+        let bm = mp.get(cy * CX + cx); if (!bm) { wantImg(cx, cy, kk); missingHi++; bm = kk > 1 ? lo.get(cy * CX + cx) : null; } if (!bm) continue;
         ctx.save(); ctx.setTransform(DPR * 32 * cam.z, DPR * 16 * cam.z, -DPR * 32 * cam.z, DPR * 16 * cam.z, DPR * sx(cx * C, cy * C), DPR * sy(cx * C, cy * C)); ctx.drawImage(bm, 0, 0, bm.width, bm.height, 0, 0, C + .6, C + .6);
-        if (ui.heat) { ctx.drawImage(getHeat(cx, cy), 0, 0, C / 2, C / 2, 0, 0, C, C); } ctx.restore();
+        if (ui.heat) { const hb = heat.get(cy * CX + cx); if (hb) ctx.drawImage(hb, 0, 0, 32, 32, 0, 0, C, C); else need.set('h:' + (cy * CX + cx), { t: 'heat', cx, cy }); } ctx.restore();
       }
     }
     if (lv === 'CLOSE') decorate(b);
     overlays(lv, b);
     if (ui.scale) drawScaleChart();
     if (ui.probe && lv !== 'FAR') { const p = ui.probe, f = CFG.FACILITIES[ui.facility]; diamond(p.x, p.y, f.fp[0], f.fp[1], p.res.ok ? 'rgba(80,220,120,.45)' : 'rgba(240,70,60,.45)', p.res.ok ? '#6dff9a' : '#ff6b60', 2); if (!p.res.ok) { const cx = sx(p.x + f.fp[0] / 2, p.y + f.fp[1] / 2), cy = sy(p.x + f.fp[0] / 2, p.y + f.fp[1] / 2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(cx - 7, cy - 7); ctx.lineTo(cx + 7, cy + 7); ctx.moveTo(cx + 7, cy - 7); ctx.lineTo(cx - 7, cy + 7); ctx.stroke(); } }
-    hud.textContent = lv + '  zoom ' + cam.z.toFixed(3) + '  view ' + Math.round(b.x1 - b.x0) + ' tiles  images ' + stats.chunksBuilt + '/' + (CX * CY) + '  world ' + world.W + '×' + world.H + ' tiles = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' km (' + world.scale().toFixed(1) + '× the current map)';
+    hud.textContent = lv + '  zoom ' + cam.z.toFixed(3) + '  view ' + Math.round(b.x1 - b.x0) + ' tiles  images ' + stats.imgs + ' · jobs ' + pendingJobs() + '  world ' + world.W + '×' + world.H + ' tiles = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' km (' + world.scale().toFixed(1) + '× the current map)';
     document.querySelectorAll('[data-z]').forEach(e => e.classList.toggle('on', e.dataset.z === lv));
     if (missingHi) { dirty = true; }
   }
-  // detail images are built one per frame (never a long frame), nearest to the screen centre first
-  function hiPump() {
-    const lv = level(); if (lv !== 'FAR' && cam.z >= 0.06) { const kk = lv === 'MEDIUM' ? 2 : 3, b = bounds(), c0 = Math.max(0, Math.floor(b.x0 / C)), c1 = Math.min(CX - 1, Math.floor(b.x1 / C)), r0 = Math.max(0, Math.floor(b.y0 / C)), r1 = Math.min(CY - 1, Math.floor(b.y1 / C)); let best = null, bd = 1e9;
-      for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) if (!hi[kk].has(cy * CX + cx)) { const d = Math.hypot(cx * C + C / 2 - cam.x, cy * C + C / 2 - cam.y); if (d < bd) { bd = d; best = [cx, cy]; } }
-      if (best) { buildHi(best[0], best[1], kk); dirty = true; } }
-    requestAnimationFrame(hiPump);
-  }
-
   // ---- input (preview-only camera: drag to pan, wheel / pinch to zoom, tap to inspect)
   const ptrs = new Map(); let moved = 0, pinch = null;
   const clampZ = z => Math.max(CFG.ZOOM.MIN, Math.min(CFG.ZOOM.MAX, z));
@@ -178,7 +201,7 @@
   function tap(px, py) {
     const t = toTile(px, py), x = Math.floor(t.x), y = Math.floor(t.y); if (!world.inb(x, y)) return;
     let hit = null; for (const s of world.sitesNear(x, y, 3)) { const vi = world.visibleInfo(s.id), ind = vi && vi.indicator, cxs = ind ? ind.x : s.x, cys = ind ? ind.y : s.y, rad = ind ? ind.r : s.radius; if ((vi || ui.dev) && Math.hypot(cxs - t.x, cys - t.y) <= rad + 1) { hit = s; break; } }
-    const tl = world.tile(x, y), res = world.canBuildAt(ui.facility, x, y); ui.probe = { x, y, res }; ui.sel = hit ? hit.id : null; dirty = true; showInfo(tl, res, hit);
+    const tl = world.tile(x, y); if (!tl) { wantImg((x / C) | 0, (y / C) | 0, 1); document.getElementById('info').textContent = 'Loading this part of the world…'; return; } const res = world.canBuildAt(ui.facility, x, y); ui.probe = { x, y, res }; ui.sel = hit ? hit.id : null; dirty = true; showInfo(tl, res, hit);
   }
   const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : '' + n;
   function showInfo(tl, res, hit) {
@@ -202,10 +225,10 @@
   const fac = document.getElementById('fac'); for (const k in CFG.FACILITIES) fac.insertAdjacentHTML('beforeend', '<option value="' + k + '">' + k + ' ' + CFG.FACILITIES[k].fp.join('×') + '</option>'); fac.onchange = () => { ui.facility = fac.value; if (ui.probe) ui.probe.res = world.canBuildAt(ui.facility, ui.probe.x, ui.probe.y); dirty = true; };
 
   function loop() { if (dirty) { const t = performance.now(); draw(); stats.lastDraw = performance.now() - t; } requestAnimationFrame(loop); }
-  window.__wp = { world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.chunksBuilt, genLeft: () => genQueue.length, draw, toTile, sx, sy, hiLeft: () => missingHi };
+  window.__wp = { world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.imgs, genLeft: () => (demoDone && !ovQueue.length ? 0 : 1) + (busy.img || busy.reg ? 1 : 0), idle: () => pendingJobs() === 0 && demoDone, pending: pendingJobs, draw, toTile, sx, sy, hiLeft: () => missingHi };
   const sp = qs.get('x'); if (sp) { cam.x = +qs.get('x'); cam.y = +qs.get('y'); cam.z = clampZ(+qs.get('z') || .9); }
   if (qs.get('dev')) { ui.dev = true; document.getElementById('tDev').classList.add('on'); }
   if (qs.get('scale')) { ui.scale = true; document.getElementById('tScale').classList.add('on'); }
   info.innerHTML = 'World <b>' + world.W + '×' + world.H + ' tiles</b> = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' km (1 tile = ' + CFG.SCALE.TILE_M + ' m), <b>' + world.scale().toFixed(1) + '×</b> the current 140×88 map · 24 regions · 600 chunks. Tap the map: a tile shows terrain and whether the selected facility fits. Tap an oil field to see what the player may know.';
-  requestAnimationFrame(pump); requestAnimationFrame(hiPump); requestAnimationFrame(loop);
+  requestAnimationFrame(schedule); requestAnimationFrame(loop);
 })();

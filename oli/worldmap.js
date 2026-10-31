@@ -85,7 +85,7 @@
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v, clamp01 = v => clamp(v, 0, 1);
 
   function createWorld(opts) {
-    opts = opts || {}; const seed = (opts.seed == null ? 20260101 : opts.seed) | 0, C = CONFIG.CHUNK, RC = CONFIG.REGION_CHUNKS;
+    opts = opts || {}; const external = !!opts.external, seed = (opts.seed == null ? 20260101 : opts.seed) | 0, C = CONFIG.CHUNK, RC = CONFIG.REGION_CHUNKS;
     const W = CONFIG.CHUNKS_X * C, H = CONFIG.CHUNKS_Y * C, RX = CONFIG.CHUNKS_X / RC, RY = CONFIG.CHUNKS_Y / RC;
     const S = { elev: seed ^ 0x1111, elev2: seed ^ 0x2222, mount: seed ^ 0x3333, ridge: seed ^ 0x4444, sand: seed ^ 0x5555, rock: seed ^ 0x6666, coast: seed ^ 0x7777, basin: seed ^ 0x8888, struct: seed ^ 0x9999, rich: seed ^ 0xaaaa, kind: seed ^ 0xbbbb, wadi: seed ^ 0xcccc, track: seed ^ 0xdddd };
     const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -120,7 +120,7 @@
     const chunks = new Map(); let chunkGen = 0;
     function chunk(cx, cy) {
       if (cx < 0 || cy < 0 || cx >= CONFIG.CHUNKS_X || cy >= CONFIG.CHUNKS_Y) return null;
-      const key = cy * CONFIG.CHUNKS_X + cx; let ch = chunks.get(key); if (ch) return ch;
+      const key = cy * CONFIG.CHUNKS_X + cx; let ch = chunks.get(key); if (ch) return ch; if (external) return null;          // external mode: chunks are injected (they come from a worker), never generated here
       const m = C + 2, el = new Float32Array(m * m); for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) el[j * m + i] = elevAt(cx * C + i - 1, cy * C + j - 1);
       const ter = new Uint8Array(C * C), elv = new Uint8Array(C * C), slope = new Uint8Array(C * C);
       for (let j = 0; j < C; j++) for (let i = 0; i < C; i++) {
@@ -132,7 +132,7 @@
       return ch;
     }
     function tile(x, y) {
-      x |= 0; y |= 0; if (!inb(x, y)) return null; const ch = chunk((x / C) | 0, (y / C) | 0), k = (y % C) * C + (x % C), t = TBYID[ch.terrain[k]], e = ch.elev[k] / 255;
+      x |= 0; y |= 0; if (!inb(x, y)) return null; const ch = chunk((x / C) | 0, (y / C) | 0); if (!ch) return null; const k = (y % C) * C + (x % C), t = TBYID[ch.terrain[k]], e = ch.elev[k] / 255;
       return { x, y, terrain: t, id: ch.terrain[k], elevation: e, level: Math.min(CONFIG.ELEV_LEVELS - 1, Math.floor(e * CONFIG.ELEV_LEVELS)), slope: ch.slope[k], region: regionIdAt(x, y) };
     }
 
@@ -159,7 +159,7 @@
     const siteCache = new Map();
     function pickType(rng, p, rich) { const W_ = CONFIG.OILFIELD; let w = {}; let tot = 0; for (const k in W_) { let v = W_[k].weight; if (k === 'MAJOR') v *= p > .62 ? 2.2 * rich : .15; if (k === 'LARGE') v *= .5 + p; w[k] = v; tot += v; } let r = rng() * tot; for (const k in w) { r -= w[k]; if (r <= 0) return k; } return 'SMALL'; }
     function regionSites(rid) {
-      if (siteCache.has(rid)) return siteCache.get(rid); const reg = regions[rid], rng = mulberry32((seed ^ 0x5eed) + rid * 7919), R = CONFIG.RICHNESS[reg.richness], out = [];
+      if (siteCache.has(rid)) return siteCache.get(rid); if (external) return []; const reg = regions[rid], rng = mulberry32((seed ^ 0x5eed) + rid * 7919), R = CONFIG.RICHNESS[reg.richness], out = [];
       const nReal = R.fields[0] + Math.floor(rng() * (R.fields[1] - R.fields[0] + 1)), nDry = Math.round(nReal * CONFIG.DRY_RATIO), want = nReal + nDry, margin = 22;
       const spaced = (x, y, r) => out.every(s => Math.hypot(s.x - x, s.y - y) >= s.radius + r + CONFIG.MIN_GAP);
       let tries = 0, real = 0, dry = 0;
@@ -215,7 +215,7 @@
     function canBuildAt(type, x, y) {
       const f = CONFIG.FACILITIES[type]; if (!f) return { ok: false, reason: 'unknownFacility' }; const [fw, fh] = f.fp; let cost = 0, worst = 0;
       for (let j = 0; j < fh; j++) for (let i = 0; i < fw; i++) {
-        const t = tile(x + i, y + j); if (!t) return { ok: false, reason: 'outside' }; const def = T[t.terrain];
+        const t = tile(x + i, y + j); if (!t) return { ok: false, reason: inb(x + i, y + j) ? 'notLoaded' : 'outside' }; const def = T[t.terrain];
         if (!def.buildable) return { ok: false, reason: 'water' }; if (f.terrains && !f.terrains.includes(t.terrain)) return { ok: false, reason: 'terrain', terrain: t.terrain };
         if (t.slope > Math.min(f.maxSlope, def.maxSlope) * CONFIG.SLOPE_K) return { ok: false, reason: 'slope' }; cost = Math.max(cost, def.buildCost); worst = Math.max(worst, t.slope);
       }
@@ -224,7 +224,7 @@
     }
     const zoneCache = new Map();
     function refineryZones(rid) {
-      if (zoneCache.has(rid)) return zoneCache.get(rid); const reg = regions[rid], Z = CONFIG.ZONES.REFINERY, cand = [];
+      if (zoneCache.has(rid)) return zoneCache.get(rid); if (external) return []; const reg = regions[rid], Z = CONFIG.ZONES.REFINERY, cand = [];
       for (let y = reg.y0 + 24; y < reg.y0 + reg.h - Z.h - 24; y += 8) for (let x = reg.x0 + 24; x < reg.x0 + reg.w - Z.w - 24; x += 8) {
         let ok = true, slopeSum = 0, n = 0; for (let j = 0; j < Z.h && ok; j += 2) for (let i = 0; i < Z.w; i += 2) { const t = tile(x + i, y + j); if (!t || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU' || t.terrain === 'VALLEY' || t.slope > Z.maxSlope * CONFIG.SLOPE_K) { ok = false; break; } slopeSum += t.slope; n++; }
         if (!ok) continue; if (sitesNear(x + Z.w / 2, y + Z.h / 2, Math.max(Z.w, Z.h) / 2 + 6).length) continue;
@@ -240,7 +240,7 @@
     // ---- tank farms (storage zones), strategic points, natural tracks
     const tfCache = new Map();
     function tankZones(rid) {
-      if (tfCache.has(rid)) return tfCache.get(rid); const reg = regions[rid], Z = CONFIG.ZONES.TANK_FARM, rz = refineryZones(rid), fs = regionSites(rid).filter(q => q.kind === 'FIELD'), cand = [];
+      if (tfCache.has(rid)) return tfCache.get(rid); if (external) return []; const reg = regions[rid], Z = CONFIG.ZONES.TANK_FARM, rz = refineryZones(rid), fs = regionSites(rid).filter(q => q.kind === 'FIELD'), cand = [];
       for (let y = reg.y0 + 20; y < reg.y0 + reg.h - Z.h - 20; y += 6) for (let x = reg.x0 + 20; x < reg.x0 + reg.w - Z.w - 20; x += 6) {
         let ok = true, ss = 0, n = 0; for (let j = 0; j < Z.h && ok; j += 2) for (let i = 0; i < Z.w; i += 2) { const t = tile(x + i, y + j); if (!t || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU' || t.slope > Z.maxSlope * CONFIG.SLOPE_K) { ok = false; break; } ss += t.slope; n++; }
         if (!ok) continue; const cx = x + Z.w / 2, cy = y + Z.h / 2; if (sitesNear(cx, cy, Math.max(Z.w, Z.h) / 2 + 4).length) continue; if (rz.some(r => x < r.x + r.w + 4 && x + Z.w > r.x - 4 && y < r.y + r.h + 4 && y + Z.h > r.y - 4)) continue;
@@ -252,7 +252,7 @@
     }
     const spCache = new Map();
     function strategicPoints(rid) {              // PIPELINE_HUB (flat ground near the middle of the region) and EXPORT_COAST (flat shore: a future export terminal)
-      if (spCache.has(rid)) return spCache.get(rid); const reg = regions[rid], out = [], cx = reg.x0 + reg.w / 2, cy = reg.y0 + reg.h / 2; let best = null;
+      if (spCache.has(rid)) return spCache.get(rid); if (external) return []; const reg = regions[rid], out = [], cx = reg.x0 + reg.w / 2, cy = reg.y0 + reg.h / 2; let best = null;
       for (let r = 0; r < 100 && !best; r += 4) for (let a = 0; a < 16 && !best; a++) { const x = Math.round(cx + Math.cos(a / 16 * 6.283) * r), y = Math.round(cy + Math.sin(a / 16 * 6.283) * r), t = tile(x, y); if (t && (t.terrain === 'FLAT_DESERT' || t.terrain === 'SAND_DUNES') && t.slope < 8 && !sitesNear(x, y, 6).length) best = { x, y }; }
       if (best) out.push({ id: 'H' + rid, regionId: rid, kind: 'PIPELINE_HUB', x: best.x, y: best.y, why: 'central, flat: a natural meeting point for trunk pipelines' });
       let shore = null; for (let y = reg.y0 + 8; y < reg.y0 + reg.h - 8 && !shore; y += 5) for (let x = reg.x0 + 8; x < reg.x0 + reg.w - 8; x += 3) { const t = tile(x, y); if (!t || t.terrain !== 'FLAT_DESERT' && t.terrain !== 'SAND_DUNES' || t.slope > 6) continue; const w = tile(x - 6, y); if (w && w.terrain === 'WATER_WADI' && x - 6 < coastLine(y) + 1 && tile(x + 4, y) && tile(x + 4, y).terrain !== 'WATER_WADI') { shore = { x, y }; break; } }
@@ -261,7 +261,7 @@
     }
     const trCache = new Map();
     function tracks(rid) {                       // faint desert tracks (future roads): refinery zone -> nearest fields, hub -> refinery zone
-      if (trCache.has(rid)) return trCache.get(rid); const rng = mulberry32((seed ^ 0x7ac) + rid * 131), out = [], rz = refineryZones(rid)[0], hub = strategicPoints(rid).find(q => q.kind === 'PIPELINE_HUB'), fs = regionSites(rid).filter(q => q.kind === 'FIELD');
+      if (trCache.has(rid)) return trCache.get(rid); if (external) return []; const rng = mulberry32((seed ^ 0x7ac) + rid * 131), out = [], rz = refineryZones(rid)[0], hub = strategicPoints(rid).find(q => q.kind === 'PIPELINE_HUB'), fs = regionSites(rid).filter(q => q.kind === 'FIELD');
       const line = (a, b) => { const pts = [[a.x, a.y]], n = 5, d = Math.hypot(b.x - a.x, b.y - a.y), nx = -(b.y - a.y) / d, ny = (b.x - a.x) / d; for (let i = 1; i < n; i++) { const t = i / n, j = (rng() - .5) * d * .12; pts.push([a.x + (b.x - a.x) * t + nx * j, a.y + (b.y - a.y) * t + ny * j]); } pts.push([b.x, b.y]); return pts; };
       if (rz) { const c = { x: rz.x + rz.w / 2, y: rz.y + rz.h / 2 }; fs.map(q => [Math.hypot(q.x - c.x, q.y - c.y), q]).sort((a, b) => a[0] - b[0]).slice(0, 3).forEach(([, q]) => out.push({ regionId: rid, pts: line(c, q) })); if (hub) out.push({ regionId: rid, pts: line(hub, c) }); }
       trCache.set(rid, out); return out;
@@ -296,6 +296,24 @@
       return out;
     }
 
+    // ---- worker support: chunk / region data can be computed elsewhere (a Web Worker) and injected into an `external` world, so the drawing thread never generates anything
+    const exportChunk = (cx, cy) => { const c = chunk(cx, cy); return c && { cx, cy, terrain: c.terrain.slice(), elev: c.elev.slice(), slope: c.slope.slice() }; };
+    const injectChunk = d => { chunks.set(d.cy * CONFIG.CHUNKS_X + d.cx, { cx: d.cx, cy: d.cy, terrain: d.terrain, elev: d.elev, slope: d.slope }); if (chunks.size > 220) chunks.delete(chunks.keys().next().value); };
+    const regionData = rid => ({ rid, sites: regionSites(rid), refinery: refineryZones(rid), tank: tankZones(rid), strategic: strategicPoints(rid), tracks: tracks(rid) });
+    const injectRegion = d => { siteCache.set(d.rid, d.sites); zoneCache.set(d.rid, d.refinery); tfCache.set(d.rid, d.tank); spCache.set(d.rid, d.strategic); trCache.set(d.rid, d.tracks); };
+    const hasRegion = rid => siteCache.has(rid) && zoneCache.has(rid) && tfCache.has(rid) && spCache.has(rid) && trCache.has(rid);
+    /* a cheap whole-world picture: one sample per `step` tiles (no chunks), shaded like the real renderer; the FAR level draws this instead of 600 chunk images */
+    function renderOverview(step) {
+      const ow = Math.ceil(W / step), oh = Math.ceil(H / step), out = new Uint8ClampedArray(ow * oh * 4), eL = new Float32Array(ow * oh), id = new Uint8Array(ow * oh);
+      for (let j = 0; j < oh; j++) for (let i = 0; i < ow; i++) { const x = Math.min(W - 1, i * step + (step >> 1)), y = Math.min(H - 1, j * step + (step >> 1)), e = elevAt(x, y); eL[j * ow + i] = e; id[j * ow + i] = classify(x, y, e); }
+      for (let j = 0; j < oh; j++) for (let i = 0; i < ow; i++) {
+        const k = j * ow + i, t = TBYID[id[k]], col = T[t].color, e = eL[k], ee = (a, b) => eL[Math.min(oh - 1, Math.max(0, b)) * ow + Math.min(ow - 1, Math.max(0, a))];
+        const f = id[k] === 5 ? 1 : .80 + e * .42 + ((ee(i - 1, j) - ee(i + 1, j)) + (ee(i, j - 1) - ee(i, j + 1))) * 1.6 + (hash(seed, i, j) - .5) * .05;
+        out[k * 4] = col[0] * f; out[k * 4 + 1] = col[1] * f; out[k * 4 + 2] = col[2] * f; out[k * 4 + 3] = 255;
+      }
+      return { w: ow, h: oh, step, rgba: out };
+    }
+
     // ---- zoom level + the iso transform (the SAME formulas as Oli's tc() / toTile(), so the world can sit under the existing camera)
     const levelForZoom = z => z < CONFIG.ZOOM.FAR.max ? 'FAR' : z < CONFIG.ZOOM.MEDIUM.max ? 'MEDIUM' : 'CLOSE';
     const iso = { tc: (x, y) => ({ x: (x - y) * 32, y: (x + y + 1) * 16 }), toTile: (wx, wy) => { const u = wx / 32, v = wy / 16; return { x: Math.floor((u + v) / 2), y: Math.floor((v - u) / 2) }; } };
@@ -316,7 +334,7 @@
     };
     const oilFieldAt = (x, y) => { for (const s of sitesNear(x, y, 2)) if (s.kind === 'FIELD' && Math.hypot(s.x - x, s.y - y) <= s.radius) return s; return null; };
 
-    return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, tracks, renderChunkRGBA, canBuildAt,
+    return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
       discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
       scale: () => (W * H) / (CONFIG.LEGACY.W * CONFIG.LEGACY.H) };
   }
