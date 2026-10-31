@@ -147,7 +147,7 @@
     }
     update(t, dms) {
       let left = Math.min(dms / 1000, .25) * ui.speed; while (left > 1e-6) { const d = Math.min(left, .25); game.step(d); left -= d; }   // game speed: pause / 1x / 2x / 3x
-      if (view.glide) view.glide(t);
+      if (view.glide) { if (touch.state !== 'IDLE') view.glide = null; else view.glide(t); }       // the Touch Controller is the only thing that moves the camera while a finger is on the map
       if ((t | 0) % 1000 < dms) this.paintGround(false);
       this.syncBuildings(); this.drawPipes(); this.drawFlow(t); this.drawMarks(t);
     }
@@ -355,7 +355,8 @@
       c.setScroll(cx - c.width / 2, cy - c.height / 2);
     },
     follow(w, sx, sy) { const c = view.cam; c.setScroll(w.x - c.width / 2 - (sx - c.width / 2) / c.zoom, w.y - c.height / 2 - (sy - c.height / 2) / c.zoom); camApi.clamp(); },
-    focus(wx, wy, ms = 450) {                                         // smooth glide to a point (never a teleport); a new touch cancels it
+    focus(wx, wy, ms = 450) {                                         // smooth glide to a point (never a teleport); a new touch cancels it, and it never starts while a finger is on the map
+      if (touch.state !== 'IDLE') return;
       const c = view.cam, sx0 = c.scrollX, sy0 = c.scrollY, tx = wx - c.width / 2, ty = wy - c.height / 2, t0 = view.scene.time.now;
       view.glide = t => { const f = clamp((t - t0) / ms, 0, 1), e = f < .5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2; c.setScroll(sx0 + (tx - sx0) * e, sy0 + (ty - sy0) * e); camApi.clamp(); if (f >= 1) view.glide = null; };
     }

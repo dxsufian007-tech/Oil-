@@ -24,7 +24,7 @@ Method source: rex CameraController (MIT) — see `THIRD_PARTY_NOTICES.md`.
 
 Left exactly as they were in the move (candidates for a later cleanup, not done now):
 - `oli/.github/workflows/android.yml` — an old workflow inside the project folder; GitHub ignores it (only the root `.github` counts).
-- Old files: `game.js`, `game.js.orig`, `index.html`, `style.css` (the pre-Phaser version), `*.bak.js`, `*-dbg.js` tests, `tests-retired/`.
+- Old files: moved in Phase A to `legacy/` (`game.js`, `game.js.orig`, `index.html`, `style.css`, the pre-Phaser version) and `tests-retired/legacy-ui/` (the 23 UI/debug tests that load them). Nothing else referenced them (not `v2.html`, not `build-www.js`, not `npm test`).
 - `build-apk.yml` still copies `.github/signing/debug.keystore` to `~/.android/`; the APK is actually signed by `signingConfigs.oli` in `oli/android/app/build.gradle` (`oli-debug.keystore`), and CI checks that certificate.
 
 ## Phase 2 — advanced hydraulics & control (v35)
@@ -66,3 +66,18 @@ How it was made (visual only; no Core / physics / network / save change):
 - Pump length ≈ 2.7 tiles along the pipe, pipe diameter inside it ≈ a branch pipe; the flanges (a little wider than a main pipe) hide the join to a main pipe.
 - Check: `test-v2-pump-art.js` + `check-pump-art.py` build main/branch pipes along x and y (and a flipped pump), screenshot at 2 zooms and verify no ground-coloured gap on the axis within ±2.2 tiles of the pump.
 - Not possible / not done: a pump cannot be dragged (like wells and tanks it has no move tool in the Core; it is removed and placed again); flipping the direction does not mirror the picture (the picture is symmetric enough along the axis; direction is shown in the panel).
+
+
+## Phase A — camera + input foundation (v36)
+
+Verdict from measurement: the Touch Controller in `v2.js` already met every Phase A rule; Phase A therefore **proved** it (new `test-v2-phaseA.js`, Android additions) and removed the competing code around it instead of adding smoothing.
+
+Input architecture (the only one): Phaser pointers -> `setupInput` -> one state (`IDLE, PAN, PINCH, PIPE_DRAG, BUILDING_DRAG`) -> `camApi` (`s2w`, `w2s`, `setZoomAt`, `clamp`). Pan = `scroll -= delta / zoom` (1:1, incremental, no lerp/tween/inertia). Pinch = `zoom *= d / dPrev` with the focus world point kept under the midpoint; every finger-count change takes a new snapshot. Pipe/building drags never touch the camera. A drag never becomes a tap (`TAP_PX = 12`). `touchcancel` reaches the controller as a pointer-up (Phaser) and returns to IDLE (tested in every state).
+
+Changed in Phase A:
+- `v2.js`: the camera glide (focus button / warning tap) is the only camera animation; it now **never starts while a finger is on the map** and is dropped if a touch begins (before: only dropped on pointerdown, so a glide started by a button press during a pan could fight the finger).
+- Legacy front-end and its 23 UI tests moved out of the live tree (see above). No competing touch/camera code remains in the shipped app.
+
+Handler list: KEPT `pointerdown/pointermove/pointerup/pointerupoutside` (Phaser, one set), `wheel` (desktop zoom about the cursor), window `blur` (drops stuck fingers), `contextmenu`/`dblclick` suppression, `touch-action: none` on the canvas, `user-scalable=no`. REPLACED nothing. DISABLED glide while touching. REMOVED from the shipped tree: none (the legacy app was never loaded by `v2.html`). MOVED: legacy front-end -> `legacy/`.
+
+Known benign console message: a real `touchcancel` makes Chrome print "Ignored attempt to cancel a touchcancel event with cancelable=false" (Phaser calls `preventDefault`). It is a browser intervention note, not an exception; it does not change behaviour. Not suppressed because turning off Phaser's `touch.capture` would let the browser synthesise mouse events after touches (double actions).

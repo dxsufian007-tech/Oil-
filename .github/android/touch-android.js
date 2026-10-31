@@ -148,6 +148,41 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   await ev('window.__v2.select(null); return 1;'); const tp = await ev(`const v = window.__v2, b = v.game.buildings.find(q => q.id === ${L0.T}), c = v.tc(b.x + .5, b.y + .5); return v.camApi.w2s(c.x, c.y - 14);`);
   const far = D({ x: tp.x - 120, y: tp.y + 80 }), tpD = D(tp); const df = [[{ slot: 0, ...far }]]; for (let i = 1; i <= 6; i++) df.push([{ slot: 0, x: far.x + (tpD.x - far.x) * i / 6, y: far.y + (tpD.y - far.y) * i / 6 }]); df.push([{ slot: 0, up: true }]); send(df); await sleep(400);
   check('DRAG ending on a tank does not select it (no click after a drag)', (await ev('return window.__v2.ui.sel;')) === null, '');
+  // 7. Phase A extras on the real Android input path: tap after drag, drag after tap, large finger, rapid taps, rapid second finger, everything ends IDLE
+  {
+    await center(1, X + 9.5, Y + 1.5); await sleep(300);
+    const tkP = async () => { const r = await ev(`const v = window.__v2, b = v.game.buildings.find(q => q.id === ${L0.T}), c = v.tc(b.x + .5, b.y + .5); return v.camApi.w2s(c.x, c.y - 14);`); return r; };
+    let tk = await tkP();
+    // large finger: an 8 px wobble is still a tap
+    await ev('window.__v2.select(null); return 1;'); const a = D(tk); send([[{ slot: 0, ...a }], [{ slot: 0, x: a.x + Math.round(5 * dpr), y: a.y + Math.round(4 * dpr) }], [{ slot: 0, up: true }]]); await sleep(500);
+    check('LARGE FINGER: an 8 px wobble on a tank is still a tap (selects it)', (await ev('return window.__v2.ui.sel && window.__v2.ui.sel.id;')) === L0.T, '');
+    // a 24 px move is a drag: the map follows, nothing is selected
+    await ev('window.__v2.select(null); return 1;'); const k0 = await cam(); send([[{ slot: 0, ...a }], [{ slot: 0, x: a.x + Math.round(12 * dpr), y: a.y }], [{ slot: 0, x: a.x + Math.round(24 * dpr), y: a.y }], [{ slot: 0, up: true }]]); await sleep(500);
+    const k1 = await cam(); check('A 24 px move is a drag: the map moved exactly 24 px, nothing selected', Math.abs((k0.x - k1.x) * k1.z - 24) < 1.0 && (await ev('return window.__v2.ui.sel;')) === null, 'moved ' + ((k0.x - k1.x) * k1.z).toFixed(2));
+    // tap right after a drag selects once; a drag right after the tap pans 1:1
+    await center(1, X + 9.5, Y + 1.5); await sleep(300); tk = await tkP(); const f0 = D({ x: tk.x - 90, y: tk.y }), f1 = D(tk);
+    send([[{ slot: 0, ...f0 }], [{ slot: 0, x: (f0.x + f1.x) / 2, y: f0.y }], [{ slot: 0, ...f1 }], [{ slot: 0, up: true }]]); await sleep(200);
+    const afterDrag = await ev('return window.__v2.ui.sel;'); await center(1, X + 9.5, Y + 1.5); await sleep(300); tk = await tkP();
+    send([[{ slot: 0, ...D(tk) }], [{ slot: 0, up: true }]]); await sleep(400);
+    check('TAP AFTER DRAG: the drag selected nothing; the tap right after selects the tank once', afterDrag === null && (await ev('return window.__v2.ui.sel && window.__v2.ui.sel.id;')) === L0.T, '');
+    const d0 = await cam(), e1 = D({ x: 100, y: 200 }); send([[{ slot: 0, ...e1 }], [{ slot: 0, x: e1.x + Math.round(30 * dpr), y: e1.y + Math.round(20 * dpr) }], [{ slot: 0, up: true }]]); await sleep(500); const d1 = await cam();
+    check('DRAG AFTER TAP: pans 1:1 (30,20 px), keeps the selection', Math.abs((d0.x - d1.x) * d1.z + 30) < 1.0 && Math.abs((d0.y - d1.y) * d1.z + 20) < 1.0 && (await ev('return window.__v2.ui.sel && window.__v2.ui.sel.id;')) === L0.T, JSON.stringify([d0, d1]));
+    // rapid touch sequence: 6 quick taps on empty ground, then everything is IDLE and a pan is 1:1
+    await ev('window.__v2.select(null); return 1;'); const rq = D({ x: 60, y: 200 }); const fr = []; for (let i = 0; i < 6; i++) { fr.push([{ slot: 0, x: rq.x + 4 * i, y: rq.y }]); fr.push([{ slot: 0, up: true }]); } send(fr); await sleep(500);
+    const stR = await state(), g0 = await cam(), g1p = D({ x: 150, y: 300 }); send([[{ slot: 0, ...g1p }], [{ slot: 0, x: g1p.x + Math.round(40 * dpr), y: g1p.y }], [{ slot: 0, up: true }]]); await sleep(500); const g1 = await cam();
+    check('RAPID TOUCH SEQUENCE: 6 quick taps end IDLE and the next pan is 1:1', stR === 'IDLE' && Math.abs((g0.x - g1.x) * g1.z + 40) < 1.0 && (await state()) === 'IDLE', 'state ' + stR);
+    if (multi) {
+      // rapid second finger: down, second down and up within two frames, the first keeps panning from where it is, no jump
+      await ev('window.__v2.select(null); return 1;'); await center(1, 70, 44); await sleep(200); const r0 = D({ x: 140, y: 300 }), r1 = D({ x: 260, y: 360 });
+      sendM([[{ slot: 0, ...r0 }], [{ slot: 0, x: r0.x + 20, y: r0.y }]]); await sleep(150); const h0 = await cam(); sendM([[{ slot: 1, ...r1 }], [{ slot: 1, up: true }]]); await sleep(300);
+      const h1 = await cam(), stH = await state(); sendM([[{ slot: 0, x: r0.x + 20 + Math.round(30 * dpr), y: r0.y }]]); await sleep(250); const h2 = await cam(); sendM([[{ slot: 0, up: true }]]); await sleep(400);
+      check('RAPID SECOND FINGER: touching and lifting a 2nd finger quickly does not move the camera; the first finger continues 1:1', h0.z === h1.z && stH === 'PAN' && Math.abs((h1.x - h2.x) * h2.z - 30) < 1.5, 'state ' + stH + ' dz ' + (h1.z - h0.z).toFixed(4) + ' dx ' + ((h1.x - h2.x) * h2.z).toFixed(2));
+      // rapid finger release: two fingers lifted in consecutive frames -> IDLE, nothing stuck
+      sendM([[{ slot: 0, ...r0 }, { slot: 1, ...r1 }]]); await sleep(120); sendM([[{ slot: 0, up: true }], [{ slot: 1, up: true }]]); await sleep(400);
+      check('RAPID FINGER RELEASE: both fingers lifted in consecutive frames -> IDLE', (await state()) === 'IDLE', 'state ' + await state());
+    }
+    await ev('window.__v2.select(null); return 1;');
+  }
   const tr = await ev('return window.__v2.touch.log.slice();');
   const ok = new Set(['IDLE>PAN', 'IDLE>PIPE_DRAG', 'IDLE>BUILDING_DRAG', 'PAN>PINCH', 'PAN>IDLE', 'PINCH>PAN', 'PINCH>IDLE', 'PINCH>PINCH', 'PIPE_DRAG>IDLE', 'PIPE_DRAG>PINCH', 'BUILDING_DRAG>IDLE', 'BUILDING_DRAG>PINCH']);
   check('every state change was a legal one', tr.every(x => ok.has(x)), [...new Set(tr)].join(', '));
