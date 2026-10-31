@@ -34,7 +34,7 @@ runTest() {   # $1 script, $2 result name
   adb logcat -c
   launch
   node .github/android/$1 2>&1 | tee results/$2.txt
-  if grep -q "crashed: WebSocket is not open" results/$2.txt && killedByGms; then
+  if grep -qE "crashed: (WebSocket is not open|socket hang up)" results/$2.txt && killedByGms; then
     echo "NOTE the app was killed by Android because Google Play Services restarted (emulator); repeating $1 once" | tee -a results/$2.txt
     adb logcat -d > results/$2-attempt1-logcat.txt
     mv results/$2.txt results/$2-attempt1.txt
