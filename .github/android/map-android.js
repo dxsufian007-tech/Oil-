@@ -14,7 +14,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   let ready = false; for (let i = 0; i < 60 && !ready; i++) { ready = await ev('return !!window.__wp;').catch(() => false); if (!ready) await sleep(1000); } check('the preview page is running in the WebView', ready);
   if (!ready) return;
   const env = await ev('return { ua: navigator.userAgent, dpr: devicePixelRatio, w: innerWidth, h: innerHeight, mem: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null };'); console.log('ENV ' + JSON.stringify(env)); out.env = env;
-  let done = false; for (let i = 0; i < 240 && !done; i++) { done = await ev('return window.__wp.genLeft() === 0;'); if (!done) await sleep(1000); }
+  let done = false; for (let i = 0; i < 240 && !done; i++) { done = await ev('return window.__wp.genLeft() === 0;'); if (!done) { if (i % 15 === 0) console.log('generating: ' + await ev('return window.__wp.ready();') + '/600 after ' + i + ' s'); await sleep(1000); } }
   const gen = await ev('return { ms: window.__wp.stats.genDoneMs, built: window.__wp.ready() };'); out.generation = gen; check('the whole world (600 chunks) is generated in the background', done && gen.built >= 600, gen.built + ' chunks, ' + gen.ms + ' ms after page start (software-rendered emulator)');
   const start = await ev('const w = window.__wp.world, r = w.regions.find(r => r.starter); return { x: r.x0 + 160, y: r.y0 + 160 };');
   const level = async (name, z, x, y) => {
