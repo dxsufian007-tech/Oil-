@@ -166,17 +166,19 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
     send([[{ slot: 0, ...D(tk) }], [{ slot: 0, up: true }]]); await sleep(400);
     check('TAP AFTER DRAG: the drag selected nothing; the tap right after selects the tank once', afterDrag === null && (await ev('return window.__v2.ui.sel && window.__v2.ui.sel.id;')) === L0.T, '');
     const d0 = await cam(), e1 = D({ x: 100, y: 200 }); send([[{ slot: 0, ...e1 }], [{ slot: 0, x: e1.x + Math.round(30 * dpr), y: e1.y + Math.round(20 * dpr) }], [{ slot: 0, up: true }]]); await sleep(500); const d1 = await cam();
-    check('DRAG AFTER TAP: pans 1:1 (30,20 px), keeps the selection', Math.abs((d0.x - d1.x) * d1.z + 30) < 1.0 && Math.abs((d0.y - d1.y) * d1.z + 20) < 1.0 && (await ev('return window.__v2.ui.sel && window.__v2.ui.sel.id;')) === L0.T, JSON.stringify([d0, d1]));
+    check('DRAG AFTER TAP: pans 1:1 (30,20 px), keeps the selection', Math.abs((d1.x - d0.x) * d1.z + 30) < 1.0 && Math.abs((d1.y - d0.y) * d1.z + 20) < 1.0 && (await ev('return window.__v2.ui.sel && window.__v2.ui.sel.id;')) === L0.T, JSON.stringify([d0, d1]));
     // rapid touch sequence: 6 quick taps on empty ground, then everything is IDLE and a pan is 1:1
     await ev('window.__v2.select(null); return 1;'); const rq = D({ x: 60, y: 200 }); const fr = []; for (let i = 0; i < 6; i++) { fr.push([{ slot: 0, x: rq.x + 4 * i, y: rq.y }]); fr.push([{ slot: 0, up: true }]); } send(fr); await sleep(500);
     const stR = await state(), g0 = await cam(), g1p = D({ x: 150, y: 300 }); send([[{ slot: 0, ...g1p }], [{ slot: 0, x: g1p.x + Math.round(40 * dpr), y: g1p.y }], [{ slot: 0, up: true }]]); await sleep(500); const g1 = await cam();
-    check('RAPID TOUCH SEQUENCE: 6 quick taps end IDLE and the next pan is 1:1', stR === 'IDLE' && Math.abs((g0.x - g1.x) * g1.z + 40) < 1.0 && (await state()) === 'IDLE', 'state ' + stR);
+    check('RAPID TOUCH SEQUENCE: 6 quick taps end IDLE and the next pan is 1:1', stR === 'IDLE' && Math.abs((g1.x - g0.x) * g1.z + 40) < 1.0 && (await state()) === 'IDLE', 'state ' + stR);
     if (multi) {
       // rapid second finger: down, second down and up within two frames, the first keeps panning from where it is, no jump
       await ev('window.__v2.select(null); return 1;'); await center(1, 70, 44); await sleep(200); const r0 = D({ x: 140, y: 300 }), r1 = D({ x: 260, y: 360 });
       sendM([[{ slot: 0, ...r0 }], [{ slot: 0, x: r0.x + 20, y: r0.y }]]); await sleep(150); const h0 = await cam(); sendM([[{ slot: 1, ...r1 }], [{ slot: 1, up: true }]]); await sleep(300);
-      const h1 = await cam(), stH = await state(); sendM([[{ slot: 0, x: r0.x + 20 + Math.round(30 * dpr), y: r0.y }]]); await sleep(250); const h2 = await cam(); sendM([[{ slot: 0, up: true }]]); await sleep(400);
-      check('RAPID SECOND FINGER: touching and lifting a 2nd finger quickly does not move the camera; the first finger continues 1:1', h0.z === h1.z && stH === 'PAN' && Math.abs((h1.x - h2.x) * h2.z - 30) < 1.5, 'state ' + stH + ' dz ' + (h1.z - h0.z).toFixed(4) + ' dx ' + ((h1.x - h2.x) * h2.z).toFixed(2));
+      const h1 = await cam(), stH = await state(); const seenP = () => ev('const ps = window.__v2.view.scene.input.manager.pointers.filter(p => p.isDown); return ps.length ? { x: ps[0].x, y: ps[0].y } : null;');
+      const pr0 = await seenP(); sendM([[{ slot: 0, x: r0.x + 20 + Math.round(30 * dpr), y: r0.y }]]); await sleep(300); const pr1 = await seenP(), h2 = await cam(); sendM([[{ slot: 0, up: true }]]); await sleep(400);
+      const recv = pr0 && pr1 ? pr1.x - pr0.x : NaN, camMoved = (h1.x - h2.x) * h2.z;
+      check('RAPID SECOND FINGER: touching and lifting a 2nd finger quickly does not move the camera or zoom; the first finger then pans exactly as far as the app received it', h0.z === h1.z && h0.x === h1.x && h0.y === h1.y && stH === 'PAN' && Math.abs(camMoved - recv) < 0.5, 'state ' + stH + ', sent 30.0, app received ' + recv.toFixed(2) + ', camera moved ' + camMoved.toFixed(2) + ' css px');
       // rapid finger release: two fingers lifted in consecutive frames -> IDLE, nothing stuck
       sendM([[{ slot: 0, ...r0 }, { slot: 1, ...r1 }]]); await sleep(120); sendM([[{ slot: 0, up: true }], [{ slot: 1, up: true }]]); await sleep(400);
       check('RAPID FINGER RELEASE: both fingers lifted in consecutive frames -> IDLE', (await state()) === 'IDLE', 'state ' + await state());
