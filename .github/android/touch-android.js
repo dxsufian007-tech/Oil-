@@ -187,6 +187,38 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
     }
     await ev('window.__v2.select(null); return 1;');
   }
+  // 8. PHASE B on the real Android input path: building placement (arm -> touch -> preview follows -> release builds), invalid, snap, camera locked
+  {
+    await ev('const v = window.__v2; v.select(null); v.cancel(); v.setTool(null); return 1;');
+    const sp = await ev(`const g = window.__v2.game; for (let y = ${Y} + 6; y < ${Y} + 25; y++) for (let x = ${X} + 2; x < ${X} + 30; x++) if (g.canPlace('tank', x, y).ok && g.canPlace('tank', x + 3, y + 3).ok) return { x, y }; return null;`);
+    if (!sp) check('PHASE B: free spot', false, 'none');
+    else {
+      await center(1, sp.x + 1, sp.y + 1); await sleep(300);
+      const scr = (x, y) => ev(`const v = window.__v2, c = v.tc(${x}, ${y}); return v.camApi.w2s(c.x, c.y);`);
+      const stB = () => ev(`const v = window.__v2; return { state: v.touch.state, tool: v.ui.tool, pending: v.ui.pending && { x: v.ui.pending.x, y: v.ui.pending.y }, ghost: !!v.view.scene.ghost, snapped: !!v.ui.snapped, n: v.game.buildings.length, cash: v.game.s.cash };`);
+      await ev("const v = window.__v2; v.setTool('tank'); return 1;"); await sleep(200);
+      const b0 = await stB(); check('PB1 select a building: tank tool armed, state BUILDING_PLACEMENT, no preview yet', b0.tool === 'tank' && b0.state === 'BUILDING_PLACEMENT' && !b0.pending, JSON.stringify(b0));
+      const c0 = await cam(), a = D(await scr(sp.x, sp.y)), st0 = D(await scr(sp.x - 2, sp.y - 2));
+      const pl = await ev(`return window.__v2.game.placement('tank', ${sp.x}, ${sp.y});`);
+      send([[{ slot: 0, ...st0 }], [{ slot: 0, x: Math.round((st0.x + a.x) / 2), y: Math.round((st0.y + a.y) / 2) }], [{ slot: 0, ...a }]]); await sleep(500);
+      const m = await stB(), c1 = await cam();
+      check('PB2/PB3 preview appears under the finger and follows it to the tile; building not created yet', m.state === 'BUILDING_DRAG' && m.ghost && m.pending && m.pending.x === sp.x && m.pending.y === sp.y && m.n === b0.n, JSON.stringify(m));
+      check('PB14 camera stays LOCKED while the building is dragged', c0.x === c1.x && c0.y === c1.y && c0.z === c1.z, 'cam ' + c0.x.toFixed(1) + ',' + c0.y.toFixed(1) + ' -> ' + c1.x.toFixed(1) + ',' + c1.y.toFixed(1));
+      send([[{ slot: 0, up: true }]]); await sleep(900); const e = await stB();
+      check('PB4/PB12 release on a valid tile builds exactly one tank and charges the previewed cost; tool released', e.n === b0.n + 1 && Math.abs((m.cash - e.cash) - pl.cost) < 50 && e.tool === null, 'n ' + b0.n + '->' + e.n + ' charged ' + (m.cash - e.cash).toFixed(0) + ' vs ' + pl.cost);
+      // invalid: flood the area, release -> nothing built, tool stays armed, preview stays
+      const sp2 = { x: sp.x + 3, y: sp.y + 3 };
+      await ev(`const g = window.__v2.game; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const k = (${sp2.y} + dy) * 140 + ${sp2.x} + dx; if (!g.pipe[k] && !g.occ[k]) g.map.water[k] = 1; } window.__v2.setTool('tank'); return 1;`); await sleep(200);
+      const n1 = (await stB()).n, i1 = D(await scr(sp2.x, sp2.y));
+      send([[{ slot: 0, ...i1 }], [{ slot: 0, x: i1.x + 4, y: i1.y + 2 }], [{ slot: 0, up: true }]]); await sleep(700); const iv = await stB();
+      check('PB5/PB9 invalid spot: preview stays, nothing built, nothing charged, tool stays armed, nothing attracts it', iv.n === n1 && iv.tool === 'tank' && iv.pending && !iv.snapped, JSON.stringify(iv));
+      await ev(`const g = window.__v2.game; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) g.map.water[(${sp2.y} + dy) * 140 + ${sp2.x} + dx] = 0; window.__v2.cancel(); window.__v2.setTool(null); return 1;`);
+      // cost / performance inside the app's own engine
+      const perf = await ev(`const g = window.__v2.game; let t = performance.now(); for (let i = 0; i < 2000; i++) g.placement('tank', ${X} + (i % 40), ${Y} + (i % 17)); const tp = (performance.now() - t) / 2000; t = performance.now(); for (let i = 0; i < 300; i++) g.snapPlacement('tank', ${X} + (i % 30), ${Y} + 3 + (i % 9), 2); const ts = (performance.now() - t) / 300; return { tp, ts };`);
+      check('PB perf on Android WebView: placement check and snap search are cheap', perf.tp < 0.5 && perf.ts < 2, 'placement ' + perf.tp.toFixed(4) + ' ms, snap ' + perf.ts.toFixed(4) + ' ms');
+    }
+    await ev('const v = window.__v2; v.select(null); v.cancel(); v.setTool(null); return 1;');
+  }
   const tr = await ev('return window.__v2.touch.log.slice();');
   const ok = new Set(['IDLE>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>IDLE', 'BUILDING_PLACEMENT>BUILDING_DRAG', 'BUILDING_DRAG>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>PAN', 'PAN>BUILDING_PLACEMENT', 'PINCH>BUILDING_PLACEMENT', 'BUILDING_PLACEMENT>PINCH', 'IDLE>PAN', 'IDLE>PIPE_DRAG', 'IDLE>BUILDING_DRAG', 'PAN>PINCH', 'PAN>IDLE', 'PINCH>PAN', 'PINCH>IDLE', 'PINCH>PINCH', 'PIPE_DRAG>IDLE', 'PIPE_DRAG>PINCH', 'BUILDING_DRAG>IDLE', 'BUILDING_DRAG>PINCH']);
   check('every state change was a legal one', tr.every(x => ok.has(x)), [...new Set(tr)].join(', '));
