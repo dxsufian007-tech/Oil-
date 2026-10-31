@@ -9,6 +9,8 @@ sleep 3
 adb wait-for-device
 adb install -r Oli.apk
 adb logcat -c
+# Android shows a "Viewing full screen - Got it" overlay the first time an app goes immersive; it swallows the first taps. Mark it as already confirmed.
+adb shell settings put secure immersive_mode_confirmations confirmed || true
 
 # start (or restart) the app and attach to its WebView
 launch() {
