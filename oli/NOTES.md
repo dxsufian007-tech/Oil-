@@ -81,3 +81,11 @@ Changed in Phase A:
 Handler list: KEPT `pointerdown/pointermove/pointerup/pointerupoutside` (Phaser, one set), `wheel` (desktop zoom about the cursor), window `blur` (drops stuck fingers), `contextmenu`/`dblclick` suppression, `touch-action: none` on the canvas, `user-scalable=no`. REPLACED nothing. DISABLED glide while touching. REMOVED from the shipped tree: none (the legacy app was never loaded by `v2.html`). MOVED: legacy front-end -> `legacy/`.
 
 Known benign console message: a real `touchcancel` makes Chrome print "Ignored attempt to cancel a touchcancel event with cancelable=false" (Phaser calls `preventDefault`). It is a browser intervention note, not an exception; it does not change behaviour. Not suppressed because turning off Phaser's `touch.capture` would let the browser synthesise mouse events after touches (double actions).
+
+## Phase B - Building placement (web + emulator tested; real device NOT tested)
+- Model (core.js, read-only APIs): `buildingModel`, `connectionPoints`, `rotationOf`, `valvePorts`, `junctionPorts`, `pipeContacts`, `snapPlacement`. Same grid/occupancy/network as before; no second system.
+- Rule change: a new building may not touch the MIDDLE of a pipe (reason `touchesPipe`); open pipe ends are fine. Prevents accidental connections.
+- Snap: local window scan (radius 2 tiles), valid tiles only, bonus for an open pipe end, hysteresis in v2.js `placeAt`.
+- Touch: new state BUILDING_PLACEMENT (tool armed) <-> BUILDING_DRAG; camera is locked during the drag; release builds if valid.
+- Valve / Junction have no player placement tool in Oli (valve = state of a line, junction = derived from pipes): only their derived ports exist.
+- Tests: test-phaseB.js (core), test-v2-phaseB.js (UI, WebGL + ?canvas), Android checks PB* in .github/android/touch-android.js. Licences: docs/PHASE_B_REFERENCE_MATRIX.md (no code reused).
