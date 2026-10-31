@@ -33,7 +33,9 @@ const valid = (h, w) => { const p = h.validateNetwork(); assert.deepStrictEqual(
   const clipW = h.placement('tank', X - 1, Y - 1); assert.strictEqual(clipW.reason, 'overlap');
   ok('TEST 3: ' + n + ' overlap attempts (well/tank/pump over well/tank/pump, every covered cell) all refused; a tank clipping a neighbour with one corner = "overlap" (OVERLAPPING), anchor on a building = "occupied" (OCCUPIED)');
   // beside existing buildings is allowed - no invented gaps
-  for (const [type, x, y] of [['well', X, Y + 1], ['well', X, Y - 1], ['well', X - 1, Y], ['tank', X + 7, Y], ['tank', X + 5, Y + 2], ['tank', X + 3, Y + 2], ['well', X + 1, Y + 1]]) { const r = h.placement(type, x, y); assert(r.ok, type + ' beside at ' + [x, y] + ': ' + r.reason); }
+  for (const [type, x, y] of [['well', X, Y + 1], ['well', X, Y - 1], ['well', X - 1, Y], ['tank', X + 7, Y], ['tank', X + 5, Y + 2], ['tank', X + 3, Y + 2]]) { const r = h.placement(type, x, y); assert(r.ok, type + ' beside at ' + [x, y] + ': ' + r.reason); }
+  // Phase B rule: beside the MIDDLE of a pipe (would connect by accident) is refused with its own reason
+  { const r = h.placement('well', X + 1, Y + 1); assert.strictEqual(r.ok, false); assert.strictEqual(r.reason, 'touchesPipe'); }
   ok('TEST 4: placing directly beside existing buildings (touching edges, no gap) is valid - efficient use of land');
 }
 { // 5. states and exact money

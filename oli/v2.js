@@ -101,6 +101,7 @@
       this.makeGround();
       this.fxG = this.add.graphics().setDepth(5e5);         // oil moving in pipes (each frame, a few dots); dots behind a building are skipped
       this.prevG = this.add.graphics().setDepth(6e5).setAlpha(.82);   // the route preview, above everything (redrawn only when the route changes)
+      this.placeG = this.add.graphics().setDepth(5.9e5);    // building preview: footprint cells + connection points (redrawn only when the preview moves to another tile)
       this.markG = this.add.graphics().setDepth(1e6);       // node marks / selection
       this.sprites = new Map(); this.ghost = null; this.netSig = ''; this.groundSig = '';
       if (saved && saved.cam) { cam.setZoom(clamp(saved.cam.z || 1, camApi.minZoom(), Z_MAX)); cam.setScroll(saved.cam.x, saved.cam.y); camApi.clamp(); }
@@ -147,7 +148,7 @@
     }
     update(t, dms) {
       let left = Math.min(dms / 1000, .25) * ui.speed; while (left > 1e-6) { const d = Math.min(left, .25); game.step(d); left -= d; }   // game speed: pause / 1x / 2x / 3x
-      if (view.glide) { if (touch.state !== 'IDLE') view.glide = null; else view.glide(t); }       // the Touch Controller is the only thing that moves the camera while a finger is on the map
+      if (view.glide) { if (touch.busy()) view.glide = null; else view.glide(t); }       // the Touch Controller is the only thing that moves the camera while a finger is on the map
       if ((t | 0) % 1000 < dms) this.paintGround(false);
       this.syncBuildings(); this.drawPipes(); this.drawFlow(t); this.drawMarks(t);
     }
@@ -337,7 +338,8 @@
     EASE: .35,              // per-frame easing of the drawn pipe tip toward an acquired target (visual only)
     TIP_MAX: 16,            // the drawn pipe end moves at most this many world px per frame while it glides to / from a target
     BEHIND: -.3,            // a target behind the moving finger (cos below this) and not under it is ignored
-    PLACE_RADIUS: 2         // a building preview is pulled to a valid tile within this many tiles
+    PLACE_RADIUS: 2,        // a building preview is pulled to a valid tile within this many tiles
+    PLACE_KEEP: 1.25        // a snapped preview stays on its spot while the finger is within this x the radius (no flicker)
   };
   const camApi = {
     // world point under a screen point, from the CURRENT scroll / zoom (Phaser zooms about the view centre)
@@ -356,7 +358,7 @@
     },
     follow(w, sx, sy) { const c = view.cam; c.setScroll(w.x - c.width / 2 - (sx - c.width / 2) / c.zoom, w.y - c.height / 2 - (sy - c.height / 2) / c.zoom); camApi.clamp(); },
     focus(wx, wy, ms = 450) {                                         // smooth glide to a point (never a teleport); a new touch cancels it, and it never starts while a finger is on the map
-      if (touch.state !== 'IDLE') return;
+      if (touch.busy()) return;
       const c = view.cam, sx0 = c.scrollX, sy0 = c.scrollY, tx = wx - c.width / 2, ty = wy - c.height / 2, t0 = view.scene.time.now;
       view.glide = t => { const f = clamp((t - t0) / ms, 0, 1), e = f < .5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2; c.setScroll(sx0 + (tx - sx0) * e, sy0 + (ty - sy0) * e); camApi.clamp(); if (f >= 1) view.glide = null; };
     }
@@ -374,8 +376,13 @@
      Camera maths after rex CameraController (PanScroll + PinchZoom), MIT License, Copyright (c) 2018 Rex - https://github.com/rexrainbow/phaser3-rex-notes :
        pan:   scroll -= fingerDelta / zoom             (incremental: at a map edge the clamp never leaves a dead zone)
        pinch: zoom *= distance / previousDistance;  scroll so the focus world point is under the current midpoint (incremental too) ---------- */
-  const TOUCH = { IDLE: 'IDLE', PAN: 'PAN', PINCH: 'PINCH', PIPE_DRAG: 'PIPE_DRAG', BUILDING_DRAG: 'BUILDING_DRAG' };
+  const TOUCH = { IDLE: 'IDLE', PAN: 'PAN', PINCH: 'PINCH', PIPE_DRAG: 'PIPE_DRAG', BUILDING_DRAG: 'BUILDING_DRAG', BUILDING_PLACEMENT: 'BUILDING_PLACEMENT' };
+  /* BUILDING_PLACEMENT (Phase B) = a building tool is armed (well / tank / pump) and no finger is on the map. It is the resting state while placing:
+     touch -> BUILDING_DRAG (preview follows the finger) -> release (valid = build) -> back to BUILDING_PLACEMENT or IDLE. It never moves the camera. */
   const touch = { state: TOUCH.IDLE, log: [] };
+  const restState = () => (ui.tool && ui.tool !== 'pipe' ? TOUCH.BUILDING_PLACEMENT : TOUCH.IDLE);
+  touch.busy = () => touch.state !== TOUCH.IDLE && touch.state !== TOUCH.BUILDING_PLACEMENT;      // a finger is on the map
+  touch.sync = () => { if (!touch.busy()) { const r = restState(); if (r !== touch.state) { touch.log.push(touch.state + '>' + r); if (touch.log.length > 40) touch.log.shift(); touch.state = r; } } };
   function setupInput(scene) {
     const cam = view.cam, ptr = new Map();        // pointer id -> { x, y, px, py (previous), sx, sy (where it went down) }
     let g = null;                                  // the gesture of the current state
@@ -398,7 +405,7 @@
           if (ui.a && !ui.dragging && (!n || n.id !== ui.a)) { go(TOUCH.PIPE_DRAG, { id: p.id, moved: false }); ui.dragging = true; ui.dragKey = ''; ui.routeCache = new Map(); pipeDragMove(p); return; }   // a pipe is attached already: this touch continues it
           if (n) { go(TOUCH.PIPE_DRAG, { id: p.id, moved: false }); pipeDragStart(n); return; }                                                                             // grab a connection: a new pipe starts here
         }
-        if (ui.tool && ui.tool !== 'pipe') { go(TOUCH.BUILDING_DRAG, { id: p.id, kind: 'new', before: ui.pending ? { x: ui.pending.x, y: ui.pending.y } : null, moved: false }); placeAt(cell); return; }
+        if (ui.tool && ui.tool !== 'pipe') { go(TOUCH.BUILDING_DRAG, { id: p.id, kind: 'new', before: ui.pending ? { x: ui.pending.x, y: ui.pending.y } : null, moved: false }); placeAt(cell, w); return; }
         if (!ui.tool && ui.sel && ui.sel.kind === 'b') {                                                     // touching the SELECTED well / tank grabs it to move it
           const b = game.buildings.find(q => q.id === ui.sel.id), n = b && (b.type === 'well' || b.type === 'tank') ? pickNode(cell, w, p) : null;
           if (n && n.kind === 'b' && n.b === b) { go(TOUCH.BUILDING_DRAG, { id: p.id, kind: 'move', moved: false }); moveStart(b, cell); return; }
@@ -428,7 +435,7 @@
       if (Math.hypot(p.x - q.sx, p.y - q.sy) > TAP_PX) g.moved = true;
       if (touch.state === TOUCH.PAN) { panScroll(q.x - q.px, q.y - q.py); if (g.moved) scene.ripple = null; return; }   // 1:1 with the finger
       if (touch.state === TOUCH.PIPE_DRAG) { pipeDragMove(p); return; }
-      if (touch.state === TOUCH.BUILDING_DRAG) { const w = camApi.s2w(p.x, p.y), c = toTile(w.x, w.y); if (g.kind === 'move') moveTo(c); else placeAt(c); }
+      if (touch.state === TOUCH.BUILDING_DRAG) { const w = camApi.s2w(p.x, p.y), c = toTile(w.x, w.y); if (g.kind === 'move') moveTo(c); else placeAt(c, w); }
     });
     const up = p => {
       const q = ptr.get(p.id); if (!q) return; ptr.delete(p.id);
@@ -436,17 +443,17 @@
       if (st === TOUCH.PINCH) {
         if (ptr.size >= 2) return startPinch();                                            // three fingers -> two: a new snapshot
         if (ptr.size === 1) { const [id, r] = [...ptr.entries()][0]; return startPan(id, r, true); }   // continue as PAN from where that finger IS now
-        return go(TOUCH.IDLE);
+        return go(restState());
       }
       if (!d || d.id !== p.id) return;
-      go(TOUCH.IDLE);                                                                      // fingers that remain belong to no gesture: ignored until lifted
+      go(restState());                                                                      // fingers that remain belong to no gesture: ignored until lifted
       if (st === TOUCH.PIPE_DRAG) return pipeDragEnd();
       if (st === TOUCH.BUILDING_DRAG) { if (d.kind === 'move') moveEnd(false); else placeRelease(); return; }
       if (st === TOUCH.PAN && !d.moved) { const w = camApi.s2w(p.x, p.y); onTap(toTile(w.x, w.y), w, p); }   // a drag never turns into a tap
     };
     scene.input.on('pointerup', up); scene.input.on('pointerupoutside', up);
     scene.input.on('wheel', (p, o, dx, dy) => { const w = camApi.s2w(p.x, p.y); camApi.setZoomAt(cam.zoom * (dy > 0 ? .9 : 1.1), p.x, p.y, w.x, w.y); });
-    window.addEventListener('blur', () => { ptr.clear(); if (touch.state === TOUCH.PIPE_DRAG) pipeDragEnd(true); if (touch.state === TOUCH.BUILDING_DRAG && g && g.kind === 'move') moveEnd(true); go(TOUCH.IDLE); });
+    window.addEventListener('blur', () => { ptr.clear(); if (touch.state === TOUCH.PIPE_DRAG) pipeDragEnd(true); if (touch.state === TOUCH.BUILDING_DRAG && g && g.kind === 'move') moveEnd(true); go(restState()); });
     scene.scale.on('resize', () => camApi.clamp());
     document.addEventListener('contextmenu', e => e.preventDefault());           // a long press never opens a menu
     document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
@@ -570,11 +577,22 @@
     if (r && !abort) toast((r.ok || (r.free && r.clear)) && game.s.cash < r.cost ? why('cash') : r.free && r.clear ? T('لم يُبنَ شيء: الأنبوب قصير جداً') : why(r.reason), 'bad');
     cancel(); updateHint();
   }
-  function placeAt(cell) {                                                     // building preview under the finger, snapped to the grid (to a valid tile within 1 if possible)
-    if (!inb(cell.x, cell.y)) return; let c = cell;
-    if (!game.placement(ui.tool, c.x, c.y, ui.kind).ok) { const n = game.nearestValid(ui.tool, c.x, c.y, ASSIST.PLACE_RADIUS); if (n) c = { x: n[0], y: n[1] }; }
+  /* Building preview under the finger (Phase B). Exact tile when it is valid; otherwise the best valid tile within PLACE_RADIUS: score = distance
+     - a bonus for touching an open pipe end (a compatible connection); invalid tiles never attract. Hysteresis: a snapped spot is kept while it stays valid and
+     within PLACE_KEEP x the radius, so the preview does not flicker between two spots. Nothing here touches the simulation or the network. */
+  function placeAt(cell, w) {
+    if (!inb(cell.x, cell.y)) return; let c = cell, snapped = false;
+    if (!game.canPlace(ui.tool, c.x, c.y).ok) {
+      const u = w ? w.x / 32 : cell.x, v = w ? w.y / 16 : cell.y, hint = w ? { fx: (u + v) / 2 - .5, fy: (v - u) / 2 - .5 } : null, keep = ui.pending;
+      const best = game.snapPlacement(ui.tool, c.x, c.y, ASSIST.PLACE_RADIUS, hint);
+      if (best) { c = { x: best.x, y: best.y }; snapped = true; }
+      if (keep && ui.snapped && hint && !(keep.x === c.x && keep.y === c.y) && game.canPlace(ui.tool, keep.x, keep.y).ok && Math.hypot(keep.x - hint.fx, keep.y - hint.fy) <= ASSIST.PLACE_RADIUS * ASSIST.PLACE_KEEP) {
+        const kc = ui.tool === 'pump' ? 0 : game.pipeContacts(ui.tool, keep.x, keep.y).filter(q => q.end).length;
+        if (!best || kc >= best.compat) { c = { x: keep.x, y: keep.y }; snapped = true; }
+      }
+    }
     if (ui.pending && ui.pending.x === c.x && ui.pending.y === c.y) return;
-    ui.pending = { x: c.x, y: c.y }; showGhost(); updateConfirm(); setHint('');
+    ui.snapped = snapped; ui.pending = { x: c.x, y: c.y }; showGhost(); updateConfirm(); setHint('');
   }
   function placeRelease() {                                                    // release = build when the (attracted) spot is valid; otherwise nothing happens and the reason shows
     if (!ui.pending) return; const pl = game.placement(ui.tool, ui.pending.x, ui.pending.y, ui.kind);
@@ -602,7 +620,7 @@
   }
   const nodeName = n => !n ? '' : n.kind === 'j' ? T('أنبوب') : n.b.type === 'well' ? T('بئر') : n.b.type === 'tank' ? T('خزان') : T('مضخة');
   const REASON = {
-    noMove: T('لا يمكن نقل هذا المبنى'), occupied: T('المكان مشغول بمنشأة أخرى'), overlap: T('المبنى يتداخل مع منشأة أخرى'), pipe: T('يوجد أنبوب في هذا المكان'), water: T('لا يمكن البناء على الماء'), blocked: T('أرض صخرية: لا يمكن البناء هنا'), locked: T('هذه المنطقة مقفلة'), outside: T('خارج حدود الخريطة'), edge: T('المبنى يخرج عن حدود الخريطة'),
+    noMove: T('لا يمكن نقل هذا المبنى'), occupied: T('المكان مشغول بمنشأة أخرى'), overlap: T('المبنى يتداخل مع منشأة أخرى'), pipe: T('يوجد أنبوب في هذا المكان'), touchesPipe: T('يلامس أنبوبًا فيتصل به بالخطأ: ضعه عند طرف أنبوب مفتوح أو ابتعد'), water: T('لا يمكن البناء على الماء'), blocked: T('أرض صخرية: لا يمكن البناء هنا'), locked: T('هذه المنطقة مقفلة'), outside: T('خارج حدود الخريطة'), edge: T('المبنى يخرج عن حدود الخريطة'),
     notExplored: T('الآبار تُبنى فقط على أرض فيها نفط (البقع الداكنة)'), noOil: T('لا يوجد نفط في هذه الأرض'), depleted: T('نفد النفط في هذه الأرض'), cash: T('النقد غير كافٍ'),
     sameNode: T('اختر نقطة وصول مختلفة عن نقطة البداية'), duplicate: T('هاتان النقطتان متصلتان بأنبوب أصلاً'), badNode: T('نقطتا الاتصال غير متوافقتين'), sameNet: T('متصلان أصلاً عبر الشبكة نفسها (اتصال ثانٍ يصنع حلقة مكررة)'),
     noPort: T('لا توجد نقطة اتصال متاحة في هذا المبنى (كل جوانبه مشغولة): اختر أحد أنابيبه'), noRoute: T('لا يوجد مسار صالح بين هاتين النقطتين'),
@@ -637,10 +655,22 @@
     for (const pc of geo.pieces) drawPiece(g, pc, sc, col, 1);
   }
   function showGhost() {
-    const sc = view.scene; if (sc.ghost) { sc.ghost.destroy(); sc.ghost = null; }
+    const sc = view.scene; if (sc.ghost) { sc.ghost.destroy(); sc.ghost = null; } if (sc.placeG) sc.placeG.clear();
     if (!ui.tool || ui.tool === 'pipe' || !ui.pending) return;
     const fake = { type: ui.tool, x: ui.pending.x, y: ui.pending.y, kind: ui.kind, level: 1, id: 0 }, s = sc.add.image(0, 0, spriteKey(fake));
     placeSprite(s, ui.tool, fake.x, fake.y, fake); const pl = game.placement(ui.tool, fake.x, fake.y, ui.kind); s.setAlpha(.75).setTint(pl.ok ? 0xa8ffc8 : 0xff8a80); sc.ghost = s;
+    drawPlacement(pl);
+  }
+  // the footprint cells (the real occupancy, not the picture) and the connection points the building will have; green = can be built, red = cannot
+  function drawPlacement(pl) {
+    const g = view.scene.placeG; if (!g) return; g.clear(); const col = pl.ok ? 0x6fe39a : pl.state === 'UNAFFORDABLE' ? 0xffd166 : 0xff6b5f;
+    for (const [cx, cy] of pl.cells) { if (!inb(cx, cy)) continue; const c = tc(cx, cy); g.fillStyle(col, .22).lineStyle(2, col, .9).beginPath().moveTo(c.x, c.y - 16).lineTo(c.x + 32, c.y).lineTo(c.x, c.y + 16).lineTo(c.x - 32, c.y).closePath().fillPath().strokePath(); }
+    if (!pl.ok && pl.state !== 'UNAFFORDABLE') return;
+    let dir = 0; if (ui.tool === 'pump') { const x = ui.pending.x, y = ui.pending.y, h = (inb(x + 1, y) && game.pipe[idx(x + 1, y)]) || (inb(x - 1, y) && game.pipe[idx(x - 1, y)]); dir = game.pumpAutoDir(x, y, h ? 'h' : 'v'); }
+    for (const q of game.connectionPoints(ui.tool, ui.pending.x, ui.pending.y, dir)) {
+      if (!inb(q.x, q.y) || game.occ[idx(q.x, q.y)]) continue; const a = tc(q.from[0], q.from[1]), b = tc(q.x, q.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      g.fillStyle(q.role === 'out' ? 0xffb74d : q.role === 'in' ? 0x4fc3f7 : 0xffffff, 1).lineStyle(1.5, 0x10202e, 1).fillCircle(mx, my, 4.5).strokeCircle(mx, my, 4.5);
+    }
   }
   function updateConfirm() {
     const box = $('#confirm'); let txt = '', ok = false;
@@ -652,7 +682,8 @@
     $('#cf-ok').hidden = false;
     if (ui.tool && ui.pending) {
       const pl = game.placement(ui.tool, ui.pending.x, ui.pending.y, ui.kind); ok = pl.ok;
-      txt = pl.ok ? (ui.tool === 'well' ? T('بئر') : ui.tool === 'tank' ? T('خزان') : T('مضخة')) + ' · ' + money(pl.cost) : pl.state === 'UNAFFORDABLE' ? why('cash') : why(pl.reason);
+      const nm = ui.tool === 'well' ? T('بئر') : ui.tool === 'tank' ? T('خزان') : T('مضخة'), cash = game.s.cash, money3 = nm + ' · ' + T('التكلفة') + ' ' + money(pl.cost) + ' · ' + T('الرصيد') + ' ' + money(cash) + ' ← ' + money(cash - pl.cost);   // COST / BALANCE / AFTER BUILD (nothing is charged before the build)
+      txt = pl.ok ? money3 + (ui.snapped ? ' · ' + T('ملتصق بأقرب مكان صالح') : '') : pl.state === 'UNAFFORDABLE' ? why('cash') + ' · ' + T('التكلفة') + ' ' + money(pl.cost) + ' · ' + T('الرصيد') + ' ' + money(cash) : why(pl.reason);
     } else { box.hidden = true; return; }
     box.hidden = false; box.dataset.ok = ok ? '1' : '0'; $('#cf-text').textContent = txt; $('#cf-ok').disabled = !ok;
   }
@@ -669,13 +700,13 @@
       toast(T('تم البناء · ') + money(r.cost), 'good'); const id = r.building.id; setTool(null); select({ kind: 'b', id }); save();
     }
   }
-  function cancel() { ui.pending = null; ui.a = ui.b = null; ui.route = null; ui.dragging = false; ui.dragKey = ''; view.tip = null; if (view.scene) { view.scene.prevG.clear(); view.scene.previewGeom = null; showGhost(); } updateConfirm(); updateHint(); }
+  function cancel() { ui.pending = null; ui.snapped = false; ui.a = ui.b = null; ui.route = null; ui.dragging = false; ui.dragKey = ''; view.tip = null; if (view.scene) { view.scene.prevG.clear(); view.scene.previewGeom = null; showGhost(); } updateConfirm(); updateHint(); }
   function setTool(t, ptype) {
     ui.tool = t; if (ptype != null) ui.ptype = ptype; cancel();
     $$('#buildmenu button').forEach(b => b.classList.toggle('on', b.dataset.tool === t && (t !== 'pipe' || +b.dataset.ptype === ui.ptype)));
     $('#buildmenu').hidden = !t && !$('#b-build').classList.contains('on');
     if (!t) { $('#b-build').classList.remove('on'); $('#buildmenu').hidden = true; }
-    if (t) select(null); updateHint();
+    if (t) select(null); touch.sync(); updateHint();
   }
   function select(s) { ui.sel = s; renderPanel(); }
   function renderPanel() {

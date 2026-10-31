@@ -407,6 +407,62 @@
       for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) out.push(idx(b.x + dx, b.y + dy));
       return out;
     }
+    /* ---------- Phase B: building model, connection points, placement helpers (read-only: nothing here changes the game) ---------- */
+    // rotation in degrees from the facing: 0 +x, 90 +y, 180 -x, 270 -y (only the pump has a facing today; the others are symmetric)
+    rotationOf(b) { return b && b.type === 'pump' ? [0, 180, 90, 270][b.dir || 0] : 0; }
+    // The real connection points of a building (where a pipe may attach), each { role: 'in' | 'out' | 'both', x, y (the free tile outside the footprint), side (0 +x, 1 -x, 2 +y, 3 -y), from (footprint cell) }.
+    //   WELL: out (every side)   TANK: in (every side)   PUMP: out on its facing side, in on the opposite side (rotation turns both)
+    connectionPoints(type, x, y, dir) {
+      const [w, h] = this.footprintOf(type), out = [];
+      if (type === 'pump') {
+        const d = DIRV[dir || 0], o = [dir || 0, (dir || 0) ^ 1];
+        out.push({ role: 'out', x: x + d[0], y: y + d[1], side: o[0], from: [x, y] }); out.push({ role: 'in', x: x - d[0], y: y - d[1], side: o[1], from: [x, y] });
+        return out;
+      }
+      const role = type === 'well' ? 'out' : type === 'tank' ? 'in' : 'both';
+      for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) for (let i = 0; i < 4; i++) {
+        const nx = x + dx + DIRV[i][0], ny = y + dy + DIRV[i][1]; if (nx >= x && nx < x + w && ny >= y && ny < y + h) continue;
+        out.push({ role, x: nx, y: ny, side: i, from: [x + dx, y + dy] });
+      }
+      return out;
+    }
+    // id, type, position, rotation, width, height, footprint cells and connection points of a placed building
+    buildingModel(b) {
+      const [w, h] = this.footprintOf(b.type), cells = []; for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) cells.push([b.x + dx, b.y + dy]);
+      return { id: b.id, type: b.type, x: b.x, y: b.y, rotation: this.rotationOf(b), width: w, height: h, footprint: cells, connectionPoints: this.connectionPoints(b.type, b.x, b.y, b.dir) };
+    }
+    // the two ends of a valve (in = towards the start of its line, out = towards the end) and the arms of a junction; both live on pipe tiles
+    valvePorts(k) {
+      if (!this.valve[k]) return null; const L = this.lineAt(k), i = L ? L.cells.indexOf(k) : -1;
+      const t = c => ({ x: c % W, y: (c / W) | 0 });
+      if (i > 0 && i < L.cells.length - 1) return [Object.assign({ role: 'in' }, t(L.cells[i - 1])), Object.assign({ role: 'out' }, t(L.cells[i + 1]))];
+      return [];
+    }
+    junctionPorts(k) { const out = []; for (let i = 0; i < 4; i++) { const nx = (k % W) + DIRV[i][0], ny = ((k / W) | 0) + DIRV[i][1]; if (inb(nx, ny) && this.pipe[idx(nx, ny)]) out.push({ role: 'both', x: nx, y: ny, side: i }); } return out; }
+    // pipe tiles that touch the footprint (outside it): [{ k, end }] - end = it is an OPEN END of a pipe (the one deliberate way to attach a pipe to a new building)
+    pipeContacts(type, x, y) {
+      const [w, h] = this.footprintOf(type), out = [], seen = new Set(), mv = this.moving ? new Set(this.cellsOf(this.moving)) : null;
+      for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) for (let i = 0; i < 4; i++) {
+        const nx = x + dx + DIRV[i][0], ny = y + dy + DIRV[i][1]; if (!inb(nx, ny) || (nx >= x && nx < x + w && ny >= y && ny < y + h)) continue;
+        const nk = idx(nx, ny); if (!this.pipe[nk] || seen.has(nk)) continue; seen.add(nk);
+        if (mv) { let own = false; for (let j = 0; j < 4 && !own; j++) { const ax = nx + DIRV[j][0], ay = ny + DIRV[j][1]; if (inb(ax, ay) && mv.has(idx(ax, ay))) own = true; } if (own) continue; }   // the moving building's own pipe stays its own
+        let links = 0; for (let j = 0; j < 4; j++) { const ax = nx + DIRV[j][0], ay = ny + DIRV[j][1]; if (inb(ax, ay) && (this.pipe[idx(ax, ay)] || this.occ[idx(ax, ay)])) links++; }
+        out.push({ k: nk, end: links <= 1 });                  // an OPEN END = a pipe tile with at most one neighbour (pipe or building); computed from the tiles, so it is right while pipes are still under construction too
+      }
+      return out;
+    }
+    // The best valid tile near the finger. Score = distance (in tiles) - a bonus when the spot touches an open pipe end (a compatible connection). Invalid tiles never attract.
+    // Local window only (radius^2 tiles), so it is cheap enough for every pointer move.
+    snapPlacement(type, x, y, radius, hint) {
+      const R = Math.ceil(radius), fx = hint ? hint.fx : x, fy = hint ? hint.fy : y; let best = null;
+      for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+        const tx = x + dx, ty = y + dy, d = Math.hypot(tx - fx, ty - fy); if (d > radius + 0.01 || !inb(tx, ty)) continue;
+        if (!this.canPlace(type, tx, ty).ok) continue;
+        const compat = type === 'pump' ? 0 : this.pipeContacts(type, tx, ty).filter(c => c.end).length, score = d / radius - (compat ? 0.35 : 0);
+        if (!best || score < best.score - 1e-9) best = { x: tx, y: ty, d, compat, score };
+      }
+      return best;
+    }
     wellKind(b) { return CFG.WELL_KINDS[b.kind || 'small']; }
     // nominal output of a well at its level (before condition and pressure)
     wellNominal(b) { return this.wellKind(b).base * CFG.WELL_MULT[b.level - 1]; }
@@ -486,6 +542,7 @@
         if (this.pipe[k]) return { ok: false, reason: 'pipe' };
       }
       for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) if (!this.regionOpen(this.areaAt(x + dx, y + dy).region)) return { ok: false, reason: 'locked' };
+      for (const c of this.pipeContacts(type, x, y)) if (!c.end) return { ok: false, reason: 'touchesPipe' };   // beside the middle of a pipe it would join the network by accident (only an open pipe end is a deliberate attachment)
       if (type === 'well') {                       // wells can only be built on a reserve that has been explored
         const a = this.areaAt(x, y);
         if (a.st !== 2) return { ok: false, reason: 'notExplored' };
@@ -522,6 +579,7 @@
       return out;
     }
     nearestValid(type, x, y, radius, spots) {
+      if (!spots) { const r = this.snapPlacement(type, x, y, radius); return r ? [r.x, r.y] : null; }          // local window: cheap on every pointer move
       let best = null, bd = radius * radius + 0.01;
       for (const p of spots || this.validSpots(type)) { const d = (p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y); if (d < bd) { bd = d; best = p; } }
       return best;

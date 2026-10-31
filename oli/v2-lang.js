@@ -59,6 +59,8 @@
     'المكان مشغول بمنشأة أخرى': 'This spot is taken by another facility',
     'المبنى يتداخل مع منشأة أخرى': 'The building overlaps another facility',
     'يوجد أنبوب في هذا المكان': 'There is a pipe here',
+    'يلامس أنبوبًا فيتصل به بالخطأ: ضعه عند طرف أنبوب مفتوح أو ابتعد': 'It touches a pipe and would join it by accident: place it at an open pipe end or move away',
+    'التكلفة': 'Cost', 'الرصيد': 'Balance', 'ملتصق بأقرب مكان صالح': 'snapped to the nearest valid spot',
     'لا يمكن البناء على الماء': 'You cannot build on water',
     'أرض صخرية: لا يمكن البناء هنا': 'Rocky ground: you cannot build here',
     'هذه المنطقة مقفلة': 'This area is locked',
