@@ -237,7 +237,7 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
       const c0 = await cam(), cash0 = (await SC()).cash, fr = [[{ slot: 0, ...D(ws) }]];
       for (let i = 1; i <= 10; i++) fr.push([{ slot: 0, ...D({ x: ws.x + (ts.x - ws.x) * i / 10, y: ws.y + (ts.y - ws.y) * i / 10 }) }]); send(fr); await sleep(400);
       const mid = await SC(), c1 = await cam();
-      check('PC3 hold + drag: state PIPE_DRAG, pipe attached to the well, target acquired, live cost bar with $, camera LOCKED', mid.state === 'PIPE_DRAG' && mid.a === pair.W && mid.b === pair.T && !!mid.route && mid.route.ok && /\$/.test(mid.cf || '') && c0.x === c1.x && c0.y === c1.y && c0.z === c1.z, JSON.stringify(mid));
+      check('PC3 hold + drag: state PIPE_DRAG, pipe attached to the well, target acquired, live cost bar with $, camera LOCKED', mid.state === 'PIPE_DRAG' && mid.a === pair.W && mid.b === pair.T && !!mid.route && mid.route.ok && /\$/.test(mid.cf || '') && c0.x === c1.x && c0.y === c1.y && c0.z === c1.z, JSON.stringify(Object.assign({ W: pair.W, T: pair.T, ws, ts }, mid)));
       try { fs.writeFileSync('results/phaseC-drag.png', execSync('adb exec-out screencap -p')); } catch (e) {}
       send([[{ slot: 0, up: true }]]); await sleep(900); const fin = await SC();
       check('PC4 release on the valid target builds exactly one pipe and charges the previewed cost; state IDLE', fin.lines === n0 + 1 && Math.abs((cash0 - fin.cash) - mid.route.cost) < 60 && fin.state === 'IDLE' && fin.a === null, 'pipes ' + n0 + '->' + fin.lines + ' charged ' + (cash0 - fin.cash).toFixed(0) + ' vs ' + mid.route.cost);
