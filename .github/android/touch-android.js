@@ -235,7 +235,7 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
       send([[{ slot: 0, ...D(ws) }], [{ slot: 0, up: true }]]); await sleep(500); send([[{ slot: 0, ...D(ts) }], [{ slot: 0, up: true }]]); await sleep(500); const tt = await SC();
       check('PC2 no two-tap construction: tap well, tap tank -> no pipe, nothing attached', tt.lines === n0 && tt.a === null, JSON.stringify(tt));
       const c0 = await cam(), cash0 = (await SC()).cash, fr = [[{ slot: 0, ...D(ws) }]];
-      for (let i = 1; i <= 10; i++) fr.push([{ slot: 0, ...D({ x: ws.x + (ts.x - 28 - ws.x) * i / 10, y: ws.y + (ts.y - ws.y) * i / 10 }) }]); send(fr); await sleep(400);
+      for (let i = 1; i <= 10; i++) fr.push([{ slot: 0, ...D({ x: ws.x + (ts.x - ws.x) * i / 10, y: ws.y + (ts.y - ws.y) * i / 10 }) }]); send(fr); await sleep(400);
       const mid = await SC(), c1 = await cam();
       check('PC3 hold + drag: state PIPE_DRAG, pipe attached to the well, target acquired, live cost bar with $, camera LOCKED', mid.state === 'PIPE_DRAG' && mid.a === pair.W && mid.b === pair.T && !!mid.route && mid.route.ok && /\$/.test(mid.cf || '') && c0.x === c1.x && c0.y === c1.y && c0.z === c1.z, JSON.stringify(mid));
       try { fs.writeFileSync('results/phaseC-drag.png', execSync('adb exec-out screencap -p')); } catch (e) {}
