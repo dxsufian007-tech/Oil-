@@ -222,7 +222,7 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   // 9. PHASE C on the real Android input path: connection points, no tap-tap, hold + drag + release, live cost, camera locked, info panel, perf
   {
     await ev('const v = window.__v2; v.select(null); v.cancel(); v.setTool(null); return 1;');
-    const pair = await ev(`const g = window.__v2.game; for (let y = ${Y} + 8; y < ${Y} + 30; y++) for (let x = ${X} + 1; x < ${X} + 20; x++) if (g.canPlace('well', x, y).ok && g.canPlace('tank', x + 7, y).ok) { const w = g.place('well', x, y, 'large'), t = g.place('tank', x + 7, y); if (w.ok && t.ok) return { x, y, W: 'B' + w.building.id, T: 'B' + t.building.id }; } return null;`);
+    const pair = await ev(`const g = window.__v2.game; for (let y = ${Y} + 8; y < ${Y} + 30; y++) for (let x = ${X} + 1; x < ${X} + 20; x++) if (g.canPlace('well', x, y).ok && g.canPlace('tank', x + 7, y).ok) { const w = g.place('well', x, y, 'large'), t = g.place('tank', x + 7, y); if (w.ok && t.ok) { for (const b of g.buildings.slice()) if (b.type === 'tank' && b.id !== t.building.id && Math.hypot(b.x - x, b.y - y) < 14) g.removeAt(b.x, b.y); return { x, y, W: 'B' + w.building.id, T: 'B' + t.building.id }; } } return null;`);
     if (!pair) check('PHASE C: free pair of spots', false, 'none');
     else {
       await center(1, pair.x + 3.5, pair.y); await sleep(300);
@@ -235,16 +235,16 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
       send([[{ slot: 0, ...D(ws) }], [{ slot: 0, up: true }]]); await sleep(500); send([[{ slot: 0, ...D(ts) }], [{ slot: 0, up: true }]]); await sleep(500); const tt = await SC();
       check('PC2 no two-tap construction: tap well, tap tank -> no pipe, nothing attached', tt.lines === n0 && tt.a === null, JSON.stringify(tt));
       const c0 = await cam(), cash0 = (await SC()).cash, fr = [[{ slot: 0, ...D(ws) }]];
-      for (let i = 1; i <= 10; i++) fr.push([{ slot: 0, ...D({ x: ws.x + (ts.x - 28 - ws.x) * i / 10, y: ws.y + (ts.y - ws.y) * i / 10 }) }]); send(fr); await sleep(400);
+      for (let i = 1; i <= 10; i++) fr.push([{ slot: 0, ...D({ x: ws.x + (ts.x - ws.x) * i / 10, y: ws.y + (ts.y - ws.y) * i / 10 }) }]); send(fr); await sleep(400);
       const mid = await SC(), c1 = await cam();
-      check('PC3 hold + drag: state PIPE_DRAG, pipe attached to the well, target acquired, live cost bar with $, camera LOCKED', mid.state === 'PIPE_DRAG' && mid.a === pair.W && mid.b === pair.T && !!mid.route && mid.route.ok && /\$/.test(mid.cf || '') && c0.x === c1.x && c0.y === c1.y && c0.z === c1.z, JSON.stringify(mid));
+      check('PC3 hold + drag: state PIPE_DRAG, pipe attached to the well, target acquired, live cost bar with $, camera LOCKED', mid.state === 'PIPE_DRAG' && mid.a === pair.W && mid.b === pair.T && !!mid.route && mid.route.ok && /\$/.test(mid.cf || '') && c0.x === c1.x && c0.y === c1.y && c0.z === c1.z, JSON.stringify(Object.assign({ W: pair.W, T: pair.T, ws, ts }, mid)));
       try { fs.writeFileSync('results/phaseC-drag.png', execSync('adb exec-out screencap -p')); } catch (e) {}
       send([[{ slot: 0, up: true }]]); await sleep(900); const fin = await SC();
       check('PC4 release on the valid target builds exactly one pipe and charges the previewed cost; state IDLE', fin.lines === n0 + 1 && Math.abs((cash0 - fin.cash) - mid.route.cost) < 60 && fin.state === 'IDLE' && fin.a === null, 'pipes ' + n0 + '->' + fin.lines + ' charged ' + (cash0 - fin.cash).toFixed(0) + ' vs ' + mid.route.cost);
       await ev('const v = window.__v2; v.cancel(); v.setTool(null); return 1;');
       // second finger (only where multi-touch injection reaches the app): the pipe is dropped, nothing is built
       if (multi) {
-        const nw = await ev(`const g = window.__v2.game; for (let y = ${Y} + 8; y < ${Y} + 30; y++) for (let x = ${X} + 1; x < ${X} + 20; x++) if (g.canPlace('well', x, y).ok && g.canPlace('tank', x + 7, y).ok) { const w = g.place('well', x, y, 'large'), t = g.place('tank', x + 7, y); if (w.ok && t.ok) return { x, y, W: 'B' + w.building.id, T: 'B' + t.building.id }; } return null;`);
+        const nw = await ev(`const g = window.__v2.game; for (let y = ${Y} + 8; y < ${Y} + 30; y++) for (let x = ${X} + 1; x < ${X} + 20; x++) if (g.canPlace('well', x, y).ok && g.canPlace('tank', x + 7, y).ok) { const w = g.place('well', x, y, 'large'), t = g.place('tank', x + 7, y); if (w.ok && t.ok) { for (const b of g.buildings.slice()) if (b.type === 'tank' && b.id !== t.building.id && Math.hypot(b.x - x, b.y - y) < 14) g.removeAt(b.x, b.y); return { x, y, W: 'B' + w.building.id, T: 'B' + t.building.id }; } } return null;`);
         if (nw) { await center(1, nw.x + 3.5, nw.y); await sleep(300); await ev("window.__v2.setTool('pipe', 0); return 1;"); await sleep(300); const w2 = await scr(nw.W), t2 = await scr(nw.T), l0 = (await SC()).lines;
           sendM([[{ slot: 0, ...D(w2) }], [{ slot: 0, ...D({ x: w2.x + 30, y: w2.y + 10 }) }], [{ slot: 0, ...D({ x: ts.x, y: w2.y + 20 }) }]]); await sleep(250); const cA = await cam();
           sendM([[{ slot: 0, ...D({ x: ts.x, y: w2.y + 20 }) }, { slot: 1, x: D({ x: 300, y: 600 }).x, y: D({ x: 300, y: 600 }).y }]]); await sleep(400); const sS = await SC(), cB = await cam();

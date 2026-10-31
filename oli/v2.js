@@ -16,6 +16,11 @@
   for (const key of [SAVE_KEY, OLD_KEY]) {
     try { const raw = localStorage.getItem(key); if (raw) { const d = JSON.parse(raw); game.load(d.game); saved = key === SAVE_KEY ? d : {}; break; } } catch (e) { game.reset(); }
   }
+  // offline production (OliOffline, offline.js): the saved record carries a timestamp; on launch / resume the existing Game.step is run forward for the time that passed
+  const OFF = window.OliOffline; let offMeta = (saved && saved.offline) || null;
+  const offClock = () => ({ now: Date.now() });
+  const resumeOffline = () => { if (!OFF || !offMeta) return null; try { const r = OFF.resume(game, offMeta, offClock()); offMeta = r.meta; return r; } catch (e) { return null; } };
+  const offReport = resumeOffline();
   const prefs = Object.assign({ sound: 1, music: 1, vib: 1, lang: 'ar', gfx: 'auto' }, (window.OliLang && OliLang.prefs) || {});
   const buzz = ms => { if (prefs.vib && navigator.vibrate) try { navigator.vibrate(ms); } catch (e) { /* not supported */ } };   // short haptic feedback
   // graphics quality: low = 30 fps, no smoothing, fewer oil dots | medium = 60 fps, no smoothing | high = 60 fps, smoothing | auto = picked from the device
@@ -23,7 +28,7 @@
     return { q, fps: q === 'low' ? 30 : 60, aa: q === 'high', dotGap: q === 'low' ? 60 : 34 }; })();
   const openWholeMap = () => { for (const r of game.s.regions) r.unlocked = true; };   // the whole map is open: no locked regions
   openWholeMap();
-  const save = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ game: game.serialize(), speed: ui.speed, cam: view.cam ? { x: view.cam.scrollX, y: view.cam.scrollY, z: view.cam.zoom } : null })); } catch (e) { /* storage unavailable */ } };
+  const save = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ game: game.serialize(), offline: OFF ? (offMeta = OFF.makeMeta(offMeta, offClock())) : undefined, speed: ui.speed, cam: view.cam ? { x: view.cam.scrollX, y: view.cam.scrollY, z: view.cam.zoom } : null })); } catch (e) { /* storage unavailable */ } };
 
   /* ---------- ONE coordinate system: grid tile <-> world pixel (isometric 64 x 32) ---------- */
   const tc = (x, y) => ({ x: (x - y) * 32, y: (x + y + 1) * 16 });                 // centre of tile (x, y)
@@ -864,12 +869,16 @@
     save(); st.hidden = true; toast(T('بدأت لعبة جديدة'), 'good'); refreshHud();
   });
   $('#b-sell').addEventListener('click', () => { const n = game.oilTotal(), c0 = game.s.cash, r = game.sell(n); if (!r.ok) return toast(why(r.reason), 'bad'); toast(T('بيع ') + num(n) + T(' برميل · +') + money(game.s.cash - c0), 'good'); refreshHud(); save(); });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+  const offlineToast = r => { if (!r || !(r.elapsed.sec > 0)) return; const m = Math.round(r.elapsed.sec / 60), t = m >= 120 ? Math.round(m / 60) + T(' ساعة') : m + T(' دقيقة'), dc = game.s.cash - r.report.before.cash;
+    toast(T('أثناء غيابك (') + t + (r.elapsed.capped ? T('، الحد الأقصى 24 ساعة') : '') + T(') · النفط المخزّن ') + (r.report.produced >= 0 ? '+' : '') + num(r.report.produced) + T(' برميل') + (Math.abs(dc) >= 1 ? T(' · المال ') + (dc >= 0 ? '+' : '') + money(dc) : ''), 'good'); };
+  document.addEventListener('visibilitychange', () => { if (document.hidden) save(); else { const r = resumeOffline(); if (r && r.elapsed.sec > 0) { refreshHud(); offlineToast(r); } } });
   window.addEventListener('beforeunload', save);
 
   /* ---------- start ---------- */
   new Phaser.Game({ type: /[?&]canvas\b/.test(location.search) ? Phaser.CANVAS : Phaser.AUTO, parent: 'world', backgroundColor: '#123a52', scale: { mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight }, scene: WorldScene, input: { activePointers: 3 }, render: { antialias: GFX.aa, roundPixels: false }, fps: { target: GFX.fps, limit: GFX.fps === 30 ? 30 : 0 } });
 
+  if (offReport && offReport.elapsed.sec > 0) setTimeout(() => { refreshHud(); offlineToast(offReport); }, 1500);
+
   // test / debug handle (read-only use by the automated tests)
-  window.__v2 = { touch, prefs, GFX, game, ui, flowStretches, flowSpeed, renderPanel, view, camApi, pickNode, magnetTarget, freeRoute, pipeDragMove, pipeDragStart, tc, toTile, pipeGeom, nodeAnchor, setTool, select, confirmAction, cancel, save };
+  window.__v2 = { offline: { resume: resumeOffline, meta: () => offMeta, report: offReport }, touch, prefs, GFX, game, ui, flowStretches, flowSpeed, renderPanel, view, camApi, pickNode, magnetTarget, freeRoute, pipeDragMove, pipeDragStart, tc, toTile, pipeGeom, nodeAnchor, setTool, select, confirmAction, cancel, save };
 })();

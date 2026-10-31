@@ -7,6 +7,6 @@ fs.mkdirSync(out, { recursive: true });
 const phaser = fs.existsSync(path.join(__dirname, 'node_modules/phaser/dist/phaser.min.js')) ? path.join(__dirname, 'node_modules/phaser/dist/phaser.min.js') : path.join(__dirname, 'phaser.min.js');
 fs.copyFileSync(path.join(__dirname, 'v2.html'), path.join(out, 'index.html'));
 fs.copyFileSync(phaser, path.join(out, 'phaser.min.js'));
-for (const f of ['v2.js', 'v2-lang.js', 'v2.css', 'fonts.css', 'core.js', 'art.js']) fs.copyFileSync(path.join(__dirname, f), path.join(out, f));
+for (const f of ['v2.js', 'v2-lang.js', 'v2.css', 'fonts.css', 'core.js', 'offline.js', 'art.js']) fs.copyFileSync(path.join(__dirname, f), path.join(out, f));
 fs.cpSync(path.join(__dirname, 'fonts'), path.join(out, 'fonts'), { recursive: true });
 console.log('www/ ready:', fs.readdirSync(out).join(', '));
