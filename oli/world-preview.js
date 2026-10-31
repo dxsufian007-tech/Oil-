@@ -1,52 +1,46 @@
-/* Oli - world preview renderer (isolated; uses its own camera, NOT the Phase A camera). Three detail levels over chunk bitmaps. */
+/* Oli - world preview renderer (isolated; own camera, NOT the Phase A camera). Original code. Three detail levels:
+   FAR    z < 0.2  : one pre-composited overview image (z < 0.06) or 1 px/tile chunk images (only the visible chunks are drawn)
+   MEDIUM 0.2-0.6  : 2 px/tile chunk images, fields, zones, tracks, labels
+   CLOSE  >= 0.6   : 3 px/tile chunk images + ground detail, wells, footprints to scale
+   Colours are interpolated between tiles (worldmap.renderChunkRGBA) so no tile grid shows. */
 (function () {
   'use strict';
   const OW = window.OliWorld, CFG = OW.CONFIG, qs = new URLSearchParams(location.search);
   const seed = qs.get('seed') ? +qs.get('seed') : 20260101;
   const world = OW.createWorld({ seed }), C = CFG.CHUNK, CX = CFG.CHUNKS_X, CY = CFG.CHUNKS_Y;
   const cv = document.getElementById('c'), ctx = cv.getContext('2d'), info = document.getElementById('info'), hud = document.getElementById('hud');
-  const TC = []; for (const k in CFG.TERRAIN) TC[CFG.TERRAIN[k].id] = CFG.TERRAIN[k].color;
-  const SR = world.regions.find(r => r.starter), cam = { x: SR.x0 + 160, y: SR.y0 + 160, z: 0.9 };      // centre in tile coords
-  const ui = { reg: true, zone: true, dev: false, heat: false, sel: null, facility: 'well', probe: null };
-  let DPR = Math.min(2, window.devicePixelRatio || 1), VW = 0, VH = 0, dirty = true, ready = 0, genQueue = [];
-  const bmp = new Map(), heat = new Map();
+  const SR = world.regions.find(r => r.starter), cam = { x: SR.x0 + 160, y: SR.y0 + 160, z: 0.9 };
+  const ui = { reg: true, zone: true, dev: false, heat: false, sel: null, facility: 'well', probe: null, scale: false };
+  let DPR = Math.min(2, window.devicePixelRatio || 1), VW = 0, VH = 0, dirty = true, genQueue = [];
   const level = () => world.levelForZoom(cam.z);
+  const stats = { chunksBuilt: 0, hiBuilt: 0, lastHiMs: 0, lastLoMs: 0 };
 
-  // ---- demo discovery state (starter region): a little of every state, so the preview shows what each state looks like
+  // ---- demo discovery state (starter region): a little of every state so the preview shows each look
   (function demo() {
-    const f = world.regionSites(SR.id).filter(s => s.kind === 'FIELD'), d = world.regionSites(SR.id).filter(s => s.kind === 'DRY');
-    f.forEach((s, i) => { if (i < 7) { world.discover(s.id); if (i < 5) { world.survey(s.id); if (i < 3) { world.makeDrillable(s.id); } } } });
+    const all = world.regionSites(SR.id), f = all.filter(s => s.kind === 'FIELD'), d = all.filter(s => s.kind === 'DRY');
+    f.forEach((s, i) => { if (i < 8) { world.discover(s.id); if (i < 6) { world.survey(s.id); if (i < 4) { world.makeDrillable(s.id); if (i < 3) world.startProducing(s.id); } } } });
     if (f[0]) { f[0].remainingReserve = 0; world.deplete(f[0].id); }
     d.slice(0, 2).forEach(s => { world.discover(s.id); world.survey(s.id); });
-    // a few DISCOVERED hints in the neighbouring regions
     for (const rid of [SR.id - 6, SR.id - 1, SR.id + 1, SR.id + 6]) world.regionSites(rid).filter(s => s.kind === 'FIELD').slice(0, 2).forEach(s => world.discover(s.id));
   })();
 
-  // ---- chunk bitmaps (1 px per tile, hillshaded); generated in time slices so the UI never freezes
-  function E(x, y) { x = Math.max(0, Math.min(world.W - 1, x)); y = Math.max(0, Math.min(world.H - 1, y)); const ch = world.chunk((x / C) | 0, (y / C) | 0); return ch.elev[(y % C) * C + (x % C)] / 255; }
-  function makeBitmap(cx, cy) {
-    const ch = world.chunk(cx, cy), cvs = document.createElement('canvas'); cvs.width = cvs.height = C; const g = cvs.getContext('2d'), im = g.createImageData(C, C), d = im.data;
-    for (let j = 0; j < C; j++) for (let i = 0; i < C; i++) {
-      const x = cx * C + i, y = cy * C + j, k = j * C + i, col = TC[ch.terrain[k]], e = ch.elev[k] / 255;
-      const shade = ((E(x - 1, y) - E(x + 1, y)) + (E(x, y - 1) - E(x, y + 1))) * 5.5;            // light from the north-west
-      const f = ch.terrain[k] === 5 ? 1 : 0.72 + e * 0.5 + shade + (OW.hash(seed, x, y) - .5) * .07;
-      d[k * 4] = Math.max(0, Math.min(255, col[0] * f)); d[k * 4 + 1] = Math.max(0, Math.min(255, col[1] * f)); d[k * 4 + 2] = Math.max(0, Math.min(255, col[2] * f)); d[k * 4 + 3] = 255;
-    }
-    g.putImageData(im, 0, 0); return cvs;
-  }
-  function makeHeat(cx, cy) {
-    const cvs = document.createElement('canvas'); cvs.width = cvs.height = C / 2; const g = cvs.getContext('2d'), im = g.createImageData(C / 2, C / 2), d = im.data;
-    for (let j = 0; j < C / 2; j++) for (let i = 0; i < C / 2; i++) { const p = world.oilProbability(cx * C + i * 2, cy * C + j * 2), k = (j * C / 2 + i) * 4; d[k] = 255; d[k + 1] = 80 + 80 * (1 - p); d[k + 2] = 20; d[k + 3] = Math.min(210, p * 330); }
-    g.putImageData(im, 0, 0); return cvs;
-  }
-  const getBmp = (cx, cy) => { const k = cy * CX + cx; let b = bmp.get(k); if (!b) { b = makeBitmap(cx, cy); bmp.set(k, b); ready++; } return b; };
-  const getHeat = (cx, cy) => { const k = cy * CX + cx; let b = heat.get(k); if (!b) { b = makeHeat(cx, cy); heat.set(k, b); } return b; };
+  // ---- images: k px per tile. FAR images are kept for the whole world (10 MB); MEDIUM / CLOSE images are cached for a few chunks only.
+  const lo = new Map(), hi = { 2: new Map(), 3: new Map() }, HI_MAX = { 2: 70, 3: 36 };
+  function toCanvas(rgba, n) { const c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d'); g.putImageData(new ImageData(rgba, n, n), 0, 0); return c; }
+  const OV_Z = 0.025, OV_W = Math.round((CFG.CHUNKS_X + CFG.CHUNKS_Y) * C * 32 * OV_Z), OV_H = Math.round((CFG.CHUNKS_X + CFG.CHUNKS_Y) * C * 16 * OV_Z), OV_EX = CFG.CHUNKS_Y * C * 32 * OV_Z;
+  const ov = document.createElement('canvas'); ov.width = OV_W; ov.height = OV_H; const ovg = ov.getContext('2d');
+  function getLo(cx, cy) { const k = cy * CX + cx; let b = lo.get(k); if (!b) { const t = performance.now(); b = toCanvas(world.renderChunkRGBA(cx, cy, 1), C); stats.lastLoMs = performance.now() - t; lo.set(k, b); stats.chunksBuilt++;
+      ovg.save(); ovg.setTransform(32 * OV_Z, 16 * OV_Z, -32 * OV_Z, 16 * OV_Z, (cx * C - cy * C) * 32 * OV_Z + OV_EX, (cx * C + cy * C) * 16 * OV_Z); ovg.imageSmoothingEnabled = true; ovg.drawImage(b, 0, 0, C, C, 0, 0, C + .7, C + .7); ovg.restore(); } return b; }
+  function getHi(cx, cy, kk) { const m = hi[kk], key = cy * CX + cx; let b = m.get(key); if (b) { m.delete(key); m.set(key, b); return b; } return null; }
+  function buildHi(cx, cy, kk) { const t = performance.now(), b = toCanvas(world.renderChunkRGBA(cx, cy, kk), C * kk), m = hi[kk]; m.set(cy * CX + cx, b); while (m.size > HI_MAX[kk]) m.delete(m.keys().next().value); stats.hiBuilt++; stats.lastHiMs = performance.now() - t; return b; }
+  const heat = new Map();
+  function getHeat(cx, cy) { const k = cy * CX + cx; let b = heat.get(k); if (!b) { b = document.createElement('canvas'); b.width = b.height = C / 2; const g = b.getContext('2d'), im = g.createImageData(C / 2, C / 2), d = im.data;
+      for (let j = 0; j < C / 2; j++) for (let i = 0; i < C / 2; i++) { const p = world.oilProbability(cx * C + i * 2, cy * C + j * 2), q = (j * C / 2 + i) * 4; d[q] = 255; d[q + 1] = 80 + 80 * (1 - p); d[q + 2] = 20; d[q + 3] = Math.min(210, p * 330); } g.putImageData(im, 0, 0); heat.set(k, b); } return b; }
   for (let cy = 0; cy < CY; cy++) for (let cx = 0; cx < CX; cx++) genQueue.push([cx, cy]);
-  // generate the centre first so the player sees something at once
   genQueue.sort((a, b) => Math.hypot(a[0] * C - cam.x, a[1] * C - cam.y) - Math.hypot(b[0] * C - cam.x, b[1] * C - cam.y));
   function pump() {
-    const t0 = performance.now(); while (genQueue.length && performance.now() - t0 < 10) { const [cx, cy] = genQueue.shift(); getBmp(cx, cy); dirty = true; }
-    const p = document.getElementById('prog'); if (genQueue.length) { p.textContent = 'Generating world… ' + Math.round(100 * ready / (CX * CY)) + '%'; p.style.display = (ready < 40) ? '' : 'none'; hud.dataset.gen = genQueue.length; } else { p.style.display = 'none'; hud.dataset.gen = 0; }
+    const t0 = performance.now(); while (genQueue.length && performance.now() - t0 < 8) { const [cx, cy] = genQueue.shift(); getLo(cx, cy); dirty = true; }
+    const p = document.getElementById('prog'), done = stats.chunksBuilt; if (!genQueue.length && !stats.genDoneMs) stats.genDoneMs = Math.round(performance.now()); if (genQueue.length) { p.textContent = 'Generating world… ' + Math.round(100 * done / (CX * CY)) + '%'; p.style.display = done < 24 ? '' : 'none'; } else p.style.display = 'none';
     requestAnimationFrame(pump);
   }
 
@@ -57,81 +51,119 @@
   function resize() { VW = innerWidth; VH = innerHeight; cv.width = VW * DPR; cv.height = VH * DPR; dirty = true; }
   addEventListener('resize', resize); resize();
 
-  const SIZE = { SMALL: 5, MEDIUM: 8, LARGE: 12, MAJOR: 16 };
-  function diamond(x, y, w, h, fill, stroke, lw, dash) {
-    ctx.beginPath(); ctx.moveTo(sx(x, y), sy(x, y)); ctx.lineTo(sx(x + w, y), sy(x + w, y)); ctx.lineTo(sx(x + w, y + h), sy(x + w, y + h)); ctx.lineTo(sx(x, y + h), sy(x, y + h)); ctx.closePath();
-    if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); ctx.setLineDash([]); }
-  }
-  function ellipseIso(x, y, r, fill, stroke, lw, dash) {                                          // a circle in tile space = an ellipse on screen
-    ctx.beginPath(); for (let a = 0; a <= 32; a++) { const t = a / 32 * Math.PI * 2, px = x + Math.cos(t) * r, py = y + Math.sin(t) * r; a ? ctx.lineTo(sx(px, py), sy(px, py)) : ctx.moveTo(sx(px, py), sy(px, py)); } ctx.closePath();
-    if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); ctx.setLineDash([]); }
-  }
-  function derrick(px, py, s, col) {                                                                // small, resolution independent well glyph (original artwork)
-    ctx.save(); ctx.translate(px, py); ctx.strokeStyle = '#1a1a1a'; ctx.fillStyle = col; ctx.lineWidth = Math.max(1, s * .12);
-    ctx.beginPath(); ctx.arc(0, 0, s * .62, 0, 7); ctx.fill(); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-s * .28, s * .3); ctx.lineTo(0, -s * .38); ctx.lineTo(s * .28, s * .3); ctx.moveTo(-s * .16, s * .02); ctx.lineTo(s * .16, s * .02); ctx.stroke(); ctx.restore();
-  }
-  const SCOL = { DISCOVERED: '#e6c35a', SURVEYED: '#6ec1ff', DRILLABLE: '#4fd18b', DEPLETED: '#8b8b8b' };
+  function poly(pts, fill, stroke, lw, dash) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); ctx.setLineDash([]); } }
+  const dia = (x, y, w, h) => [[sx(x, y), sy(x, y)], [sx(x + w, y), sy(x + w, y)], [sx(x + w, y + h), sy(x + w, y + h)], [sx(x, y + h), sy(x, y + h)]];
+  const diamond = (x, y, w, h, fill, stroke, lw, dash) => poly(dia(x, y, w, h), fill, stroke, lw, dash);
+  function ellipseIso(x, y, r, fill, stroke, lw, dash) { ctx.beginPath(); for (let a = 0; a <= 32; a++) { const t = a / 32 * Math.PI * 2, px = x + Math.cos(t) * r, py = y + Math.sin(t) * r; a ? ctx.lineTo(sx(px, py), sy(px, py)) : ctx.moveTo(sx(px, py), sy(px, py)); } ctx.closePath(); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); ctx.setLineDash([]); } }
+  function derrick(px, py, s, col) { ctx.save(); ctx.translate(px, py); ctx.strokeStyle = '#1a1a1a'; ctx.fillStyle = col; ctx.lineWidth = Math.max(1, s * .12); ctx.beginPath(); ctx.arc(0, 0, s * .62, 0, 7); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-s * .28, s * .3); ctx.lineTo(0, -s * .38); ctx.lineTo(s * .28, s * .3); ctx.moveTo(-s * .16, s * .02); ctx.lineTo(s * .16, s * .02); ctx.stroke(); ctx.restore(); }
+  const SCOL = { DISCOVERED: '#e6c35a', SURVEYED: '#6ec1ff', DRILLABLE: '#4fd18b', PRODUCING: '#ffb347', DEPLETED: '#8b8b8b' };
 
-  function decorate(b) {                                                                             // close level only: small hand-placed-looking detail, deterministic per tile
-    const z = cam.z; if (z < 0.6) return; const x0 = Math.max(0, Math.floor(b.x0)), x1 = Math.min(world.W - 1, Math.ceil(b.x1)), y0 = Math.max(0, Math.floor(b.y0)), y1 = Math.min(world.H - 1, Math.ceil(b.y1));
-    if ((x1 - x0) * (y1 - y0) > 9000) return;
+  // ---- ground detail (CLOSE only): sparse rocks, ripples, scrub - light, deterministic, drawn only for the visible tiles
+  function decorate(b) {
+    const z = cam.z; if (z < 0.6) return; const x0 = Math.max(0, Math.floor(b.x0)), x1 = Math.min(world.W - 1, Math.ceil(b.x1)), y0 = Math.max(0, Math.floor(b.y0)), y1 = Math.min(world.H - 1, Math.ceil(b.y1)); if ((x1 - x0) * (y1 - y0) > 9000) return;
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const h = OW.hash(seed + 5, x, y); if (h > 0.2) continue; const t = world.tile(x, y), px = sx(x + .5, y + .5), py = sy(x + .5, y + .5), s = 7 * z;
-      if (t.terrain === 'ROCKY_GROUND' || t.terrain === 'ROCKY_RIDGE') { ctx.fillStyle = 'rgba(40,30,22,.55)'; ctx.beginPath(); ctx.moveTo(px - s, py); ctx.lineTo(px - s * .3, py - s * .8); ctx.lineTo(px + s * .6, py - s * .5); ctx.lineTo(px + s, py); ctx.closePath(); ctx.fill(); }
-      else if (t.terrain === 'SAND_DUNES') { ctx.strokeStyle = 'rgba(150,110,50,.45)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(px, py + s * .5, s * 1.5, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
-      else if (t.terrain === 'LOW_VALLEY') { ctx.strokeStyle = 'rgba(70,90,40,.7)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px - s * .3, py - s); ctx.moveTo(px, py); ctx.lineTo(px + s * .3, py - s * .9); ctx.stroke(); }
-      else if (t.terrain === 'FLAT_DESERT') { ctx.fillStyle = 'rgba(120,90,50,.35)'; ctx.fillRect(px - s * .4, py - s * .15, s * .5, s * .3); ctx.fillRect(px + s * .5, py + s * .2, s * .3, s * .2); }
-      else if (t.terrain === 'WATER') { ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.beginPath(); ctx.moveTo(px - s, py); ctx.lineTo(px + s, py); ctx.stroke(); }
+      const h = OW.hash(seed + 5, x, y); if (h > 0.22) continue; const t = world.tile(x, y), jx = OW.hash(seed + 6, x, y) - .5, jy = OW.hash(seed + 7, x, y) - .5, px = sx(x + .5 + jx * .8, y + .5 + jy * .8), py = sy(x + .5 + jx * .8, y + .5 + jy * .8), s = 6 * z;
+      if (t.terrain === 'ROCKY_GROUND' || t.terrain === 'ROCKY_PLATEAU') { const big = h < .05; ctx.fillStyle = 'rgba(30,22,16,.28)'; ctx.beginPath(); ctx.ellipse(px + s * .3, py + s * .15, s * (big ? 1.5 : .9), s * (big ? .6 : .35), 0, 0, 7); ctx.fill(); ctx.fillStyle = big ? 'rgba(120,98,78,.95)' : 'rgba(140,114,90,.9)'; ctx.beginPath(); ctx.moveTo(px - s, py); ctx.lineTo(px - s * .35, py - s * (big ? 1.5 : .8)); ctx.lineTo(px + s * .6, py - s * (big ? 1.1 : .55)); ctx.lineTo(px + s, py); ctx.closePath(); ctx.fill(); ctx.fillStyle = 'rgba(255,240,220,.18)'; ctx.beginPath(); ctx.moveTo(px - s * .35, py - s * (big ? 1.5 : .8)); ctx.lineTo(px + s * .6, py - s * (big ? 1.1 : .55)); ctx.lineTo(px, py - s * .2); ctx.closePath(); ctx.fill(); }
+      else if (t.terrain === 'SAND_DUNES') { ctx.strokeStyle = 'rgba(150,108,52,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(px, py + s * .5, s * 1.8, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
+      else if (t.terrain === 'VALLEY') { ctx.strokeStyle = 'rgba(88,92,48,.8)'; ctx.lineWidth = 1; ctx.beginPath(); for (let q = -1; q <= 1; q++) { ctx.moveTo(px + q * s * .35, py); ctx.lineTo(px + q * s * .6, py - s * (.9 + q * q * -.2)); } ctx.stroke(); }
+      else if (t.terrain === 'FLAT_DESERT') { ctx.fillStyle = 'rgba(120,88,50,.30)'; ctx.fillRect(px - s * .4, py - s * .12, s * .5, s * .22); ctx.fillRect(px + s * .5, py + s * .2, s * .3, s * .16); }
     }
   }
 
-  function draw() {
-    dirty = false; const lv = level(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = '#0c1015'; ctx.fillRect(0, 0, VW, VH);
-    const b = bounds(), c0 = Math.max(0, Math.floor(b.x0 / C)), c1 = Math.min(CX - 1, Math.floor(b.x1 / C)), r0 = Math.max(0, Math.floor(b.y0 / C)), r1 = Math.min(CY - 1, Math.floor(b.y1 / C));
-    // chunks: the iso affine transform maps tile (x,y) to screen; each 64x64 bitmap becomes a diamond. 1-tile overlap hides seams.
-    ctx.imageSmoothingEnabled = lv === 'FAR';
-    for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) {
-      const bm = bmp.get(cy * CX + cx); if (!bm) continue; ctx.save(); ctx.setTransform(DPR * 32 * cam.z, DPR * 16 * cam.z, -DPR * 32 * cam.z, DPR * 16 * cam.z, DPR * sx(cx * C, cy * C), DPR * sy(cx * C, cy * C));
-      ctx.drawImage(bm, 0, 0, C, C, 0, 0, C + .6, C + .6);
-      if (ui.heat) { const h = getHeat(cx, cy); ctx.imageSmoothingEnabled = true; ctx.drawImage(h, 0, 0, C / 2, C / 2, 0, 0, C, C); ctx.imageSmoothingEnabled = lv === 'FAR'; }
-      ctx.restore();
-    }
-    ctx.imageSmoothingEnabled = true;
-    if (lv === 'CLOSE') { decorate(b); if (cam.z > 1.1) { ctx.strokeStyle = 'rgba(0,0,0,.08)'; ctx.lineWidth = 1; ctx.beginPath(); for (let x = Math.floor(b.x0); x <= b.x1; x++) { ctx.moveTo(sx(x, b.y0), sy(x, b.y0)); ctx.lineTo(sx(x, b.y1), sy(x, b.y1)); } for (let y = Math.floor(b.y0); y <= b.y1; y++) { ctx.moveTo(sx(b.x0, y), sy(b.x0, y)); ctx.lineTo(sx(b.x1, y), sy(b.x1, y)); } ctx.stroke(); } }
-    // regions
+  // ---- scale chart: every facility drawn to its true footprint and a height, in one row, next to a well and a pipe
+  const FAC_ORDER = ['well', 'pump', 'valve', 'pumpStation', 'tank', 'crudeStorage', 'gasStorage', 'dieselStorage', 'gasolineStorage', 'separation', 'power', 'exportTerminal', 'hq', 'refinery'];
+  function shade(c, f) { return 'rgb(' + c.map(v => Math.max(0, Math.min(255, Math.round(v * f)))).join(',') + ')'; }
+  function box(x, y, w, h, hz, col) {
+    const H = hz * 36 * cam.z, A = [sx(x, y), sy(x, y)], B = [sx(x + w, y), sy(x + w, y)], Cc = [sx(x + w, y + h), sy(x + w, y + h)], D = [sx(x, y + h), sy(x, y + h)], up = p => [p[0], p[1] - H];
+    poly([D, Cc, up(Cc), up(D)], shade(col, .72), 'rgba(0,0,0,.35)', 1); poly([B, Cc, up(Cc), up(B)], shade(col, .86), 'rgba(0,0,0,.35)', 1); poly([up(A), up(B), up(Cc), up(D)], shade(col, 1.08), 'rgba(0,0,0,.35)', 1);
+  }
+  function cyl(x, y, w, h, hz, col) {
+    const cxT = x + w / 2, cyT = y + h / 2, r = Math.min(w, h) / 2 * .94, X = sx(cxT, cyT), Y = sy(cxT, cyT), rx = r * 32 * 1.4142 * cam.z, ry = r * 16 * 1.4142 * cam.z, H = hz * 36 * cam.z;
+    ctx.fillStyle = shade(col, .8); ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(X, Y, rx, ry, 0, 0, 7); ctx.fill(); ctx.fillRect(X - rx, Y - H, rx * 2, H); ctx.strokeRect(X - rx, Y - H, rx * 2, H);
+    const g = ctx.createLinearGradient(X - rx, 0, X + rx, 0); g.addColorStop(0, 'rgba(255,255,255,.18)'); g.addColorStop(.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,.25)'); ctx.fillStyle = g; ctx.fillRect(X - rx, Y - H, rx * 2, H);
+    ctx.fillStyle = shade(col, 1.12); ctx.beginPath(); ctx.ellipse(X, Y - H, rx, ry, 0, 0, 7); ctx.fill(); ctx.stroke();
+  }
+  function sphere(x, y, w, h, hz, col) { const X = sx(x + w / 2, y + h / 2), Y = sy(x + w / 2, y + h / 2), r = Math.min(w, h) / 2 * 32 * 1.4142 * cam.z * .9, H = r * 1.0; const g = ctx.createRadialGradient(X - r * .3, Y - H - r * .3, r * .1, X, Y - H, r); g.addColorStop(0, shade(col, 1.3)); g.addColorStop(1, shade(col, .65)); ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(X, Y, r, r * .5, 0, 0, 7); ctx.fill(); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(X, Y - H, r, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.stroke(); }
+  function derrickBig(x, y, w, h, hz, col) { const X = sx(x + w / 2, y + h / 2), Y = sy(x + w / 2, y + h / 2), H = hz * 36 * cam.z, bw = 12 * cam.z * 1.1; ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(X, Y, bw * 1.2, bw * .6, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#2b2b2b'; ctx.lineWidth = Math.max(1, 1.6 * cam.z); ctx.beginPath(); ctx.moveTo(X - bw, Y); ctx.lineTo(X, Y - H); ctx.lineTo(X + bw, Y); ctx.moveTo(X - bw * .55, Y - H * .45); ctx.lineTo(X + bw * .55, Y - H * .45); ctx.moveTo(X - bw * .75, Y - H * .22); ctx.lineTo(X + bw * .75, Y - H * .22); ctx.stroke(); ctx.fillStyle = col; ctx.fillRect(X - 2 * cam.z, Y - H - 3 * cam.z, 4 * cam.z, 5 * cam.z); }
+  function pumpJack(x, y, w, h, hz, col) { box(x + .15, y + .15, .7, .7, .35, [90, 90, 94]); const X = sx(x + .5, y + .5), Y = sy(x + .5, y + .5) - 14 * cam.z; ctx.strokeStyle = '#d98b1e'; ctx.lineWidth = 3 * cam.z; ctx.beginPath(); ctx.moveTo(X - 14 * cam.z, Y + 4 * cam.z); ctx.lineTo(X + 12 * cam.z, Y - 5 * cam.z); ctx.stroke(); ctx.beginPath(); ctx.arc(X - 14 * cam.z, Y + 4 * cam.z, 3 * cam.z, 0, 7); ctx.fillStyle = '#d98b1e'; ctx.fill(); }
+  function towers(x, y, w, h, hz, col) { box(x, y, w, h, .25, [120, 120, 124]); const n = Math.max(2, Math.floor(w)); for (let i = 0; i < n; i++) cyl(x + .5 + i * (w - 1) / Math.max(1, n - 1) - .35, y + h / 2 - .35, .7, .7, hz * (.7 + .3 * ((i * 7) % 3) / 2), [170, 172, 176]); }
+  function refinery(x, y, w, h, hz, col) { box(x, y, w, h, .12, [128, 124, 118]); for (let i = 0; i < 5; i++) cyl(x + .6 + i * 1.3, y + 1.0, .9, .9, 1.1 + (i % 3) * .5, [188, 190, 194]); for (let i = 0; i < 3; i++) cyl(x + 1 + i * 2.4, y + 3.4, 1.2, 1.2, 1.2, [200, 160, 90]); cyl(x + w - 1.7, y + h - 2, 1.0, 1.0, 3.0, [160, 160, 165]); box(x + .5, y + h - 1.4, 2.2, .9, .8, [150, 110, 90]); }
+  function stack(x, y, w, h, hz, col) { box(x, y, w, h, .9, [150, 150, 154]); cyl(x + w - 1.1, y + h - 1.1, .8, .8, hz, [190, 186, 180]); }
+  const SHAPE = { derrick: derrickBig, pump: pumpJack, valve: (x, y, w, h, hz, c) => { box(x + .3, y + .3, .4, .4, .3, [150, 40, 40]); }, box: box, cyl: cyl, sphere: sphere, tower: towers, refinery: refinery, stack: stack };
+  const FCOL = { EXTRACTION: [200, 150, 60], TRANSPORT: [128, 140, 150], STORAGE: [188, 188, 190], PROCESSING: [170, 172, 176], INFRASTRUCTURE: [150, 140, 126], CORPORATE: [140, 150, 160] };
+  function drawScaleChart() {
+    const b0 = { x: Math.round(cam.x - 11), y: Math.round(cam.y - 13) }; diamond(b0.x - 2, b0.y - 2, 26, 30, 'rgba(214,190,140,.97)', 'rgba(0,0,0,.4)', 2);
+    ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 1.5; for (let i = -2; i <= 24; i += 2) { ctx.beginPath(); ctx.moveTo(sx(b0.x + i, b0.y - 2), sy(b0.x + i, b0.y - 2)); ctx.lineTo(sx(b0.x + i, b0.y - 1.2), sy(b0.x + i, b0.y - 1.2)); ctx.stroke(); }   // ruler: one tick per 2 tiles (24 m)
+    const items = []; let rx = b0.x, ry = b0.y + 1, rowH = 0;
+    for (const k of FAC_ORDER) { const f = CFG.FACILITIES[k], w = f.fp[0], h = f.fp[1]; if (rx + w > b0.x + 22) { rx = b0.x; ry += rowH + 3; rowH = 0; } items.push({ k, f, x: rx, y: ry }); rx += w + 2; rowH = Math.max(rowH, h); }
+    // a pipe next to the well: 0.18 tile wide, 6 tiles long
+    const pw = CFG.SCALE.PIPE_TILE; items.sort((a, b) => (a.x + a.y) - (b.x + b.y));
+    for (const it of items) { const [shp, hz] = it.f.look, fn = SHAPE[shp]; diamond(it.x, it.y, it.f.fp[0], it.f.fp[1], 'rgba(80,60,40,.18)', 'rgba(60,40,20,.55)', 1, [3, 3]); fn(it.x, it.y, it.f.fp[0], it.f.fp[1], hz, FCOL[it.f.cat]); }
+    for (const it of items) { const X = sx(it.x + it.f.fp[0] / 2, it.y + it.f.fp[1] + .4), Y = sy(it.x + it.f.fp[0] / 2, it.y + it.f.fp[1] + .4); ctx.font = '600 ' + Math.max(9, 11 * Math.min(1.4, cam.z)) + 'px system-ui'; ctx.textAlign = 'center'; ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 3; const t = it.k + ' ' + it.f.fp[0] + '×' + it.f.fp[1]; ctx.strokeText(t, X, Y + 12 * cam.z); ctx.fillStyle = '#222'; ctx.fillText(t, X, Y + 12 * cam.z); }
+    const wl = items.find(i => i.k === 'well'); if (wl) { diamond(wl.x + 1.4, wl.y + .5 - pw / 2, 6, pw, '#6b6f75', '#2b2b2b', 1); }
+    ctx.fillStyle = '#222'; ctx.font = '600 12px system-ui'; ctx.textAlign = 'left'; ctx.fillText('1 tile = ' + CFG.SCALE.TILE_M + ' m · pipe = ' + pw + ' tile · all footprints in tiles (well 1×1, pump 1×1, tank 2×2 are the game values)', sx(b0.x, b0.y - 1), sy(b0.x, b0.y - 1) - 6);
+  }
+
+  // ---- tracks / zones / sites overlay
+  function overlays(lv, b) {
     if (ui.reg) {
-      ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.font = (lv === 'FAR' ? '600 13px' : '600 12px') + ' system-ui';
-      for (const r of world.regions) { diamond(r.x0, r.y0, r.w, r.h, null, 'rgba(255,255,255,.28)', 1, [6, 5]); if (lv !== 'CLOSE') { const m = r.x0 + r.w / 2, n = r.y0 + r.h / 2, px = sx(m, n), py = sy(m, n); if (px > -60 && px < VW + 60 && py > -20 && py < VH + 20) { ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3; const lab = lv === 'FAR' && cam.z < .012 ? r.name : r.name + ' · ' + r.richness; ctx.strokeText(lab, px, py); ctx.fillText(lab, px, py); if (lv === 'MEDIUM') { ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.font = '11px system-ui'; ctx.fillText(r.kind, px, py + 14); ctx.font = '600 12px system-ui'; } } } }
+      ctx.lineWidth = 1; ctx.font = '600 12px system-ui';
+      for (const r of world.regions) { diamond(r.x0, r.y0, r.w, r.h, null, 'rgba(255,255,255,.30)', 1, [6, 5]); if (lv !== 'CLOSE') { const m = r.x0 + r.w / 2, n = r.y0 + r.h / 2, px = sx(m, n), py = sy(m, n); if (px > -80 && px < VW + 80 && py > -20 && py < VH + 20) { ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3; const lab = lv === 'FAR' && cam.z < .012 ? r.name : r.name + ' · ' + r.richness; ctx.strokeText(lab, px, py); ctx.fillText(lab, px, py); if (lv === 'MEDIUM') { ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = '11px system-ui'; ctx.fillText(r.kind, px, py + 14); ctx.font = '600 12px system-ui'; } } } }
     }
-    if (ui.zone && lv !== 'FAR') for (const r of world.regions) { const x0 = r.x0, y0 = r.y0; if (x0 > b.x1 || y0 > b.y1 || x0 + r.w < b.x0 || y0 + r.h < b.y0) continue; for (const z of world.refineryZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(150,90,200,.18)', '#b27be0', 1.5, [7, 4]); diamond(z.x - 8, z.y - 8, z.w + 16, z.h + 16, null, 'rgba(178,123,224,.45)', 1, [2, 4]); if (lv === 'MEDIUM' || cam.z < 1.2) { ctx.fillStyle = '#d6b4f5'; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; ctx.fillText('REFINERY ZONE', sx(z.x + z.w / 2, z.y + z.h / 2), sy(z.x + z.w / 2, z.y + z.h / 2)); } } }
-    // oil sites. Player view: only what visibleInfo() allows. Dev view: ghost markers for everything.
+    const near = r => !(r.x0 > b.x1 + 30 || r.y0 > b.y1 + 30 || r.x0 + r.w < b.x0 - 30 || r.y0 + r.h < b.y0 - 30);
+    if (lv !== 'FAR') for (const r of world.regions) if (near(r)) for (const t of world.tracks(r.id)) { ctx.strokeStyle = 'rgba(196,164,112,.75)'; ctx.lineWidth = Math.max(1.5, 3.2 * cam.z); ctx.setLineDash([]); ctx.beginPath(); t.pts.forEach((p, i) => i ? ctx.lineTo(sx(p[0], p[1]), sy(p[0], p[1])) : ctx.moveTo(sx(p[0], p[1]), sy(p[0], p[1]))); ctx.stroke(); }
+    if (ui.zone && lv !== 'FAR') for (const r of world.regions) { if (!near(r)) continue;
+      for (const z of world.refineryZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(150,90,200,.16)', '#b27be0', 1.5, [7, 4]); diamond(z.x - 8, z.y - 8, z.w + 16, z.h + 16, null, 'rgba(178,123,224,.45)', 1, [2, 4]); ctx.fillStyle = '#e0c6f7'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); ctx.strokeText('REFINERY ZONE', X, Y); ctx.fillText('REFINERY ZONE', X, Y); }
+      for (const z of world.tankZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(70,150,200,.15)', '#6ab6e6', 1.3, [5, 4]); ctx.fillStyle = '#cfeaff'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); if (lv === 'MEDIUM' || cam.z < 1.3) { ctx.strokeText('TANK FARM', X, Y); ctx.fillText('TANK FARM', X, Y); } }
+      for (const p of world.strategicPoints(r.id)) { const X = sx(p.x, p.y), Y = sy(p.x, p.y); ctx.fillStyle = p.kind === 'EXPORT_COAST' ? '#ffd166' : '#ffffff'; ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X, Y - 9); ctx.lineTo(X + 7, Y); ctx.lineTo(X, Y + 9); ctx.lineTo(X - 7, Y); ctx.closePath(); ctx.fill(); ctx.stroke(); if (lv !== 'FAR' && cam.z < 1.3) { ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3; const t = p.kind === 'EXPORT_COAST' ? 'EXPORT SITE' : 'HUB'; ctx.strokeText(t, X, Y - 13); ctx.fillText(t, X, Y - 13); } } }
     for (const r of world.regions) {
-      if (r.x0 > b.x1 + 30 || r.y0 > b.y1 + 30 || r.x0 + r.w < b.x0 - 30 || r.y0 + r.h < b.y0 - 30) continue;
+      if (!near(r)) continue;
       for (const s of world.regionSites(r.id)) {
         if (s.x < b.x0 - 20 || s.x > b.x1 + 20 || s.y < b.y0 - 20 || s.y > b.y1 + 20) continue;
         const st = world.stateOf(s.id), vi = world.visibleInfo(s.id), sel = ui.sel === s.id;
-        if (!vi) { if (ui.dev) { ellipseIso(s.x, s.y, s.radius, s.kind === 'DRY' ? 'rgba(160,160,160,.12)' : 'rgba(255,80,40,.18)', s.kind === 'DRY' ? '#9a9a9a' : '#ff6a3d', 1, [3, 3]); } continue; }
+        if (!vi) { if (ui.dev) ellipseIso(s.x, s.y, s.radius, s.kind === 'DRY' ? 'rgba(160,160,160,.12)' : 'rgba(255,80,40,.18)', s.kind === 'DRY' ? '#9a9a9a' : '#ff6a3d', 1, [3, 3]); continue; }
         if (st === 'DISCOVERED') { const i = vi.indicator; ellipseIso(i.x, i.y, i.r, 'rgba(230,195,90,.10)', SCOL.DISCOVERED, sel ? 2.5 : 1.5, [5, 4]); if (lv !== 'FAR') { ctx.fillStyle = SCOL.DISCOVERED; ctx.font = '600 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('?', sx(i.x, i.y), sy(i.x, i.y) + 4); } continue; }
         const col = s.kind === 'DRY' ? '#777' : SCOL[st];
-        ellipseIso(s.x, s.y, s.radius, s.kind === 'DRY' ? 'rgba(90,90,90,.08)' : st === 'DEPLETED' ? 'rgba(60,60,60,.16)' : 'rgba(30,20,10,.12)', col, sel ? 3 : 1.6, st === 'SURVEYED' ? [6, 3] : st === 'DRILLABLE' ? null : [2, 3]);
-        const sz = Math.max(10, Math.min(22, cam.z * 26)) * (lv === 'FAR' ? .75 : 1), px = sx(s.x, s.y), py = sy(s.x, s.y);
-        if (s.kind === 'FIELD') {
-          derrick(px, py, sz, col);
-          if (lv !== 'FAR') { ctx.fillStyle = '#fff'; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; const t = s.type[0] + s.type.slice(1).toLowerCase() + ' · ' + st.toLowerCase(); ctx.strokeText(t, px, py - sz - 4); ctx.fillText(t, px, py - sz - 4); }
-        } else { ctx.strokeStyle = '#999'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px - 6, py - 6); ctx.lineTo(px + 6, py + 6); ctx.moveTo(px + 6, py - 6); ctx.lineTo(px - 6, py + 6); ctx.stroke(); if (lv !== 'FAR') { ctx.fillStyle = '#ccc'; ctx.font = '11px system-ui'; ctx.textAlign = 'center'; ctx.fillText('dry hole', px, py - 12); } }
+        ellipseIso(s.x, s.y, s.radius, s.kind === 'DRY' ? 'rgba(90,90,90,.07)' : st === 'DEPLETED' ? 'rgba(60,60,60,.14)' : st === 'PRODUCING' ? 'rgba(255,170,60,.12)' : 'rgba(30,20,10,.10)', col, sel ? 3 : 1.6, st === 'SURVEYED' ? [6, 3] : st === 'DRILLABLE' || st === 'PRODUCING' ? null : [2, 3]);
+        const sz = Math.max(CFG.SCALE.ICON_MIN_PX, Math.min(CFG.SCALE.ICON_MAX_PX, cam.z * 26)) * (lv === 'FAR' ? .75 : 1), px = sx(s.x, s.y), py = sy(s.x, s.y);
+        if (s.kind === 'FIELD') { derrick(px, py, sz, col); if (lv !== 'FAR') { ctx.fillStyle = '#fff'; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; const t = s.type[0] + s.type.slice(1).toLowerCase() + ' · ' + st.toLowerCase(); ctx.strokeText(t, px, py - sz - 4); ctx.fillText(t, px, py - sz - 4); } }
+        else { ctx.strokeStyle = '#999'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px - 6, py - 6); ctx.lineTo(px + 6, py + 6); ctx.moveTo(px + 6, py - 6); ctx.lineTo(px - 6, py + 6); ctx.stroke(); if (lv !== 'FAR') { ctx.fillStyle = '#ccc'; ctx.font = '11px system-ui'; ctx.textAlign = 'center'; ctx.fillText('dry hole', px, py - 12); } }
       }
     }
-    // facility probe (footprint to scale)
+  }
+
+  let missingHi = 0;
+  function draw() {
+    dirty = false; const lv = level(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.lineJoin = 'round'; ctx.fillStyle = '#0c1015'; ctx.fillRect(0, 0, VW, VH);
+    const b = bounds(), c0 = Math.max(0, Math.floor(b.x0 / C)), c1 = Math.min(CX - 1, Math.floor(b.x1 / C)), r0 = Math.max(0, Math.floor(b.y0 / C)), r1 = Math.min(CY - 1, Math.floor(b.y1 / C));
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; missingHi = 0;
+    if (cam.z < 0.06) { const z = cam.z, Xc = (cam.x - cam.y) * 32, Yc = (cam.x + cam.y) * 16; ctx.drawImage(ov, VW / 2 + (-OV_EX / OV_Z - Xc) * z, VH / 2 + (0 - Yc) * z, OV_W * z / OV_Z, OV_H * z / OV_Z); }
+    else {
+      const kk = lv === 'FAR' ? 1 : lv === 'MEDIUM' ? 2 : 3;
+      for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) {
+        let bm = kk === 1 ? lo.get(cy * CX + cx) : getHi(cx, cy, kk), per = C; if (!bm && kk > 1) { missingHi++; bm = lo.get(cy * CX + cx); } if (!bm) continue;
+        ctx.save(); ctx.setTransform(DPR * 32 * cam.z, DPR * 16 * cam.z, -DPR * 32 * cam.z, DPR * 16 * cam.z, DPR * sx(cx * C, cy * C), DPR * sy(cx * C, cy * C)); ctx.drawImage(bm, 0, 0, bm.width, bm.height, 0, 0, C + .6, C + .6);
+        if (ui.heat) { ctx.drawImage(getHeat(cx, cy), 0, 0, C / 2, C / 2, 0, 0, C, C); } ctx.restore();
+      }
+    }
+    if (lv === 'CLOSE') decorate(b);
+    overlays(lv, b);
+    if (ui.scale) drawScaleChart();
     if (ui.probe && lv !== 'FAR') { const p = ui.probe, f = CFG.FACILITIES[ui.facility]; diamond(p.x, p.y, f.fp[0], f.fp[1], p.res.ok ? 'rgba(80,220,120,.45)' : 'rgba(240,70,60,.45)', p.res.ok ? '#6dff9a' : '#ff6b60', 2); if (!p.res.ok) { const cx = sx(p.x + f.fp[0] / 2, p.y + f.fp[1] / 2), cy = sy(p.x + f.fp[0] / 2, p.y + f.fp[1] / 2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(cx - 7, cy - 7); ctx.lineTo(cx + 7, cy + 7); ctx.moveTo(cx + 7, cy - 7); ctx.lineTo(cx - 7, cy + 7); ctx.stroke(); } }
-    // scale ruler (tiles) + hud
-    const px50 = 50 * 32 * cam.z * 2; ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(10, VH - 4, 1, 1);
-    hud.textContent = lv + '  zoom ' + cam.z.toFixed(3) + '  view ' + Math.round(b.x1 - b.x0) + ' tiles  chunks ' + ready + '/' + (CX * CY) + '  world ' + world.W + 'x' + world.H + ' (' + world.scale().toFixed(1) + 'x map)';
+    hud.textContent = lv + '  zoom ' + cam.z.toFixed(3) + '  view ' + Math.round(b.x1 - b.x0) + ' tiles  images ' + stats.chunksBuilt + '/' + (CX * CY) + '  world ' + world.W + '×' + world.H + ' tiles = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' km (' + world.scale().toFixed(1) + '× the current map)';
     document.querySelectorAll('[data-z]').forEach(e => e.classList.toggle('on', e.dataset.z === lv));
+    if (missingHi) { dirty = true; }
+  }
+  // detail images are built one per frame (never a long frame), nearest to the screen centre first
+  function hiPump() {
+    const lv = level(); if (lv !== 'FAR' && cam.z >= 0.06) { const kk = lv === 'MEDIUM' ? 2 : 3, b = bounds(), c0 = Math.max(0, Math.floor(b.x0 / C)), c1 = Math.min(CX - 1, Math.floor(b.x1 / C)), r0 = Math.max(0, Math.floor(b.y0 / C)), r1 = Math.min(CY - 1, Math.floor(b.y1 / C)); let best = null, bd = 1e9;
+      for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) if (!hi[kk].has(cy * CX + cx)) { const d = Math.hypot(cx * C + C / 2 - cam.x, cy * C + C / 2 - cam.y); if (d < bd) { bd = d; best = [cx, cy]; } }
+      if (best) { buildHi(best[0], best[1], kk); dirty = true; } }
+    requestAnimationFrame(hiPump);
   }
 
   // ---- input (preview-only camera: drag to pan, wheel / pinch to zoom, tap to inspect)
-  const ptrs = new Map(); let last = null, moved = 0, pinch = null;
+  const ptrs = new Map(); let moved = 0, pinch = null;
   const clampZ = z => Math.max(CFG.ZOOM.MIN, Math.min(CFG.ZOOM.MAX, z));
   function zoomAt(px, py, nz) { const t = toTile(px, py); cam.z = clampZ(nz); const t2 = toTile(px, py); cam.x += t.x - t2.x; cam.y += t.y - t2.y; keepIn(); dirty = true; }
   function keepIn() { cam.x = Math.max(0, Math.min(world.W, cam.x)); cam.y = Math.max(0, Math.min(world.H, cam.y)); }
@@ -145,7 +177,7 @@
 
   function tap(px, py) {
     const t = toTile(px, py), x = Math.floor(t.x), y = Math.floor(t.y); if (!world.inb(x, y)) return;
-    let hit = null; for (const s of world.sitesNear(x, y, 3)) { const vi = world.visibleInfo(s.id); const rr = vi && vi.indicator ? vi.indicator : s; const cxs = vi && vi.indicator ? vi.indicator.x : s.x, cys = vi && vi.indicator ? vi.indicator.y : s.y; const rad = vi && vi.indicator ? vi.indicator.r : s.radius; if ((vi || ui.dev) && Math.hypot(cxs - t.x, cys - t.y) <= rad + 1) { hit = s; break; } }
+    let hit = null; for (const s of world.sitesNear(x, y, 3)) { const vi = world.visibleInfo(s.id), ind = vi && vi.indicator, cxs = ind ? ind.x : s.x, cys = ind ? ind.y : s.y, rad = ind ? ind.r : s.radius; if ((vi || ui.dev) && Math.hypot(cxs - t.x, cys - t.y) <= rad + 1) { hit = s; break; } }
     const tl = world.tile(x, y), res = world.canBuildAt(ui.facility, x, y); ui.probe = { x, y, res }; ui.sel = hit ? hit.id : null; dirty = true; showInfo(tl, res, hit);
   }
   const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : '' + n;
@@ -156,24 +188,24 @@
       if (!vi) h += 'Developer view only: the player does not know this site yet.<br><span class="k">' + hit.kind + ' ' + hit.type + ' · reserve ' + fmt(hit.initialReserve) + ' · depth ' + hit.depth + ' m · pressure ' + hit.pressurePotential + ' · quality ' + hit.quality + '</span>';
       else if (st === 'DISCOVERED') h += 'Promising geology. Not surveyed: size, type and depth unknown.';
       else if (vi.dry) h += 'Survey result: no commercial oil.';
-      else { h += vi.type + ' field · estimated ' + fmt(vi.estimatedReserve) + ' bbl (range ' + fmt(vi.reserveRange[0]) + '–' + fmt(vi.reserveRange[1]) + ') · pressure ' + vi.pressureClass + ' · quality ' + vi.quality + ' · success ' + Math.round(vi.probability * 100) + '%'; if (vi.depth) h += '<br>depth ' + vi.depth + ' m · drilling estimate ' + vi.estimatedCost + ' (not charged) · remaining ' + fmt(vi.remainingReserve); }
-      const nxt = { UNDISCOVERED: 'discover', DISCOVERED: 'survey', SURVEYED: 'makeDrillable', DRILLABLE: 'deplete' }[st]; if (nxt && nxt !== 'deplete') h += '<div class="row"><button data-adv="' + nxt + '" data-id="' + hit.id + '">Advance → ' + nxt + '</button></div>'; }
+      else { h += vi.type + ' field · estimated ' + fmt(vi.estimatedReserve) + ' bbl (range ' + fmt(vi.reserveRange[0]) + '–' + fmt(vi.reserveRange[1]) + ') · pressure ' + vi.pressureClass + ' · quality ' + vi.quality + ' · success ' + Math.round(vi.probability * 100) + '%'; if (vi.depth) h += '<br>depth ' + vi.depth + ' m · drilling estimate ' + vi.estimatedCost + ' (not charged) · remaining ' + fmt(vi.remainingReserve) + ' · depleted ' + vi.depletionPct + '%'; }
+      const nxt = { UNDISCOVERED: 'discover', DISCOVERED: 'survey', SURVEYED: 'makeDrillable', DRILLABLE: 'startProducing' }[st]; if (nxt && !(vi && vi.dry && nxt === 'makeDrillable')) h += '<div class="row"><button data-adv="' + nxt + '" data-id="' + hit.id + '">Advance → ' + nxt + '</button></div>'; }
     info.innerHTML = h;
   }
   info.addEventListener('click', e => { const b = e.target.closest('[data-adv]'); if (!b) return; const r = world[b.dataset.adv](b.dataset.id); dirty = true; const s = world.siteById(b.dataset.id); showInfo(world.tile(s.x, s.y), ui.probe.res, s); if (!r.ok) info.insertAdjacentHTML('beforeend', '<br><span class="k">refused: ' + r.reason + '</span>'); });
 
-  // ---- buttons
-  const zlevels = { FAR: 0.012, MEDIUM: 0.35, CLOSE: 1.0 };
+  const zlevels = { FAR: 0.0045, MEDIUM: 0.35, CLOSE: 1.0 };
   function setLevel(n) { zoomAt(VW / 2, VH / 2, zlevels[n]); }
   document.querySelectorAll('[data-z]').forEach(b => b.onclick = () => setLevel(b.dataset.z));
-  const tog = (id, key) => { const el = document.getElementById(id); el.onclick = () => { ui[key] = !ui[key]; el.classList.toggle('on', ui[key]); dirty = true; }; };
-  tog('tReg', 'reg'); tog('tZone', 'zone'); tog('tDev', 'dev'); tog('tHeat', 'heat');
+  const tog = (id, key) => { const el = document.getElementById(id); el.onclick = () => { ui[key] = !ui[key]; el.classList.toggle('on', ui[key]); if (key === 'scale' && ui[key]) { cam.z = .3; } dirty = true; }; };
+  tog('tReg', 'reg'); tog('tZone', 'zone'); tog('tDev', 'dev'); tog('tHeat', 'heat'); tog('tScale', 'scale');
   const fac = document.getElementById('fac'); for (const k in CFG.FACILITIES) fac.insertAdjacentHTML('beforeend', '<option value="' + k + '">' + k + ' ' + CFG.FACILITIES[k].fp.join('×') + '</option>'); fac.onchange = () => { ui.facility = fac.value; if (ui.probe) ui.probe.res = world.canBuildAt(ui.facility, ui.probe.x, ui.probe.y); dirty = true; };
 
-  function loop() { if (dirty) draw(); requestAnimationFrame(loop); }
-  // test / debug handle
-  window.__wp = { world, cam, ui, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => ready, genLeft: () => genQueue.length, draw, toTile, sx, sy };
+  function loop() { if (dirty) { const t = performance.now(); draw(); stats.lastDraw = performance.now() - t; } requestAnimationFrame(loop); }
+  window.__wp = { world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.chunksBuilt, genLeft: () => genQueue.length, draw, toTile, sx, sy, hiLeft: () => missingHi };
   const sp = qs.get('x'); if (sp) { cam.x = +qs.get('x'); cam.y = +qs.get('y'); cam.z = clampZ(+qs.get('z') || .9); }
   if (qs.get('dev')) { ui.dev = true; document.getElementById('tDev').classList.add('on'); }
-  requestAnimationFrame(pump); requestAnimationFrame(loop);
+  if (qs.get('scale')) { ui.scale = true; document.getElementById('tScale').classList.add('on'); }
+  info.innerHTML = 'World <b>' + world.W + '×' + world.H + ' tiles</b> = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' km (1 tile = ' + CFG.SCALE.TILE_M + ' m), <b>' + world.scale().toFixed(1) + '×</b> the current 140×88 map · 24 regions · 600 chunks. Tap the map: a tile shows terrain and whether the selected facility fits. Tap an oil field to see what the player may know.';
+  requestAnimationFrame(pump); requestAnimationFrame(hiPump); requestAnimationFrame(loop);
 })();

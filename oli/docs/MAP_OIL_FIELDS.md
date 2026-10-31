@@ -1,46 +1,60 @@
-# Map / Oil Fields (parallel track, branch `feature/map-oil-fields`)
+# PHASE 1 — MAP / WORLD / TERRAIN / OIL FIELDS (branch `feature/map-oil-fields`, NOT merged)
 
-Isolated, original implementation. **No shared file is modified** (v2.js, core.js, camera/input, placement, pipes, hydraulics, network, pumps, tanks, economy, market, save/load are untouched). Nothing here is loaded by the game; it is reachable only through `world-preview.html`.
+Original implementation, isolated. **No shared game file is modified** (v2.js, core.js, camera/input, placement, pipes, hydraulics, network, pumps, tanks, economy, market, save/load, build-www.js, the game workflows). The map is reachable only through `world-preview.html` and the separate "Oli Map" preview APK.
 
-Files: `worldmap.js` (model), `world-preview.html` + `world-preview.js` (visual preview, own camera), `test-world.js` (96 checks), `test-world-preview.js` (15 checks), `docs/map-preview/*.png` (real screenshots).
+Files: `worldmap.js` (model + pixel renderer), `world-preview.html` / `world-preview.js` (preview, own camera), `build-www-map.js`, `.github/workflows/map-apk.yml`, `.github/android/map-run.sh` + `map-android.js`, `test-world.js` (163 checks), `test-world-preview.js` (18 checks), `docs/map-preview/*.png`.
 
-## MAP ARCHITECTURE
-World 1920 x 1280 tiles = **199.5x** the current 140 x 88 map. Chunks of 64 x 64 tiles (30 x 20 = 600). Regions of 5 x 5 chunks = 320 x 320 tiles (6 x 4 = 24, named A1..D6). Chunks are generated **lazily** from the seed and cached in a bounded LRU (160): reading one tile builds one chunk. Regions carry name, kind (desert plains, dune sea, rocky badlands, mountain belt, valley basin, coastal shelf...), richness (POOR / MEDIUM / RICH), starter flag, unlocked flag. Region C3 is the starter (MEDIUM). Isometric transform is identical to `tc()` in v2.js (checked by a test), so the world can later sit under the existing camera.
-Zoom levels (`CONFIG.ZOOM`): FAR < 0.2 (world, regions, terrain), MEDIUM 0.2-0.6 (fields, zones, networks), CLOSE >= 0.6 (wells, pipes, buildings, ground detail). Min zoom 0.0038 fits the whole world on a phone.
+## WORLD SCALE (one scale for everything)
+1 tile = **12 m**. World 1920 x 1280 tiles = 23.0 x 15.4 km = **199.5x** the current 140 x 88 map (1.7 x 1.1 km). 24 regions (6 x 4, A1..D6) of 320 x 320 tiles, 600 chunks of 64 x 64. Chunks are generated lazily from the seed (a bounded LRU keeps memory flat); nothing is drawn or stored for the whole world at full detail.
 
-## TERRAIN TYPES
-FLAT_DESERT, SAND_DUNES, ROCKY_GROUND, ROCKY_RIDGE, LOW_VALLEY, WATER. Each has `buildable`, `buildCost` (modifier, stored only), `oilMod`, `maxSlope`, colour. Elevation 0..1 per tile, reported also as level 0..7; slope per tile. Measured share (seed 20260101, sampled): flat 28%, rocky ground 24%, ridge 16%, valley 14%, dunes 12%, water 5%. Tiles are **not** lifted on screen (elevation shades the ground), so isometric picking stays exact.
+| Building | Footprint (tiles) | Look (height, tiles) | Note |
+|---|---|---|---|
+| well | 1x1 | derrick 2.2 | = core.js |
+| pump / booster | 1x1 | pump jack 0.8 | = core.js |
+| valve / junction | 1x1 | 0.4-0.5 | |
+| pump station / pressure station | 2x2 | box 1.1 | |
+| crude tank | 2x2 | cylinder 1.2 | = core.js |
+| water storage | 2x2 | cylinder 1.0 | |
+| crude storage | 3x3 | cylinder 1.6 | large tank |
+| gas storage | 3x3 | sphere | |
+| diesel / gasoline / product storage | 3x3 | cylinder 1.3-1.4 | |
+| separation / processing | 4x3 / 3x3 | towers 1.8-2.0 | |
+| refinery | **8x6** | towers up to 3.0 | needs a refinery zone |
+| power / substation | 3x3 / 2x2 | stack 2.2 / box | |
+| loading / export terminal | 3x2 / 5x3 | box | export: flat shore |
+| maintenance, warehouse, security | 3x2, 3x2, 2x1 | box | |
+| HQ / admin / lab | 4x3 / 3x2 / 3x3 | box 1.2-1.8 | |
+| pipe | 0.18 tile wide | | |
 
-## OIL FIELD MODEL
-Types SMALL / MEDIUM / LARGE / MAJOR (radius 3-18 tiles). Per field: `initialReserve`, `remainingReserve`, `estimatedReserve` (+ `estimateError`), `pressurePotential`, `quality` (LOW/MEDIUM/HIGH), `depth`, `terrainType`, `geologyScore`, region, state. Big-but-deep and small-but-shallow both exist. **Dry prospects** (about 0.6 per field) look as promising as real fields and never become drillable. Oil probability is a product of terrain modifier, region richness, a basin noise layer and a structure noise layer (valleys and rocky ground favour oil, ridges rarely hold it, but a basin or structure can override). Seed 20260101: 200 fields (110 small, 67 medium, 19 large, 4 major) + 120 dry holes; rich regions hold about 2x the fields of poor ones.
+Tests: well/tank/pump equal the numbers in `core.js`; well <= pump < tank < crude storage < separation < refinery; every storage type is bigger than a crude tank and far smaller than the refinery; a refinery is >= 6 tank footprints. The preview has a **Scale chart** that draws every building to its footprint and height side by side (`docs/map-preview/08-scale-chart.png`). Map icons (oil-field markers) are 10-22 px whatever the zoom, so they never cover the terrain.
 
-## DISCOVERY STATES
-`UNDISCOVERED -> DISCOVERED -> SURVEYED -> DRILLABLE -> DEPLETED`, strictly in order (skipping and going back are refused; dry sites stop at SURVEYED; DEPLETED only when the reserve is 0). `visibleInfo(id)` is the only thing a UI may show the player: UNDISCOVERED = nothing; DISCOVERED = a rough dashed area that contains the field, no type/size/depth; SURVEYED = type, estimated reserve with a range, pressure class, quality, success probability; DRILLABLE = depth, pressure potential and a **drilling cost estimate (preview only, never charged)**. Survey and drill foundations are data + rules only; no economy hook exists.
+## TERRAIN (6 types)
+FLAT_DESERT, ROCKY_GROUND, ROCKY_PLATEAU, VALLEY, SAND_DUNES, WATER_WADI. Each has buildable, build-cost modifier, oil-probability modifier, max slope, elevation (0..1, level 0..7) and slope per tile; shown by colour and ground detail. Sampled share: flat 33%, rocky ground 22%, plateau 14%, valley 12%, dunes 11%, water/wadi 7%. Future transport effect is data only (`buildCost`, slope). Tiles are not lifted on screen (elevation shades the ground) so isometric picking stays exact.
+**Industrial plains:** every region has two levelled, flat plains (radius ~30 tiles) held free of oil: the places where refineries, tank farms and hubs belong. Result: **every region has 2 refinery zones (28 x 18) and 3 tank farms (18 x 12)** with room to grow, plus a pipeline hub; 4 regions on the west coast have an export-terminal site; natural dirt tracks link zone -> fields and hub -> zone (future roads).
 
-## GENERATION
-Terrain: fractal value noise (elevation, mountain belts, ridge lines, sand, rock patches, coastline). Sites: per region, from a region seed, rejection sampling weighted by geology, min gap between sites, no overlap (tested). Refinery zones: 24 x 16 tiles, flat, no ridge/valley/water, no field nearby, scored by flatness and expansion room (>30% free ring), up to 2 per region (every region has one). Facility rules (`CONFIG.FACILITIES`): footprint, max slope, terrain list, ports, `needsZone` (refinery). `canBuildAt(type,x,y)` returns ok/reason (water, slope, terrain, needsZone, outside) and cost modifier.
-
-## SEED SYSTEM
-`createWorld({seed})`, default 20260101. Same seed = identical terrain, fields, zones (tested); another seed differs. Discovery progress is separate state: `progressSnapshot()/restoreProgress()` (not wired to save/load).
+## OIL FIELDS
+SMALL / MEDIUM / LARGE / MAJOR (radius 3-18 tiles). Per field: initial / remaining / estimated reserve (+error), pressure potential, quality (LOW/MEDIUM/HIGH), depth, terrain, geology score, discovery / survey / depletion state. Large-and-deep and small-and-shallow both occur; dry prospects (0.6 per field) look as promising as real fields and never become drillable. Probability = terrain modifier x region richness (POOR / MEDIUM / RICH) x basin noise x structure noise; rich regions hold ~2x the fields of poor ones; plains hold none. Seed 20260101: ~220 sites (about 100 small, 70 medium, 25 large, 1-4 major + ~120 dry holes).
+States: UNDISCOVERED -> DISCOVERED -> SURVEYED -> DRILLABLE -> **PRODUCING** -> DEPLETED, strictly in order. `visibleInfo()` is the only thing a UI may show the player: nothing before discovery; a rough dashed area after (no size, type or depth); estimates with a range after survey; depth, pressure and a drilling cost **estimate (never charged)** when drillable; depletion % when producing. `WellLink.bind(well, field)` starts PRODUCING; `extract()` lowers the reserve and DEPLETES the field at 0.
 
 ## VISUAL SYSTEM
-Preview: one 64x64 bitmap per chunk (hillshaded + noise), drawn through the iso affine transform with 1-tile overlap; generated in time slices (UI never blocks). Overlays: region borders/labels, refinery zones, oil sites by state (dashed "?" area, dashed blue survey ring, green drillable ring, grey depleted, grey X dry hole), original vector derrick glyph 10-22 px (never covers the map), CLOSE-only ground detail (rocks, dune arcs, reeds, pebbles, waves), facility footprint probe to scale, developer layers (hidden geology, oil odds heat map). Screenshots in `docs/map-preview/`. Layers: NORMAL implemented; OIL / PRESSURE / FLOW / TERRAIN are interface stubs (`LAYERS`).
+Warm industrial desert palette, no tile grid: `renderChunkRGBA(cx, cy, k)` interpolates colours between tile centres and shades from the interpolated elevation (hillshade), with per-terrain detail (dune ripples, plateau strata, rock speckle, scrub patches), smooth coast and wadi edges. A test measures that the colour change across a tile edge is not larger than inside a tile. Close level adds sparse rocks, ripples, tufts; overlays: regions, refinery zones, tank farms, hubs/export sites, tracks, fields by state (dashed "?" area, dashed blue survey ring, green drillable, orange producing, grey depleted, grey X dry hole), facility footprint probe, developer layers (hidden geology, oil odds). Screenshots: `docs/map-preview/`.
 
-## PERFORMANCE
-No thousands of sprites: chunk bitmaps + a handful of vector overlays. Desktop Chromium (software canvas, headless): chunk generation about 8-12 ms each, frame draw 0.2 ms MEDIUM, 0.5 ms CLOSE, **about 28 ms FAR** (600 chunk bitmaps drawn with smoothing; a pre-composited overview would fix it - listed as future work). Whole-world load in the preview: 600 chunks built in the background in a few seconds. Android: not measured here.
+## PERFORMANCE / STREAMING
+FAR (<0.2): one pre-composited 1600 x 800 overview image (z < 0.06) or 1 px/tile chunk images of the visible chunks; MEDIUM (0.2-0.6): 2 px/tile images; CLOSE (>=0.6): 3 px/tile images (cache of 70 / 36 chunks), built one per frame, nearest to the screen centre first; world generation runs in 8 ms slices in the background; no per-tile sprites. Desktop Chromium (software canvas, headless): frame draw 0.3-0.5 ms (FAR was 28 ms before the overview image), one close-up image 7-60 ms. Android emulator numbers: see the report (branch `map-android-test`); the emulator is software-rendered, so they are an upper bound, not a phone.
 
-## INTERFACES (data only, game does not call them)
-`toLegacyWindow(ox,oy,w,h)` -> `{water, block, terrain}` arrays in the legacy ids (so a 140x88 slice could feed the current Game); `WellLink.bind/fieldOf/extract` (well -> field, reduces `remainingReserve`, depletes); `canBuildAt`, `refineryZones`, `resourceZone`, `visibleInfo`, `drillEstimate`, `progressSnapshot/restoreProgress`.
+## INTERFACES (data only, the game does not call them)
+`toLegacyWindow(ox,oy,w,h)` (arrays in the current game's terrain ids), `WellLink`, `canBuildAt`, `refineryZones`, `tankZones`, `strategicPoints`, `tracks`, `visibleInfo`, `progressSnapshot/restoreProgress`, `drillEstimate`, `levelForZoom`, `iso` (same formula as `tc()` in v2.js, tested).
 
 ### CONFLICT / WHY / PROPOSED INTERFACE
-- CONFLICT: `core.js makeMap/makeTerrain/makeAreas` (140x88, fixed 5 regions, 4 terrain ids, `areas` with kind/quality/remaining). WHY: the game needs one map; this world is 200x and chunked. PROPOSED INTERFACE: `Game` opts `{ world, window:{ox,oy} }` calling `toLegacyWindow` for water/block/terrain and mapping `areas` from the sites inside the window (`oilFieldAt`). Not applied.
-- CONFLICT: save/load. WHY: discovery state and `remainingReserve` must persist. PROPOSED INTERFACE: store `{seed, progress: progressSnapshot(), reserves}` in `serialize()`; reserves are derivable (`initialReserve - extracted`).
-- CONFLICT: economy/survey/drill cost. WHY: `drillEstimate` is a preview number. PROPOSED INTERFACE: `world.survey(id)` / `makeDrillable(id)` called by a future economy action after it charges money.
-- CONFLICT: Phase A camera (zoom range 0.0038-2 here, own preview camera). PROPOSED INTERFACE: reuse `levelForZoom` and the same iso formula; the game camera decides its own limits.
-- CONFLICT: build-www.js/CI build only `main`. WHY: a feature-branch APK needs a shared-file change. PROPOSED: none until approval.
+- CONFLICT: `core.js makeMap/makeTerrain/makeAreas` (140x88, 5 fixed regions, 4 terrain ids, `areas`). WHY: one game map vs a 200x chunked world. PROPOSED: `Game` option `{ world, window }` using `toLegacyWindow` for water / block / terrain and mapping `areas` from the sites inside the window. Not applied.
+- CONFLICT: save/load. WHY: discovery state + remaining reserves must persist. PROPOSED: add `{ seed, progress: progressSnapshot(), extracted }` to `serialize()`.
+- CONFLICT: economy (survey / drill / building costs). PROPOSED: economy actions call `world.survey()` / `makeDrillable()` after charging; `canBuildAt().costModifier` scales construction cost.
+- CONFLICT: Phase A camera (own preview camera, zoom 0.0038-2). PROPOSED: reuse `levelForZoom` and the iso formula; the game camera keeps its own limits.
+- CONFLICT: build-www.js / CI build only `main`. WHY: a branch APK needs its own build. DONE WITHOUT TOUCHING SHARED FILES: `build-www-map.js` + `map-apk.yml` build a separate app (Oli Map, `com.oli.mappreview`) that installs next to the game.
+- CONFLICT: the master plan lists plateau / valley / wadi; core has SAND/FLAT/ROUGH/ROCK. PROPOSED: the adapter maps them (plateau -> ROCK, valley -> FLAT, dunes -> SAND, rocky ground -> ROUGH).
 
 ## REFERENCES / LICENSES
-No code, art or data copied from games or from the supplied reference image; the image only informed the layout idea (region spread, scale, density). Value-noise / fBm and mulberry32 are standard published algorithms written from scratch in this repo. No third-party code added, no new dependencies.
+No code, art or data from games or from the supplied reference image; only the layout idea (spread of regions, scale, density) was taken from it. Value-noise / fBm / mulberry32 are standard published algorithms written here. No new dependency.
 
-## FUTURE EXTENSIONS
-Overview bitmap for FAR; OIL/PRESSURE/FLOW/TERRAIN layers; survey/drill actions and costs; integration through `toLegacyWindow` window streaming; flooding in valleys; coast/ports; refinery placement with product tanks and export; Android monotonic offline hooks.
+## KNOWN LIMITS
+Preview only; the game still uses its 140x88 map. Layers OIL / PRESSURE / FLOW / TERRAIN are interface stubs. Wadi channels are not buildable (flood risk later). Real-device performance not measured. Phase 2 (buildings) not started.

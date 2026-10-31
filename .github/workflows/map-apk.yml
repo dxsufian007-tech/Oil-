@@ -1,0 +1,111 @@
+name: Map preview APK + Android test
+
+# Only for the branch feature/map-oil-fields. Builds a SEPARATE app (Oli Map Preview, id com.oli.mappreview) that shows the world preview, so it installs next to the game and never
+# replaces it. The game's workflows (build-apk.yml / android-test.yml) and build-www.js are not touched. Results: branch map-apk-build (OliMap.apk) and branch map-android-test.
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/map-oil-fields]
+    paths: ['oli/world*', 'oli/test-world*', 'oli/build-www-map.js', '.github/workflows/map-apk.yml', '.github/android/map-*']
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install and run the world tests
+        working-directory: oli
+        run: |
+          npm ci
+          node test-world.js
+      - name: Package the preview page and make it a separate Android app
+        working-directory: oli
+        run: |
+          node build-www-map.js
+          sed -i 's/"appId": "com.oli.oilgame"/"appId": "com.oli.mappreview"/; s/"appName": "Oli"/"appName": "Oli Map"/' capacitor.config.json
+          npx cap sync android
+          sed -i 's/applicationId "com.oli.oilgame"/applicationId "com.oli.mappreview"/' android/app/build.gradle
+          sed -i 's|<string name="app_name">Oli</string>|<string name="app_name">Oli Map</string>|' android/app/src/main/res/values/strings.xml
+          grep -n "applicationId" android/app/build.gradle
+      - name: Same signing key as the game
+        run: |
+          mkdir -p ~/.android
+          cp .github/signing/debug.keystore ~/.android/debug.keystore
+          sed -i "s/versionCode [0-9]*/versionCode $((100 + ${{ github.run_number }}))/" oli/android/app/build.gradle
+      - name: Build the APK
+        working-directory: oli/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+      - run: cp oli/android/app/build/outputs/apk/debug/app-debug.apk OliMap.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OliMap-apk
+          path: OliMap.apk
+      - name: Publish the APK on the branch map-apk-build
+        run: |
+          mkdir -p /tmp/out && cp OliMap.apk /tmp/out/
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout --orphan map-apk-build
+          git rm -rf --quiet .
+          cp /tmp/out/OliMap.apk .
+          git add OliMap.apk
+          git commit -q -m "Oli Map preview APK"
+          git push -f origin map-apk-build
+
+  android:
+    needs: apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get the APK
+        run: |
+          git fetch origin map-apk-build
+          git show origin/map-apk-build:OliMap.apk > OliMap.apk
+          ls -l OliMap.apk
+      - name: Allow the emulator to use hardware virtualisation
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-save chrome-remote-interface@0.33.2
+      - name: Run the map on Android 14
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          heap-size: 576M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash .github/android/map-run.sh
+      - name: Publish the results on the branch map-android-test
+        if: always()
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/pub/results && cp -r results/. /tmp/pub/results/ 2>/dev/null || echo "no results folder" > /tmp/pub/results/missing.txt
+          cd /tmp/pub
+          git init -q -b map-android-test
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -q -m "Map Android test results"
+          git push -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" map-android-test
