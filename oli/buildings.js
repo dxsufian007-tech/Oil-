@@ -64,7 +64,7 @@
     connections: [pt('PIPE_IN', 'pipe', 'in', [0, 0], 1), pt('PIPE_OUT', 'pipe', 'out', [0, 0], 0)] });
   define({ id: 'oil_tank', name: 'Oil Tank', category: 'STORAGE', footprint: [2, 2], cost: 1500, maintenanceCost: 12, buildTime: 25, visual: 'oil_tank',
     allowedTerrain: SOLID, maxSlope: 5, capacity: { value: 5000, unit: 'bbl' },
-    connections: [pt('INLET_W', 'pipe', 'in', [0, 0], 1, { group: 'INLET' }), pt('INLET_N', 'pipe', 'in', [1, 0], 3, { group: 'INLET' }), pt('OUTLET_E', 'pipe', 'out', [1, 1], 0, { required: false, reserved: true }), pt('OUTLET_S', 'pipe', 'out', [0, 1], 2, { required: false, reserved: true })] });
+    connections: [pt('INLET_W', 'pipe', 'in', [0, 0], 1, { group: 'INLET' }), pt('INLET_N', 'pipe', 'in', [1, 0], 3, { group: 'INLET' }), pt('INLET_E', 'pipe', 'in', [1, 1], 0, { group: 'INLET' }), pt('INLET_S', 'pipe', 'in', [0, 1], 2, { group: 'INLET' })] });   // same as core.js: a tank takes a pipe on every side; the outlet is added in Phase 3/4
   define({ id: 'large_tank', name: 'Large Storage Tank', category: 'STORAGE', footprint: [3, 3], cost: 4800, maintenanceCost: 30, buildTime: 50, visual: 'large_tank',
     allowedTerrain: STABLE, maxSlope: 3, capacity: { value: 40000, unit: 'bbl' }, clearance: 1,
     connections: [pt('INLET_W', 'pipe', 'in', [0, 1], 1, { group: 'INLET' }), pt('INLET_N', 'pipe', 'in', [1, 0], 3, { group: 'INLET' }), pt('OUTLET_E', 'pipe', 'out', [2, 1], 0, { required: false, reserved: true }), pt('OUTLET_S', 'pipe', 'out', [1, 2], 2, { required: false, reserved: true })] });

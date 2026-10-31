@@ -206,8 +206,24 @@
   $('tFields').onclick = () => { const sr = world.regions.find(r => r.starter), f = world.regionSites(sr.id).filter(s => s.kind === 'FIELD' && (world.stateOf(s.id) === 'DRILLABLE' || world.stateOf(s.id) === 'PRODUCING'))[0]; if (f) WP.goto(f.x, f.y, .75); };
   $('tRef').onclick = () => { const sr = world.regions.find(r => r.starter), z = world.refineryZones(sr.id)[0]; if (z) WP.goto(z.x + z.w / 2, z.y + z.h / 2, .5); };
 
+  /* a coherent demo compound for screenshots and device checks: wells + jacks on the field, a gathering line to a pump station and tanks, and a processing site with the refinery in its zone */
+  const until = async fn => { for (let i = 0; i < 600; i++) { await new Promise(r => setTimeout(r, 100)); if (fn()) return true; } return false; };
+  const settle = async () => { await new Promise(r => setTimeout(r, 450)); await until(() => WP.idle()); };
+  async function buildDemo() {
+    reset(); STORE.cash = 1e8; const sr = world.regions.find(r => r.starter), fld = world.regionSites(sr.id).find(q => q.kind === 'FIELD' && (world.stateOf(q.id) === 'DRILLABLE' || world.stateOf(q.id) === 'PRODUCING')); if (!fld) return { ok: false, reason: 'noField' };
+    const put = (def, x, y, r, rad) => { const sn = STORE.snap(def, Math.round(x), Math.round(y), r || 0, { radius: rad == null ? 5 : rad, ignoreCash: true }); if (!sn) return null; const res = STORE.place(def, sn.x, sn.y, sn.r, { instant: true }); return res.ok ? res.building : null; };
+    const fx = Math.round(fld.x), fy = Math.round(fld.y), out = {}, wells = []; WP.goto(fx + 4, fy + 4, .3); await settle();
+    for (const [dx, dy] of [[-4, -3], [0, -4], [4, -1], [-3, 2]]) { const w = put('oil_well', fx + dx, fy + dy, 0, 3); if (w) { wells.push(w); const j = [[1, 0, 0], [-2, 0, 0], [0, 1, 1], [0, -1, 1]].map(([a, b, r]) => STORE.validate('pump_jack', w.x + a, w.y + b, r, { ignoreCash: true })).findIndex(v => v.ok); if (j >= 0) { const o = [[1, 0, 0], [-2, 0, 0], [0, 1, 1], [0, -1, 1]][j]; STORE.place('pump_jack', w.x + o[0], w.y + o[1], o[2], { instant: true }); } } }
+    out.wells = wells.length; const jn = put('junction', fx, fy + 7, 0, 4), vs = put('valve_station', fx + 3, fy + 7, 0, 4), ps = put('pump_station', fx + 6, fy + 6, 0, 4), t1 = put('oil_tank', fx + 11, fy + 6, 0, 4), t2 = put('oil_tank', fx + 11, fy + 10, 0, 5);
+    const lay = (a, b) => { if (!a || !b) return; const pa = B.worldPoints(a).filter(p => p.kind === 'pipe' && !p.reserved), pb = B.worldPoints(b).filter(p => p.kind === 'pipe' && !p.reserved); let best = null; for (const p of pa) if (p.role !== 'in') for (const q of pb) if (q.role !== 'out') { const d = Math.abs(p.ax - q.ax) + Math.abs(p.ay - q.ay); if (!best || d < best.d) best = { d, p, q }; } if (best) { const path = pipePath([best.p.ax, best.p.ay], [best.q.ax, best.q.ay]); if (path.every(pipeOk) || path.every(([x, y]) => pipeOk([x, y]) || pipes.has(B.key(WW, x, y)))) for (const [x, y] of path) pipes.add(B.key(WW, x, y)); } };
+    for (const w of wells) lay(w, jn); lay(jn, vs); lay(vs, ps); lay(ps, t1); lay(ps, t2);
+    const z = world.refineryZones(sr.id)[0]; if (z) { WP.goto(z.x + 14, z.y + 12, .3); await settle(); const rf = put('refinery', z.x + 16, z.y + 8, 0, 6); out.refinery = !!rf; put('large_tank', z.x + 3, z.y + 4, 0, 4); put('separator', z.x + 3, z.y + 12, 0, 4); const pp = put('processing_plant', z.x + 16, z.y + 22, 0, 5); put('control_center', z.x - 8, z.y + 2, 0, 5); put('maintenance', z.x - 8, z.y + 10, 0, 5); put('power', z.x + 26, z.y + 24, 0, 5); put('warehouse', z.x - 8, z.y + 16, 0, 5); }
+    for (const b of STORE.list()) b.st = 'OPERATIONAL'; out.total = STORE.list().length; out.pipeTiles = pipes.size; save(); updateCash(); WP.markDirty(); return Object.assign({ ok: true }, out);
+  }
+  $('tDemo').onclick = async () => { toast('Building the demo compound…'); const r = await buildDemo(); toast(r.ok ? 'Demo compound: ' + r.total + ' buildings' : 'Demo needs a drillable field'); };
+
   const tick = setInterval(() => { STORE.tick(1); WP.markDirty(); }, 1000);
-  window.__lab = { store: STORE, pipes, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, anchorFor, pipePath, commitPipe, updateCash,
+  window.__lab = { buildDemo, store: STORE, pipes, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, anchorFor, pipePath, commitPipe, updateCash,
     ready: () => true };
   updateCash();
   // restore the previous session once the demo discovery states exist (wells need drillable fields)
