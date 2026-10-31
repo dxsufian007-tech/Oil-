@@ -47,6 +47,8 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
+          ram-size: 4096M        # default RAM let Android kill Google Play Services mid-test (and with it the app, which uses its fonts provider)
+          heap-size: 576M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           script: bash .github/android/run.sh
