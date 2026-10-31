@@ -19,7 +19,7 @@ Method: the seven open-source references were cloned read-only and their licence
 | SAVE/LOAD | `serialize/load` including pump/valve state, `hadPipe`, pipes; round-trip tests. | **KEEP** (version-tag migrations when the model grows) |
 | ECONOMY / MARKET | Price with events (DEMAND_SURGE, SUPPLY_SHOCK…), contracts, competitors, AI every 5 s, costs. | **DO NOT TOUCH**; only add decision UI |
 | ANDROID | Capacitor 8 WebView, CI builds `Oli.apk` (branch `apk-build`) and runs the emulator suites (pipe 18, touch 19, phase2 11). | **KEEP**; add a real-device checklist |
-| LEGACY | `game.js` (2,489 lines), `index.html`, `game.js.orig`, ~45 legacy `test-p*` files still in `oli/`. | **REPLACE/RETIRE** (§14) |
+| LEGACY | `game.js` (2,489 lines), `index.html`, `game.js.orig`, 35 legacy `test-p*.js` files still in `oli/`. | **REPLACE/RETIRE** (§14) |
 
 ## 2. BEST CAMERA SOURCE
 Oli's own controller (already built on rex's PanScroll/PinchZoom method, MIT). Cross-check with panzoom's `getMiddle/getDistance` (MIT) in a unit test. ScrollingCamera is not suitable: one pointer only, own update loop with inertia.
@@ -71,7 +71,7 @@ Everything in pogicity `public/` (incl. proprietary characters), oasis-builder `
 8. Feedback triple for every action: **what happened · why · what next**.
 
 ## 14. CURRENT OLI WEAKNESSES (found by inspection, not guessed)
-1. **Two front-ends in one repo**: legacy `game.js`/`index.html` (+ `game.js.orig`) and `v2.*`; ~45 legacy `test-p*` files. Tests still point at old paths: this very session found `test-v2-*.js` loading a stale copy at `/home/claude/oli` (fixed). Risk of testing the wrong build.
+1. **Two front-ends in one repo**: legacy `game.js`/`index.html` (+ `game.js.orig`) and `v2.*`; 35 legacy `test-p*.js` files. Tests still point at old paths: this very session found `test-v2-*.js` loading a stale copy at `/home/claude/oli` (fixed). Risk of testing the wrong build.
 2. `v2.js` is one 830-line file (very long lines); UI, input, rendering and panels share one scope.
 3. No explicit **connection points** in the model: pump direction `dir` and "tiles around a building" are computed ad hoc by `routeNodes`; valve is a tile flag. Works, but not queryable (`node.ports[]`).
 4. Bottleneck levels are 4 (normal/busy/high/bottleneck); the brief wants NEAR_LIMIT and BLOCKED. BLOCKED today is spread over valve-closed/tank-full/starved warnings, not one status.
