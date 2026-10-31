@@ -224,6 +224,7 @@
   tog('tReg', 'reg'); tog('tZone', 'zone'); tog('tDev', 'dev'); tog('tHeat', 'heat'); tog('tScale', 'scale');
   const fac = document.getElementById('fac'); for (const k in CFG.FACILITIES) fac.insertAdjacentHTML('beforeend', '<option value="' + k + '">' + k + ' ' + CFG.FACILITIES[k].fp.join('×') + '</option>'); fac.onchange = () => { ui.facility = fac.value; if (ui.probe) ui.probe.res = world.canBuildAt(ui.facility, ui.probe.x, ui.probe.y); dirty = true; };
 
+  cv.addEventListener('contextlost', () => { stats.ctxLost = (stats.ctxLost || 0) + 1; }); cv.addEventListener('contextrestored', () => { dirty = true; });
   // adaptive resolution: if real frames (not draw calls) are slow, the canvas resolution drops step by step (never below 0.75) so panning stays smooth on weak GPUs; it never goes up again within a session
   const ft = []; let lastT = 0; stats.dprChanges = 0;
   function adapt(now) { if (lastT && dirty) { ft.push(now - lastT); if (ft.length >= 12) { const m = ft.slice().sort((a, b) => a - b)[6]; ft.length = 0; if (m > 34 && DPR > 0.76 && !qs.get('fixdpr')) { DPR = Math.max(0.75, DPR * 0.72); stats.dprChanges++; resize(); } } } lastT = dirty ? now : 0; }
