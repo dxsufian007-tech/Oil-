@@ -212,7 +212,7 @@
 
   /* ------------------------------------------------------------ cash, save / load, keys, test handle */
   function updateCash() { $('cash').textContent = fmt$(STORE.cash); EU.hud(); }
-  function save() { if (window.__noSave) return; try { COMPANY.stamp(Date.now()); COMPANY.sync(); localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON() })); window.__saveError = null; } catch (e) { window.__saveError = String(e && e.message || e); } }
+  function save() { if (window.__noSave || !window.__lab || !window.__lab.restored) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON() })); window.__saveError = null; } catch (e) { window.__saveError = String(e && e.message || e); } }
   function swapNet(n2) { pipes.clear(); pipes.lines = n2.lines; pipes.at = n2.at; pipes.nextId = n2.nextId; for (const k of n2) pipes.add(k); pipes.rev++; }
   function load(o) {
     o = o || {};
