@@ -80,10 +80,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await ev('document.getElementById("tPipe").click();'); const cA = await cam();
   await pipeDrag(await portXY(0, 'OUTPUT'), await portXY(1, 'INPUT_W')); check('VALID product connection: pump OUTPUT -> crude tank INPUT lays a CRUDE pipeline', await ev('return __lab.pipes.lines.size === 1 && [...__lab.pipes.lines.values()][0].product === "CRUDE";'));
   await shot('b-pipe-valid'); await pipeDrag(await portXY(1, 'OUTPUT_S'), await portXY(2, 'INPUT_N'));
-  check('INVALID product connection: crude tank OUTPUT -> gasoline tank INPUT builds nothing', await ev('return __lab.pipes.lines.size;') === 1); check('the player sees "INVALID PRODUCT CONNECTION"', /INVALID PRODUCT CONNECTION/.test(await ev('return document.getElementById("toast").textContent;'))); await shot('b-pipe-invalid-product');
+  check('INVALID product connection: crude tank OUTPUT -> gasoline tank INPUT builds nothing', await ev('return __lab.pipes.lines.size;') === 1); check('the player sees "INVALID PRODUCT CONNECTION"', /لا يمكن ربط هذين المنتجين/.test(await ev('return document.getElementById("toast").textContent;'))); await shot('b-pipe-invalid-product');
   const cB = await cam(); check('pipe drags by touch did not pan the map', Math.abs(cA[0] - cB[0]) + Math.abs(cA[1] - cB[1]) < 1e-6); await ev('document.getElementById("tPipe").click();');
   const tp = await ev('const t = __lab.store.list()[1]; return [__wp.sx(t.x + 1, t.y + 1), __wp.sy(t.x + 1, t.y + 1)];'); await tap(tp[0], tp[1]); await sleep(300); const panel = await ev('return document.getElementById("info").innerText;');
-  check('tapping a tank opens its panel with Level / Capacity / Fill', /Crude Tank/.test(panel) && /Level/.test(panel) && /Capacity/.test(panel) && /Fill/.test(panel), panel.replace(/\s+/g, ' ').slice(0, 120)); await shot('b-tank-panel');
+  check('tapping a tank opens its panel with Level / Capacity / Fill', /خزان نفط خام/.test(panel) && /Level/.test(panel) && /Capacity/.test(panel) && /Fill/.test(panel), panel.replace(/\s+/g, ' ').slice(0, 120)); await shot('b-tank-panel');
 
   });
 

@@ -39,11 +39,11 @@ if grep -qE "crashed: (WebSocket is not open|socket hang up)" results/economy.tx
   timeout 900 node .github/android/economy-android.js 2>&1 | tee results/economy.txt
 fi
 # Phase 3.5: the Arabic-first easy game (real touch: nav, cards, ghost, start production, tank, pipe, guide, close/reopen)
-adb shell am force-stop com.oli.buildlab; adb logcat -c; adb shell pm clear com.oli.buildlab || true; launch
+adb shell am force-stop com.oli.buildlab; adb logcat -c; launch
 timeout 900 node .github/android/game-android.js 2>&1 | tee results/game.txt
 if grep -qE "crashed: (WebSocket is not open|socket hang up)" results/game.txt && killedByGms; then
   echo "NOTE app killed by Play Services restart (emulator); repeating once" | tee -a results/game.txt
-  mv results/game.txt results/game-attempt1.txt; adb logcat -c; adb shell pm clear com.oli.buildlab || true; launch
+  mv results/game.txt results/game-attempt1.txt; adb logcat -c; launch
   timeout 900 node .github/android/game-android.js 2>&1 | tee results/game.txt
 fi
 adb logcat -d > results/logcat.txt
