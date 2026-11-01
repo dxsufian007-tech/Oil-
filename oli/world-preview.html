@@ -1,6 +1,6 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Oli - World + Building Lab</title>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>أويلي - شركة النفط</title>
 <style>
 :root{--bg:#10141a;--panel:#1b222c;--ink:#e8e2d2;--mut:#9aa3ad;--acc:#e6a13a}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -11,7 +11,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 button,select,input{font:inherit;color:var(--ink);background:var(--panel);border:1px solid #33404f;border-radius:8px;padding:8px 10px;min-height:38px}
 button.on{background:var(--acc);color:#222;border-color:var(--acc)}
 .panel{position:absolute;left:8px;right:8px;bottom:106px;min-height:64px;background:rgba(27,34,44,.94);border:1px solid #33404f;border-radius:12px;padding:10px 12px;max-height:34%;overflow:auto}
-.panel h4{margin:0 0 4px;font-size:14px}.panel .k{color:var(--mut)}
+.panel:empty{display:none}.panel h4{margin:0 0 4px;font-size:14px}.panel .k{color:var(--mut)}
 .row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 #prog{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--panel);padding:14px 18px;border-radius:12px;border:1px solid #33404f}
 #hud{position:absolute;left:8px;right:8px;bottom:210px;text-align:right;color:var(--mut);font-size:11px;pointer-events:none}
@@ -36,9 +36,13 @@ button.danger{background:#a83a30;border-color:#a83a30;color:#fff}
 </div>
 <div id="cash"></div><div id="toast"></div>
 <div id="hud"></div>
-<div id="prog">Generating world…</div>
-<div class="panel" id="info">Tap the map: a tile shows terrain and whether the selected facility can be built there. Tap an oil field to inspect what the player may know.</div>
+<div id="prog">جارٍ إنشاء العالم…</div>
+<div class="panel" id="info">اضغط على حقل نفط لتبدأ، أو على أي مبنى لترى تفاصيله.</div>
 <div id="buildbar"></div><div id="tabs"></div><div id="pal"></div>
+<script>try{if(/[?&]lab=1/.test(location.search)||localStorage.getItem("oli-labui")==="1"||/[?&]unlock=all/.test(location.search))document.documentElement.classList.add("dev0")}catch(e){}</script>
+<script>var __en=/[?&]lang=en/.test(location.search);try{if(localStorage.getItem("oli-lang")==="en")__en=true}catch(e){}if(__en){document.documentElement.lang="en";document.documentElement.dir="ltr"}</script>
+<script src="ar-dict.js"></script>
+<script src="ar.js"></script>
 <script src="worldmap.js"></script>
 <script src="building-config.js"></script>
 <script src="buildings.js"></script>
@@ -48,5 +52,7 @@ button.danger{background:#a83a30;border-color:#a83a30;color:#fff}
 <script src="economy-ui.js"></script>
 <script src="building-art.js"></script>
 <script src="world-preview.js"></script>
+<script src="game-config.js"></script>
+<script src="game-ui.js"></script>
 <script src="building-lab.js"></script>
 </body></html>

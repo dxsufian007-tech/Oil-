@@ -8,10 +8,10 @@
   'use strict';
   const PRODUCTS = ['CRUDE', 'GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'];            // the five things a company can hold and sell (OTHER is a by-product, never stored)
   return {
-    START_CASH: 50000000,                                                           // a refinery (25M..1B) is a big decision, the company can afford wells + tanks + one small plant
+    START_CASH: 10000000,                                                           // a small oil company: a first well, a pipeline and a tank; a refinery (25M..1B) has to be earned or financed
     PRODUCTS,
-    LABEL: { CRUDE: 'Crude', GASOLINE: 'Gasoline', DIESEL: 'Diesel', JET_FUEL: 'Jet Fuel', GAS: 'Gas / LPG' },
-    UNIT: { CRUDE: 'bbl', GASOLINE: 'bbl', DIESEL: 'bbl', JET_FUEL: 'bbl', GAS: 'boe' },
+    LABEL: { CRUDE: 'نفط خام', GASOLINE: 'بنزين', DIESEL: 'ديزل', JET_FUEL: 'وقود طائرات', GAS: 'غاز' },
+    UNIT: { CRUDE: 'برميل', GASOLINE: 'برميل', DIESEL: 'برميل', JET_FUEL: 'برميل', GAS: 'برميل مكافئ' },
     TIME: { hoursPerDay: 24, daysPerMonth: 30, monthsPerYear: 12, dayRealSeconds: 12, speeds: [0, 1, 2, 5, 10], tickMs: 250, maxCatchUpHours: 240, maxStepsPerTick: 60 },
 
     // ---- prices ($/bbl, gas $/boe).  Actual price = Base x Demand x Supply x Volatility, moved at most +-dailyChangeLimit per 24 h
@@ -31,13 +31,13 @@
     // ---- costs
     STORAGE_COST: { CRUDE: 0.015, GASOLINE: 0.025, DIESEL: 0.025, JET_FUEL: 0.03, GAS: 0.06 },   // $ per stored bbl per day
     ENERGY: { pricePerKWh: 0.08 },
-    POWER: { tiers: [{ name: 'Grid 1', kw: 8000, monthly: 25000, connect: 0 }, { name: 'Grid 2', kw: 25000, monthly: 90000, connect: 400000 }, { name: 'Grid 3', kw: 80000, monthly: 260000, connect: 1500000 }, { name: 'Grid 4', kw: 250000, monthly: 700000, connect: 5000000 }], startTier: 0, efficiencyFloor: 0.3 },
+    POWER: { tiers: [{ name: 'شبكة 1', kw: 8000, monthly: 25000, connect: 0 }, { name: 'شبكة 2', kw: 25000, monthly: 90000, connect: 400000 }, { name: 'شبكة 3', kw: 80000, monthly: 260000, connect: 1500000 }, { name: 'شبكة 4', kw: 250000, monthly: 700000, connect: 5000000 }], startTier: 0, efficiencyFloor: 0.3 },
     POWER_KW: { well: 25, pump: { S: 120, L: 300 }, separator: 350, refinery: { S: 2500, M: 8000, L: 28000, X: 65000 }, gas: 40, idleShare: 0.35 },
     OPERATING: { fixedShare: 0.4, conditionPenalty: 0.5 },                           // DailyOperatingCost = Base x (fixed + (1-fixed) x Load) x (1 + penalty x (1-Condition))
     MAINTENANCE: { damage: 2.5, utilBase: 0.6, utilSlope: 0.8,                       // MaintenanceCost = Base x DamageFactor x UtilizationFactor
       decayPerDay: { well: 0.0012, pump: 0.003, valve: 0.0004, junction: 0.0004, tank: 0.0006, gas: 0.0008, separator: 0.002, refinery: 0.0016 }, utilWear: 0.5,
       repairFraction: 0.35, autoRepair: true, autoRepairBelow: 0.5, cashReserve: 1000000,
-      labels: [[0.8, 'Good'], [0.6, 'Needs maintenance'], [0.4, 'Danger'], [0.2, 'Critical'], [0.0001, 'Failing']] },
+      labels: [[0.8, 'جيدة'], [0.6, 'مقبولة'], [0.4, 'تحتاج صيانة'], [0.2, 'خطرة'], [0.0001, 'على وشك التعطل']] },
     VARIABLE: { liftingPerBbl: 26, chemicalsPerBbl: 0.9 },                           // lifting cost per barrel produced at a well; refinery chemicals / catalyst per barrel processed
     LABOR: { salary: { operators: 3600, engineers: 8800, maintenance: 4400, managers: 13500 }, perManager: 60,   // per employee per month
       staff: { well: { operators: 2, maintenance: 1 }, pump_S: { operators: 2, maintenance: 1 }, pump_L: { operators: 3, engineers: 1, maintenance: 2 }, valve: { operators: 0.25 }, junction: { operators: 0.25 },

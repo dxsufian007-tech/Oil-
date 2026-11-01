@@ -100,7 +100,7 @@
     pipeValue() { let v = 0; for (const L of this.net.lines.values()) v += L.path.length * (BC.PIPES[L.dia] || BC.PIPES[BC.PIPE_DEFAULT]).cost; return v; }
     assetsTotal() { let v = this.pipeValue(); for (const b of this.store.list()) v += this.assetValue(b); return v; }
     assetList() { return this.store.list().map(b => { const a = this.assetRec(b); return { id: b.id, name: DEFS[b.d].name, purchase: a.cost, value: this.assetValue(b), maintenance: this.maintDay(b, this.loadOf(b)), ageDays: Math.floor((this.hours - a.t) / 24), condition: b.c, label: this.conditionLabel(b.c) }; }); }
-    conditionLabel(c) { if (c >= 0.9) return 'Excellent'; for (const [t, l] of this.cfg.MAINTENANCE.labels) if (c >= t) return l; return 'Stopped'; }
+    conditionLabel(c) { if (c >= 0.9) return 'ممتازة'; for (const [t, l] of this.cfg.MAINTENANCE.labels) if (c >= t) return l; return 'متوقف'; }
 
     /* ---- per building: load, power, staff, costs ---- */
     loadOf(b) {
@@ -120,7 +120,8 @@
     wellQuality(b) { const q = this.cfg.QUALITY, u = hash(b.x, b.y, 11); return u < q.share.HIGH ? 'HIGH' : u > 1 - q.share.LOW ? 'LOW' : 'NORMAL'; }
     crudeLabel() { const q = this.cfg.QUALITY; return this.crudeQ >= q.highAt ? 'HIGH' : this.crudeQ <= q.lowAt ? 'LOW' : 'NORMAL'; }
     effOf(b) {                                                                      // written to b.s.ecoEff before every Sim step: power shortage, wear and crude quality
-      const t = DEFS[b.d].type, P = this.cfg.POWER, elec = this.pw.factor >= 1 ? 1 : P.efficiencyFloor + (1 - P.efficiencyFloor) * this.pw.factor;
+      const t = DEFS[b.d].type, P = this.cfg.POWER; if (t === 'well' && b.s && b.s.started === false) return 0;      // a new well waits for the player's "start production"
+      const elec = this.pw.factor >= 1 ? 1 : P.efficiencyFloor + (1 - P.efficiencyFloor) * this.pw.factor;
       const q = t === 'refinery' ? this.cfg.QUALITY.refinery[this.crudeLabel()] : 1, cond = (t === 'refinery' || t === 'separator') ? 1 : 0.8 + 0.2 * b.c;     // refinery / separator already read b.c inside the Sim
       return clamp(elec * q * cond, 0.05, 1.05);
     }

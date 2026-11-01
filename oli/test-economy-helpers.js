@@ -2,7 +2,7 @@
 const B = require('./buildings.js'), I = require('./industry.js'), E = require('./economy.js'), EC = require('./economy-config.js');
 const TERR = { FLAT_DESERT: { buildable: true, buildCost: 1, maxSlope: 10 }, WATER_WADI: { buildable: false, buildCost: 9, maxSlope: 0 } };
 function world() { return { W: 400, H: 300, tile: () => ({ terrain: 'FLAT_DESERT', slope: 0 }), terrain: TERR, slopeK: 1, oilFieldAt: () => ({ kind: 'FIELD', id: 1 }), stateOf: () => 'DRILLABLE', zoneAt: () => ({ id: 1 }) }; }
-function game(cash, cfg) { const ts = world(), store = new B.BuildingStore(ts, { cash: cash == null ? EC.START_CASH : cash }), net = new I.PipeNet(ts.W), sim = new I.Sim(store, net), co = new E.Company(store, net, sim, { config: cfg, now: () => 1e12 }); return { ts, store, net, sim, co }; }
+function game(cash, cfg) { const ts = world(), store = new B.BuildingStore(ts, { cash: cash == null ? 50e6 : cash }), net = new I.PipeNet(ts.W), sim = new I.Sim(store, net), co = new E.Company(store, net, sim, { config: cfg, now: () => 1e12 }); return { ts, store, net, sim, co }; }
 const put = (g, d, x, y, r, instant) => { const v = g.store.place(d, x, y, r || 0, { instant: instant !== false }); if (!v.ok) throw new Error('place ' + d + ' ' + JSON.stringify(v)); return v.building; };
 const pipe = (g, a, ap, b, bp, dia) => I.layPipe(g.store, g.net, g.ts, { b: a.id, port: ap }, { b: b.id, port: bp }, dia || 16);
 /* wells -> junction -> pump -> separator -> crude tank -> refinery -> products.  `full` = with the refinery and 4 product stores */

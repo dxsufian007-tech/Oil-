@@ -10,7 +10,8 @@
   const world = OW.createWorld({ seed, external: true }), C = CFG.CHUNK, CX = CFG.CHUNKS_X, CY = CFG.CHUNKS_Y;
   const cv = document.getElementById('c'), ctx = cv.getContext('2d'), info = document.getElementById('info'), hud = document.getElementById('hud');
   const SR = world.regions.find(r => r.starter), cam = { x: SR.x0 + 160, y: SR.y0 + 160, z: 0.9 };
-  const ui = { reg: true, zone: true, dev: false, heat: false, sel: null, facility: 'well', probe: null, scale: false };
+  const DEVUI = /[?&]lab=1/.test(location.search) || (function () { try { return localStorage.getItem('oli-labui') === '1'; } catch (_) { return false; } })(), ST_AR = { DRILLABLE: 'جاهز للحفر', PRODUCING: 'ينتج', DISCOVERED: 'مكتشف', SURVEYED: 'تم مسحه', UNDISCOVERED: '' };
+  const ui = { reg: DEVUI, zone: true, dev: false, heat: false, sel: null, facility: 'well', probe: null, scale: false };
   let DPR = Math.min(+qs.get('dpr') || 2, window.devicePixelRatio || 1), VW = 0, VH = 0, dirty = true;
   const level = () => world.levelForZoom(cam.z);
   const stats = { imgs: 0, regions: 0 };
@@ -63,7 +64,7 @@
     }
     if (ready.reg && !busy.reg && regNeed.size) { let best = null, bd = 1e12; for (const r of regNeed) { const R = world.regions[r], d = Math.hypot(R.x0 + R.w / 2 - cam.x, R.y0 + R.h / 2 - cam.y) - (DEMO_REGIONS.includes(r) && !demoDone ? 1e6 : 0); if (d < bd) { bd = d; best = r; } } if (best != null) { busy.reg = true; regEng.post({ t: 'region', rid: best }); } }
     if (!stats.genDoneMs && !ovQueue.length && !busy.img && demoDone) stats.genDoneMs = Math.round(performance.now());
-    const p = document.getElementById('prog'); p.style.display = (ovStep === 99) ? '' : 'none'; p.textContent = 'Preparing the world…';
+    const p = document.getElementById('prog'); p.style.display = (ovStep === 99) ? '' : 'none'; p.textContent = 'جارٍ تجهيز العالم…';
     requestAnimationFrame(schedule);
   }
   const wantImg = (cx, cy, k) => { const key = cy * CX + cx; if (!imgOf(k).has(key)) { need.set(k + ':' + key, { cx, cy, k }); return false; } return true; };
@@ -139,9 +140,9 @@
     const near = r => !(r.x0 > b.x1 + 30 || r.y0 > b.y1 + 30 || r.x0 + r.w < b.x0 - 30 || r.y0 + r.h < b.y0 - 30);
     if (lv !== 'FAR') for (const r of world.regions) if (near(r)) for (const t of world.tracks(r.id)) { ctx.strokeStyle = 'rgba(196,164,112,.75)'; ctx.lineWidth = Math.max(1.5, 3.2 * cam.z); ctx.setLineDash([]); ctx.beginPath(); t.pts.forEach((p, i) => i ? ctx.lineTo(sx(p[0], p[1]), sy(p[0], p[1])) : ctx.moveTo(sx(p[0], p[1]), sy(p[0], p[1]))); ctx.stroke(); }
     if (ui.zone && lv !== 'FAR') for (const r of world.regions) { if (!near(r)) continue;
-      for (const z of world.refineryZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(150,90,200,.16)', '#b27be0', 1.5, [7, 4]); diamond(z.x - 8, z.y - 8, z.w + 16, z.h + 16, null, 'rgba(178,123,224,.45)', 1, [2, 4]); ctx.fillStyle = '#e0c6f7'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); ctx.strokeText('REFINERY ZONE', X, Y); ctx.fillText('REFINERY ZONE', X, Y); }
-      for (const z of world.tankZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(70,150,200,.15)', '#6ab6e6', 1.3, [5, 4]); ctx.fillStyle = '#cfeaff'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); if (lv === 'MEDIUM' || cam.z < 1.3) { ctx.strokeText('TANK FARM', X, Y); ctx.fillText('TANK FARM', X, Y); } }
-      for (const p of world.strategicPoints(r.id)) { const X = sx(p.x, p.y), Y = sy(p.x, p.y); ctx.fillStyle = p.kind === 'EXPORT_COAST' ? '#ffd166' : '#ffffff'; ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X, Y - 9); ctx.lineTo(X + 7, Y); ctx.lineTo(X, Y + 9); ctx.lineTo(X - 7, Y); ctx.closePath(); ctx.fill(); ctx.stroke(); if (lv !== 'FAR' && cam.z < 1.3) { ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3; const t = p.kind === 'EXPORT_COAST' ? 'EXPORT SITE' : 'HUB'; ctx.strokeText(t, X, Y - 13); ctx.fillText(t, X, Y - 13); } } }
+      for (const z of world.refineryZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(150,90,200,.16)', '#b27be0', 1.5, [7, 4]); diamond(z.x - 8, z.y - 8, z.w + 16, z.h + 16, null, 'rgba(178,123,224,.45)', 1, [2, 4]); ctx.fillStyle = '#e0c6f7'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); ctx.strokeText('REFINERY ZONE', X, Y); ctx.fillText(DEVUI ? 'REFINERY ZONE' : 'منطقة المصافي', X, Y); }
+      for (const z of world.tankZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(70,150,200,.15)', '#6ab6e6', 1.3, [5, 4]); ctx.fillStyle = '#cfeaff'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); if (lv === 'MEDIUM' || cam.z < 1.3) { ctx.strokeText('TANK FARM', X, Y); ctx.fillText(DEVUI ? 'TANK FARM' : 'منطقة الخزانات', X, Y); } }
+      for (const p of world.strategicPoints(r.id)) { const X = sx(p.x, p.y), Y = sy(p.x, p.y); ctx.fillStyle = p.kind === 'EXPORT_COAST' ? '#ffd166' : '#ffffff'; ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X, Y - 9); ctx.lineTo(X + 7, Y); ctx.lineTo(X, Y + 9); ctx.lineTo(X - 7, Y); ctx.closePath(); ctx.fill(); ctx.stroke(); if (lv !== 'FAR' && cam.z < 1.3) { ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3; const t = DEVUI ? (p.kind === 'EXPORT_COAST' ? 'EXPORT SITE' : 'HUB') : (p.kind === 'EXPORT_COAST' ? 'موقع تصدير' : 'نقطة تجميع'); ctx.strokeText(t, X, Y - 13); ctx.fillText(t, X, Y - 13); } } }
     for (const r of world.regions) {
       if (!near(r)) continue;
       for (const s of world.regionSites(r.id)) {
@@ -152,7 +153,7 @@
         const col = s.kind === 'DRY' ? '#777' : SCOL[st];
         ellipseIso(s.x, s.y, s.radius, s.kind === 'DRY' ? 'rgba(90,90,90,.07)' : st === 'DEPLETED' ? 'rgba(60,60,60,.14)' : st === 'PRODUCING' ? 'rgba(255,170,60,.12)' : 'rgba(30,20,10,.10)', col, sel ? 3 : 1.6, st === 'SURVEYED' ? [6, 3] : st === 'DRILLABLE' || st === 'PRODUCING' ? null : [2, 3]);
         const sz = Math.max(CFG.SCALE.ICON_MIN_PX, Math.min(CFG.SCALE.ICON_MAX_PX, cam.z * 26)) * (lv === 'FAR' ? .75 : 1), px = sx(s.x, s.y), py = sy(s.x, s.y);
-        if (s.kind === 'FIELD') { derrick(px, py, sz, col); if (lv !== 'FAR') { ctx.fillStyle = '#fff'; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; const t = s.type[0] + s.type.slice(1).toLowerCase() + ' · ' + st.toLowerCase(); ctx.strokeText(t, px, py - sz - 4); ctx.fillText(t, px, py - sz - 4); } }
+        if (s.kind === 'FIELD') { derrick(px, py, sz, col); if (lv !== 'FAR') { ctx.fillStyle = '#fff'; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; const t = DEVUI ? s.type[0] + s.type.slice(1).toLowerCase() + ' · ' + st.toLowerCase() : '⛰️ حقل نفط' + (ST_AR[st] ? ' · ' + ST_AR[st] : ''); ctx.strokeText(t, px, py - sz - 4); ctx.fillText(t, px, py - sz - 4); } }
         else { ctx.strokeStyle = '#999'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px - 6, py - 6); ctx.lineTo(px + 6, py + 6); ctx.moveTo(px + 6, py - 6); ctx.lineTo(px - 6, py + 6); ctx.stroke(); if (lv !== 'FAR') { ctx.fillStyle = '#ccc'; ctx.font = '11px system-ui'; ctx.textAlign = 'center'; ctx.fillText('dry hole', px, py - 12); } }
       }
     }
@@ -205,7 +206,7 @@
     if (hooks.tap && hooks.tap(px, py)) return;
     const t = toTile(px, py), x = Math.floor(t.x), y = Math.floor(t.y); if (!world.inb(x, y)) return;
     let hit = null; for (const s of world.sitesNear(x, y, 3)) { const vi = world.visibleInfo(s.id), ind = vi && vi.indicator, cxs = ind ? ind.x : s.x, cys = ind ? ind.y : s.y, rad = ind ? ind.r : s.radius; if ((vi || ui.dev) && Math.hypot(cxs - t.x, cys - t.y) <= rad + 1) { hit = s; break; } }
-    const tl = world.tile(x, y); if (!tl) { wantImg((x / C) | 0, (y / C) | 0, 1); document.getElementById('info').textContent = 'Loading this part of the world…'; return; } const res = world.canBuildAt(ui.facility, x, y); ui.probe = { x, y, res }; ui.sel = hit ? hit.id : null; dirty = true; showInfo(tl, res, hit);
+    const tl = world.tile(x, y); if (!tl) { wantImg((x / C) | 0, (y / C) | 0, 1); document.getElementById('info').textContent = 'جارٍ تحميل هذا الجزء من العالم…'; return; } const res = world.canBuildAt(ui.facility, x, y); ui.probe = { x, y, res }; ui.sel = hit ? hit.id : null; dirty = true; showInfo(tl, res, hit);
   }
   const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : '' + n;
   function showInfo(tl, res, hit) {
@@ -237,6 +238,6 @@
   const sp = qs.get('x'); if (sp) { cam.x = +qs.get('x'); cam.y = +qs.get('y'); cam.z = clampZ(+qs.get('z') || .9); }
   if (qs.get('dev')) { ui.dev = true; document.getElementById('tDev').classList.add('on'); }
   if (qs.get('scale')) { ui.scale = true; document.getElementById('tScale').classList.add('on'); }
-  info.innerHTML = 'World <b>' + world.W + '×' + world.H + ' tiles</b> = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' km (1 tile = ' + CFG.SCALE.TILE_M + ' m), <b>' + world.scale().toFixed(1) + '×</b> the current 140×88 map · 24 regions · 600 chunks. Tap the map: a tile shows terrain and whether the selected facility fits. Tap an oil field to see what the player may know.';
+  if (DEVUI) { info.innerHTML = 'World <b>' + world.W + '×' + world.H + ' tiles</b> = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' km (1 tile = ' + CFG.SCALE.TILE_M + ' m), <b>' + world.scale().toFixed(1) + '×</b> the current 140×88 map · 24 regions · 600 chunks. Tap the map: a tile shows terrain and whether the selected facility fits. Tap an oil field to see what the player may know.'; } else info.textContent = 'اضغط على حقل نفط لتبدأ، أو على أي مبنى لترى تفاصيله.';
   requestAnimationFrame(schedule); requestAnimationFrame(loop);
 })();

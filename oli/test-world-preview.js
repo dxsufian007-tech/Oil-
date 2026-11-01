@@ -5,7 +5,7 @@ const srv = http.createServer((q, r) => { const u = q.url.split('?')[0], f = pat
 (async () => {
   const port = srv.address().port, b = await chromium.launch(), p = await b.newPage({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 2, hasTouch: true }), errs = [];
   p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-  await p.goto('http://localhost:' + port + '/'); await p.waitForFunction(() => window.__wp && window.__wp.genLeft() === 0, null, { timeout: 120000 });
+  await p.goto('http://localhost:' + port + '/?lab=1&lang=en'); await p.waitForFunction(() => window.__wp && window.__wp.genLeft() === 0, null, { timeout: 120000 });
   let n = 0; const ok = (c, m) => { assert(c, m); n++; }; const shot = async nm => { for (let i = 0; i < 80 && await p.evaluate(() => __wp.hiLeft()); i++) await p.waitForTimeout(150); if (shots) { await p.waitForTimeout(250); await p.screenshot({ path: path.join(shots, nm + '.png') }); } };
   ok(await p.evaluate(() => __wp.ready()) >= 0 && await p.evaluate(() => __wp.idle()), 'overview + starter regions computed in workers, queue idle');
   for (const [lv, z] of [['FAR', .0045], ['FAR', .03], ['MEDIUM', .35], ['CLOSE', 1]]) { await p.evaluate(([x, y, z]) => __wp.goto(x, y, z), [800, 800, z]); ok(await p.evaluate(() => __wp.level()) === lv, 'level ' + lv + ' at zoom ' + z); }

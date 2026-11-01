@@ -9,8 +9,8 @@
 #eco-hud{position:absolute;left:6px;right:6px;top:54px;height:40px;display:flex;gap:4px;align-items:stretch;z-index:7;pointer-events:none}
 #eco-hud>*{pointer-events:auto;background:rgba(27,34,44,.94);border:1px solid #33404f;border-radius:10px}
 #eco-hud .cell{flex:1 1 0;min-width:0;padding:3px 7px;display:flex;flex-direction:column;justify-content:center;line-height:1.15;overflow:hidden}
-#eco-hud .cell small{font-size:9px;color:var(--mut);letter-spacing:.06em;white-space:nowrap}#eco-hud .cell b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#eco-hud button{flex:0 0 auto;min-width:40px;min-height:40px;padding:0 8px;font-weight:700;position:relative}#eco-hud .pos{color:#8dffb0}#eco-hud .neg{color:#ff9a8a}
+#eco-hud .cell small{font-size:10px;color:var(--mut);letter-spacing:.06em;white-space:nowrap}#eco-hud .cell b{font-size:12.5px;direction:ltr;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#eco-hud button{flex:0 0 auto;min-width:34px;min-height:40px;padding:0 4px;font-weight:700;position:relative}#eco-hud .pos{color:#8dffb0}#eco-hud .neg{color:#ff9a8a}
 #eh-badge{position:absolute;right:-3px;top:-4px;background:#d9453a;color:#fff;border-radius:9px;font-size:10px;min-width:16px;height:16px;line-height:16px;text-align:center;display:none}
 #eco-sheet{position:fixed;inset:0;z-index:30;background:var(--bg);display:none;flex-direction:column;touch-action:pan-y}#eco-sheet.open{display:flex}
 #eco-sheet .top{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #33404f}#eco-sheet .top b{flex:1;font-size:15px;letter-spacing:.04em}
@@ -142,7 +142,8 @@
 
   /* ------------------------------------------------------------ HUD, away report, events */
   function hud() {
-    if (!CO) return; const s = CO.summary(), c = s.clock; $('eh-cash').lastChild.textContent = M(s.cash); $('eh-cash').lastChild.className = s.cash < 0 ? 'neg' : ''; const nt = $('eh-net').lastChild; nt.textContent = sg(s.dayNet) + '/d'; nt.className = s.dayNet > 0 ? 'pos' : s.dayNet < 0 ? 'neg' : '';
+    if (!CO) return; const s = CO.summary(), c = s.clock; $('eh-cash').lastChild.textContent = M(s.cash); $('eh-cash').lastChild.className = s.cash < 0 ? 'neg' : ''; const nt = $('eh-net').lastChild; nt.textContent = sg(s.dayNet); nt.className = s.dayNet > 0 ? 'pos' : s.dayNet < 0 ? 'neg' : '';
+    { const inv = CO.inventory(), vol = inv.reduce((a, r) => a + r.volume, 0), cap = inv.reduce((a, r) => a + r.capacity, 0), pr = CO.productionRates(); const hp = $('eh-prod'), hs = $('eh-stor'); if (hp) { hp.lastChild.textContent = n0(pr.crude); hp.title = 'برميل نفط في اليوم'; } if (hs) { hs.lastChild.textContent = cap ? Math.round(vol / cap * 100) + '%' : '—'; hs.lastChild.className = cap && vol / cap > .9 ? 'neg' : ''; } }
     $('eh-clock').firstChild.textContent = 'Y' + c.year + ' M' + c.month; $('eh-clock').lastChild.textContent = 'D' + c.dayOfMonth + ' ' + String(c.hour).padStart(2, '0') + ':00'; $('eh-pause').textContent = CO.speed === 0 ? '▶' : '⏸'; $('eh-speed').textContent = (CO.speed || CO.lastSpeed || 1) + '×';
     const n = CO.alerts().filter(x => x.level !== 'info').length, b = $('eh-badge'); b.textContent = n; b.style.display = n ? 'block' : 'none'; const bl = $('eco-bank'); if (CO.bankrupt && bl) showBank();
     const cs = $('cash'); if (cs) cs.textContent = '$' + Math.round(s.cash).toLocaleString('en-US');
@@ -179,7 +180,7 @@
   let opts = {};
   function mount(o) {
     opts = o; CO = o.company; toastFn = o.toast; onChange = o.onChange || onChange; const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
-    const hudEl = document.createElement('div'); hudEl.id = 'eco-hud'; hudEl.innerHTML = '<div class="cell" id="eh-cash"><small>CASH</small><b>$0</b></div><div class="cell" id="eh-net"><small>PROFIT</small><b>+$0/d</b></div><div class="cell" id="eh-clock"><small>Y1 M1</small><b>D1 00:00</b></div><button id="eh-pause">⏸</button><button id="eh-speed">1×</button><button id="eh-menu">☰<span id="eh-badge"></span></button>';
+    const hudEl = document.createElement('div'); hudEl.id = 'eco-hud'; hudEl.innerHTML = '<div class="cell" id="eh-cash"><small>💰 الرصيد</small><b>$0</b></div><div class="cell" id="eh-prod"><small>🛢️ إنتاج/يوم</small><b>0</b></div><div class="cell" id="eh-stor"><small>🏗️ التخزين</small><b>0%</b></div><div class="cell" id="eh-net"><small>💵 أرباح/يوم</small><b>+$0</b></div><div class="cell" id="eh-clock" style="display:none"><small>Y1 M1</small><b>D1 00:00</b></div><button id="eh-pause">⏸</button><button id="eh-speed">1×</button><button id="eh-menu">☰<span id="eh-badge"></span></button>';
     document.body.appendChild(hudEl);
     const sh = document.createElement('div'); sh.id = 'eco-sheet'; sh.innerHTML = '<div class="top"><b>OLI OIL COMPANY</b><button id="es-close">✕</button></div><div id="es-tabs"></div><div id="es-body"></div>'; document.body.appendChild(sh);
     const aw = document.createElement('div'); aw.id = 'eco-away'; aw.innerHTML = '<div class="box"></div>'; document.body.appendChild(aw); const bk = document.createElement('div'); bk.id = 'eco-bank'; bk.innerHTML = '<div class="box"></div>'; bk.style.cssText = 'position:fixed;inset:0;z-index:41;background:rgba(5,8,12,.85);display:none;align-items:center;justify-content:center;padding:14px'; document.body.appendChild(bk);

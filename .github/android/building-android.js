@@ -32,8 +32,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   let ready = false; for (let i = 0; i < 90 && !ready; i++) { ready = await ev('return !!(window.__lab && __lab.restored);').catch(() => false); if (!ready) await sleep(1000); } check('the game (map + building system) is running in the Android WebView', ready);
   if (!ready) return;
+  // these legacy checks drive the developer lab (full palette, English): switch it on with the stored flags, then reload
+  await ev('localStorage.setItem("oli-labui","1"); localStorage.setItem("oli-lang","en");'); await Page.reload(); await sleep(3000); ready = false; for (let i = 0; i < 90 && !ready; i++) { ready = await ev('return !!(window.__lab && __lab.restored);').catch(() => false); if (!ready) await sleep(1000); }
+  if (!ready) return;
   out.env = await ev('return { ua: navigator.userAgent, dpr: devicePixelRatio, w: innerWidth, h: innerHeight };'); console.log('ENV ' + JSON.stringify(out.env));
-  await ev('localStorage.clear(); __lab.reset(); __lab.store.cash = 5e9; __lab.state.rot = {}; __lab.updateCash();');
+  await ev('localStorage.clear(); localStorage.setItem("oli-labui","1"); localStorage.setItem("oli-lang","en"); __lab.reset(); __lab.store.cash = 5e9; __lab.state.rot = {}; __lab.updateCash();');
   check('the world map loaded (1920x1280 tiles)', await ev('return __wp.world.W === 1920 && __wp.world.H === 1280;'));
   check('the build menu has the 5 sections', (await ev('return [...document.querySelectorAll("#tabs button")].map(b => b.textContent).join("|");')) === 'EXTRACTION|PIPELINE|CRUDE STORAGE|PROCESSING|PRODUCT STORAGE');
   await shot('b-menu-extraction');

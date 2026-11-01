@@ -62,7 +62,7 @@
     opts = opts || {}; const W = store.W, margin = opts.margin || 14, x0 = Math.min(from[0], to[0]) - margin, x1 = Math.max(from[0], to[0]) + margin, y0 = Math.min(from[1], to[1]) - margin, y1 = Math.max(from[1], to[1]) + margin;
     const own = opts.own || new Set(), acc = new Set(); for (const o of store.query(x0, y0, x1, y1)) for (const p of B.worldPoints(o)) if (p.kind === 'pipe' && !p.reserved) acc.add(key(W, p.ax, p.ay)); const okTile = (x, y, end) => {
       if (x < 0 || y < 0 || x >= W || y >= store.H) return false; const t = ts.tile(x, y); if (!t || !ts.terrain[t.terrain].buildable) return false; if (store.at(x, y)) return false;
-      if (net.lineAt(x, y)) return false; if (!end && acc.has(key(W, x, y))) return false; return true; };
+      { const ln = net.lineAt(x, y); if (ln && ln.id !== opts.ignoreLine) return false; } if (!end && acc.has(key(W, x, y))) return false; return true; };
     if (!okTile(from[0], from[1], true) || !okTile(to[0], to[1], true)) return null;
     const idx = (x, y) => (y - y0) * (x1 - x0 + 1) + (x - x0), prev = new Map(), q = [from], seen = new Set([idx(from[0], from[1])]); let head = 0, guard = 0;
     while (head < q.length && guard++ < 60000) {
@@ -92,6 +92,36 @@
   }
   function layPipe(store, net, ts, A, Bp, dia, opts) {
     const v = planPipe(store, net, ts, A, Bp, dia, opts); if (!v.ok) return v; const L = net.lay({ a: v.a, b: v.b, path: v.path, product: v.product, dia: v.dia }); if (store.cash !== Infinity) store.cash -= v.cost; return Object.assign({}, v, { line: L });
+  }
+
+
+  /* An OPEN pipeline starts at a building port and ends on a free tile (b = null): the player does not have to finish the network while building.
+   * It carries nothing ("not connected") until closePipe() joins its free end to a port.  The simulator already ignores lines that lack an end. */
+  function portInfo(store, ref) { const b = store.get(ref.b); if (!b) return null; const p = B.worldPoints(b).find(q => q.id === ref.port && q.kind === 'pipe' && !q.reserved); return p ? { b, p } : null; }
+  function portTaken(net, ref, exceptId) { for (const L of net.lines.values()) { if (L.id === exceptId) continue; for (const e of [L.a, L.b]) if (e && e.b === ref.b && e.port === ref.port) return true; } return false; }
+  function planOpenPipe(store, net, ts, A, end, dia, opts) {
+    opts = opts || {}; dia = CFG.PIPES[dia] ? dia : CFG.PIPE_DEFAULT; const fail = (reason, kind) => ({ ok: false, state: 'INVALID', kind: kind || 'RULE', reason }), pa = portInfo(store, A); if (!pa) return fail('noPort');
+    if (portTaken(net, A)) return fail('portTaken');
+    const path = route(store, net, ts, [pa.p.ax, pa.p.ay], [end[0], end[1]], opts); if (!path) return fail('noRoute', 'ROUTE'); if (path.length < 2) return fail('tooShort');
+    const prods = networkProducts(store, net, [pk(A.b, A.port)]), product = prods.size === 1 ? [...prods][0] : ANY, cost = path.length * CFG.PIPES[dia].cost;
+    if (store.cash < cost && !opts.ignoreCash) return { ok: false, state: 'UNAFFORDABLE', reason: 'cash', cost, kind: null };
+    return { ok: true, state: 'VALID', cost, path, product, dia, a: { b: A.b, port: A.port }, b: null, open: true, length: path.length * CFG.TILE_METERS };
+  }
+  function layOpenPipe(store, net, ts, A, end, dia, opts) { const v = planOpenPipe(store, net, ts, A, end, dia, opts); if (!v.ok) return v; const L = net.lay({ a: v.a, b: null, path: v.path, product: v.product, dia: v.dia }); if (store.cash !== Infinity) store.cash -= v.cost; return Object.assign({}, v, { line: L }); }
+  function planClosePipe(store, net, ts, lineId, Bp, opts) {
+    opts = opts || {}; const L = net.lines.get(lineId), fail = (reason, kind) => ({ ok: false, state: 'INVALID', kind: kind || 'RULE', reason }); if (!L || L.b || !L.a) return fail('noPort');
+    const pa = portInfo(store, L.a), pb = portInfo(store, Bp); if (!pa || !pb) return fail('noPort'); if (pa.b.id === pb.b.id) return fail('sameBuilding'); if (portTaken(net, Bp, lineId)) return fail('portTaken');
+    const ra = pa.p.role, rb = pb.p.role; if (!((ra === 'out' && rb === 'in') || (ra === 'in' && rb === 'out') || ra === 'both' || rb === 'both') || (ra === rb && ra !== 'both')) return fail('portRoles');
+    if (!B.productOk(pa.p.product, pb.p.product)) return Object.assign(fail('invalidProduct', 'PRODUCT'), { wants: pa.p.product, has: pb.p.product });
+    const prods = networkProducts(store, net, [pk(L.a.b, L.a.port), pk(Bp.b, Bp.port)], [pk(L.a.b, L.a.port), pk(Bp.b, Bp.port)]); if (prods.size > 1) return Object.assign(fail('invalidProduct', 'PRODUCT'), { products: [...prods] });
+    const last = L.path[L.path.length - 1], target = [pb.p.ax, pb.p.ay]; let add = [];
+    if (!(last[0] === target[0] && last[1] === target[1])) { const r = route(store, net, ts, last, target, Object.assign({}, opts, { ignoreLine: lineId })); if (!r) return fail('noRoute', 'ROUTE'); add = r.slice(1); }
+    const cost = add.length * CFG.PIPES[L.dia].cost; if (store.cash < cost && !opts.ignoreCash) return { ok: false, state: 'UNAFFORDABLE', reason: 'cash', cost, kind: null };
+    return { ok: true, state: 'VALID', cost, add, product: prods.size === 1 ? [...prods][0] : ANY, b: { b: Bp.b, port: Bp.port }, id: lineId };
+  }
+  function closePipe(store, net, ts, lineId, Bp, opts) {
+    const v = planClosePipe(store, net, ts, lineId, Bp, opts); if (!v.ok) return v; const L = net.lines.get(lineId), path = L.path.concat(v.add), a = L.a, dia = L.dia; net.remove(lineId);
+    const NL = net.lay({ a, b: v.b, path, product: v.product, dia }); if (store.cash !== Infinity) store.cash -= v.cost; return Object.assign({}, v, { line: NL });
   }
 
   /* ------------------------------------------------------------ levels, safety helpers */
@@ -306,5 +336,5 @@
     setValve(b, mode, opening) { const s = this.ensure(b); if (!['OPEN', 'CLOSED', 'PARTIAL', 'FAULT'].includes(mode)) return false; s.mode = mode; if (opening != null) s.opening = clamp(opening, 0, 1); return true; }
   }
 
-  return { PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
+  return { PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });

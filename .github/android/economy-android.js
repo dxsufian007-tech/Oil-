@@ -32,10 +32,12 @@ setTimeout(() => { console.log('FAIL watchdog: the economy script did not finish
   check('the game with the economy is running in the Android WebView', await ready());
   out.env = await ev('return { ua: navigator.userAgent, dpr: devicePixelRatio, w: innerWidth, h: innerHeight };'); console.log('ENV ' + JSON.stringify(out.env));
 
+  // the legacy economy checks drive the developer lab in English: switch it on with the stored flags and reload
+  await ev('localStorage.setItem("oli-labui","1"); localStorage.setItem("oli-lang","en");'); await Page.reload(); await sleep(3000); await ready();
   await guard('hud + chain', async () => {
-    await ev('window.__noSave = false; localStorage.clear(); __lab.reset();'); await sleep(500);
+    await ev('window.__noSave = false; localStorage.clear(); localStorage.setItem("oli-labui","1"); localStorage.setItem("oli-lang","en"); __lab.reset();'); await sleep(500);
     check('HUD is visible on the phone screen and fits the width', await ev('const r = document.getElementById("eco-hud").getBoundingClientRect(); return r.width > 200 && r.right <= innerWidth + 1 && [...document.querySelectorAll("#eco-hud > *")].every(e => e.getBoundingClientRect().right <= innerWidth + 1);'));
-    check('the company starts with $50M', (await ev('return document.getElementById("eh-cash").innerText;')).includes('$50M'));
+    check('the company starts with $10M', (await ev('return document.getElementById("eh-cash").innerText;')).includes('$10M'));
     await tap('#eh-pause'); check('touch: PAUSE stops Game Time', await ev('return __lab.company.speed === 0;')); await tap('#eh-pause'); check('touch: PLAY resumes', await ev('return __lab.company.speed > 0;'));
     const sp = []; for (let i = 0; i < 4; i++) { await tap('#eh-speed'); sp.push(await ev('return __lab.company.speed;')); } check('touch: speed button cycles 2x, 5x, 10x, 1x', sp.join() === '2,5,10,1', sp.join());
     const h0 = await ev('return __lab.company.hours;'); await sleep(3000); const h1 = await ev('return __lab.company.hours;'); check('Game Time advances on the device (' + (h1 - h0) + ' game hours in 3 s at 1x)', h1 > h0);

@@ -8,7 +8,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
   const PRODUCTS = { CRUDE: 'CRUDE', GASOLINE: 'GASOLINE', DIESEL: 'DIESEL', JET_FUEL: 'JET_FUEL', GAS: 'GAS', WATER: 'WATER', OTHER: 'OTHER' };
-  const PRODUCT_LABEL = { CRUDE: 'Crude oil', GASOLINE: 'Gasoline', DIESEL: 'Diesel', JET_FUEL: 'Jet fuel', GAS: 'Gas / LPG', WATER: 'Water', OTHER: 'Other products' };
+  const PRODUCT_LABEL = { CRUDE: 'نفط خام', GASOLINE: 'بنزين', DIESEL: 'ديزل', JET_FUEL: 'وقود طائرات', GAS: 'غاز', WATER: 'ماء', OTHER: 'منتجات أخرى' };
   const PRODUCT_COLOR = { CRUDE: '#3b2a1c', GASOLINE: '#e0584a', DIESEL: '#e2b32c', JET_FUEL: '#4aa3ff', GAS: '#8fd694', WATER: '#5fb8d9', OTHER: '#9a7ec8' };
 
   // pipe diameters: capacity (bbl/day), max pressure (psi), cost per tile ($)
