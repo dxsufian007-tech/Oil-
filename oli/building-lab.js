@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const WP = window.__wp, B = OliBuildings, I = OliIndustry, BC = OliBuildingConfig, A = OliBuildingArt, world = WP.world, ctx = WP.ctx, cam = WP.cam, hooks = WP.hooks, CFG = OliWorld.CONFIG, cv = document.getElementById('c');
-  const ts = B.fromWorld(world), START_CASH = 2e9, STORE = new B.BuildingStore(ts, { cash: START_CASH }), pipes = new I.PipeNet(world.W), SIM = new I.Sim(STORE, pipes), WW = world.W, SAVE_KEY = 'oli-lab-v2';
+  const ts = B.fromWorld(world), qsL = new URLSearchParams(location.search), EC = OliEconomyConfig, EU = OliEconomyUI, START_CASH = qsL.get('cash') ? +qsL.get('cash') : EC.START_CASH, STORE = new B.BuildingStore(ts, { cash: START_CASH }), pipes = new I.PipeNet(world.W), SIM = new I.Sim(STORE, pipes), WW = world.W, SAVE_KEY = 'oli-lab-v2', COMPANY = new OliEconomy.Company(STORE, pipes, SIM, {}), DEMO_CAPITAL = 260e6;
   const $ = id => document.getElementById(id), fmt$ = n => '$' + Math.round(n).toLocaleString('en-US');
   const CAT = { EXTRACTION: '#d9962b', PIPELINE: '#4f8fc0', CRUDE_STORAGE: '#8f9aa6', PROCESSING: '#6faa7d', PRODUCT_STORAGE: '#c86a5a' }, SECTIONS = ['EXTRACTION', 'PIPELINE', 'CRUDE STORAGE', 'PROCESSING', 'PRODUCT STORAGE'], STCOL = { RUNNING: '#8dffb0', READY: '#cfd8e3', OFFLINE: '#9aa4ae', UNDER_CONSTRUCTION: '#f0be28', DEPLETED: '#ff9a3a', BLOCKED: '#ff8a80', NO_INPUT: '#ffd27a', NO_OUTPUT: '#ffd27a', LOW_PRESSURE: '#ffd27a', HIGH_PRESSURE: '#ff9a3a', OVER_CAPACITY: '#ff9a3a', MAINTENANCE: '#8fc4ff', DAMAGED: '#ff6a5a' };
   const REASON = { outside: 'Outside the map', water: 'Cannot build on water', terrain: 'Wrong terrain for this building', slope: 'Ground is too steep', overlap: 'Overlaps another building', tooClose: 'Too close to another plant (keep 1 tile free)',
@@ -106,7 +106,7 @@
     $('info').innerHTML = '<h4>' + d.name + ' <span class="k">' + d.section + '</span></h4><span class="k">' + d.footprint.join('×') + ' tiles · build ' + (d.type === 'well' ? '$250k–1.5M' : M(d.cost)) + ' · runs ' + M(d.operatingCost) + '/day · upkeep ' + M(d.maintenanceCost) + '/day · ' + d.capacity.value.toLocaleString('en-US') + ' ' + d.capacity.unit
       + '<br>Ports: ' + ports + (d.safetyZone ? '<br>Safety zone: ' + d.safetyZone + ' tile' : '') + (req.length ? '<br>Needs: ' + req.join(', ') : '') + '</span><div class="k" style="margin-top:6px">Drag it onto the map.</div>';
   }
-  let showAll = false;
+  let showAll = false, showEcon = false;
   function showBuilding(id) {
     const b = STORE.get(id); if (!b) return; state.sel = id; const d = B.DEFS[b.d], st = SIM.status(b), ind = SIM.indicators(b), warn = SIM.warnings(b), list = showAll ? ind.list : ind.list.slice(0, ind.top);
     const lv = d.type === 'tank' ? SIM.levelStateOf(b) : d.type === 'gas' ? SIM.gasSafetyOf(b) : null;
@@ -114,7 +114,8 @@
     h += '<table class="kv">' + list.filter(i => i.k !== 'Status').map(i => '<tr><td>' + i.k + '</td><td>' + (typeof i.v === 'number' ? i.v.toLocaleString('en-US') : i.v) + (i.u ? ' ' + i.u : '') + '</td></tr>').join('') + '</table>';
     if (warn.length) h += '<div class="k" style="color:#ffb066">⚠ ' + warn.map(w => w.replace(/_/g, ' ')).join(' · ') + '</div>';
     if (showAll) h += '<div class="k">Product: ' + (d.product ? BC.PRODUCT_LABEL[d.product] : 'carries the line product') + ' · runs ' + M(d.operatingCost) + '/day · upkeep ' + M(d.maintenanceCost) + '/day · level ' + (b.lv || 1) + '</div>';
-    h += '<div class="row">' + (ind.list.length > ind.top ? '<button id="bMore">' + (showAll ? 'Less' : 'Details') + '</button>' : '') + (d.type === 'valve' ? '<button id="bValve">Valve: ' + b.s.mode.toLowerCase() + '</button>' : '') + (d.type === 'refinery' ? '<button id="bLimit">Limit ' + Math.round(b.s.opLimit * 100) + '%</button>' : '') + '<button id="bDemo">Demolish…</button></div>';
+    if (showEcon) h += '<div class="k" style="margin-top:6px;letter-spacing:.06em">ECONOMICS</div>' + EU.buildingHtml(id);
+    h += '<div class="row">' + '<button id="bEcon"' + (showEcon ? ' class="on"' : '') + '>Economics</button>' + (ind.list.length > ind.top ? '<button id="bMore">' + (showAll ? 'Less' : 'Details') + '</button>' : '') + (d.type === 'valve' ? '<button id="bValve">Valve: ' + b.s.mode.toLowerCase() + '</button>' : '') + (d.type === 'refinery' ? '<button id="bLimit">Limit ' + Math.round(b.s.opLimit * 100) + '%</button>' : '') + '<button id="bDemo">Demolish…</button></div>';
     $('info').innerHTML = h; WP.markDirty();
   }
   function showPipe(x, y) {
@@ -123,6 +124,8 @@
   $('info').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.id === 'bMore') { showAll = !showAll; showBuilding(state.sel); return; }
+    if (b.id === 'bEcon') { showEcon = !showEcon; showBuilding(state.sel); return; }
+    if (b.id === 'bRepair') { const r = COMPANY.repair(state.sel); toast(r.ok ? 'Repaired · −' + OliEconomy.fmtMoney(r.cost) : 'Not enough cash to repair'); save(); updateCash(); showBuilding(state.sel); return; }
     if (b.id === 'bValve') { const v = STORE.get(state.sel), order = ['OPEN', 'PARTIAL', 'CLOSED']; const nx = order[(order.indexOf(v.s.mode) + 1) % 3]; SIM.setValve(v, nx, .5); save(); showBuilding(state.sel); return; }
     if (b.id === 'bLimit') { const v = STORE.get(state.sel); v.s.opLimit = v.s.opLimit > .99 ? .75 : v.s.opLimit > .74 ? .5 : 1; save(); showBuilding(state.sel); return; }
     if (b.id === 'bDemo') { const plan = STORE.demolishPlan(state.sel, pipes); state.demo = { id: state.sel, step: 1, plan };
@@ -208,18 +211,21 @@
   };
 
   /* ------------------------------------------------------------ cash, save / load, keys, test handle */
-  function updateCash() { $('cash').textContent = fmt$(STORE.cash); }
-  function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash })); } catch (_) { } }
+  function updateCash() { $('cash').textContent = fmt$(STORE.cash); EU.hud(); }
+  function save() { if (window.__noSave) return; try { COMPANY.stamp(Date.now()); COMPANY.sync(); localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON() })); } catch (_) { } }
   function swapNet(n2) { pipes.clear(); pipes.lines = n2.lines; pipes.at = n2.at; pipes.nextId = n2.nextId; for (const k of n2) pipes.add(k); pipes.rev++; }
-  function load() {
+  function load(o) {
+    o = o || {};
     let raw = null; try { raw = localStorage.getItem(SAVE_KEY); } catch (_) { } if (!raw) return { loaded: 0, from: 'none' };
     let d; try { d = JSON.parse(raw); } catch (_) { return { loaded: 0, from: 'corrupt' }; } if (!d || d.v !== 2) return { loaded: 0, from: 'oldFormat' };
     const r = B.BuildingStore.fromJSON(ts, d.store); STORE.items = r.store.items; STORE.occ = r.store.occ; STORE.bucket = r.store.bucket; STORE.nextId = r.store.nextId; STORE.time = r.store.time; STORE.rev = (STORE.rev | 0) + 1; STORE.cash = d.cash == null ? STORE.cash : d.cash;
-    swapNet(I.PipeNet.fromJSON(WW, d.net)); updateCash(); WP.markDirty(); return { loaded: r.report.loaded, dropped: r.report.dropped, from: 'save', lines: pipes.lines.size };
+    swapNet(I.PipeNet.fromJSON(WW, d.net)); if (d.eco && COMPANY.fromJSON(d.eco)) { /* company restored */ } else COMPANY.reset();
+    let away = null; if (o.catchUp !== false) away = COMPANY.catchUp(Date.now()); else COMPANY.stamp(Date.now());                                 // the app was closed: the company kept working (capped, validated)
+    updateCash(); WP.markDirty(); return { loaded: r.report.loaded, dropped: r.report.dropped, from: 'save', lines: pipes.lines.size, away };
   }
-  function reset() { STORE.items.clear(); STORE.occ.clear(); STORE.bucket.clear(); STORE.nextId = 1; STORE.rev = (STORE.rev | 0) + 1; STORE.cash = START_CASH; swapNet(new I.PipeNet(WW)); state.sel = null; state.pending = null; hideBar(); save(); updateCash(); WP.markDirty(); }
+  function reset() { STORE.items.clear(); STORE.occ.clear(); STORE.bucket.clear(); STORE.nextId = 1; STORE.rev = (STORE.rev | 0) + 1; STORE.cash = START_CASH; swapNet(new I.PipeNet(WW)); COMPANY.reset(); state.sel = null; state.pending = null; hideBar(); save(); updateCash(); WP.markDirty(); }
   $('tSave').onclick = () => { save(); toast('Saved · ' + STORE.items.size + ' buildings · ' + pipes.lines.size + ' pipelines'); };
-  $('tLoad').onclick = () => { const r = load(); toast(r.loaded ? 'Loaded ' + r.loaded + ' buildings' : 'Nothing saved yet'); };
+  $('tLoad').onclick = () => { const r = load({ catchUp: false }); toast(r.loaded ? 'Loaded ' + r.loaded + ' buildings' : 'Nothing saved yet'); };
   $('tReset').onclick = () => { if (confirm('Remove every building?')) { reset(); toast('Cleared'); } };
   window.addEventListener('keydown', e => { if (e.key === 'Escape') cancelAll(); else if ((e.key === 'r' || e.key === 'R')) { if (state.drag) { const g = state.drag; g.r = (g.r + 1) & 3; state.rot[g.def] = g.r; evaluate(g); WP.markDirty(); } else rotatePending(); } else if (e.key === 'Enter' && state.pending && state.pending.verdict.ok) confirmBuild(); });
   $('tFields').onclick = () => { const sr = world.regions.find(r => r.starter), f = world.regionSites(sr.id).filter(s => s.kind === 'FIELD' && (world.stateOf(s.id) === 'DRILLABLE' || world.stateOf(s.id) === 'PRODUCING'))[0]; if (f) WP.goto(f.x, f.y, .75); };
@@ -235,7 +241,7 @@
     return null;
   }
   async function buildDemo() {
-    reset(); STORE.cash = 5e9; const sr = world.regions.find(r => r.starter), fld = world.regionSites(sr.id).find(q => q.kind === 'FIELD' && (world.stateOf(q.id) === 'DRILLABLE' || world.stateOf(q.id) === 'PRODUCING')); if (!fld) return { ok: false, reason: 'noField' };
+    reset(); COMPANY.injectEquity(DEMO_CAPITAL, 'Demo setup capital'); const sr = world.regions.find(r => r.starter), fld = world.regionSites(sr.id).find(q => q.kind === 'FIELD' && (world.stateOf(q.id) === 'DRILLABLE' || world.stateOf(q.id) === 'PRODUCING')); if (!fld) return { ok: false, reason: 'noField' };
     const put = (def, x, y, rad) => { const sn = STORE.snap(def, Math.round(x), Math.round(y), 0, { radius: rad == null ? 5 : rad, ignoreCash: true }); if (!sn) return null; const res = STORE.place(def, sn.x, sn.y, sn.r, { instant: true }); return res.ok ? res.building : null; };
     const fx = Math.round(fld.x), fy = Math.round(fld.y), out = { failed: [] }, z = world.refineryZones(sr.id)[0]; WP.goto(fx + 10, fy + 2, .3); await settle();
     const w = [put('oil_well', fx - 3, fy - 4, 3), put('oil_well', fx - 3, fy, 3), put('oil_well', fx - 3, fy + 4, 3)].filter(Boolean), jn = put('junction', fx + 3, fy, 4), pu = put('pump_station_l', fx + 8, fy - 1, 4), sp = put('separator', fx + 16, fy - 2, 4), ct = put('crude_tank_m', fx + 26, fy - 1, 5);
@@ -251,11 +257,18 @@
   }
   $('tDemo').onclick = async () => { toast('Building the full oil chain…'); const r = await buildDemo(); toast(r.ok ? 'Oil chain built: ' + r.total + ' buildings · ' + r.pipelines + ' pipelines' : 'Demo incomplete: ' + (r.failed || [r.reason]).join(', ')); };
 
-  /* simulation clock: construction by time, flow every 500 ms (one game day = SIM.dayRealSeconds s); nothing runs when there is nothing to simulate */
+  /* simulation clock: Game Time.  1x = one game day per dayRealSeconds; the company advances in whole game hours (no dependence on FPS); nothing is simulated while paused or while a report is open */
+  let lastT = performance.now(), lastDraw = 0;
   const tick = setInterval(() => {
-    if (!STORE.items.size) return; STORE.tick(1); SIM.step(.5 / BC.SIM.dayRealSeconds * (state.speed || 1)); const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag) showBuilding(sel.id); WP.markDirty();
-  }, 500);
-  window.__lab = { buildDemo, store: STORE, pipes, sim: SIM, I, BC, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, showPipe, anchorFor, commitPipe, planFor, portNear, connect, updateCash, showSection, setDia: d => { dia = d; }, ready: () => true };
+    const now = performance.now(), dtS = Math.min(2, (now - lastT) / 1000); lastT = now; const hrs = dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0);
+    if (COMPANY.speed > 0 && !COMPANY.bankrupt) COMPANY.run(hrs);
+    const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag && now - lastDraw > 480) { showBuilding(sel.id); } if (STORE.items.size && now - lastDraw > 480) { lastDraw = now; WP.markDirty(); }
+  }, EC.TIME.tickMs);
+  setInterval(() => { if (STORE.items.size || COMPANY.hours > 0) save(); }, 6000);                          // autosave: the company stamp is what the offline report measures from
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); } else { lastT = performance.now(); const a = COMPANY.catchUp(Date.now()); if (a && a.ok) { EU.showAway(a); save(); } } });
+  window.addEventListener('pagehide', () => save());
+  EU.mount({ company: COMPANY, toast, onChange: () => save(), restart: () => { reset(); toast('New company founded'); } });
+  window.__lab = { company: COMPANY, EU, buildDemo, store: STORE, pipes, sim: SIM, I, BC, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, showPipe, anchorFor, commitPipe, planFor, portNear, connect, updateCash, showSection, setDia: d => { dia = d; }, ready: () => true };
   updateCash();
-  const wait = setInterval(() => { if (WP.idle && WP.idle()) { clearInterval(wait); const r = load(); window.__lab.restored = r; if (r.loaded) toast('Restored ' + r.loaded + ' buildings'); WP.markDirty(); } }, 200);
+  const wait = setInterval(() => { if (WP.idle && WP.idle()) { clearInterval(wait); const r = load(); window.__lab.restored = r; if (r.loaded) toast('Restored ' + r.loaded + ' buildings'); if (r.away && r.away.ok) EU.showAway(r.away); WP.markDirty(); } }, 200);
 })();

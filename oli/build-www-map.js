@@ -2,5 +2,5 @@
 const fs = require('fs'), path = require('path'), out = path.join(__dirname, 'www');
 fs.rmSync(out, { recursive: true, force: true }); fs.mkdirSync(out, { recursive: true });
 fs.copyFileSync(path.join(__dirname, 'world-preview.html'), path.join(out, 'index.html'));
-for (const f of ['worldmap.js', 'world-preview.js', 'world-worker.js', 'building-config.js', 'buildings.js', 'industry.js', 'building-art.js', 'building-lab.js']) fs.copyFileSync(path.join(__dirname, f), path.join(out, f));
+for (const f of ['worldmap.js', 'world-preview.js', 'world-worker.js', 'building-config.js', 'buildings.js', 'industry.js', 'economy-config.js', 'economy.js', 'economy-ui.js', 'building-art.js', 'building-lab.js']) fs.copyFileSync(path.join(__dirname, f), path.join(out, f));
 console.log('www/ (map preview) ready:', fs.readdirSync(out).join(', '));

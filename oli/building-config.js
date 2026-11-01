@@ -28,22 +28,22 @@
   const REFINERY = {
     yields: { GASOLINE: 45, DIESEL: 30, JET_FUEL: 10, GAS: 5, OTHER: 10 },
     sizes: {
-      S: { id: 'refinery_s', name: 'Small Refinery', w: 6, h: 5, cap: 5000, cost: 25000000, op: 100000, maint: 30000 },
-      M: { id: 'refinery_m', name: 'Medium Refinery', w: 8, h: 6, cap: 25000, cost: 100000000, op: 400000, maint: 120000 },
-      L: { id: 'refinery_l', name: 'Large Refinery', w: 10, h: 8, cap: 100000, cost: 400000000, op: 1000000, maint: 300000 },
-      X: { id: 'refinery_x', name: 'Major Refinery', w: 12, h: 9, cap: 250000, cost: 1000000000, op: 2500000, maint: 750000 }
+      S: { id: 'refinery_s', name: 'Small Refinery', w: 6, h: 5, cap: 5000, cost: 25000000, op: 10000, maint: 4500 },
+      M: { id: 'refinery_m', name: 'Medium Refinery', w: 8, h: 6, cap: 25000, cost: 100000000, op: 48000, maint: 20000 },
+      L: { id: 'refinery_l', name: 'Large Refinery', w: 10, h: 8, cap: 100000, cost: 400000000, op: 170000, maint: 70000 },
+      X: { id: 'refinery_x', name: 'Major Refinery', w: 12, h: 9, cap: 250000, cost: 1000000000, op: 400000, maint: 160000 }
     },
     baseEfficiency: 0.95, minInletPsi: 50, optimalTempC: 370, maxTempC: 420
   };
 
   const WELL = { cost: [250000, 1500000], production: [500, 2500], pressure: [500, 2500], reserve: [100000, 5000000], op: 800, maint: 400, waterCutStart: 0.04, waterCutEnd: 0.55, gorStart: 0.03 };
   const PUMP = {
-    S: { id: 'pump_station_s', name: 'Pump Station (small)', w: 2, h: 2, cost: 1000000, op: 5000, maint: 1500, maxFlow: 5000, boost: [100, 250], eff: [0.75, 0.85], minInletPsi: 15 },
-    L: { id: 'pump_station_l', name: 'Pump Station (large)', w: 3, h: 2, cost: 3500000, op: 15000, maint: 4000, maxFlow: 10000, boost: [300, 500], eff: [0.85, 0.92], minInletPsi: 15 }
+    S: { id: 'pump_station_s', name: 'Pump Station (small)', w: 2, h: 2, cost: 1000000, op: 1200, maint: 600, maxFlow: 5000, boost: [100, 250], eff: [0.75, 0.85], minInletPsi: 15 },
+    L: { id: 'pump_station_l', name: 'Pump Station (large)', w: 3, h: 2, cost: 3500000, op: 3000, maint: 1500, maxFlow: 10000, boost: [300, 500], eff: [0.85, 0.92], minInletPsi: 15 }
   };
   const VALVE = { cost: 60000, op: 50, maint: 150, maxFlow: 40000, pressureRating: 3000, w: 1, h: 1 };
   const JUNCTION = { cost: 120000, op: 0, maint: 100, maxTotalFlow: 60000, pressureLimit: 3000, w: 1, h: 1 };
-  const SEPARATOR = { cost: 2500000, op: 10000, maint: 3000, cap: 50000, w: 4, h: 3, oilSep: 0.94, gasSep: 0.92, waterSep: 0.88, minInletPsi: 30 };
+  const SEPARATOR = { cost: 2500000, op: 3500, maint: 1500, cap: 50000, w: 4, h: 3, oilSep: 0.94, gasSep: 0.92, waterSep: 0.88, minInletPsi: 30 };
   const SAFETY = { tankNearFull: 0.95, tankFull: 1.0, tankHigh: 0.8, tankLow: 0.2, gasHighPressure: 0.85, gasNearLimit: 0.95, gasHighTempC: 60, ambientC: 30 };
   const LEVELS = { 1: { capacityMultiplier: 1, efficiencyMultiplier: 1, pressureMultiplier: 1, maintenanceMultiplier: 1 } };   // architecture only: Level 1 exists, no upgrade system yet
   const SIM = { dayRealSeconds: 12, tankHeadPsi: 60, frictionPsiPerTile: 0.5, frictionExp: 1.8 };

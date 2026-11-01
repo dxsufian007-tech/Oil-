@@ -16,6 +16,7 @@
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const hash = (a, b, c) => { let h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
   const lerp = (a, b, t) => a + (b - a) * t;
+  const eco = b => (b.s && b.s.ecoEff != null) ? b.s.ecoEff : 1;       // Phase 3 hook: the economy layer (power, condition, crude quality) writes b.s.ecoEff; 1 = unchanged Phase 2 behaviour
 
   /* ------------------------------------------------------------ well profile: deterministic from the position, so a saved game and a fresh game agree */
   function wellProfile(x, y) {
@@ -166,7 +167,7 @@
           case 'pump': {
             const c0 = def.params, cap = c0.maxFlow * levelOf(b).capacityMultiplier; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;
             if (f.p < c0.minInletPsi) { if (commit) { s._lowIn = true; } break; }
-            const room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; const boost = s.boost * levelOf(b).pressureMultiplier * s.eff * levelOf(b).efficiencyMultiplier; acc = this.offer(b, 'OUTPUT', Object.assign({}, f, { r: Math.min(f.r, room), p: f.p + boost }), commit, vis);
+            const room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; const boost = s.boost * levelOf(b).pressureMultiplier * s.eff * levelOf(b).efficiencyMultiplier * eco(b); acc = this.offer(b, 'OUTPUT', Object.assign({}, f, { r: Math.min(f.r, room), p: f.p + boost }), commit, vis);
             if (commit && acc > 0) { s._in = (s._in || 0) + acc; s.pOut = f.p + boost; }
             break;
           }
@@ -191,7 +192,7 @@
     separate(b, s, def, f, commit, vis) {
       const C = def.params, L = levelOf(b), cap = C.cap * L.capacityMultiplier, room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;
       if (f.p < C.minInletPsi) { if (commit) s._lowIn = true; return 0; }
-      const fo = f.oil == null ? 1 : f.oil, fg = f.gas || 0, fw = f.wat || 0, k = L.efficiencyMultiplier * (0.85 + 0.15 * b.c), eO = Math.min(1, C.oilSep * k), eG = Math.min(1, C.gasSep * k), eW = Math.min(1, C.waterSep * k);
+      const fo = f.oil == null ? 1 : f.oil, fg = f.gas || 0, fw = f.wat || 0, k = L.efficiencyMultiplier * (0.85 + 0.15 * b.c) * eco(b), eO = Math.min(1, C.oilSep * k), eG = Math.min(1, C.gasSep * k), eW = Math.min(1, C.waterSep * k);
       let r = Math.min(f.r, room); if (r <= 1e-9) return 0;
       const oilR = r * (fo * eO + fw * (1 - eW) + fg * (1 - eG)), gasR = r * fg * eG, watR = r * fw * eW, oilStream = { prod: P.CRUDE, oil: oilR ? r * fo * eO / oilR : 1, gas: oilR ? r * fg * (1 - eG) / oilR : 0, wat: oilR ? r * fw * (1 - eW) / oilR : 0, p: f.p - 10 };
       const co = this.edgeOf(b, 'OIL_OUT'); if (!co) { if (commit) s._noOut = true; return 0; }
@@ -211,7 +212,7 @@
       const C = def.params, R = CFG.REFINERY, L = levelOf(b), cap = C.cap * L.capacityMultiplier, lim = clamp(s.opLimit, 0, 1); s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;
       const room = Math.max(0, cap * lim - (s._in || 0)); if (f.r > room + 1e-6 && lim >= 1) s._sat = true; let thr = Math.min(f.r, room); if (thr <= 1e-9) return 0;
       const util = clamp((s._in || 0) / cap + thr / cap, 0, 1), water = f.wat || 0, gas = f.gas || 0, quality = clamp(1 - .6 * water - .3 * gas, 0.2, 1), temp = lerp(150, R.optimalTempC, clamp(util * 1.4, 0, 1)), tempF = temp > R.maxTempC ? .8 : 1,
-        pressF = clamp(.6 + .4 * Math.min(1, f.p / R.minInletPsi), .6, 1), utilF = .85 + .15 * Math.min(1, util / .6), maintF = .7 + .3 * b.c, eff = clamp(R.baseEfficiency * quality * tempF * pressF * utilF * maintF * L.efficiencyMultiplier, 0, 1);
+        pressF = clamp(.6 + .4 * Math.min(1, f.p / R.minInletPsi), .6, 1), utilF = .85 + .15 * Math.min(1, util / .6), maintF = .7 + .3 * b.c, eff = clamp(R.baseEfficiency * quality * tempF * pressF * utilF * maintF * L.efficiencyMultiplier * eco(b), 0, 1);
       const outs = [['GASOLINE', 'GASOLINE_OUT', P.GASOLINE], ['DIESEL', 'DIESEL_OUT', P.DIESEL], ['JET_FUEL', 'JET_OUT', P.JET_FUEL], ['GAS', 'GAS_OUT', P.GAS]];
       let connected = 0; for (const [, port] of outs) if (this.edgeOf(b, port)) connected++; if (!connected) { if (commit) s._noOut = true; return 0; }
       let th = 1; const pOut = Math.max(20, f.p * .6);
@@ -233,7 +234,7 @@
       for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
         if (def.type === 'well') {
           const ratio = s.reserve0 ? s.reserve / s.reserve0 : 0; if (s.reserve <= 0) { s.reserve = 0; s._depleted = true; continue; }
-          const W = CFG.WELL, target = s.nominal * (.4 + .6 * ratio) * levelOf(b).capacityMultiplier, wc = lerp(W.waterCutStart, W.waterCutEnd, 1 - ratio), gas = W.gorStart + .05 * (1 - ratio), pr = s.p0 * (.3 + .7 * ratio) * levelOf(b).pressureMultiplier;
+          const W = CFG.WELL, target = s.nominal * (.4 + .6 * ratio) * levelOf(b).capacityMultiplier * eco(b), wc = lerp(W.waterCutStart, W.waterCutEnd, 1 - ratio), gas = W.gorStart + .05 * (1 - ratio), pr = s.p0 * (.3 + .7 * ratio) * levelOf(b).pressureMultiplier;
           s._target = target; s._wc = wc; s._gas = gas; s._p = pr; const ports = def.connections.map(c => c.id); if (!ports.some(id => this.edgeOf(b, id))) { s._noOut = true; continue; }
           let r = Math.min(target, s.reserve / dt / Math.max(1e-6, 1 - wc - gas)); const acc = this.split(b, ports, { prod: P.CRUDE, r, oil: 1 - wc - gas, gas, wat: wc, p: pr }, true, new Set([b.id]));
           s._out = acc; s.reserve = Math.max(0, s.reserve - acc * dt * (1 - wc - gas)); if (s.reserve < 0.5) s.reserve = 0; s.total += acc * dt;

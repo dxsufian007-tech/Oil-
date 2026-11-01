@@ -30,6 +30,14 @@ if grep -qE "crashed: (WebSocket is not open|socket hang up)" results/building.t
   node .github/android/building-android.js 2>&1 | tee results/building.txt
   echo "NOTE second attempt after a Play Services restart (first attempt: map-attempt1.txt)" | tee -a results/building.txt
 fi
+# Phase 3: economy (real touch, close/reopen the app, offline report, performance)
+adb shell am force-stop com.oli.buildlab; adb logcat -c; launch
+node .github/android/economy-android.js 2>&1 | tee results/economy.txt
+if grep -qE "crashed: (WebSocket is not open|socket hang up)" results/economy.txt && killedByGms; then
+  echo "NOTE app killed by Play Services restart (emulator); repeating once" | tee -a results/economy.txt
+  mv results/economy.txt results/economy-attempt1.txt; adb logcat -c; launch
+  node .github/android/economy-android.js 2>&1 | tee results/economy.txt
+fi
 adb logcat -d > results/logcat.txt
 grep -E "Capacitor/Console|chromium" results/logcat.txt | grep -iE " E |error|exception" > results/logcat-errors.txt || true
 exit 0
