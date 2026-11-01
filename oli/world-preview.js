@@ -45,14 +45,17 @@
   }
   function onReg(m) {
     if (m.t === 'ready') { ready.reg = true; return; }
-    busy.reg = false; dirty = true; if (m.t === 'region') { world.injectRegion(m.d); regNeed.delete(m.d.rid); stats.regions++; if (!demoDone && DEMO_REGIONS.every(r => world.hasRegion(r))) { applyDemo(); } }
+    busy.reg = false; dirty = true; if (m.t === 'region') { world.injectRegion(m.d); regNeed.delete(m.d.rid); stats.regions++; if (!demoDone && DEMO_REGIONS.every(r => world.hasRegion(r))) { applyDemo(); } if (DEMOALL) openAll(m.d.rid); }
   }
   const imgEng = makeEngine(onImg), regEng = makeEngine(onReg); imgEng.post({ t: 'init', seed }); regEng.post({ t: 'init', seed });
-  for (const r of DEMO_REGIONS) regNeed.add(r);
+  /* DEMO build: every oil field of every region is drillable, every region is unlocked, all regions load (flag from the demo APK, ?demo=1 or localStorage oli-demo=1) */
+  const DEMOALL = !!(window.OLI_DEMO || /[?&]demo=1/.test(location.search) || (function () { try { return localStorage.getItem('oli-demo') === '1'; } catch (_) { return false; } })()); window.OLI_DEMO = DEMOALL;
+  const openAll = rid => { const R = world.regions[rid]; if (R) R.unlocked = true; for (const q of world.regionSites(rid)) if (q.kind === 'FIELD') { let g = 0; while (['UNDISCOVERED', 'DISCOVERED', 'SURVEYED'].includes(world.stateOf(q.id)) && g++ < 4) { const st = world.stateOf(q.id); (st === 'UNDISCOVERED' ? world.discover : st === 'DISCOVERED' ? world.survey : world.makeDrillable)(q.id); } } };
+  for (const r of DEMO_REGIONS) regNeed.add(r); if (DEMOALL) for (const r of world.regions) regNeed.add(r.id);
   function applyDemo() {                                   // a little of every discovery state in the starter region so the preview shows each look
     demoDone = true; const all = world.regionSites(SR.id), f = all.filter(s => s.kind === 'FIELD'), d = all.filter(s => s.kind === 'DRY');
     f.forEach((s, i) => { if (i < 8) { world.discover(s.id); if (i < 6) { world.survey(s.id); if (i < 4) { world.makeDrillable(s.id); if (i < 3) world.startProducing(s.id); } } } });
-    if (f[0]) { f[0].remainingReserve = 0; world.deplete(f[0].id); }
+    if (f[0] && !DEMOALL) { f[0].remainingReserve = 0; world.deplete(f[0].id); }
     d.slice(0, 2).forEach(s => { world.discover(s.id); world.survey(s.id); });
     for (const rid of [SR.id - 6, SR.id - 1, SR.id + 1, SR.id + 6]) world.regionSites(rid).filter(s => s.kind === 'FIELD').slice(0, 2).forEach(s => world.discover(s.id));
     stats.demoMs = Math.round(performance.now());

@@ -1,0 +1,62 @@
+name: Demo APK (everything unlocked, $100M)
+
+# Manual only. A SEPARATE app (Oli Demo, id com.oli.oildemo): $100M, every building unlocked, every region open, every oil field drillable. Result: branch demo-apk-build (OliDemo.apk).
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/building-system]
+    paths: ['.github/workflows/demo-apk.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install
+        working-directory: oli
+        run: npm ci
+      - name: Package the preview page and make it a separate Android app
+        working-directory: oli
+        run: |
+          OLI_DEMO=1 node build-www-map.js
+          sed -i 's/"appId": "com.oli.oilgame"/"appId": "com.oli.oildemo"/; s/"appName": "Oli"/"appName": "Oli Demo"/' capacitor.config.json
+          npx cap sync android
+          sed -i 's/applicationId "com.oli.oilgame"/applicationId "com.oli.oildemo"/' android/app/build.gradle
+          sed -i 's|<string name="app_name">Oli</string>|<string name="app_name">Oli Demo</string>|' android/app/src/main/res/values/strings.xml
+          grep -n "applicationId" android/app/build.gradle
+      - name: Same signing key as the game
+        run: |
+          mkdir -p ~/.android
+          cp .github/signing/debug.keystore ~/.android/debug.keystore
+          sed -i "s/versionCode [0-9]*/versionCode $((100 + ${{ github.run_number }}))/" oli/android/app/build.gradle
+      - name: Build the APK
+        working-directory: oli/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+      - run: cp oli/android/app/build/outputs/apk/debug/app-debug.apk OliDemo.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OliDemo-apk
+          path: OliDemo.apk
+      - name: Publish the APK on the branch demo-apk-build
+        run: |
+          mkdir -p /tmp/out && cp OliDemo.apk /tmp/out/
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout --orphan demo-apk-build
+          git rm -rf --quiet .
+          cp /tmp/out/OliDemo.apk .
+          git add OliDemo.apk
+          git commit -q -m "Oli Demo APK"
+          git push -f origin demo-apk-build

@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   const GC = OliGameConfig, AR = window.OliAR, $ = id => document.getElementById(id);
-  const DEV = /[?&]lab=1/.test(location.search) || (function () { try { return localStorage.getItem('oli-labui') === '1'; } catch (_) { return false; } })(), UNLOCK = DEV || /[?&]unlock=all/.test(location.search);
+  const DEV = /[?&]lab=1/.test(location.search) || (function () { try { return localStorage.getItem('oli-labui') === '1'; } catch (_) { return false; } })(), UNLOCK = DEV || !!window.OLI_DEMO || /[?&]unlock=all/.test(location.search);
   const money = n => '$' + Math.round(n).toLocaleString('en-US');
   const S = { level: UNLOCK ? 6 : 1, step: 0, hidden: false, cat: null, open: null, seenLv: 1 };
   let L = null, B = null, BC = null, lastMsg = '';
