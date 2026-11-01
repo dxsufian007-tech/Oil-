@@ -30,7 +30,9 @@ setTimeout(() => { console.log('FAIL watchdog: the game script did not finish in
   if (!(await attach())) { console.log('FAIL no WebView page'); return; }
   check('the game is running in the Android WebView', await ready());
   out.env = await ev('return { ua: navigator.userAgent, dpr: devicePixelRatio, w: innerWidth, h: innerHeight };'); console.log('ENV ' + JSON.stringify(out.env));
-  await ev('localStorage.clear(); __lab.reset(); __lab.company.speed = 0;'); await sleep(800);
+  // the earlier sections left the developer flags in this app's storage: clear them and reload into the normal (Arabic) game
+  await ev('localStorage.clear();'); await Page.reload(); await sleep(3000); check('the game reloaded in normal mode', await ready());
+  await ev('__lab.reset(); __lab.company.speed = 0;'); await sleep(800);
   await guard('arabic + hud', async () => {
     check('the page is Arabic and right-to-left', await ev('return document.documentElement.dir === "rtl" && document.documentElement.lang === "ar";'));
     check('the developer palette is hidden', await ev('return ["bar","pal","tabs"].every(i => getComputedStyle(document.getElementById(i)).display === "none");'));
