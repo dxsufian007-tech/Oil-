@@ -2,9 +2,10 @@
 // HUD pause / speed / menu, Market, Sell, Inventory, Production, Contracts, Loans, building ECONOMICS, save -> reload, CLOSE the app (force-stop) -> REOPEN -> WHILE YOU WERE AWAY, clock validation, performance.
 // Emulator = software GL: this is NOT a real device.  (REAL DEVICE TEST: NOT TESTED)
 const CDP = require('chrome-remote-interface'); const fs = require('fs'); const cp = require('child_process');
-const results = []; let out = {};
+const results = []; let out = {}; globalThis.__out = out;
 const check = (n, ok, info) => { results.push({ n, ok: !!ok }); console.log((ok ? 'PASS ' : 'FAIL ') + n + (info ? '  — ' + info : '')); };
 const sleep = ms => new Promise(r => setTimeout(r, ms)); const sh = c => { try { return cp.execSync(c, { encoding: 'utf8', timeout: 60000 }).trim(); } catch (e) { return ''; } };
+setTimeout(() => { console.log('FAIL watchdog: the economy script did not finish in 13 minutes'); fs.writeFileSync('results/economy-perf.json', JSON.stringify(globalThis.__out || {}, null, 1)); process.exit(0); }, 13 * 60 * 1000);
 (async () => {
   let client, Runtime, Page, Input; const errors = [];
   const attach = async () => { let t = null; for (let i = 0; i < 30 && !t; i++) { try { t = (await CDP.List({ port: 9222 })).find(x => x.type === 'page'); } catch (e) { } if (!t) await sleep(1500); } if (!t) return false;
