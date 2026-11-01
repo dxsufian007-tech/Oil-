@@ -26,13 +26,14 @@ setTimeout(() => { console.log('FAIL watchdog: the game script did not finish in
 
   const lat = () => ev(`const out = [], w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let x; while ((x = w.nextNode())) { const v = x.nodeValue; if (/[A-Za-z]{2,}/.test(v) && !['SCRIPT','STYLE','TITLE'].includes(x.parentNode.tagName)) { const el = x.parentElement; let vis = el.getClientRects().length > 0; for (let e = el; e && vis; e = e.parentElement) if (getComputedStyle(e).display === 'none') vis = false; if (vis) out.push(v.trim()); } } return out;`);
   const txt = id => ev(`return (document.getElementById(${JSON.stringify(id)}) || { innerText: '' }).innerText.replace(/[⁦⁩]/g, '');`);
+  const idle = async () => { await sleep(500); for (let i = 0; i < 180; i++) { if (await ev('return !!(window.__wp && __wp.idle && __wp.idle());').catch(() => false)) return true; await sleep(500); } return false; };
   const mapPt = id => ev(`const b = __lab.store.get(${id}); return [__wp.sx(b.x + .5, b.y + .5), __wp.sy(b.x + .5, b.y + .5)];`);
   if (!(await attach())) { console.log('FAIL no WebView page'); return; }
   check('the game is running in the Android WebView', await ready());
   out.env = await ev('return { ua: navigator.userAgent, dpr: devicePixelRatio, w: innerWidth, h: innerHeight };'); console.log('ENV ' + JSON.stringify(out.env));
   // the earlier sections left the developer flags in this app's storage: clear them and reload into the normal (Arabic) game
-  await ev('localStorage.clear();'); await Page.reload(); await sleep(3000); check('the game reloaded in normal mode', await ready());
-  await ev('__lab.reset(); __lab.company.speed = 0;'); await sleep(800);
+  await ev('localStorage.clear();'); await Page.reload(); await sleep(3000); check('the game reloaded in normal mode', await ready()); check('the map finished drawing (terrain chunks ready)', await idle());
+  await ev('__lab.reset(); __lab.company.speed = 0;'); await sleep(800); await idle(); await sleep(4000);
   await guard('arabic + hud', async () => {
     check('the page is Arabic and right-to-left', await ev('return document.documentElement.dir === "rtl" && document.documentElement.lang === "ar";'));
     check('the developer palette is hidden', await ev('return ["bar","pal","tabs"].every(i => getComputedStyle(document.getElementById(i)).display === "none");'));
@@ -44,7 +45,7 @@ setTimeout(() => { console.log('FAIL watchdog: the game script did not finish in
   await guard('build the well by touch', async () => {
     await tap('#g-nav [data-cat=oil]'); check('the oil button opens the build list', await ev('return document.getElementById("g-sheet").classList.contains("open");')); await shot('g-oil-list');
     check('locked buildings show 🔒', await ev('const c = document.querySelector("#g-list .gcard[data-id=pump_station_s]"); return !!c && c.classList.contains("lock") && c.innerText.includes("🔒");'));
-    await tap('#g-list [data-act=build][data-id=oil_well]'); await sleep(600);
+    await tap('#g-list [data-act=build][data-id=oil_well]'); await sleep(600); await idle();
     check('the well ghost is on the map, valid (green)', await ev('const g = __lab.state.pending; return !!g && g.def === "oil_well" && g.verdict.ok;')); await shot('g-well-ghost');
     await tap('#bNext'); check('«مكان آخر» suggests another spot', await ev('return !!__lab.state.pending && __lab.state.pending.verdict.ok;'));
     const c0 = await ev('return __lab.store.cash;'); await tap('#bBuild'); await sleep(500);
