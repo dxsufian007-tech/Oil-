@@ -122,9 +122,29 @@
     $('info').innerHTML = h; WP.markDirty();
   }
   function showPipe(x, y) {
-    const i = SIM.pipeInfo(x, y); if (!i) return; state.sel = null; const L = pipes.lineAt(x, y), open = !(L && L.a && L.b), st = open ? 'غير متصل' : (i.currentFlow > 0 ? 'متصل · يعمل' : 'متصل');
+    const i = SIM.pipeInfo(x, y); if (!i) return; state.sel = null; state.pipeSel = { x, y }; const L = pipes.lineAt(x, y), open = !(L && L.a && L.b), st = open ? 'غير متصل' : (i.currentFlow > 0 ? 'متصل · يعمل' : 'متصل');
     $('info').innerHTML = '<h4>🔧 خط أنابيب <span class="st" style="color:' + (open ? '#ffd27a' : '#8dffb0') + '">● ' + st + '</span></h4><table class="kv"><tr><td>المنتج</td><td>' + (i.product === 'unassigned' ? 'غير محدد بعد' : GC.PRODUCT_NAMES[i.product] || i.product) + '</td></tr><tr><td>القطر</td><td>' + i.diameter + ' بوصة</td></tr><tr><td>الطول</td><td>' + L.path.length + ' مربعًا</td></tr><tr><td>الضغط</td><td>' + i.pressure.toLocaleString('en-US') + ' رطل/بوصة²</td></tr><tr><td>التدفق</td><td>' + i.currentFlow.toLocaleString('en-US') + ' برميل / يوم</td></tr><tr><td>السعة</td><td>' + i.capacity.toLocaleString('en-US') + ' برميل / يوم</td></tr></table>'
-      + (open ? '<div class="k" style="margin-top:4px">لا يشترط إكمال الشبكة الآن: وصّل الطرف المفتوح بمبنى عندما تبنيه.</div><div class="row"><button id="bConnectLine" data-id="' + L.id + '" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800;min-height:46px">🔗 وصّل بمبنى</button></div>' : ''); WP.markDirty();
+      + (open ? '<div class="k" style="margin-top:4px">لا يشترط إكمال الشبكة الآن: وصّل الطرف المفتوح بمبنى عندما تبنيه.</div><div class="row"><button id="bConnectLine" data-id="' + L.id + '" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800;min-height:46px">🔗 وصّل بمبنى</button></div>' : '')
+      + '<div class="row" style="margin-top:6px"><button id="bPipeJoint" style="min-height:44px">🔀 وصلة هنا</button><button id="bPipeRedo" style="min-height:44px">✏️ إعادة رسم</button><button id="bPipeDel" style="min-height:44px;background:#7a2a2a;border-color:#a33;color:#fff">🗑️ حذف</button></div>'; WP.markDirty();
+  }
+  /* pipes: delete (half the price comes back), redraw (free undo, then draw again from the same start) and a junction on any tile */
+  const pipeCostOf = L => L.path.length * BC.PIPES[L.dia].cost;
+  function lineBackup(L) { return { a: L.a, b: L.b, path: L.path.map(p => p.slice()), product: L.product, dia: L.dia }; }
+  function deletePipe(L, full) { const refund = Math.floor(pipeCostOf(L) * (full ? 1 : 0.5)); pipes.remove(L.id); if (STORE.cash !== Infinity) STORE.cash += refund; return refund; }
+  function addJunction(L) {
+    const sel = state.pipeSel, n = L.path.length; let idx = L.path.findIndex(p => p[0] === sel.x && p[1] === sel.y); if (n < 3) { toast('الأنبوب قصير جدًا لوضع وصلة'); return false; } idx = Math.max(1, Math.min(n - 2, idx < 0 ? n >> 1 : idx));
+    let T = L.path[idx]; const bk = lineBackup(L), cash0 = STORE.cash, cost = BC.JUNCTION.cost; if (STORE.cash < cost) { toast('الرصيد لا يكفي لبناء وصلة'); return false; }
+    pipes.remove(L.id); let v = STORE.validate('junction', T[0], T[1], 0, {});
+    if (!v.ok) { const order = []; for (let k = 1; k <= n - 2; k++) order.push(k); order.sort((p, q) => Math.abs(p - idx) - Math.abs(q - idx)); for (const k of order) { const vv = STORE.validate('junction', bk.path[k][0], bk.path[k][1], 0, {}); if (vv.ok) { T = bk.path[k]; v = vv; break; } } }
+    const before = new Set(pipes.lines.keys()); const rollback = j => { for (const id of [...pipes.lines.keys()]) if (!before.has(id)) pipes.remove(id); if (j) STORE.demolish(j.id, { building: true, pipes: true, pipeSet: pipes }); pipes.lay(bk); STORE.cash = cash0; };
+    if (!v.ok) { rollback(null); toast('لا يمكن وضع وصلة هنا: ' + (REASON[v.reason] || v.reason)); return false; }
+    const pr = STORE.place('junction', T[0], T[1], 0, { instant: true }); if (!pr.ok) { rollback(null); toast('لا يمكن وضع وصلة هنا'); return false; } const j = pr.building;
+    const ports = B.worldPoints(j).filter(q => q.kind === 'pipe' && !q.reserved).map(q => q.id), lay1 = (p) => I.planPipe(STORE, pipes, ts, bk.a, { b: j.id, port: p }, bk.dia, { ignoreCash: true });
+    let best = null; for (const p of ports) { const v1 = lay1(p); if (v1.ok && (!best || v1.path.length < best.v.path.length)) best = { p, v: v1 }; }
+    if (!best) { rollback(j); toast('تعذّر توصيل الأنبوب بالوصلة'); return false; } const r1 = I.layPipe(STORE, pipes, ts, bk.a, { b: j.id, port: best.p }, bk.dia, { ignoreCash: true }); if (!r1.ok) { rollback(j); toast('تعذّر توصيل الأنبوب بالوصلة'); return false; }
+    let ok2 = false; const end = bk.path[bk.path.length - 1]; for (const p of ports) { if (p === best.p) continue; const r2 = bk.b ? I.planPipe(STORE, pipes, ts, { b: j.id, port: p }, bk.b, bk.dia, { ignoreCash: true }) : I.planOpenPipe(STORE, pipes, ts, { b: j.id, port: p }, end, bk.dia, { ignoreCash: true }); if (r2.ok) { const L2 = bk.b ? I.layPipe(STORE, pipes, ts, { b: j.id, port: p }, bk.b, bk.dia, { ignoreCash: true }) : I.layOpenPipe(STORE, pipes, ts, { b: j.id, port: p }, end, bk.dia, { ignoreCash: true }); if (L2.ok) { ok2 = true; break; } } }
+    if (!ok2) { rollback(j); toast('تعذّر إكمال الأنبوب بعد الوصلة'); return false; }
+    STORE.cash = cash0 - cost; state.sel = j.id; return j;
   }
 
   $('info').addEventListener('click', e => {
@@ -132,6 +152,9 @@
     if (b.id === 'bDig') { startBuild('oil_well'); return; }
     if (b.id === 'bStartWell') { const w = STORE.get(state.sel); if (w) { SIM.ensure(w).started = true; toast('🛢️ بدأ الإنتاج'); save(); showBuilding(w.id); } return; }
     if (b.id === 'bStopWell') { const w = STORE.get(state.sel); if (w) { SIM.ensure(w).started = false; toast('تم إيقاف الإنتاج'); save(); showBuilding(w.id); } return; }
+    if (b.id === 'bPipeDel') { const L = state.pipeSel && pipes.lineAt(state.pipeSel.x, state.pipeSel.y); if (!L) return; if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '⚠️ اضغط للتأكيد'; return; } const r = deletePipe(L, false); state.pipeSel = null; $('info').innerHTML = ''; toast('🗑️ تم حذف الأنبوب · +' + fmt$(r)); save(); updateCash(); WP.markDirty(); return; }
+    if (b.id === 'bPipeRedo') { const L = state.pipeSel && pipes.lineAt(state.pipeSel.x, state.pipeSel.y); if (!L) return; const a = L.a; deletePipe(L, true); state.pipeSel = null; $('info').innerHTML = ''; pipeMode(true); const pm = state.pipeMode; if (a && STORE.get(a.b)) { pm.a = { kind: 'b', id: a.b }; pm.step = 2; state.sel = a.b; pipeBar('✏️ أُزيل الأنبوب القديم (استرداد كامل). اضغط على المبنى الذي ينتهي عنده الأنبوب الجديد، أو على أرض فارغة.', '', false, '<button id="bPipeBack">↩ البداية</button>'); } save(); updateCash(); WP.markDirty(); return; }
+    if (b.id === 'bPipeJoint') { const L = state.pipeSel && pipes.lineAt(state.pipeSel.x, state.pipeSel.y); if (!L) return; if (!GU.can('junction')) { toast('🔒 نقطة الربط تُفتح في المستوى 2'); return; } const j = addJunction(L); if (j) { state.pipeSel = null; $('info').innerHTML = ''; toast('🔀 تمت إضافة وصلة · ارسم منها أنبوبًا جديدًا'); pipeMode(true); const pm = state.pipeMode; pm.a = { kind: 'b', id: j.id }; pm.step = 2; pipeBar('🔀 الوصلة جاهزة. اضغط على المبنى الذي يتصل به الفرع الجديد، أو على أرض فارغة.', '', false, '<button id="bPipeBack">↩ البداية</button>'); save(); updateCash(); } WP.markDirty(); return; }
     if (b.id === 'bConnectLine') { pipeMode(true); const pm = state.pipeMode; pm.a = { kind: 'line', id: +b.dataset.id }; pm.step = 2; pipeBar('✅ أنبوب مفتوح · اضغط على المبنى الذي تريد توصيله به.', '', false, '<button id="bPipeBack">↩ البداية</button>'); return; }
     if (b.id === 'bMore') { showAll = !showAll; showBuilding(state.sel); return; }
     if (b.id === 'bEcon') { showEcon = !showEcon; showBuilding(state.sel); return; }
