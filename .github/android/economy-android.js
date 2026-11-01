@@ -58,13 +58,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms)); const sh = c => { try {
     await tabTo('loans'); await sleep(200); await tap('[data-act=lamt][data-v="10000000"]'); await tap('[data-act=lterm][data-v="24"]'); await shot('e-loans'); const lc = await ev('return __lab.store.cash;'); await tap('[data-act=borrow]'); await sleep(300);
     check('touch: TAKE LOAN -> +$10M cash, $10M debt', await ev('return __lab.company.debt() === 10e6;') && (await ev('return __lab.store.cash;')) - lc > 9.9e6); const lq = await ev('const l = __lab.company.loans[0]; const r = l.rate / 12, n = l.months; return [l.payment, l.principal * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)];'); check('the monthly payment follows the amortization formula on the device (' + Math.round(lq[0]) + ')', Math.abs(lq[0] - lq[1]) < 1);
     await tabTo('alerts'); await shot('e-alerts'); check('ALERTS screen', (await body()).length > 5); await tap('#es-close'); await sleep(200); check('touch: close returns to the map', await ev('return !document.getElementById("eco-sheet").classList.contains("open");'));
-    await ev('const rf = __lab.store.list().find(b => b.d === "refinery_m"); __wp.goto(rf.x + 4, rf.y + 3, .5); __lab.showBuilding(rf.id);'); await sleep(1200); await tap('#bEcon'); await sleep(300); await shot('e-building'); t = await ev('return document.getElementById("info").innerText;');
+    await ev('const rf = __lab.store.list().find(b => b.d === "refinery_m"); __wp.goto(rf.x + 4, rf.y + 3, .5); __lab.showBuilding(rf.id);'); await sleep(1200); await tap('#bEcon'); await sleep(300); await shot('e-building'); t = await ev('return document.getElementById("info").innerText;'); out.econText = t.slice(0, 600);
     check('touch: building ECONOMICS tab (refinery): revenue, operating, maintenance, energy, REFINING MARGIN', ['ECONOMICS', 'Revenue (products)', 'Operating cost', 'Maintenance', 'Energy', 'REFINING MARGIN'].every(x => t.includes(x)));
   });
 
   await guard('save load', async () => {
     await ev('__lab.company.speed = 0; __lab.save();'); const a = await snapState(); await Page.reload(); await sleep(4000); const ok1 = await ready(60); const b = ok1 && await snapState();
-    check('Save -> reload the app: cash, game time, debt, market prices, contracts, sales modes, buildings and inventory are identical', ok1 && a === b, ok1 ? '' : 'not restored');
+    check('Save -> reload the app: cash, game time, debt, market prices, contracts, sales modes, buildings and inventory are identical', ok1 && a === b, ok1 ? (a === b ? '' : 'BEFORE ' + a.slice(0, 260) + ' AFTER ' + String(b).slice(0, 260)) : 'not restored');
     check('the company continues to work after the load (RUNNING chain)', await ev('__lab.company.speed = 0; __lab.company.advanceHours(24); const L = __lab; return Object.values(L.company.store.list().filter(b => ["refinery_m", "pump_station_l"].includes(b.d))).map(b => L.sim.status(b)).every(s => s === "RUNNING");'));
   });
 
