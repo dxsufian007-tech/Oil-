@@ -32,7 +32,7 @@ setTimeout(() => { console.log('FAIL watchdog: the game script did not finish in
   check('the game is running in the Android WebView', await ready());
   out.env = await ev('return { ua: navigator.userAgent, dpr: devicePixelRatio, w: innerWidth, h: innerHeight };'); console.log('ENV ' + JSON.stringify(out.env));
   // the earlier sections left the developer flags in this app's storage: clear them and reload into the normal (Arabic) game
-  await ev('localStorage.clear();'); await Page.reload(); await sleep(3000); check('the game reloaded in normal mode', await ready()); check('the map finished drawing (terrain chunks ready)', await idle());
+  await ev('window.__noSave = true; localStorage.clear();'); await Page.reload(); await sleep(3000); check('the game reloaded in normal mode', await ready()); check('the map finished drawing (terrain chunks ready)', await idle());
   await ev('__lab.reset(); __lab.company.speed = 0;'); await sleep(800); await idle(); await sleep(4000);
   await guard('arabic + hud', async () => {
     check('the page is Arabic and right-to-left', await ev('return document.documentElement.dir === "rtl" && document.documentElement.lang === "ar";'));
