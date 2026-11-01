@@ -104,6 +104,13 @@ const AR = require('./ar.js'), GC = require('./game-config.js'), B = require('./
   console.log('SAVE / RELOAD KEEPS THE LESSON');
   const before = await co(() => JSON.stringify({ l: __lab.GU.level(), s: __lab.GU.step(), n: __lab.store.list().length, lines: __lab.pipes.lines.size })); await co(() => { __lab.company.speed = 0; __lab.save(); }); await p.reload(); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 }); await co(() => { __lab.company.speed = 0; });
   ok((await co(() => JSON.stringify({ l: __lab.GU.level(), s: __lab.GU.step(), n: __lab.store.list().length, lines: __lab.pipes.lines.size }))) === before, 'after a reload the level, the guide step, the buildings and the pipes are the same (' + before + ')');
+  console.log('NEW GAME BUTTON');
+  await tap('#eh-menu'); ok((await p.locator('#es-new').count()) === 1 && /لعبة جديدة/.test(await p.innerText('#es-new')), 'the menu has a «🔄 لعبة جديدة» button');
+  await tap('#es-new'); ok((await co(() => __lab.store.list().length)) > 0 && /تأكيد/.test(await p.innerText('#es-new')), 'the first tap only asks for confirmation (nothing is erased)');
+  await tap('#es-new'); await p.waitForTimeout(400);
+  ok(await co(() => __lab.store.list().length === 0 && __lab.pipes.lines.size === 0 && __lab.GU.level() === 1 && __lab.GU.step() === 0 && Math.round(__lab.store.cash) === 10000000), 'the second tap starts a new game: no buildings, no pipes, level 1, $10M');
+  ok(!(await co(() => document.getElementById('eco-sheet').classList.contains('open'))) && (await p.innerText('#g-guide')).includes('لديك حقل نفط'), 'the menu closes and the guide starts again from the first step');
+  await p.reload(); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 }); ok(await co(() => __lab.store.list().length === 0 && __lab.GU.level() === 1), 'after a reload the new game is still empty (the old save is gone)');
   ok(errs.length === 0, 'no console / page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
   await b.close(); srv.close(); console.log('\nGAME (ARABIC / EASY) TESTS PASSED (' + n + ' checks)');
 })().catch(e => { console.log('FAILED: ' + e.message.split('\n')[0]); process.exit(1); });

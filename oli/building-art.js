@@ -87,11 +87,11 @@
       for (const k of [.55, 1.0, 1.45, 1.9]) { const t = 1 - k / 2.3, a = .5 + (.18 - .5) * t, b = .5 + (.82 - .5) * t; p.line(a, a, k, b, a, k, '#49545f', 1); p.line(b, a, k, b, b, k, '#49545f', 1); }
       p.box(.4, .4, .6, .6, 2.3, 2.42, C.rust); p.dot(.5, .5, 2.5, 3, C.yellow);
     },
-    junction(p, o) {                                                              // 1x1: cross manifold, four flange collars, central valve wheel
-      p.flat(.06, .06, .94, .94, 0, '#8c8272'); p.line(0, .5, .2, 1, .5, .2, C.pipe, 5.4); p.line(.5, 0, .2, .5, 1, .2, C.pipe, 5.4);
-      for (const [a, b] of [[.14, .5], [.86, .5], [.5, .14], [.5, .86]]) p.dot(a, b, .2, 3.8, C.yellow);
-      p.cyl(.5, .5, .18, .12, .34, C.steel); p.cyl(.5, .5, .04, .34, .62, '#2f3942'); p.line(.36, .5, .64, .64, .5, .64, C.red, 3); p.line(.5, .36, .64, .5, .64, .64, C.red, 3);
-      p.box(.04, .04, .16, .16, 0, .12, C.dark); p.box(.84, .84, .96, .96, 0, .12, C.dark);
+    junction(p, o) {                                                              // 1x1: a clear "+" - four fat arms to the four sides, bright flange rings, a hub with a red wheel
+      p.flat(.04, .04, .96, .96, 0, '#8c8272'); p.flat(0, .36, 1, .64, .02, '#cfd6dc'); p.flat(.36, 0, .64, 1, .02, '#cfd6dc');
+      p.line(0, .5, .22, 1, .5, .22, C.pipe, 9.5); p.line(.5, 0, .22, .5, 1, .22, C.pipe, 9.5);
+      for (const [a, b] of [[.08, .5], [.92, .5], [.5, .08], [.5, .92]]) p.dot(a, b, .24, 5.4, C.yellow);
+      p.cyl(.5, .5, .2, .14, .4, C.steel); p.cyl(.5, .5, .06, .4, .66, '#2f3942'); p.line(.34, .5, .68, .66, .5, .68, C.red, 3.4); p.line(.5, .34, .68, .5, .66, .68, C.red, 3.4);
     },
     valve_station(p, o) {                                                         // 1x1: pipe run, big gate valve body, stem, red hand wheel, status lamp
       p.flat(.08, .2, .92, .8, 0, '#8c8272'); p.line(0, .5, .26, 1, .5, .26, C.pipe, 5.4);
