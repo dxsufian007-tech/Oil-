@@ -97,4 +97,5 @@ setTimeout(() => { console.log('FAIL watchdog: the economy script did not finish
   });
   check('no JavaScript errors / crash', errors.length === 0, errors.slice(0, 3).join(' | '));
   fs.writeFileSync('results/economy-perf.json', JSON.stringify(out, null, 1)); console.log('ECONOMY SUMMARY ' + results.filter(r => r.ok).length + '/' + results.length + ' PASS'); try { await client.close(); } catch (e) { }
+  process.exit(0);
 })().catch(e => { console.log('FAIL crashed: ' + e.message); });
