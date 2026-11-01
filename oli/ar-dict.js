@@ -33,6 +33,7 @@
   const days = n => { const v = parseFloat(String(n).replace(/,/g, '')); return n + ' ' + (v === 1 ? 'يوم' : v === 2 ? 'يومان' : v >= 3 && v <= 10 ? 'أيام' : 'يومًا'); };
   const R = (re, fn) => [new RegExp(re), fn], PN = { CRUDE: 'نفط خام', GASOLINE: 'بنزين', DIESEL: 'ديزل', 'JET FUEL': 'وقود طائرات', GAS: 'غاز' }, PNS = { CRUDE: 'النفط الخام', GASOLINE: 'البنزين', DIESEL: 'الديزل', 'JET FUEL': 'وقود الطائرات', GAS: 'الغاز' };
   const RULES = [
+    R('^HIGH OPERATING COST · costs with no sales yet$', () => 'تكلفة التشغيل مرتفعة · مصاريف بلا مبيعات حتى الآن'), R('^Restored ' + N + ' buildings?$', n => 'تمت استعادة ' + n + ' مبنى'),
     R('^HIGH INVENTORY · (.+)$', x => 'المخزون مرتفع · ' + x), R('^LOW INVENTORY · (.+) for a contract$', x => 'المخزون منخفض · ' + x + ' (مطلوب لعقد)'),
     R('^NEGATIVE CASH FLOW · out > in over ' + N + ' days$', n => 'التدفق النقدي سالب · الخارج أكبر من الداخل خلال ' + n + ' أيام'),
     R('^Net ' + $ + ' ?/ ?day$', a => 'صافي ' + a + ' / يوم'), R('^' + $ + ' ?/ ?day$', a => a + ' / يوم'), R('^' + $ + ' ?/ ?mo$', a => a + ' / شهر'),
