@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   push:
     branches: [feature/building-system]
-    paths: ['oli/world*', 'oli/test-world*', 'oli/build*', 'oli/test-build*', 'oli/industry*', 'oli/test-industry*', 'oli/economy*', 'oli/test-economy*', '.github/workflows/building-apk.yml', '.github/android/building-*']
+    paths: ['oli/world*', 'oli/test-world*', 'oli/build*', 'oli/test-build*', 'oli/industry*', 'oli/test-industry*', 'oli/economy*', 'oli/test-economy*', '.github/workflows/building-apk.yml', '.github/android/building-*', '.github/android/economy-*']
 
 permissions:
   contents: write
