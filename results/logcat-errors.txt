@@ -1,0 +1,4 @@
+11-01 13:39:26.817  7098  7156 E chromium: [ERROR:simple_version_upgrade.cc(152)] Failed to write a new fake index.
+11-01 13:40:44.131  7224  7273 E chromium: [ERROR:simple_version_upgrade.cc(152)] Failed to write a new fake index.
+11-01 13:40:44.133  7224  7264 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.buildlab/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+11-01 13:40:44.133  7224  7264 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk

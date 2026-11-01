@@ -1,0 +1,47 @@
+PASS the game with the economy is running in the Android WebView
+ENV {"ua":"Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36","dpr":2.625,"w":412,"h":866}
+PASS HUD is visible on the phone screen and fits the width
+PASS the company starts with $10M
+PASS touch: PAUSE stops Game Time
+PASS touch: PLAY resumes
+PASS touch: speed button cycles 2x, 5x, 10x, 1x  — 2,5,10,1
+PASS Game Time advances on the device (6 game hours in 3 s at 1x)
+PASS the oil chain is bought with real money (12 buildings, 11 pipelines)  — []
+PASS after 25 days the company holds assets, inventory and has costs
+PASS touch: the menu button opens the economy sheet
+PASS COMPANY: cash, company value, assets, debt, inventory, Today / Month / Year, cash flow, employees
+PASS touch: the sheet scrolls by swiping (scrollTop 0 -> 372) and the map camera does not move
+PASS MARKET: five products with price, 24h change, trend, inventory, potential revenue
+PASS MARKET: the price chart is drawn
+PASS touch: 24h -> 30 Days chart range (24 -> 121 points)
+PASS touch: SPOT mode
+PASS touch: WAIT mode (keeps the stock)
+PASS SELL: Available, Market price, Quantity, Gross, Fees, Net
+PASS touch: SELL 50% -> inventory 43679 -> 21840 bbl, cash +2159683
+PASS INVENTORY: Current volume, Capacity, Fill %, Market value, Storage cost
+PASS PRODUCTION: crude, throughput, gasoline, diesel, jet, gas
+PASS CONTRACTS: three offers
+PASS touch: ACCEPT starts a contract
+PASS touch: TAKE LOAN -> +$10M cash, $10M debt
+PASS the monthly payment follows the amortization formula on the device (449736)
+PASS ALERTS screen
+PASS touch: close returns to the map
+PASS touch: building ECONOMICS tab (refinery): revenue, operating, maintenance, energy, REFINING MARGIN
+PASS Save -> reload the app: cash, game time, debt, market prices, contracts, sales modes, buildings and inventory are identical
+PASS the company continues to work after the load (RUNNING chain)
+PASS the app was CLOSED (process killed) and REOPENED: the game restored
+PASS WHILE YOU WERE AWAY is shown after reopening
+PASS away report: Produced, Sold, Operating cost, Profit / Loss, Storage, Warnings  — WHILE YOU WERE AWAY | Away | 3.0 h | Company time | 18 days | Produced | 82,612 bbl crude · 58,211 bbl products | Sold | 34,706 bbl · $3.83M | Operating cost | $4.64M | Profit / Loss | -$876K | Storage | 38% | Warnings | 2 | CONTINUE
+PASS the company produced while the app was closed: 424 game hours (3 real hours x 6 game days = 432) , produced 82612 bbl crude
+PASS offline costs were charged (operating cost 4643213)
+PASS time is paused while the report is open
+PASS touch: CONTINUE closes the report and time resumes
+PASS offline cap: 400 h away counts as 24 h (3456 game hours = 24 x 6 x 24 = 3456)  — {"capped":true,"h":24}
+PASS clock validation: a save from the FUTURE gives no offline time and no money  — {"h":4572,"c":115222134.2789035,"bad":true,"shown":false}
+PASS one economy tick (1 game hour: whole chain + market + finance) costs 1.35 ms on the device
+PASS the 24 h offline catch-up (3,456 game hours) runs in 563 ms
+PASS rendering an economy screen costs 7.5 ms
+FAIL frame rate while the game runs at 10x with the HUD: 0.3 fps, p95 6275 ms (emulator, software GL; informational - depends on the load of the shared CI machine)
+PASS JS heap 10 MB
+PASS no JavaScript errors / crash
+ECONOMY SUMMARY 44/45 PASS

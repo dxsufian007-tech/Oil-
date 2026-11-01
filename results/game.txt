@@ -1,0 +1,33 @@
+PASS the game is running in the Android WebView
+ENV {"ua":"Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36","dpr":2.625,"w":412,"h":866}
+PASS the game reloaded in normal mode
+PASS the map finished drawing (terrain chunks ready)
+PASS the page is Arabic and right-to-left
+PASS the developer palette is hidden
+PASS the company starts with $10M (💰 الرصيد $10M)
+PASS the four category buttons are big and inside the screen
+PASS the guide says: لديك حقل نفط. ابدأ بحفر أول بئر.
+PASS no English word is visible on the first screen
+PASS the oil button opens the build list
+PASS locked buildings show 🔒
+PASS the well ghost is on the map, valid (green)
+PASS «مكان آخر» suggests another spot
+PASS «بناء»: the well is built and its price leaves the balance
+PASS the guide asks to start production
+PASS the new well shows «▶ ابدأ الإنتاج»
+PASS the well is started by touch
+PASS the guide: النفط يحتاج إلى مكان للتخزين
+PASS the guide: اربط البئر بالخزان
+PASS pipe mode asks for the start building
+PASS a valid route is previewed with its price
+PASS the pipe is built and connected at both ends
+PASS oil flows by itself into the tank (5518 bbl)
+PASS the guide: بِع النفط
+PASS no English on the market screen
+PASS selling crude brings the first revenue
+PASS level 2 is announced
+PASS level 2 opens the small pump station
+PASS after closing and reopening the app the lesson, the buildings and the pipes are the same ({"l":2,"s":7,"n":2,"p":1})
+PASS still Arabic, no English
+PASS no JavaScript errors / crash
+GAME SUMMARY 31/31 PASS

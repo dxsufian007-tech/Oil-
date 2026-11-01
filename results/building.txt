@@ -1,0 +1,42 @@
+PASS the game (map + building system) is running in the Android WebView
+ENV {"ua":"Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36","dpr":2.625,"w":412,"h":866}
+PASS the world map loaded (1920x1280 tiles)
+PASS the build menu has the 5 sections
+PASS legal spots for 10 building types found on the real terrain  — {"pump_station_s":"851,851","valve":"845,875","junction":"844,874","crude_tank_s":"850,820","separator":"851,847","gasoline_tank_s":"852,819","diesel_tank_s":"788,818","jet_tank_s":"850,817","gas_sphere_s":"786,821","refinery_s":"858,782"}
+PASS a legal well spot exists on the drillable oil field  — {"x":672,"y":787,"w":1,"h":1}
+PASS 1. Oil Well: touch drag -> valid ghost -> Build  — {"ok":true,"reason":null,"kind":null,"x":672,"y":787,"r":0,"def":"oil_well","aligned":false}
+PASS 2. pump_station_s: touch drag -> valid ghost -> Build  — {"ok":true,"reason":null,"kind":null,"x":851,"y":851,"r":0,"def":"pump_station_s","aligned":false}
+PASS 3. valve: touch drag -> valid ghost -> Build  — {"ok":true,"reason":null,"kind":null,"x":845,"y":875,"r":0,"def":"valve","aligned":false}
+PASS 4. junction: touch drag -> valid ghost -> Build  — {"ok":true,"reason":null,"kind":null,"x":844,"y":875,"r":0,"def":"junction","aligned":true}
+PASS 5. crude_tank_s: touch drag -> valid ghost -> Build  — {"ok":true,"reason":null,"kind":null,"x":850,"y":820,"r":0,"def":"crude_tank_s","aligned":false}
+PASS 6. separator: touch drag -> valid ghost -> Build  — {"ok":true,"reason":null,"kind":null,"x":851,"y":847,"r":0,"def":"separator","aligned":false}
+PASS 7. gasoline_tank_s: touch drag -> valid ghost -> Build  — {"ok":true,"reason":null,"kind":null,"x":852,"y":819,"r":0,"def":"gasoline_tank_s","aligned":false}
+PASS 8. diesel_tank_s: touch drag -> valid ghost -> Build  — {"ok":true,"reason":null,"kind":null,"x":788,"y":818,"r":0,"def":"diesel_tank_s","aligned":false}
+PASS 9. jet_tank_s: touch drag -> valid ghost -> Build  — {"ok":true,"reason":null,"kind":null,"x":850,"y":817,"r":0,"def":"jet_tank_s","aligned":false}
+PASS 10. gas_sphere_s: touch drag -> valid ghost -> Build  — {"ok":true,"reason":null,"kind":null,"x":786,"y":821,"r":0,"def":"gas_sphere_s","aligned":false}
+PASS 11. refinery_s: touch drag -> valid ghost -> Build  — {"ok":true,"reason":null,"kind":null,"x":858,"y":782,"r":0,"def":"refinery_s","aligned":false}
+PASS all 11 building types stand after touch placement  — placed by touch: 11
+PASS camera isolation: the camera never moved during any building drag (max change 0.0000)
+PASS overlap: a tank dropped on the refinery is never built on top of it (ghost red, or smart-snapped to free ground: ok=false at 860,783)
+PASS the Build button is disabled while a ghost is red
+PASS Cancel removes the ghost
+PASS invalid terrain: a tank on water is red (reason water)
+PASS releasing over the palette cancels (nothing pending, nothing built)
+PASS VALID product connection: pump OUTPUT -> crude tank INPUT lays a CRUDE pipeline
+PASS INVALID product connection: crude tank OUTPUT -> gasoline tank INPUT builds nothing
+PASS the player sees "INVALID PRODUCT CONNECTION"
+PASS pipe drags by touch did not pan the map
+PASS tapping a tank opens its panel with Level / Capacity / Fill  — خزان نفط خام صغير ● جاهز Level 0 bbl Capacity 10,000 bbl Fill 0 % Input Flow 0 bbl/day Output Flow 0 bbl/day Available C
+PASS OIL FIELD -> WELLS -> PUMP -> PIPE -> SEPARATOR -> CRUDE STORAGE -> REFINERY -> 4 product storages built on the device (12 buildings, 11 pipelines)  — []
+PASS every building of the chain is RUNNING on the device: well:RUNNING junction:RUNNING pump:RUNNING separator:RUNNING crude:RUNNING refinery:RUNNING gasoline:RUNNING diesel:RUNNING jet:RUNNING gas:RUNNING
+PASS gasoline / diesel / jet / gas storage received product: 5424 / 3616 / 1205 / 603
+PASS Save -> reload the app -> identical buildings, positions, rotations, pipelines, product types and cash; storage volumes equal (the game keeps simulating for ~3 s while the page reloads, so volumes are compared within 3%)
+PASS after the reload the chain keeps running  — ["RUNNING","RUNNING","RUNNING","RUNNING","RUNNING","RUNNING","RUNNING","RUNNING","RUNNING","RUNNING"]
+PASS 15 rapid touch drags: no stuck drag, no error, nothing built without Build, camera unchanged
+PASS frame times while dragging a ghost over the compound: 31.4 fps, p95 79 ms, max 121 ms (emulator, software GL)
+PASS frame times while panning across the compound at CLOSE: 16.3 fps, p95 118 ms, max 153 ms (emulator)
+PASS one simulation step of the whole chain costs 2.10 ms on the device
+BASELINE blank full-screen canvas, no map: 18.3 fps (emulator ceiling)
+PASS JS heap 10 MB
+PASS no JavaScript errors / crash
+BUILDING SUMMARY 39/39 PASS
