@@ -6,7 +6,8 @@
   const GC = OliGameConfig, AR = window.OliAR, $ = id => document.getElementById(id);
   const DEV = /[?&]lab=1/.test(location.search) || (function () { try { return localStorage.getItem('oli-labui') === '1'; } catch (_) { return false; } })(), UNLOCK = DEV || !!window.OLI_DEMO || /[?&]unlock=all/.test(location.search);
   const money = n => '$' + Math.round(n).toLocaleString('en-US');
-  const S = { level: UNLOCK ? 6 : 1, step: 0, hidden: false, cat: null, open: null, seenLv: 1 };
+  const DEMO = !!window.OLI_DEMO;   // the demo unlocks every building but keeps the guide and its steps
+  const S = { level: (UNLOCK && !DEMO) ? 6 : 1, step: 0, hidden: false, cat: null, open: null, seenLv: 1 };
   let L = null, B = null, BC = null, lastMsg = '';
   const CSS = `
 body:not(.dev) #bar,body:not(.dev) #pal,body:not(.dev) #tabs,body:not(.dev) #hud{display:none!important}
@@ -66,12 +67,12 @@ body:not(.dev) .panel{bottom:72px!important}body:not(.dev) #buildbar{bottom:72px
   }
   const PRED = { drill: c => c.well > 0, wait: c => c.well > 0 && c.wellUC === 0, start: c => c.started > 0, tank: c => c.tank > 0, pipe: c => c.closedLines > 0, flow: c => c.crudeVol > 50, sell: c => c.revenue > 0, grow: c => S.level >= 2 };
   function levelFor(c) {
-    let lv = S.level; if (UNLOCK) return 6;
+    let lv = S.level; if (UNLOCK && !DEMO) return 6;
     if (lv < 2 && c.revenue > 0) lv = 2; if (lv < 3 && lv >= 2 && c.well >= 2 && c.revenue >= 1e6) lv = 3; if (lv < 4 && lv >= 3 && c.sep > 0) lv = 4; if (lv < 5 && lv >= 4 && c.ref > 0) lv = 5; if (lv < 6 && lv >= 5 && c.revenue >= 5e6) lv = 6; return lv;
   }
   function check() {
     const l = lab(); if (!l || !l.restored) return; const c = counts(), lv = levelFor(c);
-    if (lv > S.level) { const was = S.level; S.level = lv; if (!UNLOCK) levelUp(lv, was); }
+    if (lv > S.level) { const was = S.level; S.level = lv; if (!UNLOCK || DEMO) levelUp(lv, was); }
     let moved = false; while (S.step < GC.STEPS.length - 1 && PRED[GC.STEPS[S.step].id](c)) { S.step++; moved = true; }
     document.body.classList.toggle('lv-tabs', S.level >= 3); for (const t of ['contracts', 'loans']) { const b = document.querySelector('#es-tabs [data-tab=' + t + ']'); if (b) b.style.display = S.level >= 3 || UNLOCK ? '' : 'none'; }
     if (moved) { lastMsg = ''; if (lab().save) lab().save(); } refreshGuide(c);
@@ -81,7 +82,7 @@ body:not(.dev) .panel{bottom:72px!important}body:not(.dev) #buildbar{bottom:72px
     return GC.STEPS[S.step];
   }
   function refreshGuide(c) {
-    const g = $('g-guide'); if (!g) return; const show = !S.hidden && lab() && lab().restored && !DEV && !UNLOCK; const gt = guideText(c || counts()); g.classList.toggle('show', !!show);
+    const g = $('g-guide'); if (!g) return; const show = !S.hidden && lab() && lab().restored && !DEV && (!UNLOCK || DEMO); const gt = guideText(c || counts()); g.classList.toggle('show', !!show);
     if (show) { g.querySelector('.tx').innerHTML = '🧭 ' + gt.text + '<small>' + (gt.hint || '') + '</small>'; }
     const pc = { drill: 'oil', wait: null, start: null, tank: 'storage', pipe: 'pipes', flow: null, sell: null, grow: 'oil' }[GC.STEPS[S.step].id];
     for (const b of $('g-nav').children) b.classList.toggle('pulse', !!show && S.level === 1 && b.dataset.cat === pc && S.cat !== pc);
@@ -110,8 +111,8 @@ body:not(.dev) .panel{bottom:72px!important}body:not(.dev) #buildbar{bottom:72px
     setInterval(check, 700); check();
   }
   function toJSON() { return { level: S.level, step: S.step, hidden: S.hidden }; }
-  function fromJSON(d) { if (d && typeof d === 'object') { S.level = Math.max(1, Math.min(6, d.level | 0 || 1)); S.step = Math.max(0, Math.min(GC.STEPS.length - 1, d.step | 0)); S.hidden = !!d.hidden; } else { S.level = 1; S.step = 0; S.hidden = false; } if (UNLOCK) S.level = 6; if ($('g-guide')) refreshGuide(); }
-  function reset() { S.level = UNLOCK ? 6 : 1; S.step = 0; S.hidden = false; closeSheet(); }
+  function fromJSON(d) { if (d && typeof d === 'object') { S.level = Math.max(1, Math.min(6, d.level | 0 || 1)); S.step = Math.max(0, Math.min(GC.STEPS.length - 1, d.step | 0)); S.hidden = !!d.hidden; } else { S.level = 1; S.step = 0; S.hidden = false; } if (UNLOCK && !DEMO) S.level = 6; if ($('g-guide')) refreshGuide(); }
+  function reset() { S.level = (UNLOCK && !DEMO) ? 6 : 1; S.step = 0; S.hidden = false; closeSheet(); }
   function setLevel(n) { S.level = n; if ($('g-sheet')) { check(); } }
   window.OliGameUI = { mount, toJSON, fromJSON, reset, setLevel, can, check, level: () => S.level, step: () => S.step, state: () => Object.assign({}, S), showCat, closeSheet, dev: DEV, refreshGuide: () => refreshGuide(), cost };
 })();

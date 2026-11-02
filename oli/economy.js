@@ -127,13 +127,14 @@
     }
 
     /* ---- inventory (read from the tanks) ---- */
-    tanksOf(p) { return this.store.list().filter(b => b.st === 'OPERATIONAL' && (DEFS[b.d].type === 'tank' || DEFS[b.d].type === 'gas') && DEFS[b.d].product === p); }
+    tanksOf(p) { return this.store.list().filter(b => b.st !== 'UNDER_CONSTRUCTION' && (DEFS[b.d].type === 'tank' || DEFS[b.d].type === 'gas') && DEFS[b.d].product === p); }   // a DAMAGED tank still holds its oil and its capacity: it is counted too (it only stops accepting)
+    physicalVol(p) { let v = 0; for (const b of this.tanksOf(p)) v += this.sim.ensure(b).vol; return v; }                                                                           // everything in the tanks, water included
     available(p) { let v = 0; for (const b of this.tanksOf(p)) { const s = this.sim.ensure(b); v += p === 'CRUDE' ? Math.max(0, s.vol - (s.wat || 0)) : s.vol; } return v; }
     capacity(p) { let v = 0; for (const b of this.tanksOf(p)) v += DEFS[b.d].capacity.value; return v; }
     crudeOnHand() { let v = 0; for (const b of this.tanksOf('CRUDE')) v += this.sim.ensure(b).vol; return v; }
     unitPrice(p) { return this.market.price[p] * (p === 'CRUDE' ? this.crudeQ : 1); }
     inventory() {
-      return SELL.map(p => { const vol = this.available(p), cap = this.capacity(p), price = this.unitPrice(p); return { product: p, label: this.cfg.LABEL[p], unit: this.cfg.UNIT[p], volume: vol, capacity: cap, fill: cap ? vol / cap : 0, marketPrice: this.market.price[p], unitPrice: price, value: vol * price,
+      return SELL.map(p => { const vol = this.available(p), cap = this.capacity(p), phys = this.physicalVol(p), price = this.unitPrice(p); return { product: p, label: this.cfg.LABEL[p], unit: this.cfg.UNIT[p], volume: vol, water: phys - vol, capacity: cap, fill: cap ? phys / cap : 0, marketPrice: this.market.price[p], unitPrice: price, value: vol * price,
         storageCostDay: vol * this.cfg.STORAGE_COST[p], mode: this.modes[p], change24: this.market.change24(p), trend: this.market.trend(p), potential: vol * price * (1 - this.cfg.FEES.spot) }; });
     }
     inventoryValue() { let v = 0; for (const p of SELL) v += this.available(p) * this.unitPrice(p); return v; }
@@ -242,8 +243,8 @@
     _auto() {
       const A = this.cfg.AUTOSELL;
       for (const p of SELL) {
-        const m = this.modes[p]; if (m === 'SPOT') { const cap = this.capacity(p); if (cap <= 0) continue; const av = this.available(p), fill = av / cap, price = this.market.price[p];
-          if (fill >= A.trigger && (price >= this.cfg.PRICE.base[p] * A.minPriceRatio || fill >= A.force)) this.sell(p, av - A.target * cap, 'AUTO'); }
+        const m = this.modes[p]; if (m === 'SPOT') { const cap = this.capacity(p); if (cap <= 0) continue; const av = this.available(p), phys = this.physicalVol(p), water = phys - av, fill = phys / cap, price = this.market.price[p];
+          if (fill >= A.trigger && (price >= this.cfg.PRICE.base[p] * A.minPriceRatio || fill >= A.force)) this.sell(p, av - (A.target * cap - water), 'AUTO'); }
         else if (m === 'CONTRACT') for (const c of this.activeContracts().filter(x => x.product === p).sort((a, b) => a.deadline - b.deadline)) this.deliver(c.id);
       }
     }
