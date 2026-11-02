@@ -202,7 +202,7 @@
   function spotsFor(id, r) {
     const out = [], [w, h] = dims(id, r), c = WP.toTile(WP.VW() / 2, WP.VH() * .38), focus = (state.sel && STORE.get(state.sel)) || STORE.get(STORE.nextId - 1); let ox = Math.round(c.x), oy = Math.round(c.y), R = 26;
     if (B.DEFS[id].type === 'well') { const f = fieldSites().sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0]; if (!f) return out; ox = Math.round(f.x); oy = Math.round(f.y); R = 16; }
-    else if (focus && Math.hypot(focus.x - c.x, focus.y - c.y) < 60) { ox = focus.x + 3; oy = focus.y; }
+    else if (focus) { ox = focus.x + 3; oy = focus.y; }   // always suggest next to the building the player is working on (the well / the last tank), not wherever the camera happens to be
     const seen = new Set();
     for (let rad = 0; rad <= R && out.length < 10; rad++) for (let dx = -rad; dx <= rad && out.length < 10; dx++) for (let dy = -rad; dy <= rad && out.length < 10; dy++) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue; const x = ox + dx - Math.floor(w / 2), y = oy + dy - Math.floor(h / 2), k = x + ',' + y; if (seen.has(k)) continue; seen.add(k);

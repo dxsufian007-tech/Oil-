@@ -70,7 +70,7 @@
     }
     _init() {
       const c = this.cfg; this.hours = 0; this.dayIdx = 0; this.acc = 0; this.market = new Market(c); this.assets = new Map(); this.loans = []; this.nextLoan = 1; this.closed = []; this.contracts = []; this.history = []; this.offers = []; this.nextContract = 1;
-      this.crng = new Rng(c.MARKET.seed ^ 0x5bd1e995); this.modes = {}; for (const p of SELL) this.modes[p] = 'WAIT'; this.tier = c.POWER.startTier; this.autoRepair = c.MAINTENANCE.autoRepair;
+      this.crng = new Rng(c.MARKET.seed ^ 0x5bd1e995); this.modes = {}; for (const p of SELL) this.modes[p] = c.AUTOSELL && c.AUTOSELL.defaultMode || 'SPOT'; this.tier = c.POWER.startTier; this.autoRepair = c.MAINTENANCE.autoRepair;
       const cash = this.store.cash; this.led = { day: ledger(cash), month: ledger(cash), year: ledger(cash), life: ledger(cash) }; this.lastMonth = null; this.days = []; this.prodHist = []; this.crudeQ = 1;
       this.fin = { state: 'OK', negHours: 0, emergencyAt: -1 }; this.taxCarry = 0; this.bankrupt = false; this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.staff = { operators: 0, engineers: 0, maintenance: 0, managers: 0, total: 0, payroll: 0 };
       this.speed = 1; this.mirror = cash; this.lastSim = null; this.away = null; this.events = []; this.seen = new Set(); this.badClock = false; this._refreshOffers();

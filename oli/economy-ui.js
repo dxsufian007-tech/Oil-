@@ -69,9 +69,9 @@
     for (const v of inv) {
       h += '<div class="es-card" data-act="pick" data-p="' + v.product + '" style="' + (v.product === mkt ? 'border-color:#4f8fc0' : '') + '"><div class="es-prod"><span class="dot" style="background:' + COL[v.product] + '"></span><span class="nm">' + v.label + '</span><b>$' + v.marketPrice.toFixed(2) + '</b></div>'
         + kv('24h change', '<span class="' + cl(v.change24) + '">' + pc(v.change24) + '</span>') + kv('Trend', arrow(v.trend)) + kv('Your inventory', n0(v.volume) + ' ' + v.unit) + kv('Potential revenue', M(v.potential))
-        + '<div class="es-row"><button data-act="mode" data-p="' + v.product + '" data-v="WAIT" class="' + (v.mode === 'WAIT' ? 'on' : '') + '">WAIT</button><button data-act="mode" data-p="' + v.product + '" data-v="SPOT" class="' + (v.mode === 'SPOT' ? 'on' : '') + '">SPOT</button><button data-act="mode" data-p="' + v.product + '" data-v="CONTRACT" class="' + (v.mode === 'CONTRACT' ? 'on' : '') + '">CONTRACT</button><button data-act="sellnow" data-p="' + v.product + '">SELL NOW</button></div></div>';
+        + '<div class="es-row"><button data-act="mode" data-p="' + v.product + '" data-v="WAIT" class="' + (v.mode === 'WAIT' ? 'on' : '') + '">انتظر</button><button data-act="mode" data-p="' + v.product + '" data-v="SPOT" class="' + (v.mode === 'SPOT' ? 'on' : '') + '">بيع تلقائي</button><button data-act="mode" data-p="' + v.product + '" data-v="CONTRACT" class="' + (v.mode === 'CONTRACT' ? 'on' : '') + '">عقود</button><button data-act="sellnow" data-p="' + v.product + '">SELL NOW</button></div></div>';
     }
-    h += '<div class="es-sm">WAIT keeps the stock (storage cost continues). SPOT sells automatically when the store is ' + Math.round(EC.AUTOSELL.trigger * 100) + '% full and the price is not weak. CONTRACT delivers to your open contracts.</div>';
+    h += '<div class="es-sm">انتظر: يبقى المخزون (تستمر تكلفة التخزين). بيع تلقائي (الافتراضي): عند امتلاء ' + Math.round(EC.AUTOSELL.trigger * 100) + '% يُباع حتى ' + Math.round(EC.AUTOSELL.target * 100) + '%، إلا إذا كان السعر ضعيفًا. عقود: التسليم للعقود المفتوحة.</div>';
     return h;
   }
   function rSell() {
