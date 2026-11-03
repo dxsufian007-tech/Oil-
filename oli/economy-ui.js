@@ -86,7 +86,7 @@
   }
   function rInventory() {
     return CO.inventory().map(v => '<div class="es-card"><div class="es-prod"><span class="dot" style="background:' + COL[v.product] + '"></span><span class="nm">' + v.label + '</span><b>' + Math.round(v.fill * 100) + '%</b></div><div class="es-bar"><i style="width:' + Math.min(100, v.fill * 100) + '%;background:' + (v.fill >= 0.9 ? '#d9453a' : COL[v.product]) + '"></i></div>'
-      + kv('Current volume', n0(v.volume) + ' ' + v.unit) + kv('Capacity', n0(v.capacity) + ' ' + v.unit) + kv('Market value', M(v.value)) + kv('Storage cost', M(v.storageCostDay) + ' / day') + '</div>').join('');
+      + kv('Current volume', n0(v.volume + (v.water || 0)) + ' ' + v.unit) + (v.water > 0 ? kv('of which water', n0(v.water) + ' ' + v.unit) : '') + kv('Capacity', n0(v.capacity) + ' ' + v.unit) + kv('Market value', M(v.value)) + kv('Storage cost', M(v.storageCostDay) + ' / day') + '</div>').join('');
   }
   function rProduction() {
     const pr = CO.production(prodRange), rt = CO.productionRates(), row = (nm, k, c) => '<div class="es-card"><div class="es-prod"><span class="dot" style="background:' + c + '"></span><span class="nm">' + nm + '</span><div style="text-align:right"><div class="es-big" style="font-size:18px">' + n0(pr[k]) + '</div><div class="es-sm">now ' + n0(rt[k]) + ' / day</div></div></div></div>';
@@ -143,7 +143,7 @@
   /* ------------------------------------------------------------ HUD, away report, events */
   function hud() {
     if (!CO) return; const s = CO.summary(), c = s.clock; $('eh-cash').lastChild.textContent = M(s.cash); $('eh-cash').lastChild.className = s.cash < 0 ? 'neg' : ''; const nt = $('eh-net').lastChild; nt.textContent = sg(s.dayNet); nt.className = s.dayNet > 0 ? 'pos' : s.dayNet < 0 ? 'neg' : '';
-    { const inv = CO.inventory(), vol = inv.reduce((a, r) => a + r.volume, 0), cap = inv.reduce((a, r) => a + r.capacity, 0), pr = CO.productionRates(); const hp = $('eh-prod'), hs = $('eh-stor'); if (hp) { hp.lastChild.textContent = n0(pr.crude); hp.title = 'برميل نفط في اليوم'; } if (hs) { hs.lastChild.textContent = cap ? Math.round(vol / cap * 100) + '%' : '—'; hs.lastChild.className = cap && vol / cap > .9 ? 'neg' : ''; } }
+    { const inv = CO.inventory(), vol = inv.reduce((a, r) => a + r.volume + (r.water || 0), 0), cap = inv.reduce((a, r) => a + r.capacity, 0), pr = CO.productionRates(); const hp = $('eh-prod'), hs = $('eh-stor'); if (hp) { hp.lastChild.textContent = n0(pr.crude); hp.title = 'برميل نفط في اليوم'; } if (hs) { hs.lastChild.textContent = cap ? Math.round(vol / cap * 100) + '%' : '—'; hs.lastChild.className = cap && vol / cap > .9 ? 'neg' : ''; } }
     $('eh-clock').firstChild.textContent = 'Y' + c.year + ' M' + c.month; $('eh-clock').lastChild.textContent = 'D' + c.dayOfMonth + ' ' + String(c.hour).padStart(2, '0') + ':00'; $('eh-pause').textContent = CO.speed === 0 ? '▶' : '⏸'; $('eh-speed').textContent = (CO.speed || CO.lastSpeed || 1) + '×';
     const n = CO.alerts().filter(x => x.level !== 'info').length, b = $('eh-badge'); b.textContent = n; b.style.display = n ? 'block' : 'none'; const bl = $('eco-bank'); if (CO.bankrupt && bl) showBank();
     const cs = $('cash'); if (cs) cs.textContent = '$' + Math.round(s.cash).toLocaleString('en-US');
