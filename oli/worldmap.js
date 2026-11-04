@@ -55,6 +55,9 @@
     ZONE_DEPTH: { 'DESERT PLAINS': [400, 2500], 'DUNE SEA': [500, 2500], 'ROCKY BADLANDS': [800, 3500], 'MOUNTAIN BELT': [1500, 5000], 'VALLEY BASIN': [600, 3000], 'HIGH PLATEAU': [1000, 4000], 'COASTAL SHELF': [300, 2000] },
     ZONE_COST: { base: 250000, kind: { 'DESERT PLAINS': 1, 'DUNE SEA': 1.1, 'ROCKY BADLANDS': 1.3, 'MOUNTAIN BELT': 1.6, 'VALLEY BASIN': 0.9, 'HIGH PLATEAU': 1.4, 'COASTAL SHELF': 1.2 }, evaluateShare: 0.4 },   // survey a zone = base x kind; the evaluation (seismic study) costs this share on top
     ZONE_FORMATIONS: ['Sandstone anticline', 'Carbonate reef', 'Fault-bounded trap', 'Salt dome flank', 'Stratigraphic pinch-out', 'Fractured basement'],
+    /* ---- wells (Phase 4): four kinds. Exploratory and appraisal wells are the paid versions of the discovery steps, injection wells are recorded for the pressure support of Phase 5,
+       production wells are the oil_well buildings, which draw from the ONE reserve of their field. Cost = depth x costPer100m x terrain x the kind's factor. */
+    WELLS: { costPer100m: 25000, minCost: 150000, EXPLORATORY: { factor: 0.8 }, APPRAISAL: { factor: 0.7 }, PRODUCTION: { factor: 1.0 }, INJECTION: { factor: 0.6 }, APPRAISAL_NARROWING: 0.6, MIN_ESTIMATE_K: 0.15, WATER_CUT_WEIGHT: 0.35 },   // WATER_CUT_WEIGHT: how much the field's own water cut counts against the old fixed start (kept low so the production of the game keeps its balance)
     DRY_RATIO: 0.6,                                                             // dry "promising" zones per real field
     MIN_GAP: 3,                                                                 // tiles between two oil sites
     DRILL: { baseCostPer100m: 1500, preview: true },                            // estimated cost = depth/100 x base x terrain cost; PREVIEW ONLY, never charged
@@ -230,8 +233,8 @@
       if (st === 'DISCOVERED') return { id, state: st, surveyState: 'NONE', indicator: { x: s.x + s.indicator.dx, y: s.y + s.indicator.dy, r: s.indicator.r }, hint: 'promising geology' };
       const base = { id, state: st, surveyState: 'DONE', x: s.x, y: s.y, radius: s.radius, terrain: s.terrainType };
       if (s.kind === 'DRY') return Object.assign(base, { dry: true, note: 'no commercial oil' });
-      const lo = Math.round(s.estimatedReserve * (1 - s.estimateError)), hi = Math.round(s.estimatedReserve * (1 + s.estimateError));
-      const out = Object.assign(base, { type: s.type, estimatedReserve: s.estimatedReserve, reserveRange: [lo, hi], pressureClass: s.pressurePotential > 150 ? 'HIGH' : s.pressurePotential > 90 ? 'MEDIUM' : 'LOW', quality: s.quality, apiRange: [Math.round(s.props.api - 3), Math.round(s.props.api + 3)], probability: +(0.55 + 0.4 * (1 - s.estimateError)).toFixed(2) });
+      const k = s.estK == null ? 1 : s.estK, est = Math.round(s.initialReserve * (1 + (s.estimatedReserve / s.initialReserve - 1) * k)), er = s.estimateError * k, lo = Math.round(est * (1 - er)), hi = Math.round(est * (1 + er));      // every appraisal well narrows the estimate
+      const out = Object.assign(base, { type: s.type, estimatedReserve: est, reserveRange: [lo, hi], pressureClass: s.pressurePotential > 150 ? 'HIGH' : s.pressurePotential > 90 ? 'MEDIUM' : 'LOW', quality: s.quality, apiRange: [Math.round(s.props.api - 3), Math.round(s.props.api + 3)], probability: +(0.55 + 0.4 * (1 - s.estimateError)).toFixed(2) });
       if (st === 'DRILLABLE' || st === 'PRODUCING' || st === 'DEPLETED') Object.assign(out, { depletionPct: +(100 * (1 - s.remainingReserve / Math.max(1, s.initialReserve))).toFixed(1), depth: s.depth, pressurePotential: s.pressurePotential, api: s.props.api, waterCut: s.props.waterCut, extractionCost: s.props.extractCost, productiveCapacity: s.props.capacity, declineRate: s.props.decline, estimatedCost: drillEstimate(s), costNote: 'estimate only, not charged', remainingReserve: s.remainingReserve });
       return out;
     }
@@ -261,6 +264,25 @@
     }
     const evaluateZone = rid => { const z = regions[rid]; if (!z) return { ok: false, reason: 'unknown' }; if (zoneEval.has(rid)) return { ok: false, reason: 'done' }; zoneEval.add(rid); return { ok: true, cost: Math.round(exploreCostOf(rid) * CONFIG.ZONE_COST.evaluateShare) }; };   // the cost is reported, the caller charges it
     const zoneSnapshot = () => Array.from(zoneEval).sort((a, b) => a - b), restoreZones = arr => { zoneEval.clear(); for (const id of arr || []) if (regions[id]) zoneEval.add(id); };
+    // ---- the shared reserve of a field and the well registry. The reserve belongs to the FIELD: every production well draws from it, so more wells give more capacity but never more oil.
+    function take(id, bbl) {
+      const s = siteById(id); if (!s || s.kind !== 'FIELD') return 0; const st = stateOf(id); if (st !== 'DRILLABLE' && st !== 'PRODUCING') return 0;
+      const took = Math.max(0, Math.min(bbl, s.remainingReserve)); if (took > 0 && st === 'DRILLABLE') advance(id, 'PRODUCING'); s.remainingReserve -= took;
+      if (s.remainingReserve <= 1e-6) { s.remainingReserve = 0; if (stateOf(id) === 'PRODUCING') advance(id, 'DEPLETED'); } return took;
+    }
+    const wellRec = new Map(); let wellNext = 1;
+    const drillCost = (type, siteId) => { const s = siteById(siteId), W = CONFIG.WELLS; if (!s || !W[type]) return 0; return Math.round(Math.max(W.minCost, s.depth / 100 * W.costPer100m * T[s.terrainType].buildCost) * W[type].factor / 1000) * 1000; };
+    function drillWell(type, siteId, t) {
+      const s = siteById(siteId); if (!s) return { ok: false, reason: 'unknown' }; if (!CONFIG.WELLS[type] || type === 'PRODUCTION') return { ok: false, reason: 'type' }; const st = stateOf(siteId), W = CONFIG.WELLS;
+      let result = null;
+      if (type === 'EXPLORATORY') { if (st !== 'DISCOVERED') return { ok: false, reason: 'state', state: st }; advance(siteId, 'SURVEYED'); result = s.kind === 'FIELD' ? 'OIL' : 'DRY'; }
+      else if (type === 'APPRAISAL') { if (s.kind === 'DRY') return { ok: false, reason: 'dry' }; if (st !== 'SURVEYED' && st !== 'DRILLABLE' && st !== 'PRODUCING') return { ok: false, reason: 'state', state: st }; s.appraisals = (s.appraisals || 0) + 1; s.estK = Math.max(W.MIN_ESTIMATE_K, (s.estK == null ? 1 : s.estK) * W.APPRAISAL_NARROWING); if (st === 'SURVEYED') advance(siteId, 'DRILLABLE'); result = 'APPRAISED'; }
+      else if (type === 'INJECTION') { if (s.kind !== 'FIELD' || stateOf(siteId) !== 'PRODUCING') return { ok: false, reason: 'state', state: st }; s.injectors = (s.injectors || 0) + 1; result = 'INJECTING'; }
+      const rec = { id: 'W' + wellNext++, type, siteId, regionId: s.regionId, depth: s.depth, cost: drillCost(type, siteId), t: t || 0, result }; wellRec.set(rec.id, rec); return Object.assign({ ok: true }, rec);
+    }
+    const wellsOf = siteId => Array.from(wellRec.values()).filter(w => w.siteId === siteId);
+    const reserveSnapshot = () => ({ n: wellNext, w: Array.from(wellRec.values()), f: allSites().filter(s => s.kind === 'FIELD' && (s.remainingReserve !== s.initialReserve || s.appraisals || s.injectors)).map(s => [s.id, s.remainingReserve, s.appraisals || 0, s.injectors || 0, s.estK == null ? 1 : s.estK]) });
+    const restoreReserve = d => { wellRec.clear(); wellNext = (d && d.n) || 1; for (const w of (d && d.w) || []) wellRec.set(w.id, w); for (const [id, rem, ap, inj, k] of (d && d.f) || []) { const s = siteById(id); if (s) { s.remainingReserve = rem; s.appraisals = ap; s.injectors = inj; s.estK = k; } } };
     const progressSnapshot = () => Array.from(progress.entries()).sort();
     const restoreProgress = arr => { progress.clear(); for (const [id, st] of arr || []) if (STATES.includes(st) && siteById(id)) progress.set(id, st); };
 
@@ -388,7 +410,7 @@
     const oilFieldAt = (x, y) => { for (const s of sitesNear(x, y, 2)) if (s.kind === 'FIELD' && Math.hypot(s.x - x, s.y - y) <= s.radius) return s; return null; };
 
     return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
-      zoneInfo, evaluateZone, zoneSnapshot, restoreZones, discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
+      zoneInfo, evaluateZone, zoneSnapshot, restoreZones, take, drillWell, drillCost, wellsOf, reserveSnapshot, restoreReserve, discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
       scale: () => (W * H) / (CONFIG.LEGACY.W * CONFIG.LEGACY.H) };
   }
   const api = { CONFIG, STATES, LAYERS, TBYID, createWorld, hash, vnoise, fbm, mulberry32 };

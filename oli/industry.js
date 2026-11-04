@@ -25,6 +25,13 @@
     const score = (prod - W.production[0]) / (W.production[1] - W.production[0]) * .5 + (pres - W.pressure[0]) / (W.pressure[1] - W.pressure[0]) * .25 + (res - W.reserve[0]) / (W.reserve[1] - W.reserve[0]) * .25;
     return { production: prod, pressure: pres, reserve: res, cost: Math.round((W.cost[0] + (W.cost[1] - W.cost[0]) * score) / 1000) * 1000 };
   }
+  /* a well on a real oil field draws from the field's ONE reserve; its own numbers come from the field. Wells on a field without data (the mock worlds of the tests) keep the old per-well profile. */
+  const WORLDCFG = () => (typeof OliWorld !== 'undefined' ? OliWorld.CONFIG : require('./worldmap.js').CONFIG);
+  function fieldProfile(store, b) {
+    const ts = store.ts; if (!b.field || !ts || !ts.take || !ts.site) return null; const site = ts.site(b.field); if (!site || site.kind !== 'FIELD' || !site.props) return null;
+    const pr = wellProfile(b.x, b.y);       // the rate and the pressure of a single well stay what they always were (the economy keeps its balance); the field only adds the shared reserve, the capacity limit and its own water cut
+    return { site, nominal: pr.production, p0: pr.pressure };
+  }
   const priceOf = (def, x, y) => def.type === 'well' ? wellProfile(x, y).cost : def.cost;
 
   /* ------------------------------------------------------------ pipelines */
@@ -139,7 +146,7 @@
     /* ---- state per building (kept in b.s, saved with the game) ---- */
     ensure(b) {
       if (b.s) return b.s; const def = DEFS[b.d], t = def.type, L = levelOf(b);
-      if (t === 'well') { const pr = wellProfile(b.x, b.y); b.s = { reserve: pr.reserve, reserve0: pr.reserve, p0: pr.pressure, nominal: pr.production, total: 0 }; }
+      if (t === 'well') { const fp = fieldProfile(this.store, b), pr = fp ? null : wellProfile(b.x, b.y); b.s = fp ? { reserve: fp.site.remainingReserve, reserve0: fp.site.initialReserve, p0: fp.p0, nominal: fp.nominal, total: 0, shared: 1 } : { reserve: pr.reserve, reserve0: pr.reserve, p0: pr.pressure, nominal: pr.production, total: 0 }; }
       else if (t === 'pump') { const c = def.params, u = hash(b.x, b.y, 7); b.s = { boost: Math.round(lerp(c.boost[0], c.boost[1], u)), eff: +lerp(c.eff[0], c.eff[1], hash(b.x, b.y, 8)).toFixed(3), total: 0 }; }
       else if (t === 'valve') b.s = { mode: 'OPEN', opening: 1 };
       else if (t === 'tank') b.s = { vol: 0, wat: 0, temp: SAFE.ambientC, total: 0 };
@@ -266,13 +273,24 @@
       if (this.dirty()) this.build(); this.dt = dt = Math.max(1e-6, dt); const store = this.store; this.time += dt;
       for (const e of this._el) { e.flow = 0; e.over = false; e.lowP = false; e.hiP = false; }
       const items = store.list(); for (const b of items) { const s = this.ensure(b); for (const k in s) if (k.charCodeAt(0) === 95) delete s[k]; const ty = DEFS[b.d].type; if (ty === 'pump' || ty === 'separator' || ty === 'refinery') { s.pIn = 0; if (ty === 'pump') s.pOut = 0; } }
+      const fieldGroups = new Map(), sharedWells = [];
       for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
         if (def.type === 'well') {
+          const fp = (s.shared || b.field) ? fieldProfile(store, b) : null, site = fp ? fp.site : null;
+          if (fp && !s.shared) { s.shared = 1; s.nominal = fp.nominal; s.p0 = fp.p0; s.reserve0 = site.initialReserve; }       // a well of an older save: from now on it draws from its field
+          if (site) { s.reserve = site.remainingReserve; s.reserve0 = site.initialReserve; }
           const ratio = s.reserve0 ? s.reserve / s.reserve0 : 0; if (s.reserve <= 0) { s.reserve = 0; s._depleted = true; continue; }
-          const W = CFG.WELL, target = s.nominal * (.4 + .6 * ratio) * levelOf(b).capacityMultiplier * eco(b), wc = lerp(W.waterCutStart, W.waterCutEnd, 1 - ratio), gas = W.gorStart + .05 * (1 - ratio), pr = s.p0 * (.3 + .7 * ratio) * levelOf(b).pressureMultiplier;
+          const W = CFG.WELL, wcStart = site ? lerp(W.waterCutStart, site.props.waterCut, WORLDCFG().WELLS.WATER_CUT_WEIGHT) : 0, target0 = s.nominal * (.4 + .6 * ratio) * levelOf(b).capacityMultiplier * eco(b), wc = site ? lerp(wcStart, Math.max(wcStart, W.waterCutEnd), 1 - ratio) : lerp(W.waterCutStart, W.waterCutEnd, 1 - ratio), gas = W.gorStart + .05 * (1 - ratio), pr = s.p0 * (.3 + .7 * ratio) * levelOf(b).pressureMultiplier;
+          let target = target0;
+          if (site) {                                                                                     // the field delivers at most its capacity (weaker as it empties), shared by all its wells: more wells = more capacity until the field is full, never more oil
+            let g = fieldGroups.get(site.id); if (!g) { g = { need: 0, cap: site.props.capacity * (.4 + .6 * ratio), rate: site.remainingReserve / dt }; fieldGroups.set(site.id, g); for (const o of items) { if (o.field !== site.id || DEFS[o.d].type !== 'well' || !this.ok(o)) continue; const os = this.ensure(o), or = site.initialReserve ? site.remainingReserve / site.initialReserve : 0; g.need += os.nominal * (.4 + .6 * or) * levelOf(o).capacityMultiplier * eco(o) * (1 - wc - gas); } }
+            const scale = g.need > 0 ? Math.min(1, Math.min(g.cap, g.rate) / g.need) : 1; target = target0 * scale;
+          }
           s._target = target; s._wc = wc; s._gas = gas; s._p = pr; const ports = def.connections.map(c => c.id); if (!ports.some(id => this.edgeOf(b, id))) { s._noOut = true; continue; }
           let r = Math.min(target, s.reserve / dt / Math.max(1e-6, 1 - wc - gas)); const acc = this.split(b, ports, { prod: P.CRUDE, r, oil: 1 - wc - gas, gas, wat: wc, p: pr }, true, new Set([b.id]));
-          s._out = acc; s.reserve = Math.max(0, s.reserve - acc * dt * (1 - wc - gas)); if (s.reserve < 0.5) s.reserve = 0; s.total += acc * dt;
+          const oil = acc * dt * (1 - wc - gas); s._out = acc; s.total += acc * dt;
+          if (site) { const took = store.ts.take(site.id, oil); s.reserve = site.remainingReserve; sharedWells.push([s, site]); if (took < oil - 1e-6) s._shortfall = oil - took; }
+          else { s.reserve = Math.max(0, s.reserve - oil); if (s.reserve < 0.5) s.reserve = 0; }
         }
       }
       for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
@@ -283,6 +301,7 @@
           const removed = acc * dt; s.wat = Math.max(0, s.wat - removed * wf); s.vol = Math.max(0, s.vol - removed);
         }
       }
+      for (const [ws, st] of sharedWells) ws.reserve = st.remainingReserve;   // every well of a field shows the reserve that is left after ALL of them have produced
       for (const b of items) { const def = DEFS[b.d], s = b.s;                                         // apply deliveries, derive display values
         if (def.type === 'tank' || def.type === 'gas') { if (s._pend) { s.vol += s._pend; s.total += s._pend; if (def.type === 'tank') s.wat += s._pw || 0; } const cap = def.capacity.value; s.vol = Math.min(s.vol, cap); const fill = s.vol / cap;
           if (def.type === 'gas') { s.press = this.gasPressure(def, fill, b); s.temp = SAFE.ambientC + .08 * s.press + 8 * fill; } else s.temp = SAFE.ambientC + 6 * Math.min(1, (s._in || 0) / cap * 4); }

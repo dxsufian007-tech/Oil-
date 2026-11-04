@@ -322,12 +322,13 @@
 
   /* ------------------------------------------------------------ cash, save / load, keys, test handle */
   function updateCash() { $('cash').textContent = fmt$(STORE.cash); EU.hud(); }
-  function save() { if (window.__noSave || !window.__lab || !window.__lab.restored) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON() })); window.__saveError = null; } catch (e) { window.__saveError = String(e && e.message || e); } }
+  function save() { if (window.__noSave || !window.__lab || !window.__lab.restored) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } })); window.__saveError = null; } catch (e) { window.__saveError = String(e && e.message || e); } }
   function swapNet(n2) { pipes.clear(); pipes.lines = n2.lines; pipes.at = n2.at; pipes.nextId = n2.nextId; for (const k of n2) pipes.add(k); pipes.rev++; }
   function load(o) {
     o = o || {};
     let raw = null; try { raw = localStorage.getItem(SAVE_KEY); } catch (_) { } if (!raw) return { loaded: 0, from: 'none' };
     let d; try { d = JSON.parse(raw); } catch (_) { return { loaded: 0, from: 'corrupt' }; } if (!d || d.v !== 2) return { loaded: 0, from: 'oldFormat' };
+    if (d.wd) { try { world.restoreProgress(d.wd.p); world.restoreReserve(d.wd.r); world.restoreZones(d.wd.z); } catch (_) { } }      /* the fields' discovery state, what is left in each field, the wells drilled and the evaluated zones */
     const r = B.BuildingStore.fromJSON(ts, d.store); STORE.items = r.store.items; STORE.occ = r.store.occ; STORE.bucket = r.store.bucket; STORE.nextId = r.store.nextId; STORE.time = r.store.time; STORE.rev = (STORE.rev | 0) + 1; STORE.cash = d.cash == null ? STORE.cash : d.cash;
     swapNet(I.PipeNet.fromJSON(WW, d.net)); if (d.eco && COMPANY.fromJSON(d.eco)) { /* company restored */ } else COMPANY.reset(); GU.fromJSON(d.guide);
     let away = null; if (o.catchUp !== false) away = COMPANY.catchUp(Date.now()); else COMPANY.stamp(Date.now());                                 // the app was closed: the company kept working (capped, validated)
