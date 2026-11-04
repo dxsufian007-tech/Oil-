@@ -79,6 +79,7 @@
     RISK: { liquidityMonths: 1, debtRatio: 0.5, costRatio: 0.9, salesDrop: 0.15 },      // financial stress indicators: a month of fixed costs in cash, debt above half of the assets, costs above 90% of sales, sales falling 15% a month
     AUTOSELL: { trigger: 0.8, target: 0.5, minPriceRatio: 0.92, force: 0.98, defaultMode: 'SPOT' },       // SPOT mode: above `trigger` fill sell down to `target`, unless the price is below minPriceRatio x base (then wait) or the tank is `force` full
     CONTRACTS: { maxActive: 3, offers: 3, offerValidDays: 10, deadlineDays: [20, 45], premium: [0.06, 0.18], penaltyPct: 0.15, rewardPct: 0.05, payDays: 7,   // a delivered contract is paid after payDays (a receivable until then)
+      lateShare: 0.2, lateDays: [5, 15],                                              // 1 in 5 contracts is paid late, by 5 to 15 days more (a fixed share, by contract number)
       qty: { CRUDE: [10000, 25000, 50000], GASOLINE: [5000, 10000, 25000], DIESEL: [5000, 10000, 25000], JET_FUEL: [3000, 6000, 12000], GAS: [3000, 6000, 12000] } },
     // ---- purchasing (Phase 8). Buy price = reference price x (1 + supplier premium); a product's reference is its market price, a material's is the editable price below.
     //      Purchase total = qty x unit price + freight + fees.  Freight and fees are part of the cost of the goods (capitalised into stock).

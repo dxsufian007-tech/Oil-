@@ -123,6 +123,7 @@
     /* ---- the one door to the journal ---- */
     _post(meta, lines, opts) {
       opts = opts || {}; meta = Object.assign({ t: this.hours, flow: 'NONE' }, meta);
+      if (!opts.cashApplied && isFinite(this.store.cash)) this.sync();                 // money that moved outside the journal (pipe works) is recorded before the mirror is updated
       let cashNet = 0; for (const [a, v] of lines) if (a === 'CASH') cashNet += v;
       if (cashNet !== 0 && meta.flow === 'NONE' && !meta.noProj) throw new Error('cash movement without a cash-flow tag: ' + meta.type);
       const e = this.journal.post(meta, lines);                                    // refuses an unbalanced entry: nothing is applied then
@@ -359,13 +360,15 @@
       this._post({ type: 'SALE_CONTRACT', desc: 'Contract #' + c.id + ' delivery' }, [['AR', rev], ['REV_CONTRACT', -rev]]);
       this._post({ type: 'FEE_CONTRACT', desc: 'Contract fee' }, [['EXP_FEES', fee], ['AR', -fee]]);
       this._cogs(c.product, got); c.delivered += got; this._L(L => { L.sold[c.product] += got; L.soldRev += rev; });
-      this.recv.push({ id: this.nextRecv++, amount: rev - fee, due, contract: c.id });
+      const C = this.cfg.CONTRACTS, late = hash(c.id, 17, 3) < C.lateShare, lateH = late ? Math.round((C.lateDays[0] + hash(c.id, 23, 5) * (C.lateDays[1] - C.lateDays[0])) * 24) : 0;   // some customers pay late
+      this.recv.push({ id: this.nextRecv++, amount: rev - fee, due, payOn: due + lateH, late: lateH > 0, contract: c.id });   // due = the contract's due date; payOn = when the customer pays (later if late)
       let reward = 0; if (c.delivered >= c.qty - 1e-6) { c.status = 'DONE'; c.done = this.hours; reward = c.reward; this._post({ type: 'BONUS', flow: 'OP', desc: 'Contract bonus' }, [['CASH', reward], ['REV_CONTRACT', -reward]]); this._finish(c); this._event('info', 'Contract completed: ' + c.product + ' · bonus ' + Math.round(reward)); }
       return { ok: true, qty: got, revenue: rev, fee, reward, done: c.status === 'DONE' };
     }
+    overdue() { let v = 0, n = 0; for (const r of this.recv) if (r.due < this.hours) { v += r.amount; n++; } return { amount: v, count: n }; }   // receivables past their due date
     _collect() {                                                                    // receivables that fell due are paid
-      if (!this.recv.length) return; const due = this.recv.filter(r => r.due <= this.hours); if (!due.length) return; this.recv = this.recv.filter(r => r.due > this.hours);
-      for (const r of due) if (r.amount > 0) this._post({ type: 'COLLECT', flow: 'OP', desc: 'Contract #' + r.contract + ' paid' }, [['CASH', r.amount], ['AR', -r.amount]]);
+      if (!this.recv.length) return; const due = this.recv.filter(r => (r.payOn == null ? r.due : r.payOn) <= this.hours); if (!due.length) return; this.recv = this.recv.filter(r => (r.payOn == null ? r.due : r.payOn) > this.hours);
+      for (const r of due) if (r.amount > 0) this._post({ type: 'COLLECT', flow: 'OP', desc: 'Contract #' + r.contract + ' paid' + (r.late ? ' (late)' : '') }, [['CASH', r.amount], ['AR', -r.amount]]);
     }
     _finish(c) { this.contracts = this.contracts.filter(x => x !== c); this.history.unshift(c); if (this.history.length > 12) this.history.pop(); }
     _contractClock() {
@@ -607,7 +610,7 @@
     /* ---- summaries for the screens ---- */
     summary() {
       const cash = this.store.cash, assets = this.assetsTotal(), inv = this.inventoryValue(), debt = this.debt(), bs = this.balanceSheet();
-      return { cash, assets, debt, inventoryValue: inv, inventoryBook: bs.inventory, value: assets + cash + inv - debt, today: calc(this.led.day, cash), month: calc(this.led.month, cash), year: calc(this.led.year, cash), life: calc(this.led.life, cash), lastMonth: this.lastMonth, months: this.months.slice(), balance: bs, staff: this.staff, power: Object.assign({}, this.pw, { tier: this.tier, tierName: this.cfg.POWER.tiers[this.tier].name }),
+      return { cash, assets, debt, inventoryValue: inv, inventoryBook: bs.inventory, receivables: bs.receivables, overdue: this.overdue(), value: assets + cash + inv - debt, today: calc(this.led.day, cash), month: calc(this.led.month, cash), year: calc(this.led.year, cash), life: calc(this.led.life, cash), lastMonth: this.lastMonth, months: this.months.slice(), balance: bs, staff: this.staff, power: Object.assign({}, this.pw, { tier: this.tier, tierName: this.cfg.POWER.tiers[this.tier].name }),
         fin: Object.assign({}, this.fin), taxCarry: this.taxCarry, clock: this.clock(), dayNet: this.netPerDay() };
     }
     /* the audit: the journal balances, the balance sheet balances, the cash account is the company's cash, the stock pools agree with the journal */
@@ -677,7 +680,7 @@
       this.contracts = d.contracts || []; this.history = d.history || []; this.offers = d.offers || []; this.nextContract = d.nextContract || 1; this.crng = new Rng(d.crng || 1); this.modes = Object.assign(this.modes, d.modes || {}); this.tier = d.tier || 0; this.autoRepair = d.autoRepair !== false;
       this.led = d.led || this.led; for (const k of ['day', 'month', 'year', 'life']) { const L = Object.assign(ledger(0), this.led[k]); L.produced = Object.assign(PZERO(), L.produced); L.sold = Object.assign(SZERO(), L.sold); L.pl = Object.assign(ledger(0).pl, L.pl || {}); L.cf = Object.assign(ledger(0).cf, L.cf || {}); this.led[k] = L; }
       this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSim = d.savedAt == null ? null : d.savedAt;
-      this.recv = d.recv || []; this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy; this.bsStart = d.bsStart || null;
+      this.recv = (d.recv || []).map(r => Object.assign({ late: false, payOn: r.due }, r)); this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy; this.bsStart = d.bsStart || null;
       if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); }
       else this._migrate();                                                         // a save from before the journal: the company starts from an opening balance sheet of what it holds now
       this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.mirror = this.store.cash; if (!this.bsStart) this.bsStart = this._snap(); this.away = null; this.events = []; this.seen = new Set(); this._refreshOffers(); this.computeStaff(); return true;
