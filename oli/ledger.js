@@ -54,6 +54,7 @@
     EXP_PENALTY: ['exp', 'Contract penalties'],
     EXP_INTEREST: ['exp', 'Interest'],
     EXP_TAX: ['exp', 'Income tax'],
+    EXP_EXPLORATION: ['exp', 'Exploration: geological evaluation and test wells'],
     EXP_DEP: ['exp', 'Depreciation'],
     EXP_DISPOSAL: ['exp', 'Loss on disposal of assets']
   };
