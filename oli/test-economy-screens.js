@@ -53,6 +53,13 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   const pay0 = await co(() => __lab.company.staff.payroll); await tap('#es-body [data-act=hire][data-p=operators]');
   const pay1 = await co(() => __lab.company.staff.payroll); ok(pay1 > pay0, 'hiring an operator raises payroll');
   await tap('#es-body [data-act=screen][data-v=""]');
+  // 4d. rescue: the screen lists the measures; selling stock brings cash
+  await tap('#es-body [data-act=screen][data-v=rescue]'); t = await body();
+  ok(/بيع أصل غير مطلوب/.test(t) && /جدولة الديون/.test(t) && /خفض التكاليف/.test(t), 'rescue screen: asset sale, debt rescheduling and cost cut are shown');
+  const avail = await co(() => __lab.company.available('CRUDE')), cashR0 = await co(() => __lab.company.store.cash);
+  if (avail > 0) { await tap('#es-body [data-act=liquid][data-p=CRUDE]'); ok(await co(() => __lab.company.store.cash) > cashR0, 'rescue: selling crude brings cash'); }
+  ok(await co(() => __lab.company.audit().ok), 'rescue: the audit passes after the actions');
+  await tap('#es-body [data-act=screen][data-v=""]');
   // 5. nothing failed in the page
   ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
   await b.close(); srv.close(); console.log('\nECONOMY SCREENS TESTS PASSED (' + n + ' checks)');

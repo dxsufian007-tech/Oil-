@@ -74,6 +74,11 @@
       { id: 'B', name: 'مورد ب', premium: 0.02, freightPerUnit: { crude: 0.25, product: 0.35, material: 0.03 }, feeRate: 0.003, creditDays: 15 },
       { id: 'C', name: 'مورد ج', premium: 0.04, freightPerUnit: { crude: 0.10, product: 0.15, material: 0.01 }, feeRate: 0.000, creditDays: 0 }     // dearest, cash only
     ],
+    // ---- rescue measures (Phase 10): each one has a real financial effect in the journal
+    RESCUE: { assetSaleRatio: 0.8,                                                    // an asset sells for 80% of its market value (its condition-adjusted value)
+      rescheduleFee: 0.005, rescheduleMonths: [6, 12, 24, 48],                         // rescheduling: a fee on the balance; new installments over the chosen months
+      loanMax: 20000000, loanRate: 0.18, loanTerm: 12, collateral: 1.0,               // rescue loan: at most loanMax, backed by assets + stock (collateral x amount), only in a financial crisis, one at a time
+      costCutShare: 0.2, costCutMonths: 6 },                                          // cost cut: administration and tank operation 20% lower for 6 months
     ALERTS: { lowCashDays: 20, highOpexRatio: 0.9, lowMarginRatio: 0.05, highStorageRatio: 0.08, loanDueDays: 3, contractDays: 5, lowInventoryFill: 0.05, highInventoryFill: 0.9, priceMove: 0.035, cooldownDays: 3 },
     OFFLINE: { capHours: 24, minSeconds: 60, gameDaysPerRealHour: 6, stepHours: 3 }  // away: at most capHours of real time count; each real hour = 6 game days (1/50 of the speed of playing); simulated in 3 h steps
   };

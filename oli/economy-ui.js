@@ -114,7 +114,7 @@
       + '<div><div class="es-sm">مستوى المخاطر</div><div class="es-big ' + (risk === 'مرتفع' ? 'neg' : risk === 'متوسط' ? 'warn' : 'pos') + '" style="font-size:17px">' + risk + '</div><div class="es-sm">' + f.score + ' من 8 مؤشرات</div></div></div>'
       + (act.length ? '<div class="es-sm">مؤشرات نشطة: ' + act.join('، ') + '</div>' : '<div class="es-sm">لا توجد مؤشرات خطر نشطة.</div>'));
     // the three screens
-    h += '<div class="es-grid" style="margin-top:6px"><button data-act="screen" data-v="buy">المشتريات</button><button data-act="screen" data-v="staff">الموظفون</button><button data-act="screen" data-v="budget">إدارة الميزانية</button><button data-act="screen" data-v="report">التقرير المالي</button><button data-act="screen" data-v="log" style="grid-column:1/3">سجل العمليات المالية</button></div>';
+    h += '<div class="es-grid" style="margin-top:6px"><button data-act="screen" data-v="buy">المشتريات</button><button data-act="screen" data-v="staff">الموظفون</button><button data-act="screen" data-v="rescue">الإنقاذ المالي</button><button data-act="screen" data-v="budget">إدارة الميزانية</button><button data-act="screen" data-v="report">التقرير المالي</button><button data-act="screen" data-v="log" style="grid-column:1/3">سجل العمليات المالية</button></div>';
     return h;
   }
   const DEFS_TYPE = b => window.OliBuildings.DEFS[b.d].type;
@@ -198,7 +198,24 @@
         + '<button data-act="hours" data-p="' + r + '" data-d="-4">ساعات −4</button><button data-act="hours" data-p="' + r + '" data-d="4">ساعات +4</button></div></div>'; }
     return h;
   }
+  /* rescue: sell what is not needed, reschedule debt, a rescue loan, cut costs, sell stock for cash */
+  function rRescue() {
+    const R = EC.RESCUE, trouble = CO.inTrouble(), F = EC.FIXED;
+    let h = '<button data-act="screen" data-v="">← العودة للوحة الشركة</button>';
+    h += '<div class="es-sm" style="margin:8px 0">الحالة: ' + (trouble ? '<span class="neg">أزمة سيولة — الإنقاذ متاح</span>' : 'وضع طبيعي — قرض الإنقاذ يتطلب أزمة') + (CO.costCutOn() ? ' · خفض التكاليف مفعّل' : '') + '</div>';
+    h += '<div style="margin:10px 0"><b>بيع أصل غير مطلوب</b><div class="es-sm">السعر = ' + Math.round(R.assetSaleRatio * 100) + '% من القيمة السوقية. الربح أو الخسارة = السعر − القيمة الدفترية.</div>';
+    const list = CO.store.list().slice(0, 12); h += list.length ? list.map(b => { const price = CO.assetValue(b) * R.assetSaleRatio, book = CO.assetRec(b).cost - (CO.assetRec(b).dep || 0);
+      return '<div class="es-row" style="margin:6px 0"><div>' + window.OliBuildings.DEFS[b.d].name + ' <span class="es-sm">سعر ' + M(price) + ' · دفتري ' + M(book) + '</span></div><button data-act="sellasset" data-id="' + b.id + '">بيع</button></div>'; }).join('') : '<div class="es-sm">لا توجد أصول.</div>';
+    h += '</div><div style="margin:10px 0"><b>جدولة الديون</b><div class="es-sm">الرصيد يبقى كما هو، والأقساط تُعاد حسابها على المدة الجديدة، وتُدفع رسوم ' + Math.round(R.rescheduleFee * 1000) / 10 + '%.</div>';
+    h += CO.loans.length ? CO.loans.map(l => '<div style="margin:6px 0"><div class="es-sm">' + (l.purpose || 'قرض') + ' · الرصيد ' + M(l.remaining) + ' · القسط ' + M(l.payment) + '</div><div class="es-grid">' + R.rescheduleMonths.map(m => '<button data-act="resched" data-id="' + l.id + '" data-v="' + m + '">' + m + ' شهر</button>').join('') + '</div></div>').join('') : '<div class="es-sm">لا توجد قروض.</div>';
+    h += '</div><div style="margin:10px 0"><b>قرض إنقاذ</b><div class="es-sm">حتى ' + M(R.loanMax) + ' بضمان الأصول والمخزون، لمدة ' + R.loanTerm + ' شهراً بفائدة ' + Math.round(R.loanRate * 100) + '%، واحد في كل مرة.</div><button data-act="rescue" data-v="' + R.loanMax + '"' + (trouble ? '' : ' disabled') + '>طلب ' + M(R.loanMax) + '</button></div>';
+    h += '<div style="margin:10px 0"><b>خفض التكاليف</b><div class="es-sm">الإدارة وتشغيل الخزانات أقل بـ ' + Math.round(R.costCutShare * 100) + '% لمدة ' + R.costCutMonths + ' شهراً.</div><button data-act="costcut"' + (CO.costCutOn() ? ' disabled' : '') + '>تفعيل خفض التكاليف</button></div>';
+    h += '<div style="margin:10px 0"><b>تخفيض العمالة</b><div class="es-sm">من شاشة الموظفين: صرف موظف يخفض الرواتب فوراً.</div></div>';
+    h += '<div style="margin:10px 0"><b>بيع المخزون لتوفير السيولة</b><div class="es-grid" style="margin-top:6px">' + SELL.map(p => '<button data-act="liquid" data-p="' + p + '"' + (CO.available(p) > 0 ? '' : ' disabled') + '>' + EC.LABEL[p] + ' · ' + n0(CO.available(p)) + '</button>').join('') + '</div></div>';
+    return h;
+  }
   function rCompany() {
+    if (subScreen === 'rescue') return rRescue();
     if (subScreen === 'staff') return rStaff();
     if (subScreen === 'buy') return rBuy();
     if (subScreen === 'budget') return rBudget();
@@ -281,6 +298,11 @@
     else if (a === 'auto') { CO.autoRepair = !CO.autoRepair; } else if (a === 'repairall') { const r = CO.repairAll(); msg = 'Repaired ' + r.n + ' · −' + M(r.cost); }
     else if (a === 'screen') { subScreen = v || ''; $('es-body').scrollTop = 0; }
     else if (a === 'supp') buySup = v; else if (a === 'terms') buyTerms = v;
+    else if (a === 'sellasset') { const r = CO.sellAsset(id); msg = r.ok ? 'Sold · ' + (r.gainOrLoss >= 0 ? 'gain ' : 'loss ') + M(Math.abs(r.gainOrLoss)) : r.reason === 'pipes' ? 'Disconnect its pipes first' : 'Cannot sell'; }
+    else if (a === 'resched') { const r = CO.rescheduleLoan(id, +v); msg = r.ok ? 'Rescheduled · new installment ' + M(r.payment) : r.reason === 'cash' ? 'Not enough cash for the fee' : 'Cannot reschedule'; }
+    else if (a === 'rescue') { const r = CO.rescueLoan(+v); msg = r.ok ? 'Rescue loan +' + M(r.amount) : r.reason === 'already' ? 'A rescue loan is already running' : r.reason === 'notInTrouble' ? 'Rescue loan is for a financial crisis only' : r.reason === 'collateral' ? 'Not enough collateral' : 'Rescue loan refused'; }
+    else if (a === 'costcut') { const r = CO.costCut(); msg = r.ok ? 'Cost cut on for ' + EC.RESCUE.costCutMonths + ' months' : 'Cost cut is already on'; }
+    else if (a === 'liquid') { const r = CO.liquidate(p); msg = r.ok ? 'Sold · +' + M(r.net) : 'Nothing to sell'; }
     else if (a === 'hire') { const r = CO.hire(p, 1); msg = r.ok ? 'Hired · payroll ' + M(r.payroll) + '/month' : r.reason === 'cap' ? 'Hiring cap reached for this facility' : 'Cannot hire'; }
     else if (a === 'dismiss') { const r = CO.dismiss(p, 1); msg = r.ok ? 'Dismissed · payroll ' + M(r.payroll) + '/month' : 'Nobody to dismiss'; }
     else if (a === 'train') { const r = CO.train(p); msg = r.ok ? 'Training done · −' + M(r.cost) : r.reason === 'cash' ? 'Not enough cash for training' : 'Nobody to train'; }
