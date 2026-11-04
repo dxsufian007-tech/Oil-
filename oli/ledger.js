@@ -22,6 +22,10 @@
     INV_JET_FUEL: ['asset', 'Inventory · jet fuel'],
     INV_GAS: ['asset', 'Inventory · gas'],
     INV_WIP: ['asset', 'Refinery in progress (costs waiting for products)'],
+    INV_BYPRODUCT: ['asset', 'Inventory · by-products (sellable)'],
+    INV_RESIDUE: ['asset', 'Residues (kept, not for sale)'],
+    EXP_FUEL: ['exp', 'Refinery internal fuel'],
+    EXP_LOSS: ['exp', 'Refinery losses (recorded, explained)'],
     INV_CHEM: ['asset', 'Inventory · chemicals'],
     INV_PARTS: ['asset', 'Inventory · spare parts'],
     INV_OPS: ['asset', 'Inventory · operating materials'],
@@ -75,7 +79,9 @@
       return e;
     }
     /* sum of all debits minus all credits: must be zero */
-    check() { let s = 0; for (const k of KINDS) s += this.bal[k]; return { ok: Math.abs(s) < 1e-3, sum: s }; }
+    // the tolerance is relative to the size of the books: double arithmetic leaves a residue of about 1e-16 of the gross balances, far below any money that could go missing
+    tol() { let g = 0; for (const k of KINDS) g += Math.abs(this.bal[k]); return Math.max(1e-3, 1e-12 * g); }
+    check() { let s = 0; for (const k of KINDS) s += this.bal[k]; const tol = this.tol(); return { ok: Math.abs(s) < tol, sum: s, tol }; }
     /* the balance sheet: assets, liabilities, equity (paid-in + accumulated result) */
     balanceSheet() {
       const b = this.bal, sumKind = kind => KINDS.filter(k => ACC[k][0] === kind).reduce((a, k) => a + b[k], 0);

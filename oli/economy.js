@@ -94,7 +94,7 @@
   const INVACC = { CRUDE: 'INV_CRUDE', GASOLINE: 'INV_GASOLINE', DIESEL: 'INV_DIESEL', JET_FUEL: 'INV_JET_FUEL', GAS: 'INV_GAS' };
   const MATACC = { CHEM: 'INV_CHEM', PARTS: 'INV_PARTS', OPS: 'INV_OPS' }, MZERO = () => ({ CHEM: 0, PARTS: 0, OPS: 0 });
   const HRROLES = ['operators', 'engineers', 'maintenance', 'managers'], HRZERO = () => { const o = {}; for (const r of HRROLES) o[r] = { extra: 0, training: 1, hours: 48, exp: 5 }; return o; };
-  const PRODS = ['GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'], CHAIN = { well: 1, pump: 1, separator: 1, valve: 1, junction: 1 }, FLOWS = ['OP', 'INV', 'FIN'], EPS2 = 1e-6;
+  const PRODS = ['GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'], REF_OTHER = ['BYPRODUCT', 'RESIDUE', 'FUEL'], CHAIN = { well: 1, pump: 1, separator: 1, valve: 1, junction: 1 }, FLOWS = ['OP', 'INV', 'FIN'], EPS2 = 1e-6;
 
   class Company {
     constructor(store, net, sim, opts) {
@@ -102,7 +102,7 @@
     }
     _init() {
       const c = this.cfg; this.hours = 0; this.dayIdx = 0; this.acc = 0; this.market = new Market(c); this.assets = new Map(); this.loans = []; this.nextLoan = 1; this.closed = []; this.contracts = []; this.history = []; this.offers = []; this.nextContract = 1;
-      this.recv = []; this.nextRecv = 1; this.months = []; this.bsStart = null; this.qty = PZERO(); this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.purchases = []; this.nextPur = 1; this.matLimit = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1; this.cutUntil = -1; this.powerBuy = false; this.pwStop = null; this.bsStart = null;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
+      this.recv = []; this.nextRecv = 1; this.months = []; this.bsStart = null; this.qty = PZERO(); this.qty2 = { BYPRODUCT: 0, RESIDUE: 0 }; this.crudeShort = 0; this.refLast = null; this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.purchases = []; this.nextPur = 1; this.matLimit = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1; this.cutUntil = -1; this.powerBuy = false; this.pwStop = null; this.bsStart = null;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
       this.crng = new Rng(c.MARKET.seed ^ 0x5bd1e995); this.modes = {}; for (const p of SELL) this.modes[p] = c.AUTOSELL && c.AUTOSELL.defaultMode || 'SPOT'; this.tier = c.POWER.startTier; this.autoRepair = c.MAINTENANCE.autoRepair;
       const cash = isFinite(this.store.cash) ? this.store.cash : 0;
       this.journal = new Journal(); this.led = { day: ledger(cash), month: ledger(cash), year: ledger(cash), life: ledger(cash) }; this.lastMonth = null; this.days = []; this.prodHist = []; this.crudeQ = 1;
@@ -450,8 +450,12 @@
     _tick(h) {
       const S = this.sim, st = this.store, C = this.cfg, dt = h / 24, price = C.ENERGY.pricePerKWh * this.market.costMult().energy; this.sync(); this._collect(); st.tick(h); const items = st.list();
       for (const b of items) { const s = S.ensure(b); s.ecoEff = this.effOf(b); }
+      // refineries may only run on the chemicals and operating materials on hand; the limit is set BEFORE the simulator draws crude, so no crude leaves the tanks without being processed
+      this.matLimit = 1; { const MUg = this.cfg.MATERIAL_USE, rem = { CHEM: this.mats.CHEM || 0, OPS: this.mats.OPS || 0 }; for (const b of items) { if (DEFS[b.d].type !== 'refinery' || b.st !== 'OPERATIONAL') continue; const s = S.ensure(b), cap = S.capOf(b); let lim = 1;
+        if (cap > 0) { const need = { CHEM: cap * dt * MUg.CHEM.qty, OPS: cap * dt * MUg.OPS.qty }; const fr = k => (need[k] > 0 ? Math.min(1, rem[k] / need[k]) : 1); lim = Math.min(fr('CHEM'), fr('OPS')); for (const k of ['CHEM', 'OPS']) rem[k] = Math.max(0, rem[k] - lim * need[k]); }
+        s.matLim = lim; this.matLimit = Math.min(this.matLimit, lim); } }
       S.step(dt);
-      const prod = PZERO(), refOut = { GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 }, crude = { operating: 0, maintenance: 0, energy: 0, lifting: 0 }, refin = { operating: 0, maintenance: 0, energy: 0, chem: 0, ops: 0 };
+      const prod = PZERO(), refOut = { GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 }, crude = { operating: 0, maintenance: 0, energy: 0, lifting: 0 }, refin = { operating: 0, maintenance: 0, energy: 0, chem: 0, ops: 0 }, rf = { BYPRODUCT: 0, RESIDUE: 0, FUEL: 0, FLARED: 0 };
       let kw = 0, storageCost = 0, tankOpex = 0, tankMaint = 0, powerCost = 0, sepGas = 0;
       for (const b of items) {
         if (b.st !== 'OPERATIONAL') continue; const def = DEFS[b.d], s = b.s, t = def.type, load = this.loadOf(b); const ar = this.assetRec(b); if (ar.useStart == null) ar.useStart = this.hours;   // the day it goes into service
@@ -461,7 +465,8 @@
         else if (t === 'refinery') { refin.operating += op; refin.maintenance += mt; refin.energy += en; }        // refinery: capitalised into products
         else { tankOpex += op; tankMaint += mt; powerCost += en; }                                                 // tanks / gas storage: period expenses
         if (t === 'well') { const oil = (s._out || 0) * Math.max(0, 1 - (s._wc || 0) - (s._gas || 0)) * dt; prod.CRUDE += oil; crude.lifting += oil * C.VARIABLE.liftingPerBbl; }
-        else if (t === 'refinery') { const thr = (s._in || 0) * dt, p = s._p || {}; prod.THRU += thr; for (const q of PRODS) { const v = (p[q] || 0) * dt; prod[q] += v; refOut[q] += v; } }
+        else if (t === 'refinery') { const thr = (s._in || 0) * dt, p = s._p || {}; prod.THRU += thr; for (const q of PRODS) { const v = (p[q] || 0) * dt; prod[q] += v; refOut[q] += v; }
+          for (const k of REF_OTHER) rf[k] += (p[k] || 0) * dt; const fl = (s.flared || 0) - (s._flSeen || 0); s._flSeen = s.flared || 0; rf.FLARED += Math.max(0, fl); }
         else if (t === 'separator' && S.edgeOf(b, 'GAS_OUT')) { const g = (s._g || 0) * dt; prod.GAS += g; sepGas += g; }
       }
       for (const b of items) { const def = DEFS[b.d]; if ((def.type === 'tank' || def.type === 'gas') && b.s && b.s.vol > 0) storageCost += b.s.vol * C.STORAGE_COST[def.product] * dt; }
@@ -479,9 +484,7 @@
       // chemicals and operating materials: used from stock first (at average cost); only the shortfall is paid in cash at the material price
       const MU = C.MATERIAL_USE; let chemStock = 0, opsStock = 0; const chemCash = 0, opsCash = 0;
       // no chemicals or operating materials on hand: the refinery slows down to what the stock allows, and nothing is bought on its behalf
-      if (prod.THRU > 0) { const needC = prod.THRU * MU.CHEM.qty, needO = prod.THRU * MU.OPS.qty, f = Math.min(1, needC > 0 ? this.mats.CHEM / needC : 1, needO > 0 ? this.mats.OPS / needO : 1);
-        this.matLimit = f; if (f < 1) { prod.THRU *= f; for (const q of PRODS) { prod[q] *= f; refOut[q] *= f; } }
-        if (prod.THRU > 0) { const ch = this._drawMaterial('CHEM', prod.THRU * MU.CHEM.qty), op = this._drawMaterial('OPS', prod.THRU * MU.OPS.qty); chemStock = ch.cost; opsStock = op.cost; } } else this.matLimit = 1;
+      if (prod.THRU > 0) { const ch = this._drawMaterial('CHEM', prod.THRU * MU.CHEM.qty), op = this._drawMaterial('OPS', prod.THRU * MU.OPS.qty); chemStock = ch.cost; opsStock = op.cost; }
       refin.chem = chemStock + chemCash; refin.ops = opsStock + opsCash;
       const refCash = refin.operating + refin.maintenance + refin.energy + chemCash + opsCash, refCost = refCash + chemStock + opsStock;
       if (refCost > 0) this._post({ type: 'PROD_REFINERY', flow: 'OP', desc: 'Refinery operation', inc: { operating: refin.operating, maintenance: refin.maintenance, energy: refin.energy, chem: refin.chem, ops: refin.ops } },
@@ -491,14 +494,22 @@
       this._expense('energy', powerCost, 'Gas storage · power');
       this.qty.CRUDE += prod.CRUDE;
       // the refinery takes crude out of stock at its average cost
-      const consumed = Math.min(prod.THRU, this.qty.CRUDE), crudeBal = Math.max(0, this.journal.bal.INV_CRUDE), uc = this.unitCost('CRUDE');
+      const consumed = prod.THRU, crudeBal = Math.max(0, this.journal.bal.INV_CRUDE), uc = this.unitCost('CRUDE'); if (consumed > this.qty.CRUDE + 1e-6) this.crudeShort += consumed - this.qty.CRUDE;   // a shortfall is counted, never hidden
       if (consumed > 0 && uc > 0) { const amt = Math.min(consumed * uc, crudeBal); if (amt > 0) this._post({ type: 'REFINE_IN', desc: 'Crude to refinery' }, [['INV_WIP', amt], ['INV_CRUDE', -amt]]); }
       this.qty.CRUDE = Math.max(0, this.qty.CRUDE - consumed); this._clearPool('CRUDE');
       // products take the refinery's cost, shared by barrels
-      const outQ = PRODS.reduce((a, q) => a + refOut[q], 0), wip = Math.max(0, this.journal.bal.INV_WIP);
-      if (outQ > 0) { for (const q of PRODS) { if (refOut[q] <= 0) continue; const amt = wip * refOut[q] / outQ; if (amt > 0.005) this._post({ type: 'REFINE_OUT', desc: 'Products · ' + q }, [[INVACC[q], amt], ['INV_WIP', -amt]]); this.qty[q] += refOut[q]; } }
+      // every barrel of feed is accounted for. The cost of a barrel of feed is the same for all outputs; the fuel, the flare and the loss are expensed, the rest is carried in stock
+      const T = prod.THRU, wip = Math.max(0, this.journal.bal.INV_WIP), outs = PRODS.reduce((a, q) => a + refOut[q], 0) + rf.BYPRODUCT + rf.RESIDUE + rf.FUEL + rf.FLARED, loss = Math.max(0, T - outs);
+      this.refLast = { feed: T, products: Object.assign({}, refOut), byproduct: rf.BYPRODUCT, residue: rf.RESIDUE, fuel: rf.FUEL, flared: rf.FLARED, loss };
+      for (const q of PRODS) this.qty[q] += refOut[q]; this.qty2.BYPRODUCT += rf.BYPRODUCT; this.qty2.RESIDUE += rf.RESIDUE;
+      if (T > 0 && wip > 0) { const per = wip / T, costOf = v => Math.min(wip, per * Math.max(0, v));
+        for (const q of PRODS) { const amt = costOf(refOut[q]); if (amt > 0.005) this._post({ type: 'REFINE_OUT', desc: 'Products · ' + q }, [[INVACC[q], amt], ['INV_WIP', -amt]]); }
+        const bp = costOf(rf.BYPRODUCT); if (bp > 0.005) this._post({ type: 'REFINE_BYPRODUCT', desc: 'By-product (sellable)' }, [['INV_BYPRODUCT', bp], ['INV_WIP', -bp]]);
+        const rs = costOf(rf.RESIDUE); if (rs > 0.005) this._post({ type: 'REFINE_RESIDUE', desc: 'Residue (not for sale)' }, [['INV_RESIDUE', rs], ['INV_WIP', -rs]]);
+        const fu = costOf(rf.FUEL); if (fu > 0.005) this._post({ type: 'REFINE_FUEL', desc: 'Refinery internal fuel' }, [['EXP_FUEL', fu], ['INV_WIP', -fu]]);
+        const ls = costOf(loss + rf.FLARED); if (ls > 0.005) this._post({ type: 'REFINE_LOSS', desc: 'Refinery losses (recorded)' }, [['EXP_LOSS', ls], ['INV_WIP', -ls]]); }
       if (sepGas > 0) { const amt = Math.min(sepGas * this.unitCost('CRUDE'), Math.max(0, this.journal.bal.INV_CRUDE)); if (amt > 0.005) this._post({ type: 'SEP_GAS', desc: 'Gas from separators' }, [['INV_GAS', amt], ['INV_CRUDE', -amt]]); this.qty.GAS += sepGas; }
-      this._L(L => { for (const k of Object.keys(prod)) L.produced[k] += prod[k]; });
+      this._L(L => { for (const k of Object.keys(prod)) L.produced[k] += prod[k]; for (const k of ['BYPRODUCT', 'RESIDUE', 'FUEL', 'FLARED']) L.produced[k] = (L.produced[k] || 0) + rf[k]; });
 
       const qNow = this._qNow(items), onHand = this.crudeOnHand(); if (onHand > 0 && prod.CRUDE > 0) { const sh = Math.min(1, prod.CRUDE / onHand); this.crudeQ = this.crudeQ * (1 - sh) + qNow * sh; } else if (onHand <= 0) this.crudeQ = qNow;
       const row = [prod.CRUDE / h, prod.THRU / h, prod.GASOLINE / h, prod.DIESEL / h, prod.JET_FUEL / h, prod.GAS / h].map(v => Math.round(v * 100) / 100); for (let i = 0; i < h; i++) this.prodHist.push(row); while (this.prodHist.length > C.MARKET.historyHours) this.prodHist.shift();
@@ -627,8 +638,8 @@
     /* the audit: the journal balances, the balance sheet balances, the cash account is the company's cash, the stock pools agree with the journal */
     audit() {
       this.sync(); const errs = [], j = this.journal.check(); if (!j.ok) errs.push('journal not balanced: ' + j.sum);
-      const bs = this.journal.balanceSheet(); if (Math.abs(bs.gap) > 1e-3) errs.push('balance sheet gap: ' + bs.gap);
-      if (isFinite(this.store.cash) && Math.abs(this.journal.bal.CASH - this.store.cash) > 1e-3) errs.push('cash differs from the journal: ' + (this.journal.bal.CASH - this.store.cash));
+      const bs = this.journal.balanceSheet(), tol = this.journal.tol(); if (Math.abs(bs.gap) > tol) errs.push('balance sheet gap: ' + bs.gap);
+      if (isFinite(this.store.cash) && Math.abs(this.journal.bal.CASH - this.store.cash) > Math.max(1e-3, 1e-12 * Math.abs(this.store.cash))) errs.push('cash differs from the journal: ' + (this.journal.bal.CASH - this.store.cash));
       for (const p of SELL) { if (this.qty[p] <= EPS2 && this.journal.bal[INVACC[p]] > 0.01) errs.push('stock cost without quantity: ' + p); }
       for (const m of this.cfg.MATERIALS) { if ((this.mats[m] || 0) <= EPS2 && this.journal.bal[MATACC[m]] > 0.01) errs.push('material cost without quantity: ' + m); }
       return { ok: !errs.length, errors: errs, entries: this.journal.n };
@@ -683,7 +694,7 @@
     /* ---- save / load (the store and the pipes are saved by the lab as before; this is the company) ---- */
     toJSON() {
       return { v: 2, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0, a.useStart == null ? null : a.useStart]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
-        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, savedAt: this.lastSim };
+        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, savedAt: this.lastSim };
     }
     fromJSON(d) {
       if (!d || (d.v !== 1 && d.v !== 2)) return false; const c = this.cfg;
@@ -692,7 +703,7 @@
       this.led = d.led || this.led; for (const k of ['day', 'month', 'year', 'life']) { const L = Object.assign(ledger(0), this.led[k]); L.produced = Object.assign(PZERO(), L.produced); L.sold = Object.assign(SZERO(), L.sold); L.pl = Object.assign(ledger(0).pl, L.pl || {}); L.cf = Object.assign(ledger(0).cf, L.cf || {}); this.led[k] = L; }
       this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSim = d.savedAt == null ? null : d.savedAt;
       this.recv = (d.recv || []).map(r => Object.assign({ late: false, payOn: r.due }, r)); this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.purchases = d.purchases || []; this.nextPur = d.nextPur || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy; this.bsStart = d.bsStart || null;
-      if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); }
+      if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); this.qty2 = Object.assign({ BYPRODUCT: 0, RESIDUE: 0 }, d.qty2 || {}); }
       else this._migrate();                                                         // a save from before the journal: the company starts from an opening balance sheet of what it holds now
       this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.mirror = this.store.cash; if (!this.bsStart) this.bsStart = this._snap(); this.away = null; this.events = []; this.seen = new Set(); this._refreshOffers(); this.computeStaff(); return true;
     }
