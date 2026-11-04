@@ -51,8 +51,9 @@
     LOANS: { baseRate: 0.07, riskMax: 0.06, terms: [12, 24, 48, 60], amounts: [5000000, 10000000, 25000000, 50000000, 100000000, 250000000], maxDebtRatio: 0.5, prepayFee: 0.01,
       emergency: { rate: 0.18, term: 12, limit: 20000000, minAmount: 2000000, cover: 1.5 } },
     FINANCE: { emergencyAfterDays: 5, pressureAfterDays: 15, bankruptAfterDays: 40 },
+    RISK: { liquidityMonths: 1, debtRatio: 0.5, costRatio: 0.9, salesDrop: 0.15 },      // financial stress indicators: a month of fixed costs in cash, debt above half of the assets, costs above 90% of sales, sales falling 15% a month
     AUTOSELL: { trigger: 0.8, target: 0.5, minPriceRatio: 0.92, force: 0.98, defaultMode: 'SPOT' },       // SPOT mode: above `trigger` fill sell down to `target`, unless the price is below minPriceRatio x base (then wait) or the tank is `force` full
-    CONTRACTS: { maxActive: 3, offers: 3, offerValidDays: 10, deadlineDays: [20, 45], premium: [0.06, 0.18], penaltyPct: 0.15, rewardPct: 0.05,
+    CONTRACTS: { maxActive: 3, offers: 3, offerValidDays: 10, deadlineDays: [20, 45], premium: [0.06, 0.18], penaltyPct: 0.15, rewardPct: 0.05, payDays: 7,   // a delivered contract is paid after payDays (a receivable until then)
       qty: { CRUDE: [10000, 25000, 50000], GASOLINE: [5000, 10000, 25000], DIESEL: [5000, 10000, 25000], JET_FUEL: [3000, 6000, 12000], GAS: [3000, 6000, 12000] } },
     ALERTS: { lowCashDays: 20, highOpexRatio: 0.9, lowMarginRatio: 0.05, highStorageRatio: 0.08, loanDueDays: 3, contractDays: 5, lowInventoryFill: 0.05, highInventoryFill: 0.9, priceMove: 0.035, cooldownDays: 3 },
     OFFLINE: { capHours: 24, minSeconds: 60, gameDaysPerRealHour: 6, stepHours: 3 }  // away: at most capHours of real time count; each real hour = 6 game days (1/50 of the speed of playing); simulated in 3 h steps

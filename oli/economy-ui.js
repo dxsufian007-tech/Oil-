@@ -46,22 +46,132 @@
   const SECTIONS = [['company', 'COMPANY'], ['market', 'MARKET'], ['sell', 'SELL'], ['inventory', 'INVENTORY'], ['production', 'PRODUCTION'], ['contracts', 'CONTRACTS'], ['loans', 'LOANS'], ['alerts', 'ALERTS']];
 
   /* ------------------------------------------------------------ screens */
-  function rCompany() {
-    const s = CO.summary(), m = s.month, t = s.today, y = s.year, f = s.fin; let h = '';
-    if (f.state !== 'OK') h += '<div class="es-banner ' + (f.state === 'WARNING' ? 'warn' : 'crit') + '">' + { WARNING: 'FINANCIAL WARNING — cash is negative, new purchases are blocked', EMERGENCY_CREDIT: 'EMERGENCY CREDIT — the bank covered the gap at a high rate', DEBT_PRESSURE: 'DEBT PRESSURE — no new loans; sell products or demolish assets', BANKRUPT: 'BANKRUPT' }[f.state] + ' · ' + Math.floor(f.negHours / 24) + ' days below zero</div>';
-    h += '<div class="es-grid">' + big('CASH', M(s.cash), 'Net ' + sg(s.dayNet) + ' / day', s.cash < 0 ? 'neg' : '') + big('COMPANY VALUE', M(s.value), 'Assets + Cash + Inventory − Debt') + big('ASSETS', M(s.assets), CO.store.list().length + ' buildings · ' + CO.net.lines.size + ' pipelines') + big('DEBT', M(s.debt), CO.loans.length + ' loan(s)', s.debt > 0 ? 'warn' : '') + big('INVENTORY', M(s.inventoryValue), 'at market prices') + big('THIS MONTH', sg(m.netProfit), 'Net profit', cl(m.netProfit)) + '</div>';
-    h += card('REVENUE · EXPENSES · PROFIT', '<table class="es-tbl"><tr><th></th><th>Today</th><th>Month</th><th>Year</th></tr><tr><td>Revenue</td><td>' + M(t.revenue) + '</td><td>' + M(m.revenue) + '</td><td>' + M(y.revenue) + '</td></tr><tr><td>Expenses</td><td>' + M(t.expenses) + '</td><td>' + M(m.expenses) + '</td><td>' + M(y.expenses) + '</td></tr><tr><td>Net profit</td><td class="' + cl(t.netProfit) + '">' + sg(t.netProfit) + '</td><td class="' + cl(m.netProfit) + '">' + sg(m.netProfit) + '</td><td class="' + cl(y.netProfit) + '">' + sg(y.netProfit) + '</td></tr></table>');
-    h += card('CASH FLOW · THIS MONTH', kv('Starting cash', M(m.cash.start)) + kv('Cash in', '+' + M(m.cash.in), 'pos') + kv('Cash out', '−' + M(m.cash.out), 'neg') + kv('Ending cash', M(m.cash.end)));
-    const L = m.L, ex = [['Operating', L.operating], ['Maintenance', L.maintenance], ['Energy', L.energy], ['Labor', L.labor], ['Storage', L.storage], ['Lifting & chemicals', L.lifting + L.chem], ['Insurance', L.insurance], ['Administration', L.admin], ['Pipeline upkeep', L.infra], ['Sales fees', L.fees], ['Penalties', L.penalty], ['Loan interest', L.interest], ['Tax', L.tax]].filter(e => e[1] > 0);
-    h += card('MONTHLY EXPENSES', ex.length ? ex.map(e => kv(e[0], M(e[1]))).join('') : '<div class="es-sm">Nothing spent yet this month.</div>');
+  /* ------------------------------------------------------------ Economy Phase 6: the company dashboard (every number comes from the journal and the period ledgers) */
+  const AR_ACC = { CASH: 'النقد', AR: 'ذمم العقود المدينة', INV_CRUDE: 'مخزون النفط الخام', INV_GASOLINE: 'مخزون البنزين', INV_DIESEL: 'مخزون الديزل', INV_JET_FUEL: 'مخزون وقود الطائرات', INV_GAS: 'مخزون الغاز', INV_WIP: 'تكاليف المصفاة قيد التشغيل',
+    FIXED: 'الأصول الثابتة بالتكلفة', ACC_DEP: 'مجمع الإهلاك', PAY_PAYROLL: 'رواتب مستحقة', PAY_TAX: 'ضريبة مستحقة', LOANS: 'القروض', EQUITY: 'رأس المال المدفوع', REV_SPOT: 'مبيعات فورية', REV_CONTRACT: 'مبيعات العقود', REV_OTHER: 'إيرادات أخرى',
+    COGS: 'تكلفة البضاعة المباعة', EXP_OPERATING: 'تشغيل الخزانات', EXP_LABOR: 'الرواتب', EXP_MAINT: 'الصيانة والإصلاح', EXP_ENERGY: 'الكهرباء والطاقة', EXP_STORAGE: 'التخزين', EXP_INSURANCE: 'التأمين', EXP_ADMIN: 'الإدارة', EXP_INFRA: 'صيانة الأنابيب',
+    EXP_FEES: 'رسوم البيع', EXP_PENALTY: 'غرامات العقود', EXP_INTEREST: 'فوائد القروض', EXP_TAX: 'ضريبة الدخل', EXP_DEP: 'الإهلاك', EXP_DISPOSAL: 'خسارة بيع الأصول' };
+  const STAGE_AR = { NORMAL: 'وضع طبيعي', WARNING: 'تحذير مالي', PRESSURE: 'ضغط مالي', LIQUIDITY: 'أزمة سيولة', DEFAULT: 'تعثر في السداد', RESCUE: 'إجراءات إنقاذ', BANKRUPT: 'إفلاس' };
+  const IND_AR = { liquidity: 'انخفاض السيولة', debt: 'تراكم الديون', salary: 'تأخر الرواتب', loan: 'تأخر أقساط القروض', losses: 'خسائر متكررة', costs: 'ارتفاع تكاليف التشغيل', sales: 'انخفاض المبيعات', halt: 'توقف الإنتاج' };
+  const MON = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+  let subScreen = '', repKey = 'income', repPer = 'month', chartRange = 'month';
+  const REPORTS = [['income', 'قائمة الدخل'], ['balance', 'الميزانية العمومية'], ['cashflow', 'قائمة التدفقات النقدية'], ['expenses', 'تقرير المصروفات'], ['revenue', 'تقرير الإيرادات'], ['payroll', 'تقرير الرواتب'], ['production', 'الإنتاج وتكلفة البرميل'], ['debt', 'تقرير الديون والقروض'], ['assets', 'الأصول والإهلاك'], ['tax', 'تقرير الضرائب']];
+  const PER = [['day', 'يومي'], ['month', 'شهري'], ['year', 'سنوي']];
+  const arrowAr = (cur, prev) => { if (prev == null) return '<span class="es-sm">لا توجد مقارنة</span>'; const d = cur - prev; return d > 0 ? '<span class="pos">▲ ' + sg(d) + ' عن الشهر السابق</span>' : d < 0 ? '<span class="neg">▼ ' + sg(d) + ' عن الشهر السابق</span>' : '<span class="es-sm">بلا تغيير</span>'; };
+  const nameOf = k => AR_ACC[k] || k;
+  const sumArr = (a, f) => a.reduce((s, x) => s + f(x), 0);
+
+  function lineChart(series, labels) {                                              // plain SVG: one line per series, values in the same unit
+    const W = 320, H = 150, P = 26, all = []; for (const s of series) for (const v of s.values) all.push(v); all.push(0);
+    const mx = Math.max(...all), mn = Math.min(...all), span = (mx - mn) || 1, n = labels.length, x = i => P + (n > 1 ? i * (W - 2 * P) / (n - 1) : (W - 2 * P) / 2), y = v => H - 20 - (v - mn) / span * (H - 40);
+    let g = '<line x1="' + P + '" x2="' + (W - P) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="#33404f" stroke-dasharray="3 3"/>';
+    for (const s of series) { const pts = s.values.map((v, i) => x(i) + ',' + y(v)).join(' '); g += '<polyline fill="none" stroke="' + s.color + '" stroke-width="2" points="' + pts + '"/>'; s.values.forEach((v, i) => { g += '<circle cx="' + x(i) + '" cy="' + y(v) + '" r="2.6" fill="' + s.color + '"/>'; }); }
+    labels.forEach((l, i) => { g += '<text x="' + x(i) + '" y="' + (H - 4) + '" font-size="9" text-anchor="middle" fill="#8ea0b4">' + l + '</text>'; });
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="direction:ltr;max-height:170px">' + g + '</svg>';
+  }
+  function chartData(s) {
+    if (chartRange === 'day') { const a = CO.days.slice(-30); return { labels: a.map(d => String(d.d + 1)), rev: a.map(d => d.revenue), exp: a.map(d => d.expenses), pro: a.map(d => d.profit) }; }
+    if (chartRange === 'year') { const groups = []; for (let i = 0; i < CO.months.length; i += 12) groups.push(CO.months.slice(i, i + 12)); const a = groups.slice(-6); return { labels: a.map((g, i) => 'سنة ' + (groups.length - a.length + i + 1)), rev: a.map(g => sumArr(g, m => m.revenue)), exp: a.map(g => sumArr(g, m => m.expenses)), pro: a.map(g => sumArr(g, m => m.profit)) }; }
+    const a = CO.months.slice(-6); return { labels: a.map(m => MON[(m.n - 1) % 12]), rev: a.map(m => m.revenue), exp: a.map(m => m.expenses), pro: a.map(m => m.profit) };
+  }
+  function costShares(L) {                                                          // the cost breakdown: incurred costs of the period (production cost included)
+    const rows = [['الرواتب', L.labor], ['الصيانة', L.maintenance], ['الكهرباء والطاقة', L.energy], ['التخزين', L.storage], ['الاستخراج', L.lifting], ['المواد الكيميائية', L.chem], ['التشغيل', L.operating], ['التأمين والإدارة', L.insurance + L.admin + L.infra]].filter(r => r[1] > 0);
+    const tot = sumArr(rows, r => r[1]); return { rows, tot };
+  }
+  function rDashboard() {
+    const s = CO.summary(), f = s.fin, bs = s.balance, lm = s.lastMonth, prev = s.months.length >= 2 ? s.months[s.months.length - 2] : null, last = s.months.length ? s.months[s.months.length - 1] : null, cl2 = CO.clock();
+    let h = '<div class="es-sm" style="margin-bottom:8px">' + 'السنة ' + cl2.year + ' · ' + MON[(cl2.month - 1) % 12] + ' · اليوم ' + cl2.dayOfMonth + '</div>';
+    h += '<div class="es-banner ' + (f.stage === 'NORMAL' ? '' : f.stage === 'WARNING' ? 'warn' : 'crit') + '" style="' + (f.stage === 'NORMAL' ? 'display:none' : '') + '">الحالة المالية: ' + (STAGE_AR[f.stage] || f.stage) + (f.negHours ? ' · ' + Math.floor(f.negHours / 24) + ' يوماً تحت الصفر' : '') + '</div>';
+    const cashPrev = prev ? prev.cashEnd : null, cashCur = s.cash, netLast = last ? last.profit : null, netPrev = prev ? prev.profit : null;
+    h += '<div class="es-grid">'
+      + '<div class="es-card"><h5>الرصيد النقدي</h5><div class="es-big ' + (cashCur < 0 ? 'neg' : '') + '">' + M(cashCur) + '</div><div class="es-sm">' + (cashPrev == null ? 'لا توجد مقارنة بعد' : sg(cashCur - cashPrev) + ' عن نهاية الشهر السابق') + '</div></div>'
+      + '<div class="es-card"><h5>قيمة الشركة</h5><div class="es-big">' + M(s.value) + '</div><div class="es-sm">أصول بسعر السوق + نقد + مخزون − ديون</div></div>'
+      + '<div class="es-card"><h5>إجمالي الأصول</h5><div class="es-big">' + M(bs.totalAssets) + '</div><div class="es-sm">بالتكلفة ناقص الإهلاك + نقد + مخزون</div></div>'
+      + '<div class="es-card"><h5>إجمالي الديون</h5><div class="es-big ' + (s.debt > 0 ? 'warn' : '') + '">' + M(s.debt) + '</div><div class="es-sm">' + CO.loans.length + ' قرض نشط</div></div>'
+      + '<div class="es-card"><h5>قيمة المخزون</h5><div class="es-big">' + M(bs.inventory) + '</div><div class="es-sm">بالتكلفة · بسعر السوق ' + M(s.inventoryValue) + '</div></div>'
+      + '<div class="es-card"><h5>صافي الربح أو الخسارة (آخر شهر مغلق)</h5><div class="es-big ' + cl(netLast || 0) + '">' + (netLast == null ? '—' : sg(netLast)) + '</div><div class="es-sm">' + (netLast == null ? 'يظهر بعد إغلاق أول شهر' : arrowAr(netLast, netPrev)) + '</div></div>'
+      + '</div>';
+    // performance chart with daily / monthly / yearly
+    const cd = chartData(); h += card('الأداء المالي', '<div class="es-row" style="margin:0 0 6px">' + [['day', 'يومي'], ['month', 'شهري'], ['year', 'سنوي']].map(r => '<button data-act="crange" data-v="' + r[0] + '" class="' + (chartRange === r[0] ? 'on' : '') + '">' + r[1] + '</button>').join('') + '</div>'
+      + (cd.labels.length ? lineChart([{ name: 'الإيرادات', color: '#8dffb0', values: cd.rev }, { name: 'المصروفات', color: '#5aa7ff', values: cd.exp }, { name: 'صافي الربح', color: '#ff9a8a', values: cd.pro }], cd.labels) : '<div class="es-sm">لا توجد أشهر مغلقة بعد — تظهر البيانات بعد نهاية أول شهر.</div>')
+      + '<div class="es-kv"><span>الإيرادات</span><span class="pos">' + M(sumArr(cd.rev, v => v)) + '</span></div><div class="es-kv"><span>المصروفات</span><span>' + M(sumArr(cd.exp, v => v)) + '</span></div><div class="es-kv"><span>صافي الربح</span><span class="' + cl(sumArr(cd.pro, v => v)) + '">' + sg(sumArr(cd.pro, v => v)) + '</span></div>');
+    // cash flow: this month, in three sections
+    const mc = s.month.cash, F = mc.flows;
+    h += card('التدفق النقدي · هذا الشهر', kv('الرصيد الافتتاحي', M(mc.start)) + kv('الأموال الداخلة', '+' + M(mc.in), 'pos') + kv('الأموال الخارجة', '−' + M(mc.out), 'neg') + kv('الرصيد النهائي', M(mc.actualEnd))
+      + '<div class="es-sm" style="margin-top:6px">تشغيلي ' + sg(F.OP.net) + ' · استثماري ' + sg(F.INV.net) + ' · تمويلي ' + sg(F.FIN.net) + '</div>');
+    // cost breakdown
+    const src = lm ? lm.L : s.month.L, sh = costShares(src);
+    h += card('تكاليف التشغيل · ' + (lm ? 'آخر شهر مغلق' : 'الشهر الحالي'), sh.rows.length ? sh.rows.map(r => kv(r[0], M(r[1]) + ' · ' + Math.round(r[1] / sh.tot * 100) + '%')).join('') : '<div class="es-sm">لا توجد تكاليف مسجلة بعد.</div>');
+    // health
+    const F0 = EC.FIXED, monthlyFixed = s.staff.payroll + F0.adminBase, cover = monthlyFixed > 0 ? Math.max(0, s.cash) / monthlyFixed : 0;
+    const wells = CO.store.list().filter(b => b.s && DEFS_TYPE(b) === 'well' && b.st === 'OPERATIONAL'); let wOut = 0, wTar = 0; for (const b of wells) { wOut += b.s._out || 0; wTar += b.s._target || 0; }
+    const eff = wTar > 0 ? wOut / wTar : null, bl = CO.store.list(), cond = bl.length ? sumArr(bl, b => b.c) / bl.length : null, act = f.indicators.filter(i => i.on).map(i => IND_AR[i.key] || i.label);
+    const risk = f.stage === 'NORMAL' ? 'منخفض' : f.stage === 'WARNING' ? 'متوسط' : 'مرتفع';
+    h += card('صحة الشركة', '<div class="es-grid" style="margin:0 0 8px">'
+      + '<div><div class="es-sm">السيولة</div><div class="es-big" style="font-size:17px">' + cover.toFixed(1) + ' شهر</div><div class="es-bar"><i style="width:' + Math.min(100, cover / 3 * 100) + '%;background:#4f8fc0"></i></div></div>'
+      + '<div><div class="es-sm">كفاءة الإنتاج</div><div class="es-big" style="font-size:17px">' + (eff == null ? '—' : Math.round(eff * 100) + '%') + '</div><div class="es-bar"><i style="width:' + (eff == null ? 0 : eff * 100) + '%;background:#5cbf7a"></i></div></div>'
+      + '<div><div class="es-sm">حالة الأصول</div><div class="es-big" style="font-size:17px">' + (cond == null ? '—' : Math.round(cond * 100) + '%') + '</div><div class="es-bar"><i style="width:' + (cond == null ? 0 : cond * 100) + '%;background:#5cbf7a"></i></div></div>'
+      + '<div><div class="es-sm">مستوى المخاطر</div><div class="es-big ' + (risk === 'مرتفع' ? 'neg' : risk === 'متوسط' ? 'warn' : 'pos') + '" style="font-size:17px">' + risk + '</div><div class="es-sm">' + f.score + ' من 8 مؤشرات</div></div></div>'
+      + (act.length ? '<div class="es-sm">مؤشرات نشطة: ' + act.join('، ') + '</div>' : '<div class="es-sm">لا توجد مؤشرات خطر نشطة.</div>'));
+    // the three screens
+    h += '<div class="es-grid" style="margin-top:6px"><button data-act="screen" data-v="budget">إدارة الميزانية</button><button data-act="screen" data-v="report">التقرير المالي</button><button data-act="screen" data-v="log" style="grid-column:1/3">سجل العمليات المالية</button></div>';
+    return h;
+  }
+  const DEFS_TYPE = b => window.OliBuildings.DEFS[b.d].type;
+  function rBudget() {
+    const s = CO.summary(), F0 = EC.FIXED, pay = s.staff.payroll, loanPay = CO.loans.reduce((a, l) => a + l.payment, 0), power = EC.POWER.tiers[CO.tier].monthly, ins = s.assets * F0.insurancePerMonth, adm = F0.adminBase + s.assets * F0.adminPerAsset, lm = s.lastMonth, taxEst = lm && lm.tax > 0 ? lm.tax : Math.max(0, (lm ? lm.netProfit : 0)) * EC.TAX.rate;
+    const commit = pay + loanPay + power + ins + adm + taxEst, free = s.cash - commit;
+    let h = card('الالتزامات الشهرية المعروفة', kv('الرواتب (تُدفع كل 30 يوماً)', M(pay)) + kv('أقساط القروض (أصل + فائدة)', M(loanPay)) + kv('شبكة الكهرباء', M(power)) + kv('التأمين على الأصول', M(ins)) + kv('الإدارة', M(adm)) + kv('الضريبة المتوقعة', M(taxEst)) + kv('<b>مجموع الالتزامات</b>', '<b>' + M(commit) + '</b>'));
+    h += card('ما يمكن إنفاقه الآن', kv('الرصيد النقدي', M(s.cash)) + kv('بعد تغطية شهر كامل من الالتزامات', '<b class="' + cl(free) + '">' + M(free) + '</b>') + '<div class="es-sm">المبلغ المتاح للاستثمار أو الشراء دون أن تتعثر الشركة في الشهر القادم. المعادلة: النقد − الالتزامات الشهرية.</div>');
+    h += card('السيولة بالأشهر', '<div class="es-big">' + (commit > 0 ? (s.cash / commit).toFixed(1) : '∞') + ' شهر</div><div class="es-sm">كم شهراً تكفي النقدية الحالية لتغطية الالتزامات الشهرية.</div>');
+    return '<button data-act="screen" data-v="">← العودة للوحة الشركة</button>' + h;
+  }
+  function rJournal() {
+    const log = CO.journal.log.slice().reverse().slice(0, 80);
+    let h = '<button data-act="screen" data-v="">← العودة للوحة الشركة</button><div class="es-sm" style="margin:8px 0">آخر ' + log.length + ' قيد من ' + CO.journal.n + '. كل قيد متوازن: مجموع المدين = مجموع الدائن.</div>';
+    if (!log.length) return h + '<div class="es-sm">لا توجد عمليات بعد.</div>';
+    for (const e of log) h += '<div class="es-card" style="padding:8px 10px"><div style="display:flex;justify-content:space-between;gap:6px"><b>' + e.type.replace(/_/g, ' ') + '</b><span class="es-sm">#' + e.id + ' · ' + (e.flow === 'NONE' ? 'بدون نقد' : { OP: 'تشغيلي', INV: 'استثماري', FIN: 'تمويلي' }[e.flow]) + '</span></div><div class="es-sm">' + (e.desc || '') + '</div>'
+      + e.lines.map(([a, v]) => kv(nameOf(a), (v > 0 ? 'مدين ' : 'دائن ') + M(Math.abs(v)), v > 0 ? 'pos' : 'neg')).join('') + '</div>';
+    return h;
+  }
+  function rFinReport() {
+    const s = CO.summary(), per = repPer, pick = per === 'day' ? s.today : per === 'year' ? s.year : (s.lastMonth || s.month);
+    const perLbl = per === 'day' ? 'اليوم الحالي' : per === 'year' ? 'السنة الحالية' : (s.lastMonth ? 'آخر شهر مغلق' : 'الشهر الحالي حتى الآن');
+    let h = '<button data-act="screen" data-v="">← العودة للوحة الشركة</button><div class="es-row" style="margin:8px 0">' + PER.map(r => '<button data-act="rper" data-v="' + r[0] + '" class="' + (repPer === r[0] ? 'on' : '') + '">' + r[1] + '</button>').join('') + '</div>';
+    h += '<div class="es-row" style="margin:0 0 8px">' + REPORTS.map(r => '<button data-act="rep" data-v="' + r[0] + '" class="' + (repKey === r[0] ? 'on' : '') + '">' + r[1] + '</button>').join('') + '</div>';
+    const L = pick.L || {}, P = L.pl || {}, c = pick.cash || {}, lbl = REPORTS.find(r => r[0] === repKey)[1];
+    if (repKey === 'income') h += card(lbl + ' · ' + perLbl, kv('الإيرادات (المبيعات)', M(pick.revenue)) + kv('تكلفة البضاعة المباعة', '−' + M(P.cogs || 0)) + kv('<b>مجمل الربح</b>', '<b class="' + cl(pick.grossProfit) + '">' + sg(pick.grossProfit) + '</b>') + kv('رسوم البيع', '−' + M(P.fees || 0)) + kv('مصروفات الرواتب', '−' + M(P.labor || 0)) + kv('الصيانة والإصلاح', '−' + M(P.maintenance || 0)) + kv('الكهرباء والطاقة', '−' + M(P.energy || 0)) + kv('التخزين والتشغيل', '−' + M((P.storage || 0) + (P.operating || 0))) + kv('التأمين والإدارة وصيانة الأنابيب', '−' + M((P.insurance || 0) + (P.admin || 0) + (P.infra || 0))) + kv('الإهلاك', '−' + M(P.depreciation || 0)) + kv('الغرامات والخسائر', '−' + M((P.penalty || 0) + (P.disposal || 0))) + kv('فوائد القروض', '−' + M(P.interest || 0)) + kv('ضريبة الدخل', '−' + M(P.tax || 0)) + kv('<b>صافي الربح أو الخسارة</b>', '<b class="' + cl(pick.netProfit) + '">' + sg(pick.netProfit) + '</b>'));
+    else if (repKey === 'balance') { const b = CO.balanceSheet(); h += card(lbl + ' · الآن', '<div class="es-sm">الأصول</div>' + kv('النقد', M(b.cash)) + kv('ذمم العقود المدينة', M(b.receivables)) + PRODS_KV(b) + kv('تكاليف المصفاة قيد التشغيل', M(b.wip)) + kv('الأصول الثابتة بالتكلفة', M(b.fixedCost)) + kv('مجمع الإهلاك', '−' + M(-b.accumulatedDepreciation)) + kv('<b>إجمالي الأصول</b>', '<b>' + M(b.totalAssets) + '</b>')
+      + '<div class="es-sm" style="margin-top:8px">الالتزامات وحقوق الملكية</div>' + kv('رواتب مستحقة', M(b.payroll)) + kv('ضريبة مستحقة', M(b.tax)) + kv('القروض', M(b.loans)) + kv('رأس المال المدفوع', M(b.paidIn)) + kv('الأرباح المتراكمة (نتيجة النشاط)', sg(b.result)) + kv('<b>إجمالي الالتزامات وحقوق الملكية</b>', '<b>' + M(b.totalLiabilities + b.totalEquity) + '</b>')
+      + '<div class="es-sm" style="margin-top:8px">فحص الميزان: ' + (Math.abs(b.gap) < 0.01 ? 'متوازن ✓' : 'فرق ' + M(b.gap)) + '</div>'); }
+    else if (repKey === 'cashflow') h += card(lbl + ' · ' + perLbl, kv('الرصيد الافتتاحي', M(c.start)) + kv('تشغيلي: داخل', '+' + M(c.flows.OP.in), 'pos') + kv('تشغيلي: خارج', '−' + M(c.flows.OP.out), 'neg') + kv('<b>صافي التشغيل</b>', '<b class="' + cl(c.flows.OP.net) + '">' + sg(c.flows.OP.net) + '</b>') + kv('استثماري: صافي', sg(c.flows.INV.net)) + kv('تمويلي: صافي', sg(c.flows.FIN.net)) + kv('<b>الرصيد النهائي</b>', '<b>' + M(c.end) + '</b>'));
+    else if (repKey === 'expenses') { const rows = [['الرواتب', P.labor], ['الصيانة والإصلاح', P.maintenance], ['الكهرباء', P.energy], ['التخزين', P.storage], ['تشغيل الخزانات', P.operating], ['التأمين', P.insurance], ['الإدارة', P.admin], ['صيانة الأنابيب', P.infra], ['رسوم البيع', P.fees], ['الغرامات', P.penalty], ['الفوائد', P.interest], ['الضريبة', P.tax], ['الإهلاك', P.depreciation], ['تكلفة البضاعة المباعة', P.cogs]].filter(r => r[1] > 0); h += card(lbl + ' · ' + perLbl, rows.length ? rows.map(r => kv(r[0], M(r[1]))).join('') + kv('<b>المجموع</b>', '<b>' + M(pick.expenses) + '</b>') : '<div class="es-sm">لا توجد مصروفات في هذه الفترة.</div>') + '<div class="es-sm">الإنتاج الذي يُباع يتحول إلى تكلفة بضاعة مباعة، وليس مصروفاً مباشراً.</div>'; }
+    else if (repKey === 'revenue') h += card(lbl + ' · ' + perLbl, kv('مبيعات فورية', M(L.spot || 0)) + kv('مبيعات العقود', M(L.contract || 0)) + kv('إيرادات أخرى', M(L.other || 0)) + kv('<b>إجمالي الإيرادات</b>', '<b>' + M(pick.revenue) + '</b>') + '<div class="es-sm">الإيراد يُسجل عند البيع فقط. النفط في الخزان ليس إيراداً.</div>');
+    else if (repKey === 'payroll') { const st = s.staff, Sx = EC.LABOR.salary; h += card('الموظفون والرواتب', kv('المشغلون: ' + n0(st.operators), M(st.operators * Sx.operators)) + kv('المهندسون: ' + n0(st.engineers), M(st.engineers * Sx.engineers)) + kv('موظفو الصيانة: ' + n0(st.maintenance), M(st.maintenance * Sx.maintenance)) + kv('المديرون: ' + n0(st.managers), M(st.managers * Sx.managers)) + kv('<b>الرواتب الشهرية</b>', '<b>' + M(st.payroll) + '</b>') + kv('رواتب مستحقة لم تُدفع بعد', M(-CO.journal.bal.PAY_PAYROLL)) + '<div class="es-sm">الرواتب تُستحق كل ساعة وتُدفع كل 30 يوماً.</div>'); }
+    else if (repKey === 'production') { const rows = SELL.map(p => { const v = CO.inventory().find(x => x.product === p); return kv(EC.LABEL[p], n0(L.produced ? L.produced[p] : 0) + ' مُنتج · تكلفة البرميل ' + '$' + (v.unitCost || 0).toFixed(2)); }); h += card(lbl + ' · ' + perLbl, rows.join('') + kv('المصفاة: معالج', n0(L.produced ? L.produced.THRU : 0))); }
+    else if (repKey === 'debt') { h += card('القروض النشطة', CO.loans.length ? CO.loans.map(l => kv(l.purpose || 'قرض', M(l.remaining) + ' · ' + (l.rate * 100).toFixed(1) + '% · ' + l.paid + '/' + l.months)).join('') : '<div class="es-sm">لا توجد قروض نشطة.</div>') + kv('<b>إجمالي الدين</b>', '<b>' + M(CO.debt()) + '</b>') + kv('أقساط الشهر القادم', M(CO.loans.reduce((a, l) => a + l.payment, 0))) + kv('فوائد مدفوعة (منذ البداية)', M(CO.led.life.pl.interest)); }
+    else if (repKey === 'assets') { const A = CO.assetList(); h += card('الأصول ' + '(' + A.length + ' مبنى)', A.length ? A.slice(0, 30).map(a => kv(a.name + ' · ' + a.label, M(a.book) + ' ' + '<span class="es-sm">إهلاك ' + M(a.depreciated) + '</span>')).join('') : '<div class="es-sm">لا توجد مبانٍ.</div>') + kv('<b>الأصول بالتكلفة الدفترية</b>', '<b>' + M(CO.balanceSheet().fixedNet) + '</b>') + '<div class="es-sm">الإهلاك القسري: ' + Math.round(EC.ASSET.depreciationPerYear * 100) + '% سنوياً من التكلفة، لا ينزل عن ' + Math.round(EC.ASSET.floor * 100) + '%.</div>'; }
+    else if (repKey === 'tax') { const y = s.year; h += card(lbl, kv('نسبة الضريبة', Math.round(EC.TAX.rate * 100) + '% من الربح الخاضع') + kv('خسائر مرحّلة', M(s.taxCarry)) + kv('ضريبة مدفوعة هذه السنة', M(y.L.pl.tax)) + kv('ضريبة الشهر المغلق', M(s.lastMonth ? s.lastMonth.L.pl.tax : 0)) + '<div class="es-sm">لا تُفرض ضريبة في شهر الخسارة. الخسارة تُرحّل وتُخصم من الأرباح اللاحقة.</div>'); }
+    return h;
+  }
+  const PRODS_KV = b => SELL.filter(p => p !== 'CRUDE' || true).map(p => kv('مخزون ' + EC.LABEL[p], M(b.inventoryByProduct[p] || 0))).join('');
+
+  function rCompanyDetails() {
+    const s = CO.summary(), y = s.year; let h = '';
     const st = s.staff; h += card('EMPLOYEES', '<div class="es-big">' + n0(st.total) + '</div><div class="es-sm">Monthly payroll ' + M(st.payroll) + ' (paid every 30 days)</div>' + kv('Operators', n0(st.operators)) + kv('Engineers', n0(st.engineers)) + kv('Maintenance', n0(st.maintenance)) + kv('Managers', n0(st.managers)));
     const p = s.power, nx = EC.POWER.tiers[CO.tier + 1]; h += card('POWER' + (p.limited ? ' · POWER LIMITED' : ''), '<div class="es-sm">' + n0(p.demand) + ' kW of ' + n0(p.cap) + ' kW (' + p.tierName + ')</div><div class="es-bar"><i style="width:' + Math.min(100, p.cap ? p.demand / p.cap * 100 : 0) + '%;background:' + (p.limited ? '#d9453a' : '#4f8fc0') + '"></i></div>' + (p.limited ? '<div class="warn">Efficiency is reduced until you add capacity.</div>' : '')
       + (nx ? '<div class="es-row"><button data-act="grid">Upgrade to ' + nx.name + ' (' + n0(nx.kw) + ' kW) · ' + M(nx.connect) + ' + ' + M(nx.monthly) + '/mo</button></div>' : ''));
     const worn = CO.store.list().filter(b => b.c < 0.999 && b.st !== 'UNDER_CONSTRUCTION'), cost = worn.reduce((a, b) => a + CO.repairCost(b), 0);
     h += card('MAINTENANCE', kv('Auto-maintenance', CO.autoRepair ? 'ON (repairs below ' + Math.round(EC.MAINTENANCE.autoRepairBelow * 100) + '%)' : 'OFF') + kv('Worn buildings', worn.length) + '<div class="es-row"><button data-act="auto">' + (CO.autoRepair ? 'Turn auto-maintenance off' : 'Turn auto-maintenance on') + '</button><button data-act="repairall"' + (worn.length ? '' : ' disabled') + '>Repair all · ' + M(cost) + '</button></div>');
     const rm = CO.refiningMargin(); if (rm.refineries) h += card('REFINING MARGIN', '<div class="es-big ' + cl(rm.margin) + '">' + sg(rm.margin) + ' / day</div><div class="es-sm">Product revenue − crude opportunity cost − energy − labor − maintenance − operating</div>');
-    h += card('TAX', kv('Tax rate', Math.round(EC.TAX.rate * 100) + '% of taxable profit') + kv('Losses carried forward', M(s.taxCarry)) + kv('Paid this year', M(y.tax)));
+    h += card('TAX', kv('Tax rate', Math.round(EC.TAX.rate * 100) + '% of taxable profit') + kv('Losses carried forward', M(s.taxCarry)) + kv('Paid this year', M(y.L.pl.tax)));
     return h;
+  }
+  function rCompany() {
+    if (subScreen === 'budget') return rBudget();
+    if (subScreen === 'log') return rJournal();
+    if (subScreen === 'report') return rFinReport();
+    return rDashboard() + rCompanyDetails();
   }
   function rMarket() {
     const inv = CO.inventory(), cur = inv.find(v => v.product === mkt) || inv[0], hrs = range, vals = CO.market.series(mkt, hrs, hrs > 200 ? 120 : 0); let h = '';
@@ -136,6 +246,8 @@
     else if (a === 'repay') { const r = CO.repayLoan(id); msg = r.ok ? 'Loan repaid · −' + M(r.paid) : 'Not enough cash'; }
     else if (a === 'grid') { const r = CO.gridUpgrade(); msg = r.ok ? 'Grid upgraded to ' + r.tier.name : r.reason === 'cash' ? 'Not enough cash' : 'Maximum grid'; }
     else if (a === 'auto') { CO.autoRepair = !CO.autoRepair; } else if (a === 'repairall') { const r = CO.repairAll(); msg = 'Repaired ' + r.n + ' · −' + M(r.cost); }
+    else if (a === 'screen') { subScreen = v || ''; $('es-body').scrollTop = 0; }
+    else if (a === 'rep') repKey = v; else if (a === 'rper') repPer = v; else if (a === 'crange') chartRange = v;
     else redo = false;
     if (msg && toastFn) toastFn(msg); if (redo) { render(true); hud(); onChange(); }
   }
@@ -185,7 +297,7 @@
     const sh = document.createElement('div'); sh.id = 'eco-sheet'; sh.innerHTML = '<div class="top"><b>OLI OIL COMPANY</b><button id="es-close">✕</button></div><div id="es-tabs"></div><div id="es-body"></div>'; document.body.appendChild(sh);
     const aw = document.createElement('div'); aw.id = 'eco-away'; aw.innerHTML = '<div class="box"></div>'; document.body.appendChild(aw); const bk = document.createElement('div'); bk.id = 'eco-bank'; bk.innerHTML = '<div class="box"></div>'; bk.style.cssText = 'position:fixed;inset:0;z-index:41;background:rgba(5,8,12,.85);display:none;align-items:center;justify-content:center;padding:14px'; document.body.appendChild(bk);
     const sty = document.createElement('style'); sty.textContent = '#eco-bank.open{display:flex!important}#eco-bank .box{background:var(--panel);border:1px solid #4b5a6b;border-radius:14px;padding:16px;max-width:420px;width:100%}'; document.head.appendChild(sty);
-    for (const [k, nm] of SECTIONS) { const b = document.createElement('button'); b.dataset.tab = k; b.textContent = nm; b.onclick = () => { tab = k; render(true); $('es-body').scrollTop = 0; }; $('es-tabs').appendChild(b); }
+    for (const [k, nm] of SECTIONS) { const b = document.createElement('button'); b.dataset.tab = k; b.textContent = nm; b.onclick = () => { tab = k; subScreen = ''; render(true); $('es-body').scrollTop = 0; }; $('es-tabs').appendChild(b); }
     $('es-body').addEventListener('click', act); $('es-body').addEventListener('input', e => { if (e.target.id === 'sq-in') { sellQ = Math.max(0, +e.target.value || 0); const out = $('sq-out'); if (out) out.innerHTML = sellQuoteHtml(); } });
     $('es-close').onclick = close; $('eh-menu').onclick = () => { open(); }; $('eh-cash').onclick = () => open('company'); $('eh-net').onclick = () => open('company'); $('eh-clock').onclick = () => open('market');
     $('eh-pause').onclick = () => { if (CO.speed === 0) CO.speed = CO.lastSpeed || 1; else { CO.lastSpeed = CO.speed; CO.speed = 0; } hud(); onChange(); };
@@ -194,6 +306,6 @@
     timer = setInterval(() => { hud(); pumpEvents(); if ($('eco-sheet').classList.contains('open')) render(false); }, 1000); hud();
     return api;
   }
-  const api = { mount, open, close, render: () => render(true), hud, showAway, buildingHtml, spark, state: () => ({ tab, open: $('eco-sheet').classList.contains('open'), sellP, sellQ, range, mkt }), setSell: (p, q) => { sellP = p; sellQ = q; } };
+  const api = { mount, open, close, render: () => render(true), hud, showAway, buildingHtml, spark, state: () => ({ tab, subScreen, repKey, repPer, chartRange, open: $('eco-sheet').classList.contains('open'), sellP, sellQ, range, mkt }), setSell: (p, q) => { sellP = p; sellQ = q; } };
   window.OliEconomyUI = api;
 })();
