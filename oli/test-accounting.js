@@ -54,7 +54,7 @@ const cashOf = g => g.store.cash;
   T('M5a stock value rises (cost of production is kept in inventory)', co.inventoryBook() > inv0 + 1);
   T('M5b no sales revenue', co.led.life.revenue === 0 && co.led.life.spot === 0);
   T('M5c no cost of sales and no sales profit', co.led.life.pl.cogs === 0 && co.summary().life.grossProfit === 0);
-  T('M5d stock quantity equals what was produced', near(co.qty.CRUDE, co.led.life.produced.CRUDE - co.led.life.produced.THRU, 1e-3), [co.qty.CRUDE, co.led.life.produced]); }
+  T('M5d stock quantity = what was produced - what the refinery took - the crude lost before it reached a tank (separator slop, written off), and it equals the oil in the tanks', near(co.qty.CRUDE, co.led.life.produced.CRUDE - co.led.life.produced.THRU - (co.crudeLoss || 0), 1e-3) && near(co.qty.CRUDE, co.crudeOnHand(), 1e-3), [co.qty.CRUDE, co.crudeOnHand(), co.crudeLoss, co.led.life.produced]); }
 
 /* 6. salaries: earned every hour, paid every 30 days, cash moves only when paid */
 { const g = game(500e6), co = g.co; chain(g, false, false); const c0 = cashOf(g);

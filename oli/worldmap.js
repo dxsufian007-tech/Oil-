@@ -28,21 +28,27 @@
     },
     SLOPE_K: 3,                                                                     // slope units per "maxSlope" step (slope values are 0..~45, 90% below 20)
     ELEV_LEVELS: 8,                                                             // elevation is also reported as a coarse level 0..7 (the "height" concept)
-    OILFIELD: {                                                                 // reserve in barrels, radius in tiles, pressure in bar, depth in metres
-      SMALL:  { weight: 0.52, reserve: [0.5e6, 3e6],    radius: [3, 5],   pressure: [40, 90],   depth: [300, 1200],  prod: 'low' },
-      MEDIUM: { weight: 0.30, reserve: [3e6, 15e6],     radius: [5, 8],   pressure: [60, 130],  depth: [600, 2200],  prod: 'normal' },
-      LARGE:  { weight: 0.14, reserve: [15e6, 80e6],    radius: [8, 12],  pressure: [90, 170],  depth: [1200, 3600], prod: 'high' },
-      MAJOR:  { weight: 0.04, reserve: [80e6, 400e6],   radius: [12, 18], pressure: [130, 220], depth: [2000, 5000], prod: 'very high' }
+    /* ---- oil fields (Phase 3): five size classes, the design ranges of the oil-system spec x RESERVE_SCALE (0.25 = the middle option between the nominal ranges and a heavily shrunk world;
+       at 1 the ranges are the nominal ones). Keys are kept (MAJOR = giant) so saves and tests keep working; MARGINAL is new. Every number is meant to be tuned. */
+    RESERVE_SCALE: 0.25,
+    FIELD_NOMINAL: { MAJOR: [1e9, 5e9], LARGE: [3e8, 1e9], MEDIUM: [5e7, 3e8], SMALL: [5e6, 5e7], MARGINAL: [5e5, 5e6] },   // barrels: giant 1-5 bn, large 300 m-1 bn, medium 50-300 m, small 5-50 m, marginal under 5 m
+    OILFIELD: {                                                                 // reserve in barrels (filled from FIELD_NOMINAL), radius in tiles, pressure in bar, depth in metres
+      MARGINAL: { weight: 0.18, reserve: null, radius: [2, 3],   pressure: [30, 60],   depth: [200, 900],   prod: 'very low' },
+      SMALL:  { weight: 0.52, reserve: null, radius: [3, 5],   pressure: [40, 90],   depth: [300, 1200],  prod: 'low' },
+      MEDIUM: { weight: 0.30, reserve: null, radius: [5, 8],   pressure: [60, 130],  depth: [600, 2200],  prod: 'normal' },
+      LARGE:  { weight: 0.14, reserve: null, radius: [8, 12],  pressure: [90, 170],  depth: [1200, 3600], prod: 'high' },
+      MAJOR:  { weight: 0.04, reserve: null, radius: [12, 18], pressure: [130, 220], depth: [2000, 5000], prod: 'very high' }
     },
+    FIELD_PROPS: { api: { LOW: [18, 26], MEDIUM: [28, 36], HIGH: [38, 46] }, waterCut: [0.02, 0.40], extractBase: 6, extractPerKm: 4.5, decline: [0.04, 0.25], life: [2, 18] },   // API gravity per quality, initial water cut, $/bbl lifting, annual decline (clamped), years the field would last at full capacity
     RICHNESS: { POOR: { mult: 0.55, fields: [3, 5] }, MEDIUM: { mult: 1.0, fields: [6, 9] }, RICH: { mult: 1.6, fields: [10, 14] } },
     /* ---- exploration zones (Phase 2 of the oil system): every region is one zone. The CLASS comes from what is really in the ground, the player only sees a rough prior until the zone is evaluated.
-       Every number is meant to be tuned. Reserves are in barrels at THIS world's scale (the nominal design ranges of the spec are scaled by RESERVE_SCALE, see FIELD_CLASS below). */
+       Every number is meant to be tuned. The reserve figures here are NOMINAL (scale 1) and are multiplied by RESERVE_SCALE below, like the field classes. */
     ZONE_CLASS: {                                                               // min = total reserve of the zone's real fields, discovery = share of exploration sites that hold oil (prior), prior = reserve range shown before evaluation
-      RICH:           { min: 100e6, discovery: 0.78, prior: [80e6, 400e6],  quality: { LOW: .10, MEDIUM: .40, HIGH: .50 } },
-      PROMISING:      { min: 45e6,  discovery: 0.58, prior: [40e6, 150e6],  quality: { LOW: .20, MEDIUM: .45, HIGH: .35 } },
-      MEDIUM:         { min: 20e6,  discovery: 0.40, prior: [15e6, 60e6],   quality: { LOW: .30, MEDIUM: .50, HIGH: .20 } },
-      WEAK:           { min: 0.001, discovery: 0.20, prior: [2e6, 25e6],    quality: { LOW: .50, MEDIUM: .40, HIGH: .10 } },
-      NON_COMMERCIAL: { min: 0,     discovery: 0.0,  prior: [0, 5e6],       quality: { LOW: .60, MEDIUM: .30, HIGH: .10 } }
+      RICH:           { min: 1000e6, discovery: 0.78, prior: [800e6, 4000e6],  quality: { LOW: .10, MEDIUM: .40, HIGH: .50 } },
+      PROMISING:      { min: 600e6,  discovery: 0.58, prior: [400e6, 1600e6],  quality: { LOW: .20, MEDIUM: .45, HIGH: .35 } },
+      MEDIUM:         { min: 280e6,  discovery: 0.40, prior: [160e6, 640e6],   quality: { LOW: .30, MEDIUM: .50, HIGH: .20 } },
+      WEAK:           { min: 0.001, discovery: 0.20, prior: [20e6, 240e6],    quality: { LOW: .50, MEDIUM: .40, HIGH: .10 } },
+      NON_COMMERCIAL: { min: 0,     discovery: 0.0,  prior: [0, 48e6],       quality: { LOW: .60, MEDIUM: .30, HIGH: .10 } }
     },
     ZONE_NONCOMMERCIAL_SHARE: 0.12,                                             // share of the regions that are closed off at the start and hold no commercial oil at all
     ZONE_PRIOR_ACCURACY: 0.6,                                                   // chance that the rough prior class shown before evaluation is the true one (otherwise it is one class off)
@@ -85,6 +91,8 @@
     },
     ZOOM: { MIN: 0.0038, MAX: 2.0, FAR: { max: 0.2 }, MEDIUM: { min: 0.2, max: 0.6 }, CLOSE: { min: 0.6 } }   // camera zoom -> level (the preview uses the same table)
   };
+  for (const k in CONFIG.FIELD_NOMINAL) CONFIG.OILFIELD[k].reserve = CONFIG.FIELD_NOMINAL[k].map(v => v * CONFIG.RESERVE_SCALE);
+  for (const k in CONFIG.ZONE_CLASS) { const z = CONFIG.ZONE_CLASS[k]; z.min *= CONFIG.RESERVE_SCALE; z.prior = z.prior.map(v => v * CONFIG.RESERVE_SCALE); }
   const T = CONFIG.TERRAIN, TNAME = Object.keys(T), TBYID = []; for (const k of TNAME) TBYID[T[k].id] = k;
   const STATES = ['UNDISCOVERED', 'DISCOVERED', 'SURVEYED', 'DRILLABLE', 'PRODUCING', 'DEPLETED'];
   const LAYERS = { NORMAL: { implemented: true }, OIL: { implemented: false }, PRESSURE: { implemented: false }, FLOW: { implemented: false }, TERRAIN: { implemented: false } };
@@ -187,8 +195,12 @@
         const deep = typeKey === 'LARGE' || typeKey === 'MAJOR' ? rng() < .5 : rng() < .15, depth = Math.round(spec.depth[0] + (spec.depth[1] - spec.depth[0]) * clamp01((deep ? .55 : .0) + rng() * (deep ? .45 : .5)));
         const q = rng(), quality = q < .3 ? 'LOW' : q < .8 ? 'MEDIUM' : 'HIGH', pr = Math.round(spec.pressure[0] + (spec.pressure[1] - spec.pressure[0]) * clamp01(.35 * u + .65 * rng()));
         const id = 'F' + rid + '-' + out.length, err = .15 + rng() * .25, bias = (rng() * 2 - 1) * err;
+        const pr2 = mulberry32((seed ^ 0x0f1e1d) + rid * 7919 + out.length * 131), FP = CONFIG.FIELD_PROPS, pn = isDry ? 0 : clamp01((pr - spec.pressure[0]) / Math.max(1, spec.pressure[1] - spec.pressure[0]));
+        const props = isDry ? null : { api: +(FP.api[quality][0] + pr2() * (FP.api[quality][1] - FP.api[quality][0])).toFixed(1), waterCut: +Math.min(FP.waterCut[1], FP.waterCut[0] + Math.pow(pr2(), 1.6) * (FP.waterCut[1] - FP.waterCut[0]) + (typeKey === 'MARGINAL' ? .08 : 0)).toFixed(3),
+          extractCost: +((FP.extractBase + depth / 1000 * FP.extractPerKm + (quality === 'LOW' ? 2.5 : quality === 'HIGH' ? -1 : 0)) * (.85 + pr2() * .35)).toFixed(2),
+          capacity: Math.round(reserve / (365 * (FP.life[0] + (FP.life[1] - FP.life[0]) * (.6 * (1 - pn) + .4 * pr2())))), decline: +Math.min(FP.decline[1], FP.decline[0] + (1 - pn) * .14 + pr2() * .07 + (typeKey === 'MARGINAL' ? .04 : 0)).toFixed(3) };   /* capacity = reserve over the plateau life: strong reservoirs deliver faster */
         out.push({ id, kind: isDry ? 'DRY' : 'FIELD', regionId: rid, x, y, radius, type: isDry ? 'PROSPECT' : typeKey, initialReserve: reserve, remainingReserve: reserve, estimatedReserve: Math.round(reserve * (1 + bias)), estimateError: err,
-          pressurePotential: isDry ? 0 : pr, quality: isDry ? null : quality, depth: isDry ? Math.round(300 + rng() * 1800) : depth, terrainType: tile(x, y).terrain, geologyScore: +p.toFixed(3),
+          pressurePotential: isDry ? 0 : pr, quality: isDry ? null : quality, props, depth: isDry ? Math.round(300 + rng() * 1800) : depth, terrainType: tile(x, y).terrain, geologyScore: +p.toFixed(3),
           indicator: { dx: Math.round((rng() * 2 - 1) * radius * .5), dy: Math.round((rng() * 2 - 1) * radius * .5), r: Math.round(radius * 1.6 + 2) } });
         if (isDry) dry++; else real++;
       }
@@ -219,8 +231,8 @@
       const base = { id, state: st, surveyState: 'DONE', x: s.x, y: s.y, radius: s.radius, terrain: s.terrainType };
       if (s.kind === 'DRY') return Object.assign(base, { dry: true, note: 'no commercial oil' });
       const lo = Math.round(s.estimatedReserve * (1 - s.estimateError)), hi = Math.round(s.estimatedReserve * (1 + s.estimateError));
-      const out = Object.assign(base, { type: s.type, estimatedReserve: s.estimatedReserve, reserveRange: [lo, hi], pressureClass: s.pressurePotential > 150 ? 'HIGH' : s.pressurePotential > 90 ? 'MEDIUM' : 'LOW', quality: s.quality, probability: +(0.55 + 0.4 * (1 - s.estimateError)).toFixed(2) });
-      if (st === 'DRILLABLE' || st === 'PRODUCING' || st === 'DEPLETED') Object.assign(out, { depletionPct: +(100 * (1 - s.remainingReserve / Math.max(1, s.initialReserve))).toFixed(1), depth: s.depth, pressurePotential: s.pressurePotential, estimatedCost: drillEstimate(s), costNote: 'estimate only, not charged', remainingReserve: s.remainingReserve });
+      const out = Object.assign(base, { type: s.type, estimatedReserve: s.estimatedReserve, reserveRange: [lo, hi], pressureClass: s.pressurePotential > 150 ? 'HIGH' : s.pressurePotential > 90 ? 'MEDIUM' : 'LOW', quality: s.quality, apiRange: [Math.round(s.props.api - 3), Math.round(s.props.api + 3)], probability: +(0.55 + 0.4 * (1 - s.estimateError)).toFixed(2) });
+      if (st === 'DRILLABLE' || st === 'PRODUCING' || st === 'DEPLETED') Object.assign(out, { depletionPct: +(100 * (1 - s.remainingReserve / Math.max(1, s.initialReserve))).toFixed(1), depth: s.depth, pressurePotential: s.pressurePotential, api: s.props.api, waterCut: s.props.waterCut, extractionCost: s.props.extractCost, productiveCapacity: s.props.capacity, declineRate: s.props.decline, estimatedCost: drillEstimate(s), costNote: 'estimate only, not charged', remainingReserve: s.remainingReserve });
       return out;
     }
     // ---- exploration zones: the true data stays inside, zoneInfo() is the only thing the player gets
