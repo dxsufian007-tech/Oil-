@@ -114,7 +114,7 @@
     reset() { this._init(); }
     _wrap() {                                                                       // every purchase / demolition goes through the journal (the store and its validation are not changed)
       const st = this.store; if (st.__eco) { st.__eco = this; return; } st.__eco = this; const place = st.place.bind(st), dem = st.demolish.bind(st);
-      st.place = (...a) => { const me = st.__eco; me.sync(); const r = place(...a); if (r.ok) { me.assets.set(r.building.id, { cost: r.cost, t: me.hours, dep: 0 }); me._post({ type: 'BUILD', flow: 'INV', desc: DEFS[r.building.d].name }, [['FIXED', r.cost], ['CASH', -r.cost]], { cashApplied: true }); } return r; };
+      st.place = (...a) => { const me = st.__eco; me.sync(); const r = place(...a); if (r.ok) { me.assets.set(r.building.id, { cost: r.cost, t: me.hours, dep: 0, useStart: null }); me._post({ type: 'BUILD', flow: 'INV', desc: DEFS[r.building.d].name }, [['FIXED', r.cost], ['CASH', -r.cost]], { cashApplied: true }); } return r; };
       st.demolish = (...a) => { const me = st.__eco; me.sync(); const rec = me.assets.get(a[0]), r = dem(...a);
         if (r.ok) { let refund = r.refund || 0; if (me._saleOverride != null && isFinite(st.cash)) { st.cash += me._saleOverride - refund; refund = me._saleOverride; }   // a sale brings the sale price, not the demolition refund
           me._dispose(rec, refund); me.assets.delete(a[0]); r.refund = refund; } return r; };
@@ -164,8 +164,8 @@
     unitCost(p) { const q = this.qty[p]; return q > EPS2 ? Math.max(0, this.journal.bal[INVACC[p]]) / q : 0; }
 
     /* ---- assets: cost in FIXED, depreciation in ACC_DEP; a building is recorded when bought and removed when demolished ---- */
-    assetRec(b) { let a = this.assets.get(b.id); if (!a) { const d = DEFS[b.d]; a = { cost: d.type === 'well' ? I.wellProfile(b.x, b.y).cost : d.cost, t: this.hours, dep: 0 }; this.assets.set(b.id, a); } if (a.dep == null) a.dep = 0; return a; }
-    bookValue(b) { const a = this.assetRec(b); return Math.max(this.cfg.ASSET.floor * a.cost, a.cost - a.dep); }
+    assetRec(b) { let a = this.assets.get(b.id); if (!a) { const d = DEFS[b.d]; a = { cost: d.type === 'well' ? I.wellProfile(b.x, b.y).cost : d.cost, t: this.hours, dep: 0, useStart: b.st === 'OPERATIONAL' ? this.hours : null }; this.assets.set(b.id, a); } if (a.dep == null) a.dep = 0; if (a.useStart === undefined) a.useStart = null; return a; }
+    bookValue(b) { const a = this.assetRec(b); return a.cost - a.dep; }                     // cost - accumulated depreciation (never below the residual value, see _depreciate)
     assetValue(b) { const A = this.cfg.ASSET; return this.bookValue(b) * (1 - A.conditionWeight * (1 - b.c)); }     // market / condition value (the book value is in the balance sheet)
     _dispose(rec, refund) {
       const cost = rec ? rec.cost : 0, dep = rec ? rec.dep || 0 : 0, disp = cost - dep - refund, lines = [['CASH', refund], ['ACC_DEP', dep], ['FIXED', -cost]];
@@ -173,7 +173,8 @@
       this._post({ type: 'DISPOSAL', flow: 'INV', desc: 'Building demolished', inc: { assetSales: refund } }, lines, { cashApplied: true });   // the store already holds the cash
     }
     _depreciate() {
-      const A = this.cfg.ASSET; for (const b of this.store.list()) { const a = this.assetRec(b), room = a.cost * (1 - A.floor) - a.dep, d = Math.min(room, a.cost * A.depreciationPerYear / this.cfg.TIME.monthsPerYear);
+      const A = this.cfg.ASSET; for (const b of this.store.list()) { const a = this.assetRec(b); if (a.useStart == null) continue;   // straight line: (cost - residual) / useful life, from the start of use
+        const base = a.cost * (1 - A.residualShare), life = A.life[DEFS[b.d].type] || 20, room = base - a.dep, d = Math.min(room, base / (life * this.cfg.TIME.monthsPerYear));
         if (d > 0.005) { a.dep += d; this._post({ type: 'DEPRECIATION', desc: DEFS[b.d].name }, [['EXP_DEP', d], ['ACC_DEP', -d]]); } }
     }
     pipeValue() { let v = 0; for (const L of this.net.lines.values()) v += L.path.length * (BC.PIPES[L.dia] || BC.PIPES[BC.PIPE_DEFAULT]).cost; return v; }
@@ -442,7 +443,7 @@
       const prod = PZERO(), refOut = { GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 }, crude = { operating: 0, maintenance: 0, energy: 0, lifting: 0 }, refin = { operating: 0, maintenance: 0, energy: 0, chem: 0, ops: 0 };
       let kw = 0, storageCost = 0, tankOpex = 0, tankMaint = 0, powerCost = 0, sepGas = 0;
       for (const b of items) {
-        if (b.st !== 'OPERATIONAL') continue; const def = DEFS[b.d], s = b.s, t = def.type, load = this.loadOf(b);
+        if (b.st !== 'OPERATIONAL') continue; const def = DEFS[b.d], s = b.s, t = def.type, load = this.loadOf(b); const ar = this.assetRec(b); if (ar.useStart == null) ar.useStart = this.hours;   // the day it goes into service
         const k = this.kwOf(b, load), en = k * h * price, op = this.opDay(b, load) * dt, mt = this.maintDay(b, load) * dt; kw += k;
         b.c = clamp(b.c - C.MAINTENANCE.decayPerDay[t] * (C.MAINTENANCE.utilWear + load) * dt * this.engMult, 0, 1); if (b.c <= 0) { b.st = 'DAMAGED'; this._event('crit', def.name + ' #' + b.id + ' broke down'); }
         if (CHAIN[t]) { crude.operating += op; crude.maintenance += mt; crude.energy += en; }                    // wells, pumps, separators: capitalised into crude
@@ -667,12 +668,12 @@
 
     /* ---- save / load (the store and the pipes are saved by the lab as before; this is the company) ---- */
     toJSON() {
-      return { v: 2, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
+      return { v: 2, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0, a.useStart == null ? null : a.useStart]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
         recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, mats: this.mats, payables: this.payables, nextPay: this.nextPay, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, savedAt: this.lastSim };
     }
     fromJSON(d) {
       if (!d || (d.v !== 1 && d.v !== 2)) return false; const c = this.cfg;
-      this.hours = d.hours || 0; this.dayIdx = d.dayIdx || 0; this.acc = 0; this.market = new Market(c, d.market); this.assets = new Map((d.assets || []).map(a => [a[0], { cost: a[1], t: a[2], dep: a[3] || 0 }])); this.loans = d.loans || []; this.nextLoan = d.nextLoan || 1; this.closed = d.closed || [];
+      this.hours = d.hours || 0; this.dayIdx = d.dayIdx || 0; this.acc = 0; this.market = new Market(c, d.market); this.assets = new Map((d.assets || []).map(a => [a[0], { cost: a[1], t: a[2], dep: a[3] || 0, useStart: a.length > 4 ? a[4] : a[2] }])); /* saves before Phase 14: in use from the purchase */ this.loans = d.loans || []; this.nextLoan = d.nextLoan || 1; this.closed = d.closed || [];
       this.contracts = d.contracts || []; this.history = d.history || []; this.offers = d.offers || []; this.nextContract = d.nextContract || 1; this.crng = new Rng(d.crng || 1); this.modes = Object.assign(this.modes, d.modes || {}); this.tier = d.tier || 0; this.autoRepair = d.autoRepair !== false;
       this.led = d.led || this.led; for (const k of ['day', 'month', 'year', 'life']) { const L = Object.assign(ledger(0), this.led[k]); L.produced = Object.assign(PZERO(), L.produced); L.sold = Object.assign(SZERO(), L.sold); L.pl = Object.assign(ledger(0).pl, L.pl || {}); L.cf = Object.assign(ledger(0).cf, L.cf || {}); this.led[k] = L; }
       this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSim = d.savedAt == null ? null : d.savedAt;
