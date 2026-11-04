@@ -158,7 +158,7 @@
     if (b.id === 'bConnectLine') { pipeMode(true); const pm = state.pipeMode; pm.a = { kind: 'line', id: +b.dataset.id }; pm.step = 2; pipeBar('✅ أنبوب مفتوح · اضغط على المبنى الذي تريد توصيله به.', '', false, '<button id="bPipeBack">↩ البداية</button>'); return; }
     if (b.id === 'bMore') { showAll = !showAll; showBuilding(state.sel); return; }
     if (b.id === 'bEcon') { showEcon = !showEcon; showBuilding(state.sel); return; }
-    if (b.id === 'bRepair') { const r = COMPANY.repair(state.sel); toast(r.ok ? 'Repaired · −' + OliEconomy.fmtMoney(r.cost) : 'Not enough cash to repair'); save(); updateCash(); showBuilding(state.sel); return; }
+    if (b.id === 'bRepair') { const r = COMPANY.repair(state.sel); toast(r.ok ? 'Repaired · −' + OliEconomy.fmtMoney(r.cost) : r.reason === 'noPart' ? 'No spare parts in stock' : r.reason === 'noOps' ? 'No operating materials in stock' : 'Not enough cash to repair'); save(); updateCash(); showBuilding(state.sel); return; }
     if (b.id === 'bValve') { const v = STORE.get(state.sel), order = ['OPEN', 'PARTIAL', 'CLOSED']; const nx = order[(order.indexOf(v.s.mode) + 1) % 3]; SIM.setValve(v, nx, .5); save(); showBuilding(state.sel); return; }
     if (b.id === 'bLimit') { const v = STORE.get(state.sel); v.s.opLimit = v.s.opLimit > .99 ? .75 : v.s.opLimit > .74 ? .5 : 1; save(); showBuilding(state.sel); return; }
     if (b.id === 'bDemo') { const plan = STORE.demolishPlan(state.sel, pipes); state.demo = { id: state.sel, step: 1, plan };

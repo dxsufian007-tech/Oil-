@@ -517,6 +517,8 @@
       const consumed = prod.THRU, crudeBal = Math.max(0, this.journal.bal.INV_CRUDE), uc = this.unitCost('CRUDE'); if (consumed > this.qty.CRUDE + 1e-6) this.crudeShort += consumed - this.qty.CRUDE;   // a shortfall is counted, never hidden
       if (consumed > 0 && uc > 0) { const amt = Math.min(consumed * uc, crudeBal); if (amt > 0) this._post({ type: 'REFINE_IN', desc: 'Crude to refinery' }, [['INV_WIP', amt], ['INV_CRUDE', -amt]]); }
       this.qty.CRUDE = Math.max(0, this.qty.CRUDE - consumed); this._clearPool('CRUDE');
+      /* the books never hold crude that is not in a tank: oil that was booked at the wellhead but never reached a tank (separator slop, shrink) is written off at its average cost as a loss */
+      { const phys = this.crudeOnHand(), ex = this.qty.CRUDE - phys; if (ex > 1e-6) { const u = this.unitCost('CRUDE'), amt = Math.min(ex * u, Math.max(0, this.journal.bal.INV_CRUDE)); if (amt > 0) this._post({ type: 'CRUDE_LOSS', flow: 'OP', desc: 'Crude lost before the refinery (separator slop, tank shrink)' }, [['EXP_LOSS', amt], ['INV_CRUDE', -amt]]); this.qty.CRUDE = phys; this.crudeLoss = (this.crudeLoss || 0) + ex; } }
       // products take the refinery's cost, shared by barrels
       // every barrel of feed is accounted for. The cost of a barrel of feed is the same for all outputs; the fuel, the flare and the loss are expensed, the rest is carried in stock
       const T = prod.THRU, wip = Math.max(0, this.journal.bal.INV_WIP), outs = PRODS.reduce((a, q) => a + refOut[q], 0) + rf.BYPRODUCT + rf.RESIDUE + rf.FUEL + rf.FLARED, loss = Math.max(0, T - outs);
@@ -648,6 +650,12 @@
       if (r30.n >= 7 && r30.revenue > 0 && r30.storage / r30.revenue > A.highStorageRatio) add('storagecost', 'info', 'HIGH STORAGE COST', Math.round(r30.storage / r30.revenue * 100) + '% of revenue');
       if (this.loans.length && this.nextPaymentInDays() <= A.loanDueDays) add('loandue', 'warn', 'LOAN PAYMENT DUE', Math.ceil(this.nextPaymentInDays()) + ' days · ' + Math.round(this.loans.reduce((a, l) => a + l.payment, 0)));
       for (const c of this.activeContracts()) { const left = (c.deadline - this.hours) / 24; if (left <= A.contractDays) add('contract' + c.id, 'warn', 'CONTRACT DEADLINE', c.product + ' · ' + Math.ceil(left) + ' days · ' + Math.round(c.qty - c.delivered) + ' left'); }
+      /* things that silently stop crude from reaching the refinery: a refinery with no chemicals / operating materials, a broken building, repairs that cannot be paid for in spare parts */
+      { const list = this.store.list(), refs = list.filter(b => DEFS[b.d].type === 'refinery' && b.st !== 'UNDER_CONSTRUCTION'), broken = list.filter(b => b.st === 'DAMAGED'), M = this.cfg.MAINTENANCE, MU = this.cfg.MATERIAL_USE;
+        if (refs.length && (this.matLimit || 0) <= 0) add('nomat', 'warn', 'REFINERY LACKS MATERIALS', 'buy chemicals and operating materials');
+        if (broken.length) add('broken', 'crit', 'BUILDINGS BROKEN', broken.length + ' · oil flow may be stopped · repair them');
+        const worn = list.some(b => b.st !== 'UNDER_CONSTRUCTION' && b.c < M.autoRepairBelow);
+        if (worn && (this.mats.PARTS || 0) + EPS2 < MU.PARTS.qty) add('noparts', 'warn', 'REPAIRS BLOCKED', 'no spare parts in stock'); else if (worn && (this.mats.OPS || 0) + EPS2 < MU.REPAIR_OPS.qty) add('noparts', 'warn', 'REPAIRS BLOCKED', 'no operating materials in stock'); }
       for (const v of this.inventory()) {
         if (v.capacity > 0 && v.fill >= A.highInventoryFill) add('hiinv' + v.product, 'warn', 'HIGH INVENTORY', v.label + ' ' + Math.round(v.fill * 100) + '%');
         const needs = this.activeContracts().some(c => c.product === v.product); if (needs && v.fill < A.lowInventoryFill) add('loinv' + v.product, 'info', 'LOW INVENTORY', v.label + ' for a contract');
