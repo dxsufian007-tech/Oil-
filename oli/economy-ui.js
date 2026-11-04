@@ -54,7 +54,7 @@
   const STAGE_AR = { NORMAL: 'وضع طبيعي', WARNING: 'تحذير مالي', PRESSURE: 'ضغط مالي', LIQUIDITY: 'أزمة سيولة', DEFAULT: 'تعثر في السداد', RESCUE: 'إجراءات إنقاذ', BANKRUPT: 'إفلاس' };
   const IND_AR = { liquidity: 'انخفاض السيولة', debt: 'تراكم الديون', salary: 'تأخر الرواتب', loan: 'تأخر أقساط القروض', losses: 'خسائر متكررة', costs: 'ارتفاع تكاليف التشغيل', sales: 'انخفاض المبيعات', halt: 'توقف الإنتاج' };
   const MON = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-  let subScreen = '', repKey = 'income', repPer = 'month', chartRange = 'month';
+  let subScreen = '', repKey = 'income', repPer = 'month', chartRange = 'month', buySup = 'A', buyTerms = 'CASH';
   const REPORTS = [['income', 'قائمة الدخل'], ['balance', 'الميزانية العمومية'], ['cashflow', 'قائمة التدفقات النقدية'], ['expenses', 'تقرير المصروفات'], ['revenue', 'تقرير الإيرادات'], ['payroll', 'تقرير الرواتب'], ['production', 'الإنتاج وتكلفة البرميل'], ['debt', 'تقرير الديون والقروض'], ['assets', 'الأصول والإهلاك'], ['tax', 'تقرير الضرائب']];
   const PER = [['day', 'يومي'], ['month', 'شهري'], ['year', 'سنوي']];
   const arrowAr = (cur, prev) => { if (prev == null) return '<span class="es-sm">لا توجد مقارنة</span>'; const d = cur - prev; return d > 0 ? '<span class="pos">▲ ' + sg(d) + ' عن الشهر السابق</span>' : d < 0 ? '<span class="neg">▼ ' + sg(d) + ' عن الشهر السابق</span>' : '<span class="es-sm">بلا تغيير</span>'; };
@@ -114,7 +114,7 @@
       + '<div><div class="es-sm">مستوى المخاطر</div><div class="es-big ' + (risk === 'مرتفع' ? 'neg' : risk === 'متوسط' ? 'warn' : 'pos') + '" style="font-size:17px">' + risk + '</div><div class="es-sm">' + f.score + ' من 8 مؤشرات</div></div></div>'
       + (act.length ? '<div class="es-sm">مؤشرات نشطة: ' + act.join('، ') + '</div>' : '<div class="es-sm">لا توجد مؤشرات خطر نشطة.</div>'));
     // the three screens
-    h += '<div class="es-grid" style="margin-top:6px"><button data-act="screen" data-v="budget">إدارة الميزانية</button><button data-act="screen" data-v="report">التقرير المالي</button><button data-act="screen" data-v="log" style="grid-column:1/3">سجل العمليات المالية</button></div>';
+    h += '<div class="es-grid" style="margin-top:6px"><button data-act="screen" data-v="buy">المشتريات</button><button data-act="screen" data-v="budget">إدارة الميزانية</button><button data-act="screen" data-v="report">التقرير المالي</button><button data-act="screen" data-v="log" style="grid-column:1/3">سجل العمليات المالية</button></div>';
     return h;
   }
   const DEFS_TYPE = b => window.OliBuildings.DEFS[b.d].type;
@@ -167,7 +167,21 @@
     h += card('TAX', kv('Tax rate', Math.round(EC.TAX.rate * 100) + '% of taxable profit') + kv('Losses carried forward', M(s.taxCarry)) + kv('Paid this year', M(y.L.pl.tax)));
     return h;
   }
+  /* purchasing: buy crude, products, chemicals, spare parts and operating materials from a supplier, cash or credit */
+  const BUY_QTY = { CRUDE: 1000, GASOLINE: 1000, DIESEL: 1000, JET_FUEL: 1000, GAS: 1000, CHEM: 1000, PARTS: 10, OPS: 100 };
+  function rBuy() {
+    const sup = CO.supplierOf(buySup), items = EC.PRODUCTS.concat(EC.MATERIALS), names = Object.assign({}, EC.LABEL, EC.MATERIAL_LABEL);
+    let h = '<button data-act="screen" data-v="">← العودة للوحة الشركة</button><div class="es-sm" style="margin-bottom:8px">المورد</div><div class="es-grid">' + EC.SUPPLIERS.map(x => '<button data-act="supp" data-v="' + x.id + '"' + (x.id === buySup ? ' style="outline:2px solid currentColor"' : '') + '>' + x.name + (x.creditDays ? ' · آجل ' + x.creditDays + ' يوم' : ' · نقداً فقط') + '</button>').join('') + '</div>';
+    h += '<div class="es-sm" style="margin:10px 0 6px">طريقة الدفع</div><div class="es-grid"><button data-act="terms" data-v="CASH"' + (buyTerms === 'CASH' ? ' style="outline:2px solid currentColor"' : '') + '>نقداً</button><button data-act="terms" data-v="CREDIT"' + (buyTerms === 'CREDIT' ? ' style="outline:2px solid currentColor"' : '') + (sup.creditDays ? '' : ' disabled') + '>آجل</button></div>';
+    h += '<div class="es-sm" style="margin:10px 0 6px">الأسعار تتبع السوق (المنتجات) أو سعر المادة القابل للتعديل في الإعدادات، والمورد يضيف علاوته ونقل ورسومه.</div>';
+    for (const it of items) { const q = BUY_QTY[it], qt = CO.buyQuote(it, q, buySup), have = it === 'CRUDE' || EC.PRODUCTS.includes(it) ? CO.available(it) : CO.mats[it] || 0, room = EC.PRODUCTS.includes(it) ? CO.roomFor(it) : Infinity;
+      h += '<div class="es-row" style="margin:8px 0;padding:8px 0;border-bottom:1px solid #0002"><div><b>' + names[it] + '</b> <span class="es-sm">المخزون ' + n0(have) + ' ' + (EC.UNIT[it] || 'وحدة') + '</span><div class="es-sm">' + n0(q) + ' ' + (EC.UNIT[it] || 'وحدة') + ' × ' + qt.unitPrice.toFixed(2) + ' + نقل ' + M(qt.freight) + ' + رسوم ' + M(qt.fee) + ' = <b>' + M(qt.total) + '</b></div>'
+        + (room < q ? '<div class="es-sm neg">لا توجد سعة كافية في الخزانات (' + n0(room) + ' متاح)</div>' : '') + '</div>'
+        + '<button data-act="buy" data-p="' + it + '" data-q="' + q + '"' + (room < q ? ' disabled' : '') + '>شراء</button></div>'; }
+    return h;
+  }
   function rCompany() {
+    if (subScreen === 'buy') return rBuy();
     if (subScreen === 'budget') return rBudget();
     if (subScreen === 'log') return rJournal();
     if (subScreen === 'report') return rFinReport();
@@ -247,6 +261,8 @@
     else if (a === 'grid') { const r = CO.gridUpgrade(); msg = r.ok ? 'Grid upgraded to ' + r.tier.name : r.reason === 'cash' ? 'Not enough cash' : 'Maximum grid'; }
     else if (a === 'auto') { CO.autoRepair = !CO.autoRepair; } else if (a === 'repairall') { const r = CO.repairAll(); msg = 'Repaired ' + r.n + ' · −' + M(r.cost); }
     else if (a === 'screen') { subScreen = v || ''; $('es-body').scrollTop = 0; }
+    else if (a === 'supp') buySup = v; else if (a === 'terms') buyTerms = v;
+    else if (a === 'buy') { const r = CO.buy(p, +el.dataset.q, buySup, buyTerms); msg = r.ok ? 'Bought ' + n0(r.qty) + ' · ' + M(r.cost) + (r.terms === 'CREDIT' ? ' (آجل)' : '') : r.reason === 'cash' ? 'Not enough cash' : r.reason === 'noRoom' ? 'Not enough tank room' : r.reason === 'noCredit' ? 'This supplier sells for cash only' : 'Purchase refused: ' + r.reason; }
     else if (a === 'rep') repKey = v; else if (a === 'rper') repPer = v; else if (a === 'crange') chartRange = v;
     else redo = false;
     if (msg && toastFn) toastFn(msg); if (redo) { render(true); hud(); onChange(); }

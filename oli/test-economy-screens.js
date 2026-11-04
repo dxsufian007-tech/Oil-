@@ -38,6 +38,15 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   // 4. the journal
   await tap('#es-body [data-act=screen][data-v=log]'); t = await body(); ok(/سجل|قيد|مدين|دائن/.test(t) && /مدين/.test(t) && /دائن/.test(t), 'journal screen lists balanced entries (debit and credit)');
   await shot('econ-journal');
+  // 4b. purchasing: suppliers and quotes on screen; a purchase moves cash, stock and the journal
+  await tap('#es-body [data-act=screen][data-v=""]'); await tap('#es-body [data-act=screen][data-v=buy]'); t = await body();
+  ok(/المورد/.test(t) && /مورد أ/.test(t) && /الإجمالي|= /.test(t), 'purchasing screen: suppliers and quotes are shown');
+  const cash0 = await co(() => __lab.company.store.cash), inv0 = await co(() => __lab.company.journal.bal.INV_CRUDE);
+  await tap('#es-body [data-act=buy][data-p=CRUDE]');
+  const cash1 = await co(() => __lab.company.store.cash), inv1 = await co(() => __lab.company.journal.bal.INV_CRUDE);
+  ok(cash1 < cash0 && inv1 > inv0, 'purchase of crude: cash goes down, crude inventory goes up');
+  ok(await co(() => __lab.company.audit().ok), 'purchase: the audit passes');
+  await tap('#es-body [data-act=screen][data-v=""]');
   // 5. nothing failed in the page
   ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
   await b.close(); srv.close(); console.log('\nECONOMY SCREENS TESTS PASSED (' + n + ' checks)');

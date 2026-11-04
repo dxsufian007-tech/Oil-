@@ -55,6 +55,17 @@
     AUTOSELL: { trigger: 0.8, target: 0.5, minPriceRatio: 0.92, force: 0.98, defaultMode: 'SPOT' },       // SPOT mode: above `trigger` fill sell down to `target`, unless the price is below minPriceRatio x base (then wait) or the tank is `force` full
     CONTRACTS: { maxActive: 3, offers: 3, offerValidDays: 10, deadlineDays: [20, 45], premium: [0.06, 0.18], penaltyPct: 0.15, rewardPct: 0.05, payDays: 7,   // a delivered contract is paid after payDays (a receivable until then)
       qty: { CRUDE: [10000, 25000, 50000], GASOLINE: [5000, 10000, 25000], DIESEL: [5000, 10000, 25000], JET_FUEL: [3000, 6000, 12000], GAS: [3000, 6000, 12000] } },
+    // ---- purchasing (Phase 8). Buy price = reference price x (1 + supplier premium); a product's reference is its market price, a material's is the editable price below.
+    //      Purchase total = qty x unit price + freight + fees.  Freight and fees are part of the cost of the goods (capitalised into stock).
+    MATERIALS: ['CHEM', 'PARTS', 'OPS'],                                              // chemicals · spare parts · operating materials (stock pools, not tanks)
+    MATERIAL_LABEL: { CHEM: 'مواد كيميائية', PARTS: 'قطع غيار', OPS: 'مواد تشغيل' },
+    MATERIAL_PRICE: { CHEM: 2.5, PARTS: 1200, OPS: 40 },                             // editable starting prices ($ per unit): change them here, the engine reads them
+    MATERIAL_USE: { CHEM: { per: 'refinedBbl', qty: 0.36 }, OPS: { per: 'refinedBbl', qty: 0.002 }, PARTS: { per: 'repair', qty: 1 } },   // units used: chemicals 0.36 per refined bbl (= 0.90 $/bbl at 2.5 $/unit, the existing cost); operating materials 0.002 per bbl; one spare part per repair
+    SUPPLIERS: [
+      { id: 'A', name: 'مورد أ', premium: 0.00, freightPerUnit: { crude: 0.40, product: 0.50, material: 0.05 }, feeRate: 0.005, creditDays: 30 },   // cheapest, pays 30 days after delivery
+      { id: 'B', name: 'مورد ب', premium: 0.02, freightPerUnit: { crude: 0.25, product: 0.35, material: 0.03 }, feeRate: 0.003, creditDays: 15 },
+      { id: 'C', name: 'مورد ج', premium: 0.04, freightPerUnit: { crude: 0.10, product: 0.15, material: 0.01 }, feeRate: 0.000, creditDays: 0 }     // dearest, cash only
+    ],
     ALERTS: { lowCashDays: 20, highOpexRatio: 0.9, lowMarginRatio: 0.05, highStorageRatio: 0.08, loanDueDays: 3, contractDays: 5, lowInventoryFill: 0.05, highInventoryFill: 0.9, priceMove: 0.035, cooldownDays: 3 },
     OFFLINE: { capHours: 24, minSeconds: 60, gameDaysPerRealHour: 6, stepHours: 3 }  // away: at most capHours of real time count; each real hour = 6 game days (1/50 of the speed of playing); simulated in 3 h steps
   };
