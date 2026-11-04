@@ -114,7 +114,7 @@
       + '<div><div class="es-sm">مستوى المخاطر</div><div class="es-big ' + (risk === 'مرتفع' ? 'neg' : risk === 'متوسط' ? 'warn' : 'pos') + '" style="font-size:17px">' + risk + '</div><div class="es-sm">' + f.score + ' من 8 مؤشرات</div></div></div>'
       + (act.length ? '<div class="es-sm">مؤشرات نشطة: ' + act.join('، ') + '</div>' : '<div class="es-sm">لا توجد مؤشرات خطر نشطة.</div>'));
     // the three screens
-    h += '<div class="es-grid" style="margin-top:6px"><button data-act="screen" data-v="buy">المشتريات</button><button data-act="screen" data-v="budget">إدارة الميزانية</button><button data-act="screen" data-v="report">التقرير المالي</button><button data-act="screen" data-v="log" style="grid-column:1/3">سجل العمليات المالية</button></div>';
+    h += '<div class="es-grid" style="margin-top:6px"><button data-act="screen" data-v="buy">المشتريات</button><button data-act="screen" data-v="staff">الموظفون</button><button data-act="screen" data-v="budget">إدارة الميزانية</button><button data-act="screen" data-v="report">التقرير المالي</button><button data-act="screen" data-v="log" style="grid-column:1/3">سجل العمليات المالية</button></div>';
     return h;
   }
   const DEFS_TYPE = b => window.OliBuildings.DEFS[b.d].type;
@@ -180,7 +180,26 @@
         + '<button data-act="buy" data-p="' + it + '" data-q="' + q + '"' + (room < q ? ' disabled' : '') + '>شراء</button></div>'; }
     return h;
   }
+  /* employees: headcount vs need, training, hours, and what the crew does to output */
+  const ROLE_AR = { operators: 'مشغلون', engineers: 'مهندسون', maintenance: 'صيانة', managers: 'مديرون' };
+  function rStaff() {
+    const s = CO.staff, H = EC.HR, pct = v => Math.round(v * 100) + '%';
+    let h = '<button data-act="screen" data-v="">← العودة للوحة الشركة</button>';
+    h += '<div class="es-row" style="margin:8px 0"><div><div class="es-sm">كفاءة الفريق</div><div class="es-big ' + (CO.teamEff < 0.95 ? 'warn' : 'pos') + '">' + pct(CO.teamEff) + '</div></div>'
+      + '<div><div class="es-sm">عامل الإنتاج</div><div class="es-big">' + pct(CO.staffF) + '</div></div><div><div class="es-sm">الرواتب الشهرية</div><div class="es-big">' + M(s.payroll) + '</div></div></div>';
+    h += '<div class="es-sm">' + (CO.engMult > 1 ? 'نقص المهندسين يرفع خطر الأعطال ×' + CO.engMult.toFixed(2) : CO.engMult < 1 ? 'المهندسون الزائدون يقللون خطر الأعطال ×' + CO.engMult.toFixed(2) : 'خطر الأعطال طبيعي (المهندسون بالعدد المطلوب)') + '</div>';
+    for (const r of H.roles) { const x = CO.hr[r], n = s[r], req = s.required ? s.required[r] : 0, cap = Math.max(H.surplusMin, Math.ceil(H.surplusShare * req)), short = n < req;
+      h += '<div style="margin:10px 0;padding:8px 0;border-bottom:1px solid #0002"><div><b>' + ROLE_AR[r] + '</b> · ' + n + ' من ' + req + ' مطلوب' + (short ? ' <span class="neg">(نقص)</span>' : '') + '</div>'
+        + '<div class="es-sm">التدريب ' + pct(x.training) + ' · ساعات ' + x.hours + ' في الأسبوع · الراتب ' + M(EC.LABOR.salary[r] || 0) + ' للفرد شهرياً</div>'
+        + '<div class="es-grid" style="margin-top:6px">'
+        + '<button data-act="hire" data-p="' + r + '"' + (x.extra + 1 > cap ? ' disabled' : '') + '>+ توظيف</button>'
+        + '<button data-act="dismiss" data-p="' + r + '"' + (n <= 0 ? ' disabled' : '') + '>− صرف</button>'
+        + (r === 'managers' ? '' : '<button data-act="train" data-p="' + r + '"' + (n <= 0 ? ' disabled' : '') + '>تدريب · ' + M(n * H.trainingCost) + '</button>')
+        + '<button data-act="hours" data-p="' + r + '" data-d="-4">ساعات −4</button><button data-act="hours" data-p="' + r + '" data-d="4">ساعات +4</button></div></div>'; }
+    return h;
+  }
   function rCompany() {
+    if (subScreen === 'staff') return rStaff();
     if (subScreen === 'buy') return rBuy();
     if (subScreen === 'budget') return rBudget();
     if (subScreen === 'log') return rJournal();
@@ -262,6 +281,10 @@
     else if (a === 'auto') { CO.autoRepair = !CO.autoRepair; } else if (a === 'repairall') { const r = CO.repairAll(); msg = 'Repaired ' + r.n + ' · −' + M(r.cost); }
     else if (a === 'screen') { subScreen = v || ''; $('es-body').scrollTop = 0; }
     else if (a === 'supp') buySup = v; else if (a === 'terms') buyTerms = v;
+    else if (a === 'hire') { const r = CO.hire(p, 1); msg = r.ok ? 'Hired · payroll ' + M(r.payroll) + '/month' : r.reason === 'cap' ? 'Hiring cap reached for this facility' : 'Cannot hire'; }
+    else if (a === 'dismiss') { const r = CO.dismiss(p, 1); msg = r.ok ? 'Dismissed · payroll ' + M(r.payroll) + '/month' : 'Nobody to dismiss'; }
+    else if (a === 'train') { const r = CO.train(p); msg = r.ok ? 'Training done · −' + M(r.cost) : r.reason === 'cash' ? 'Not enough cash for training' : 'Nobody to train'; }
+    else if (a === 'hours') { const cur = CO.hr[p].hours; const r = CO.setHours(p, cur + (+el.dataset.d)); msg = r.ok ? 'Weekly hours: ' + r.hours : 'Cannot change hours'; }
     else if (a === 'buy') { const r = CO.buy(p, +el.dataset.q, buySup, buyTerms); msg = r.ok ? 'Bought ' + n0(r.qty) + ' · ' + M(r.cost) + (r.terms === 'CREDIT' ? ' (آجل)' : '') : r.reason === 'cash' ? 'Not enough cash' : r.reason === 'noRoom' ? 'Not enough tank room' : r.reason === 'noCredit' ? 'This supplier sells for cash only' : 'Purchase refused: ' + r.reason; }
     else if (a === 'rep') repKey = v; else if (a === 'rper') repPer = v; else if (a === 'crange') chartRange = v;
     else redo = false;

@@ -47,6 +47,12 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   ok(cash1 < cash0 && inv1 > inv0, 'purchase of crude: cash goes down, crude inventory goes up');
   ok(await co(() => __lab.company.audit().ok), 'purchase: the audit passes');
   await tap('#es-body [data-act=screen][data-v=""]');
+  // 4c. employees: the screen shows the crew; hiring one raises payroll
+  await tap('#es-body [data-act=screen][data-v=staff]'); t = await body();
+  ok(/كفاءة الفريق/.test(t) && /مشغلون/.test(t), 'employees screen: team efficiency and roles are shown');
+  const pay0 = await co(() => __lab.company.staff.payroll); await tap('#es-body [data-act=hire][data-p=operators]');
+  const pay1 = await co(() => __lab.company.staff.payroll); ok(pay1 > pay0, 'hiring an operator raises payroll');
+  await tap('#es-body [data-act=screen][data-v=""]');
   // 5. nothing failed in the page
   ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
   await b.close(); srv.close(); console.log('\nECONOMY SCREENS TESTS PASSED (' + n + ' checks)');

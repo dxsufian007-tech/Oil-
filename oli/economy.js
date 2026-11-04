@@ -74,6 +74,7 @@
   const REVKEY = { REV_SPOT: 'spot', REV_CONTRACT: 'contract', REV_OTHER: 'other' };
   const INVACC = { CRUDE: 'INV_CRUDE', GASOLINE: 'INV_GASOLINE', DIESEL: 'INV_DIESEL', JET_FUEL: 'INV_JET_FUEL', GAS: 'INV_GAS' };
   const MATACC = { CHEM: 'INV_CHEM', PARTS: 'INV_PARTS', OPS: 'INV_OPS' }, MZERO = () => ({ CHEM: 0, PARTS: 0, OPS: 0 });
+  const HRROLES = ['operators', 'engineers', 'maintenance', 'managers'], HRZERO = () => { const o = {}; for (const r of HRROLES) o[r] = { extra: 0, training: 1, hours: 48, exp: 5 }; return o; };
   const PRODS = ['GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'], CHAIN = { well: 1, pump: 1, separator: 1, valve: 1, junction: 1 }, FLOWS = ['OP', 'INV', 'FIN'], EPS2 = 1e-6;
 
   class Company {
@@ -82,14 +83,14 @@
     }
     _init() {
       const c = this.cfg; this.hours = 0; this.dayIdx = 0; this.acc = 0; this.market = new Market(c); this.assets = new Map(); this.loans = []; this.nextLoan = 1; this.closed = []; this.contracts = []; this.history = []; this.offers = []; this.nextContract = 1;
-      this.recv = []; this.nextRecv = 1; this.months = []; this.qty = PZERO(); this.mats = MZERO(); this.payables = []; this.nextPay = 1;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
+      this.recv = []; this.nextRecv = 1; this.months = []; this.qty = PZERO(); this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
       this.crng = new Rng(c.MARKET.seed ^ 0x5bd1e995); this.modes = {}; for (const p of SELL) this.modes[p] = c.AUTOSELL && c.AUTOSELL.defaultMode || 'SPOT'; this.tier = c.POWER.startTier; this.autoRepair = c.MAINTENANCE.autoRepair;
       const cash = isFinite(this.store.cash) ? this.store.cash : 0;
       this.journal = new Journal(); this.led = { day: ledger(cash), month: ledger(cash), year: ledger(cash), life: ledger(cash) }; this.lastMonth = null; this.days = []; this.prodHist = []; this.crudeQ = 1;
       this.fin = { state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }; this.taxCarry = 0; this.bankrupt = false; this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.staff = { operators: 0, engineers: 0, maintenance: 0, managers: 0, total: 0, payroll: 0 };
       this.speed = 1; this.mirror = this.store.cash; this.lastSim = null; this.away = null; this.events = []; this.seen = new Set(); this.badClock = false;
       this._post({ type: 'OPENING', flow: 'NONE', desc: 'Opening balance', noProj: true }, [['CASH', cash], ['EQUITY', -cash]], { cashApplied: true });
-      this._refreshOffers();
+      this._refreshOffers(); this.computeStaff();
     }
     reset() { this._init(); }
     _wrap() {                                                                       // every purchase / demolition goes through the journal (the store and its validation are not changed)
@@ -180,7 +181,7 @@
       const t = DEFS[b.d].type, P = this.cfg.POWER; if (t === 'well' && b.s && b.s.started === false) return 0;      // a new well waits for the player's "start production"
       const elec = this.pw.factor >= 1 ? 1 : P.efficiencyFloor + (1 - P.efficiencyFloor) * this.pw.factor;
       const q = t === 'refinery' ? this.cfg.QUALITY.refinery[this.crudeLabel()] : 1, cond = (t === 'refinery' || t === 'separator') ? 1 : 0.8 + 0.2 * b.c;     // refinery / separator already read b.c inside the Sim
-      return clamp(elec * q * cond, 0.05, 1.05);
+      return clamp(elec * q * cond * this.staffF, 0.05, 1.05);
     }
 
     /* ---- inventory (read from the tanks; the cost is in the journal) ---- */
@@ -327,8 +328,31 @@
       const need = { operators: 0, engineers: 0, maintenance: 0, managers: 0 }, c = this.cfg.LABOR;
       for (const b of this.store.list()) { if (b.st !== 'OPERATIONAL') continue; const sk = c.staff[this.staffKey(DEFS[b.d])]; if (sk) for (const k of Object.keys(sk)) need[k] += sk[k]; }
       const crew = Math.ceil(need.operators) + Math.ceil(need.engineers) + Math.ceil(need.maintenance), s = { operators: Math.ceil(need.operators), engineers: Math.ceil(need.engineers), maintenance: Math.ceil(need.maintenance), managers: Math.ceil(need.managers + (crew ? crew / c.perManager : 0)) };
-      s.total = s.operators + s.engineers + s.maintenance + s.managers; s.payroll = s.operators * c.salary.operators + s.engineers * c.salary.engineers + s.maintenance * c.salary.maintenance + s.managers * c.salary.managers; this.staff = s; return s;
+      const H = this.cfg.HR, req = { operators: s.operators, engineers: s.engineers, maintenance: s.maintenance, managers: s.managers };   // what the buildings need
+      for (const r of HRROLES) s[r] = Math.max(0, req[r] + (this.hr[r] ? this.hr[r].extra : 0));                                       // what the company employs
+      s.required = req; s.total = s.operators + s.engineers + s.maintenance + s.managers; s.payroll = s.operators * c.salary.operators + s.engineers * c.salary.engineers + s.maintenance * c.salary.maintenance + s.managers * c.salary.managers;
+      let wsum = 0, esum = 0; for (const r of ['operators', 'engineers', 'maintenance']) { const w = H.weight[r], cov = req[r] > 0 ? Math.min(1, s[r] / req[r]) : 1, eff = (H.base + (1 - H.base) * this.hr[r].training) * this.fatigue(this.hr[r].hours); wsum += w; esum += w * cov * eff; }
+      this.teamEff = wsum ? esum / wsum : 1; this.staffF = clamp(this.teamEff, H.shortageFloor, 1);                                     // bounded: extra staff never adds output above the facility's capacity
+      const eng = req.engineers > 0 ? Math.min(1, s.engineers / req.engineers) : 1, surp = req.engineers > 0 ? Math.min(1, Math.max(0, (s.engineers - req.engineers) / req.engineers)) : 0;
+      this.engMult = clamp(1 + H.engineerDecay * (1 - eng) - H.engineerSurplusCut * surp, H.decayBounds[0], H.decayBounds[1]);
+      this.staff = s; return s;
     }
+    fatigue(hours) { const H = this.cfg.HR; return hours <= H.hoursStd ? 1 : clamp(1 - H.fatiguePerHour * (hours - H.hoursStd), H.fatigueMin, 1); }
+    _trainHr(h) { const H = this.cfg.HR; for (const r of ['operators', 'engineers', 'maintenance']) { const x = this.hr[r], rate = H.trainingPerDay / 24 * (1 + H.expBonus * Math.min(x.exp, 20) / 10); x.training = x.training + (1 - x.training) * Math.min(1, rate * h); } }
+    /* ---- employees: hire / dismiss / train / hours (the company decides, the engine applies) ---- */
+    hire(role, n) {
+      const H = this.cfg.HR, x = this.hr[role]; if (!x) return { ok: false, reason: 'role' }; n = Math.max(1, n | 0);
+      const req = this.staff.required ? this.staff.required[role] : 0, cap = Math.max(H.surplusMin, Math.ceil(H.surplusShare * req)); if (x.extra + n > cap) return { ok: false, reason: 'cap', cap };
+      const before = this.staff[role], tot = before + n; x.training = tot > 0 ? (x.training * before + H.newHireTraining * n) / tot : x.training; x.extra += n;   // new hires come in less trained
+      this.computeStaff(); this._event('info', 'Hired ' + n + ' · ' + role); return { ok: true, count: this.staff[role], payroll: this.staff.payroll };
+    }
+    dismiss(role, n) { const x = this.hr[role]; if (!x) return { ok: false, reason: 'role' }; const k = Math.min(Math.max(1, n | 0), this.staff[role]); if (k <= 0) return { ok: false, reason: 'none' }; x.extra -= k; this.computeStaff(); this._event('info', 'Dismissed ' + k + ' · ' + role); return { ok: true, count: this.staff[role], payroll: this.staff.payroll }; }
+    train(role) {
+      const H = this.cfg.HR, x = this.hr[role]; if (!x || role === 'managers') return { ok: false, reason: 'role' }; const cnt = this.staff[role], cost = cnt * H.trainingCost; if (!(cnt > 0)) return { ok: false, reason: 'none' };
+      if (this.store.cash < cost) return { ok: false, reason: 'cash', need: cost }; this.sync(); this._expense('admin', cost, 'Training · ' + role, 'OP');
+      x.training = Math.min(1, x.training + H.trainingStep); this.computeStaff(); return { ok: true, cost, training: x.training };
+    }
+    setHours(role, hours) { const H = this.cfg.HR, x = this.hr[role]; if (!x) return { ok: false, reason: 'role' }; x.hours = clamp(+hours || H.hoursStd, H.hoursMin, H.hoursMax); this.computeStaff(); return { ok: true, hours: x.hours }; }
 
     /* ---- maintenance / repair: a repair is a period expense when it is paid ---- */
     repairCost(b) { return this.assetRec(b).cost * this.cfg.MAINTENANCE.repairFraction * (1 - b.c); }
@@ -351,7 +375,7 @@
       for (const b of items) {
         if (b.st !== 'OPERATIONAL') continue; const def = DEFS[b.d], s = b.s, t = def.type, load = this.loadOf(b);
         const k = this.kwOf(b, load), en = k * h * price, op = this.opDay(b, load) * dt, mt = this.maintDay(b, load) * dt; kw += k;
-        b.c = clamp(b.c - C.MAINTENANCE.decayPerDay[t] * (C.MAINTENANCE.utilWear + load) * dt, 0, 1); if (b.c <= 0) { b.st = 'DAMAGED'; this._event('crit', def.name + ' #' + b.id + ' broke down'); }
+        b.c = clamp(b.c - C.MAINTENANCE.decayPerDay[t] * (C.MAINTENANCE.utilWear + load) * dt * this.engMult, 0, 1); if (b.c <= 0) { b.st = 'DAMAGED'; this._event('crit', def.name + ' #' + b.id + ' broke down'); }
         if (CHAIN[t]) { crude.operating += op; crude.maintenance += mt; crude.energy += en; }                    // wells, pumps, separators: capitalised into crude
         else if (t === 'refinery') { refin.operating += op; refin.maintenance += mt; refin.energy += en; }        // refinery: capitalised into products
         else { tankOpex += op; tankMaint += mt; powerCost += en; }                                                 // tanks / gas storage: period expenses
@@ -389,7 +413,7 @@
       const qNow = this._qNow(items), onHand = this.crudeOnHand(); if (onHand > 0 && prod.CRUDE > 0) { const sh = Math.min(1, prod.CRUDE / onHand); this.crudeQ = this.crudeQ * (1 - sh) + qNow * sh; } else if (onHand <= 0) this.crudeQ = qNow;
       const row = [prod.CRUDE / h, prod.THRU / h, prod.GASOLINE / h, prod.DIESEL / h, prod.JET_FUEL / h, prod.GAS / h].map(v => Math.round(v * 100) / 100); for (let i = 0; i < h; i++) this.prodHist.push(row); while (this.prodHist.length > C.MARKET.historyHours) this.prodHist.shift();
       this.computeStaff();
-      this._paySuppliers();
+      this._paySuppliers(); this._trainHr(h); this.computeStaff();
       const pay = this.staff.payroll * h / (C.TIME.daysPerMonth * C.TIME.hoursPerDay);                             // salaries are earned every hour and paid every 30 days
       if (pay > 0) this._post({ type: 'PAYROLL_EARNED', desc: 'Salaries earned' }, [['EXP_LABOR', pay], ['PAY_PAYROLL', -pay]]);
       for (let i = 0; i < h; i++) this.market.tick();
@@ -566,7 +590,7 @@
     /* ---- save / load (the store and the pipes are saved by the lab as before; this is the company) ---- */
     toJSON() {
       return { v: 2, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
-        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, mats: this.mats, payables: this.payables, nextPay: this.nextPay, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, savedAt: this.lastSim };
+        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, mats: this.mats, payables: this.payables, nextPay: this.nextPay, hr: this.hr, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, savedAt: this.lastSim };
     }
     fromJSON(d) {
       if (!d || (d.v !== 1 && d.v !== 2)) return false; const c = this.cfg;
@@ -574,7 +598,7 @@
       this.contracts = d.contracts || []; this.history = d.history || []; this.offers = d.offers || []; this.nextContract = d.nextContract || 1; this.crng = new Rng(d.crng || 1); this.modes = Object.assign(this.modes, d.modes || {}); this.tier = d.tier || 0; this.autoRepair = d.autoRepair !== false;
       this.led = d.led || this.led; for (const k of ['day', 'month', 'year', 'life']) { const L = Object.assign(ledger(0), this.led[k]); L.produced = Object.assign(PZERO(), L.produced); L.sold = Object.assign(SZERO(), L.sold); L.pl = Object.assign(ledger(0).pl, L.pl || {}); L.cf = Object.assign(ledger(0).cf, L.cf || {}); this.led[k] = L; }
       this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSim = d.savedAt == null ? null : d.savedAt;
-      this.recv = d.recv || []; this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1;
+      this.recv = d.recv || []; this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {});
       if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); }
       else this._migrate();                                                         // a save from before the journal: the company starts from an opening balance sheet of what it holds now
       this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.mirror = this.store.cash; this.away = null; this.events = []; this.seen = new Set(); this._refreshOffers(); this.computeStaff(); return true;

@@ -44,6 +44,14 @@
         tank_S: { operators: 1, maintenance: 1 }, tank_M: { operators: 2, maintenance: 1 }, tank_L: { operators: 4, maintenance: 2 }, gas_S: { operators: 1, engineers: 1, maintenance: 1 }, gas_M: { operators: 2, engineers: 1, maintenance: 1 }, gas_L: { operators: 4, engineers: 2, maintenance: 2 },
         separator: { operators: 6, engineers: 2, maintenance: 3 }, refinery_S: { operators: 30, engineers: 8, maintenance: 12, managers: 2 }, refinery_M: { operators: 80, engineers: 20, maintenance: 30, managers: 4 }, refinery_L: { operators: 220, engineers: 55, maintenance: 80, managers: 8 }, refinery_X: { operators: 500, engineers: 120, maintenance: 180, managers: 16 } } },
     FIXED: { insurancePerMonth: 0.0015, adminBase: 12000, adminPerAsset: 0.0003, infraPerYear: 0.008 },   // monthly: insurance on asset value, administration, pipeline upkeep (share of pipe value per year)
+    // ---- employees (Phase 9). Staff needed = what the buildings require (LABOR.staff). extra = hires beyond that (negative = missing staff).
+    //      Team efficiency = role-weighted (coverage x efficiency); efficiency = (base + (1-base) x training) x fatigue(hours).  Trained crews = 1.0 (no change to the old numbers).
+    HR: { roles: ['operators', 'engineers', 'maintenance', 'managers'], weight: { operators: 0.5, engineers: 0.25, maintenance: 0.25 },
+      base: 0.85, newHireTraining: 0.3, trainingPerDay: 0.02, expBonus: 0.1, trainingCost: 500, trainingStep: 0.1,   // new hires start at 30% trained; training gains are gradual; experience speeds it up
+      hoursStd: 48, hoursMin: 36, hoursMax: 60, fatiguePerHour: 0.005, fatigueMin: 0.85,                             // hours above 48 per week tire the crew
+      shortageFloor: 0.5,                                                                                             // staffing cannot cut output below half
+      surplusShare: 0.25, surplusMin: 2,                                                                              // extra hires are capped (a facility has room for a limited crew)
+      engineerDecay: 0.5, engineerSurplusCut: 0.3, decayBounds: [0.7, 1.5] },                                        // missing engineers raise the failure rate; extra engineers lower it (bounded)
     ASSET: { depreciationPerYear: 0.05, floor: 0.3, conditionWeight: 0.5 },
     TAX: { rate: 0.2, lossCarryForward: true },                                       // Tax = max(0, Revenue - AllowedExpenses - carried losses) x rate, settled monthly
 
