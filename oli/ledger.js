@@ -16,7 +16,8 @@
   const ACC = {
     CASH: ['asset', 'Cash'],
     AR: ['asset', 'Receivables (contracts not paid yet)'],
-    INV_CRUDE: ['asset', 'Inventory · crude'],
+    INV_CRUDE: ['asset', 'Inventory · crude (produced)'],
+    INV_CRUDE_BUY: ['asset', 'Inventory · crude (bought)'],
     INV_GASOLINE: ['asset', 'Inventory · gasoline'],
     INV_DIESEL: ['asset', 'Inventory · diesel'],
     INV_JET_FUEL: ['asset', 'Inventory · jet fuel'],

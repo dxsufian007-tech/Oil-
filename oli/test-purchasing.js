@@ -10,11 +10,11 @@ const cashOf = g => g.store.cash;
 const tankGame = (cash, cfg) => { const g = game(cash == null ? 10e6 : cash, cfg || quietCfg()); const t = put(g, 'crude_tank_m', 68, 38); return { g, co: g.co, t }; };
 
 /* P1. buying crude for cash: cash down by the total, inventory up by the total, stock and tank up by the quantity */
-{ const { g, co, t } = tankGame(); const c0 = cashOf(g), inv0 = co.journal.bal.INV_CRUDE, v0 = co.sim.ensure(t).vol;
+{ const { g, co, t } = tankGame(); const c0 = cashOf(g), inv0 = co.journal.bal.INV_CRUDE_BUY, v0 = co.sim.ensure(t).vol;
   const r = co.buy('CRUDE', 1000, 'A', 'CASH'); T('P1 buy crude accepted', r.ok, r);
   T('P1a cash down by the purchase total', near(c0 - cashOf(g), r.cost, 1e-9), [c0 - cashOf(g), r.cost]);
-  T('P1b inventory up by the purchase total', near(co.journal.bal.INV_CRUDE - inv0, r.cost, 1e-9));
-  T('P1c stock quantity up by 1,000 bbl', near(co.qty.CRUDE, 1000, 1e-9), co.qty.CRUDE);
+  T('P1b inventory up by the purchase total (bought crude has its own account)', near(co.journal.bal.INV_CRUDE_BUY - inv0, r.cost, 1e-9));
+  T('P1c stock quantity up by 1,000 bbl', near(co.bq, 1000, 1e-9) && co.qty.CRUDE === 0, co.bq);
   T('P1d the tank holds the bought crude', near(co.sim.ensure(t).vol - v0, 1000, 1e-6), co.sim.ensure(t).vol);
   T('P1e the audit passes after the purchase', co.audit().ok, co.audit()); }
 
@@ -28,7 +28,7 @@ const tankGame = (cash, cfg) => { const g = game(cash == null ? 10e6 : cash, cfg
 { const { g, co } = tankGame(); const c0 = cashOf(g), r0 = null, r = co.buy('CRUDE', 1000, 'A', 'CREDIT'); T('P3 credit purchase accepted', r.ok && r.terms === 'CREDIT', r);
   T('P3a no cash moves at purchase', cashOf(g) === c0);
   T('P3b the payable equals the purchase total', near(-co.journal.bal.PAY_SUPPLIERS, r.cost, 1e-9), co.journal.bal.PAY_SUPPLIERS);
-  T('P3c the inventory holds the cost', near(co.journal.bal.INV_CRUDE, r.cost, 1e-9));
+  T('P3c the inventory holds the cost', near(co.journal.bal.INV_CRUDE_BUY, r.cost, 1e-9));
   co.advanceHours(24 * (EC.SUPPLIERS[0].creditDays) + 1);
   const pay = co.journal.log.filter(e => e.type === 'SUPPLIER_PAID'), paid = pay.reduce((a, e) => a + (e.lines.find(l => l[0] === 'CASH') || [0, 0])[1] * -1, 0);
   T('P3d after the credit days the payable is paid in cash (one SUPPLIER_PAID entry for the purchase)', near(co.journal.bal.PAY_SUPPLIERS, 0, 1e-9) && pay.length === 1 && near(paid, r.cost, 0.01), [co.journal.bal.PAY_SUPPLIERS, paid, r.cost]);
@@ -37,7 +37,7 @@ const tankGame = (cash, cfg) => { const g = game(cash == null ? 10e6 : cash, cfg
 /* P4. weighted-average cost: two purchases at different prices */
 { const { co } = tankGame(); const a = co.buy('CRUDE', 1000, 'A', 'CASH'), c = co.buy('CRUDE', 1000, 'C', 'CASH');
   const avg = (a.cost + c.cost) / 2000;
-  T('P4 unit cost after two purchases = weighted average', near(co.unitCost('CRUDE'), avg, 1e-9), [co.unitCost('CRUDE'), avg]); }
+  T('P4 unit cost after two purchases = weighted average', near(co.unitCostBuy(), avg, 1e-9), [co.unitCostBuy(), avg]); }
 
 /* P5. refused cases change nothing */
 { const { g, co } = tankGame(7e6); const n0 = co.journal.n, c0 = cashOf(g);

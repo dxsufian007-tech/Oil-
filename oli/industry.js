@@ -199,7 +199,7 @@
           case 'tank': case 'gas': {
             const cap = def.capacity.value * levelOf(b).capacityMultiplier, keep = def.type === 'tank' && f.prod === P.CRUDE ? 1 - (f.gas || 0) : 1, avail = Math.max(0, cap - s.vol - (s._pend || 0)) / dt;
             s._off = Math.max(s._off || 0, f.r); acc = Math.min(f.r, avail / keep); if (acc <= 0) { if (commit) s._blockedIn = true; break; }
-            if (commit) { const add = acc * keep * dt; s._pend = (s._pend || 0) + add; s._pw = (s._pw || 0) + add * (f.wat || 0) / Math.max(1e-9, 1 - (f.gas || 0)); s._in = (s._in || 0) + acc; s._vent = (s._vent || 0) + acc * (1 - keep); }
+            if (commit) { const add = acc * keep * dt; s._pend = (s._pend || 0) + add; s._pbv = (s._pbv || 0) + add * (f.bf || 0); s._pw = (s._pw || 0) + add * (f.wat || 0) / Math.max(1e-9, 1 - (f.gas || 0)); s._in = (s._in || 0) + acc; s._vent = (s._vent || 0) + acc * (1 - keep); }
             break;
           }
           case 'pump': {
@@ -232,7 +232,7 @@
       if (f.p < C.minInletPsi) { if (commit) s._lowIn = true; return 0; }
       const fo = f.oil == null ? 1 : f.oil, fg = f.gas || 0, fw = f.wat || 0, k = L.efficiencyMultiplier * (0.85 + 0.15 * b.c) * eco(b), eO = Math.min(1, C.oilSep * k), eG = Math.min(1, C.gasSep * k), eW = Math.min(1, C.waterSep * k);
       let r = Math.min(f.r, room); if (r <= 1e-9) return 0;
-      const oilR = r * (fo * eO + fw * (1 - eW) + fg * (1 - eG)), gasR = r * fg * eG, watR = r * fw * eW, oilStream = { prod: P.CRUDE, oil: oilR ? r * fo * eO / oilR : 1, gas: oilR ? r * fg * (1 - eG) / oilR : 0, wat: oilR ? r * fw * (1 - eW) / oilR : 0, p: f.p - 10 };
+      const oilR = r * (fo * eO + fw * (1 - eW) + fg * (1 - eG)), gasR = r * fg * eG, watR = r * fw * eW, oilStream = { prod: P.CRUDE, bf: f.bf || 0, oil: oilR ? r * fo * eO / oilR : 1, gas: oilR ? r * fg * (1 - eG) / oilR : 0, wat: oilR ? r * fw * (1 - eW) / oilR : 0, p: f.p - 10 };
       const co = this.edgeOf(b, 'OIL_OUT'); if (!co) { if (commit) s._noOut = true; return 0; }
       let th = 1; const t1 = oilR > 0 ? this.offer(b, 'OIL_OUT', Object.assign({}, oilStream, { r: oilR }), false, vis) / oilR : 1; th = Math.min(th, t1);
       if (this.edgeOf(b, 'GAS_OUT') && gasR > 0) th = Math.min(th, this.offer(b, 'GAS_OUT', { prod: P.GAS, r: gasR, p: f.p * .5 }, false, vis) / gasR);
@@ -263,7 +263,7 @@
       if (commit) {
         for (const [y, port, prod] of outs) { const rate = thr * R.yields[y] / 100 * passF; if (this.edgeOf(b, port)) { const a = this.offer(b, port, { prod, r: rate, p: pOut }, true, vis); s.made[y] += a * this.dt; (s._p = s._p || {})[y] = (s._p[y] || 0) + a; } else if (y === 'GAS') s.flared += rate * this.dt; }
         const oth = thr * R.yields.OTHER / 100 * passF; for (const [k, sh] of Object.entries(R.otherSplit)) { const a = oth * sh; s.made[k] = (s.made[k] || 0) + a * this.dt; (s._p = s._p || {})[k] = (s._p[k] || 0) + a; }
-        s.made.OTHER += oth * this.dt; s._p = s._p || {}; s._p.OTHER = (s._p.OTHER || 0) + oth; s._in = (s._in || 0) + consumed; s.crude += consumed * this.dt; s._eff = eff; s._temp = temp; s._quality = quality; s._pressF = pressF;
+        s.made.OTHER += oth * this.dt; s._p = s._p || {}; s._p.OTHER = (s._p.OTHER || 0) + oth; s._in = (s._in || 0) + consumed; s._inBuy = (s._inBuy || 0) + consumed * (f.bf || 0); s.crude += consumed * this.dt; s._eff = eff; s._temp = temp; s._quality = quality; s._pressF = pressF;
       }
       return consumed;
     }
@@ -298,13 +298,14 @@
         if (def.type === 'tank' || def.type === 'gas') {
           const hasOut = def.connections.some(c => c.role === 'out' && this.edgeOf(b, c.id)); if (!hasOut || s.vol <= 1e-6) continue; const gasT = def.type === 'gas', cap = def.capacity.value * levelOf(b).capacityMultiplier;
           const maxOut = cap * .5, r = Math.min(s.vol / dt, maxOut), fill = s.vol / cap, wf = def.product === P.CRUDE && s.vol > 0 ? s.wat / s.vol : 0, press = gasT ? this.gasPressure(def, fill, b) : SIM.tankHeadPsi;
-          const acc = this.split(b, def.connections.filter(c => c.role === 'out').map(c => c.id), { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, p: Math.max(press, SIM.tankHeadPsi) }, true, new Set([b.id])); s._out = acc;
-          const removed = acc * dt; s.wat = Math.max(0, s.wat - removed * wf); s.vol = Math.max(0, s.vol - removed);
+          const bf = def.product === P.CRUDE && s.vol > 0 ? clamp((s.bv || 0) / s.vol, 0, 1) : 0;                      // the share of the tank's oil that was bought (not produced)
+          const acc = this.split(b, def.connections.filter(c => c.role === 'out').map(c => c.id), { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, p: Math.max(press, SIM.tankHeadPsi) }, true, new Set([b.id])); s._out = acc;
+          const removed = acc * dt; s.wat = Math.max(0, s.wat - removed * wf); s.vol = Math.max(0, s.vol - removed); if (s.bv) s.bv = Math.max(0, s.bv - removed * bf);
         }
       }
       for (const [ws, st] of sharedWells) ws.reserve = st.remainingReserve;   // every well of a field shows the reserve that is left after ALL of them have produced
       for (const b of items) { const def = DEFS[b.d], s = b.s;                                         // apply deliveries, derive display values
-        if (def.type === 'tank' || def.type === 'gas') { if (s._pend) { s.vol += s._pend; s.total += s._pend; if (def.type === 'tank') s.wat += s._pw || 0; } const cap = def.capacity.value; s.vol = Math.min(s.vol, cap); const fill = s.vol / cap;
+        if (def.type === 'tank' || def.type === 'gas') { if (s._pend) { s.vol += s._pend; s.total += s._pend; if (def.type === 'tank') s.wat += s._pw || 0; if (s._pbv) s.bv = (s.bv || 0) + s._pbv; } const cap = def.capacity.value; s.vol = Math.min(s.vol, cap); if (s.bv) s.bv = Math.min(s.bv, s.vol); const fill = s.vol / cap;
           if (def.type === 'gas') { s.press = this.gasPressure(def, fill, b); s.temp = SAFE.ambientC + .08 * s.press + 8 * fill; } else s.temp = SAFE.ambientC + 6 * Math.min(1, (s._in || 0) / cap * 4); }
         if (def.type === 'refinery') { s.eff = s._eff == null ? s.eff * .8 : s._eff; s.temp = s._temp == null ? Math.max(60, s.temp - 40 * dt * 10) : s._temp; }
         if (def.type === 'pump') s.power = (s._in || 0) * (s.boost * s.eff) * 0.01269 / 1000 / Math.max(.01, s.eff);
@@ -316,6 +317,22 @@
     gasPressure(def, fill, b) { const mx = def.params.maxPressure * levelOf(b).pressureMultiplier; return 15 + (mx - 15) * Math.pow(clamp(fill, 0, 1.2), 1.3); }
 
     /* ---- status, warnings, indicators (what the panel shows) ---- */
+    /* What a crude tank IS, from where its oil can come from (not from the mere presence of a pipe):
+     *   COMMERCIAL  no pipe at all: stores bought or moved oil, never receives well oil
+     *   PRODUCTION  at least one well sits upstream of it (through pipes, pumps, junctions, valves, separators or other tanks)
+     *   TRADE       connected by pipes, but no well is upstream: it belongs to a transport / trade network (bought oil, moving to a refinery or onward)
+     * Product tanks and gas storage have no kind (null). */
+    tankKind(b) {
+      const def = DEFS[b.d]; if (!def || def.type !== 'tank' || def.product !== P.CRUDE) return null; if (this.dirty()) this.build();
+      let any = false, hasIn = false; for (const c of def.connections) if (this.edgeOf(b, c.id)) { any = true; if (c.role !== 'out') hasIn = true; }
+      if (!any) return 'COMMERCIAL'; if (!hasIn) return 'TRADE';
+      return this._wellUpstream(b, null, new Set([b.id])) ? 'PRODUCTION' : 'TRADE';
+    }
+    _wellUpstream(b, cameBy, seen) {
+      const def = DEFS[b.d]; for (const c of def.connections) { if (c.id === cameBy || c.role === 'out') continue; const e = this.edgeOf(b, c.id); if (!e) continue; const far = this.other(e, b, c.id), fb = far.b; if (!fb || seen.has(fb.id)) continue; seen.add(fb.id);
+        const t = DEFS[fb.d].type; if (t === 'well') return true; if (t === 'refinery') continue; if (this._wellUpstream(fb, far.port, seen)) return true; }
+      return false;
+    }
     status(b) {
       if (b.st === 'UNDER_CONSTRUCTION') return 'UNDER_CONSTRUCTION'; if (b.st === 'MAINTENANCE' || b.st === 'DAMAGED') return b.st; const def = DEFS[b.d], s = this.ensure(b), t = def.type; if (this.dirty()) this.build();
       const has = id => !!this.edgeOf(b, id), ins = def.connections.filter(c => c.role !== 'out' && !c.reserved).map(c => c.id), outs = def.connections.filter(c => c.role !== 'in' && !c.reserved).map(c => c.id);
@@ -348,7 +365,7 @@
       if (t === 'pump') { const util = (s._in || 0) / def.params.maxFlow * 100; return { top: 6, list: [I('Flow In', r0(s._in || 0), 'bbl/day'), I('Flow Out', r0(s._in || 0), 'bbl/day'), I('Pressure In', r0(s.pIn || 0), 'psi'), I('Pressure Out', r0(s.pOut || s.pIn || 0), 'psi'), I('Boost', r0(s.boost * s.eff), 'psi'), I('Power', r0(s.power || 0, 10), 'kW')].concat([I('Efficiency', r0(s.eff * 100), '%'), I('Utilization', r0(util), '%')], common) }; }
       if (t === 'valve') return { top: 4, list: [I('Valve State', s.mode + (s.mode === 'PARTIAL' ? ' ' + Math.round(s.opening * 100) + '%' : '')), I('Opening', Math.round((s.mode === 'OPEN' ? 1 : s.mode === 'PARTIAL' ? s.opening : 0) * 100), '%'), I('Flow', r0(s._in || 0), 'bbl/day'), I('Max Flow', def.params.maxFlow, 'bbl/day'), I('Pressure Rating', def.params.pressureRating, 'psi')].concat(common) };
       if (t === 'junction') return { top: 4, list: [I('Flow', r0(s._in || 0), 'bbl/day'), I('Max Total Flow', def.params.maxTotalFlow, 'bbl/day'), I('Pressure Limit', def.params.pressureLimit, 'psi'), I('Ports', 4)].concat(common) };
-      if (t === 'tank') { const fill = s.vol / cap; return { top: 6, list: [I('Level', r0(s.vol), 'bbl'), I('Capacity', cap, 'bbl'), I('Fill', r0(fill * 100, 10), '%'), I('Input Flow', r0(s._in || 0), 'bbl/day'), I('Output Flow', r0(s._out || 0), 'bbl/day'), I('Available Capacity', r0(cap - s.vol), 'bbl')].concat([I('Pressure', 14.7, 'psi'), I('Temperature', r0(s.temp, 10), '°C'), I('Level State', tankLevel(fill).replace(/_/g, ' ').toLowerCase())], common) }; }
+      if (t === 'tank') { const fill = s.vol / cap; return { top: 6, list: [I('Level', r0(s.vol), 'bbl'), I('Capacity', cap, 'bbl'), I('Fill', r0(fill * 100, 10), '%'), I('Input Flow', r0(s._in || 0), 'bbl/day'), I('Output Flow', r0(s._out || 0), 'bbl/day'), I('Available Capacity', r0(cap - s.vol), 'bbl')].concat(def.product === P.CRUDE ? [I('Tank Type', TANK_KIND_AR[this.tankKind(b)] || ''), I('Purchased Oil', r0(s.bv || 0), 'bbl'), I('Produced Oil', r0(Math.max(0, s.vol - (s.bv || 0) - (s.wat || 0))), 'bbl')] : []).concat([I('Pressure', 14.7, 'psi'), I('Temperature', r0(s.temp, 10), '°C'), I('Level State', tankLevel(fill).replace(/_/g, ' ').toLowerCase())], common) }; }
       if (t === 'gas') { const fill = s.vol / cap; return { top: 6, list: [I('Current Level', r0(s.vol), 'boe'), I('Gas Capacity', cap, 'boe'), I('Fill', r0(fill * 100, 10), '%'), I('Pressure', r0(s.press || 15), 'psi'), I('Temperature', r0(s.temp, 10), '°C'), I('Safety', this.gasSafetyOf(b).replace(/_/g, ' ').toLowerCase())].concat([I('Max Pressure', def.params.maxPressure, 'psi'), I('Input', r0(s._in || 0), 'boe/day'), I('Output', r0(s._out || 0), 'boe/day')], common) }; }
       if (t === 'separator') return { top: 6, list: [I('Feed In', r0(s._in || 0), 'bbl/day'), I('Oil Out', r0(s._o || 0), 'bbl/day'), I('Gas Out', r0(s._g || 0), 'boe/day'), I('Water Out', r0(s._w || 0), 'bbl/day'), I('Utilization', r0((s._in || 0) / def.params.cap * 100), '%'), I('Capacity', def.params.cap, 'bbl/day')].concat(common) };
       if (t === 'refinery') { const p = s._p || {}; return { top: 6, list: [I('Feed', r0(s._in || 0), 'bbl/day'), I('Throughput', r0(s._in || 0), 'bbl/day'), I('Gasoline', r0(p.GASOLINE || 0), 'bbl/day'), I('Diesel', r0(p.DIESEL || 0), 'bbl/day'), I('Jet Fuel', r0(p.JET_FUEL || 0), 'bbl/day'), I('Efficiency', r0((s.eff || 0) * 100), '%')].concat([I('Gas / LPG', r0(p.GAS || 0), 'boe/day'), I('Other', r0(p.OTHER || 0), 'bbl/day'), I('Utilization', r0((s._in || 0) / def.params.cap * 100), '%'), I('Capacity', def.params.cap, 'bbl/day'), I('Temperature', r0(s.temp || 0), '°C')], common) }; }
@@ -361,5 +378,6 @@
     setValve(b, mode, opening) { const s = this.ensure(b); if (!['OPEN', 'CLOSED', 'PARTIAL', 'FAULT'].includes(mode)) return false; s.mode = mode; if (opening != null) s.opening = clamp(opening, 0, 1); return true; }
   }
 
-  return { PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
+  const TANK_KIND_AR = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
+  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });

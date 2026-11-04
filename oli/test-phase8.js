@@ -28,12 +28,12 @@ const lastTypes = (co, from) => co.journal.log.filter(e => e.id > from).map(e =>
   audit(co, 'A2'); }
 
 /* B. where things go: crude and products into tanks, materials into warehouses; a purchase is not production */
-{ const g = game(500e6, quietCfg()), co = g.co; chain(g, true, false); for (const p of EC.PRODUCTS) co.setMode(p, 'WAIT');
-  const prod0 = { ...co.led.life.produced }, v0 = tanksVol(co), c0 = cashOf(g), inv0 = bal(co, 'INV_CRUDE');
+{ const g = game(500e6, quietCfg()), co = g.co; chain(g, true, false); put(g, 'crude_tank_m', 60, 70);   /* a commercial tank: bought crude is never put into the tank the wells feed */ for (const p of EC.PRODUCTS) co.setMode(p, 'WAIT');
+  const prod0 = { ...co.led.life.produced }, v0 = tanksVol(co), c0 = cashOf(g), inv0 = bal(co, 'INV_CRUDE_BUY');
   const r = co.buy('CRUDE', 1000, 'A', 'CASH'); T('B1 crude bought', r.ok, r);
   T('B1a the crude enters the crude tanks (tank volume +1,000 bbl)', near(tanksVol(co) - v0, 1000, 1e-6), tanksVol(co) - v0);
   T('B1b the purchase is not production (produced crude unchanged)', co.led.life.produced.CRUDE === prod0.CRUDE, co.led.life.produced);
-  T('B1c the cash goes down by the purchase total and the inventory goes up by the same', near(c0 - cashOf(g), r.cost, 1e-9) && near(bal(co, 'INV_CRUDE') - inv0, r.cost, 1e-9));
+  T('B1c the cash goes down by the purchase total and the inventory goes up by the same', near(c0 - cashOf(g), r.cost, 1e-9) && near(bal(co, 'INV_CRUDE_BUY') - inv0, r.cost, 1e-9));
   const pg = co.buy('GASOLINE', 500, 'A', 'CASH'); T('B2 gasoline bought', pg.ok, pg);
   T('B2a the gasoline enters the gasoline tank, not a warehouse (quantity +500, produced gasoline unchanged)', co.qty.GASOLINE === 500 && co.led.life.produced.GASOLINE === prod0.GASOLINE, [co.qty.GASOLINE, co.led.life.produced.GASOLINE]);
   const v1 = tanksVol(co), cm = co.buy('CHEM', 300, 'A', 'CASH'); T('B3 chemicals bought', cm.ok, cm);

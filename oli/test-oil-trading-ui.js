@@ -1,0 +1,30 @@
+/* Phase 7, the screen: «المخازن والتجارة» in a real browser.   NODE_PATH=/opt/npm-tools/node_modules node test-oil-trading-ui.js */
+const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path'), assert = require('assert');
+const srv = http.createServer((q, r) => { const u = q.url.split('?')[0], f = path.join(__dirname, u === '/' ? 'world-preview.html' : u); fs.readFile(f, (e, d) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : f.endsWith('.html') ? 'text/html' : 'application/octet-stream' }); r.end(d); }); }).listen(0);
+let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); };
+(async () => {
+  const b = await chromium.launch(), p = await (await b.newContext({ viewport: { width: 412, height: 866 }, hasTouch: true, isMobile: true })).newPage(), errs = [];
+  p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/404/.test(m.text())) errs.push(m.text()); });
+  const ev = (f, a) => p.evaluate(f, a);
+  await p.goto('http://localhost:' + srv.address().port + '/?lab=1&lang=en'); await p.waitForFunction(() => window.__lab && __lab.restored && window.__layers, null, { timeout: 90000 });
+  await ev(() => { localStorage.clear(); __lab.reset(); __lab.store.cash = 5e9; __lab.updateCash(); __lab.company.speed = 0; }); await p.waitForTimeout(350); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 });
+  const r = await ev(async () => await __lab.buildDemo()); ok(r.ok, 'demo chain built');
+  const f0 = await ev(() => { const s = __wp.world.allSites()[0]; return { x: s.x, y: s.y }; }); await ev(f => __wp.goto(f.x, f.y, 0.5), f0); await p.waitForFunction(() => __wp.idle(), null, { timeout: 60000 }); await p.waitForTimeout(500);
+  const tk = await ev(() => { const L = __lab, f = __wp.world.allSites()[0]; for (let r = 25; r < 90; r++) for (let a = 0; a < 16 + r * 6; a++) { const n = 16 + r * 6, x = Math.round(f.x + Math.cos(a / n * 6.283) * r), y = Math.round(f.y + Math.sin(a / n * 6.283) * r); const v = L.store.validate("crude_tank_m", x, y, 0, {}); if (!v.ok) { window.__why = v.reason; continue; } const t = L.store.place('crude_tank_m', x, y, 0, { instant: true }); if (t.ok) return t.building.id; } return -1 * (window.__why ? 1 : 2); });
+  console.log("tk=",tk, await ev(() => window.__why)); ok(tk > 0, 'an unconnected commercial tank is placed'); await ev(() => { __lab.company.sync(); });
+  await p.locator('#eh-menu').tap(); await p.locator('#es-tabs [data-tab=storage]').tap();
+  let body = await p.textContent('#es-body');
+  ok(/STORAGE|المخازن والتجارة/.test(await p.textContent('#es-tabs')), 'the storage tab exists (Arabic name via ar-dict)');
+  ok(/تخزين تجاري/.test(body) && /مخزن إنتاج/.test(body) && /مخزن تجارة ونقل/.test(body), 'the three tank kinds are explained');
+  ok(/السعة الإجمالية/.test(body) && /المساحة المتبقية/.test(body) && /مصدر النفط/.test(body), 'each tank card shows capacity, free room and oil source');
+  const cash0 = await ev(() => __lab.company.cash());
+  await p.locator('[data-act=stq][data-v="1000"]').tap(); await p.locator('[data-act=buy][data-p=CRUDE]').tap();
+  const st = await ev(() => ({ bq: __lab.company.bq, rep: __lab.company.tankReport().find(r => r.canBuy && r.bought > 0), cash: __lab.company.cash() }));
+  ok(Math.abs(st.bq - 1000) < 1e-6 && st.rep && st.cash < cash0, 'buying 1,000 barrels from the screen fills the commercial tank and pays cash');
+  body = await p.textContent('#es-body'); ok(/نفط مشترى/.test(body) && /شراء/.test(body) && /سجل العمليات/.test(body), 'the card shows the source and the log lists the purchase');
+  await p.locator('[data-act=sellsrc][data-v=BOUGHT][data-q="1000"]').tap();
+  const af = await ev(() => ({ bq: __lab.company.bq, a: __lab.company.audit() }));
+  ok(af.bq < 1e-6, 'selling the bought oil from the screen empties the bought stock'); ok(/بيع/.test(await p.textContent('#es-body')), 'the sale appears in the log');
+  ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
+  console.log('PASS ' + n); await b.close(); srv.close();
+})().catch(e => { console.error('FAIL', e.message); process.exit(1); });

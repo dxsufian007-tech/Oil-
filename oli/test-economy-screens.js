@@ -41,10 +41,14 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   // 4b. purchasing: suppliers and quotes on screen; a purchase moves cash, stock and the journal
   await tap('#es-body [data-act=screen][data-v=""]'); await tap('#es-body [data-act=screen][data-v=buy]'); t = await body();
   ok(/المورد/.test(t) && /مورد أ/.test(t) && /الإجمالي|= /.test(t), 'purchasing screen: suppliers and quotes are shown');
-  const cash0 = await co(() => __lab.company.store.cash), inv0 = await co(() => __lab.company.journal.bal.INV_CRUDE);
+  // Phase 7: bought crude never enters a production tank, so a commercial (unconnected) tank is built first
+  const f0 = await co(() => { const s = __wp.world.allSites()[0]; return { x: s.x, y: s.y }; }); await p.evaluate(f => __wp.goto(f.x, f.y, 0.5), f0); await p.waitForFunction(() => __wp.idle(), null, { timeout: 60000 }); await p.waitForTimeout(500);
+  const tk = await co(() => { const L = __lab, f = __wp.world.allSites()[0]; for (let r = 25; r < 90; r++) { const n = 16 + r * 6; for (let a = 0; a < n; a++) { const x = Math.round(f.x + Math.cos(a / n * 6.283) * r), y = Math.round(f.y + Math.sin(a / n * 6.283) * r); if (!L.store.validate('crude_tank_m', x, y, 0, {}).ok) continue; const t = L.store.place('crude_tank_m', x, y, 0, { instant: true }); if (t.ok) return t.building.id; } } return 0; });
+  ok(tk > 0, 'a commercial crude tank is built to receive bought crude'); await co(() => { __lab.company.sync(); __lab.EU.hud(); }); await tap('#es-body [data-act=screen][data-v=""]'); await tap('#es-body [data-act=screen][data-v=buy]');
+  const cash0 = await co(() => __lab.company.store.cash), inv0 = await co(() => __lab.company.journal.bal.INV_CRUDE_BUY || 0);
   await tap('#es-body [data-act=buy][data-p=CRUDE]');
-  const cash1 = await co(() => __lab.company.store.cash), inv1 = await co(() => __lab.company.journal.bal.INV_CRUDE);
-  ok(cash1 < cash0 && inv1 > inv0, 'purchase of crude: cash goes down, crude inventory goes up');
+  const cash1 = await co(() => __lab.company.store.cash), inv1 = await co(() => __lab.company.journal.bal.INV_CRUDE_BUY || 0);
+  ok(cash1 < cash0 && inv1 > inv0, 'purchase of crude: cash goes down, bought-crude inventory goes up');
   ok(await co(() => __lab.company.audit().ok), 'purchase: the audit passes');
   await tap('#es-body [data-act=screen][data-v=""]');
   // 4c. employees: the screen shows the crew; hiring one raises payroll
