@@ -134,7 +134,7 @@
 
   /* ------------------------------------------------------------ the simulator */
   class Sim {
-    constructor(store, net) { this.store = store; this.net = net; this.edges = new Map(); this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => net.productAt(x, y); }
+    constructor(store, net) { this.store = store; this.net = net; this.edges = new Map(); this._el = []; this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => net.productAt(x, y); }
 
     /* ---- state per building (kept in b.s, saved with the game) ---- */
     ensure(b) {
@@ -155,6 +155,7 @@
       for (const L of net.lines.values()) { if (!L.a || !L.b) continue; if (!store.get(L.a.b) || !store.get(L.b.b)) continue; edge(pk(L.a.b, L.a.port), pk(L.b.b, L.b.port), L); }
       const pts = new Map(); for (const b of store.items.values()) for (const p of B.worldPoints(b)) if (p.kind === 'pipe' && !p.reserved) pts.set(b.id + ':' + p.id, p);
       for (const [k, p] of pts) { if (E.has(k)) continue; const o = store.at(p.ax, p.ay); if (!o || o.id === p.buildingId) continue; for (const q of B.worldPoints(o)) if (q.x === p.ax && q.y === p.ay && q.ax === p.x && q.ay === p.y && B.compatible(p, q) && !E.has(pk(o.id, q.id))) { edge(k, pk(o.id, q.id), null); break; } }
+      this._el = [...new Set(E.values())];                                          // each edge once, for the per-step loops
       this.builtRev = (store.rev | 0) * 100000 + net.rev; this._rev = this.builtRev;
     }
     dirty() { return this.builtRev !== (this.store.rev | 0) * 100000 + this.net.rev; }
@@ -259,8 +260,8 @@
     /* ---- one step of dt days ---- */
     step(dt) {
       if (this.dirty()) this.build(); this.dt = dt = Math.max(1e-6, dt); const store = this.store; this.time += dt;
-      for (const e of new Set(this.edges.values())) { e.flow = 0; e.over = false; e.lowP = false; e.hiP = false; }
-      const items = store.list(); for (const b of items) { const s = this.ensure(b); for (const k of Object.keys(s)) if (k[0] === '_') delete s[k]; const ty = DEFS[b.d].type; if (ty === 'pump' || ty === 'separator' || ty === 'refinery') { s.pIn = 0; if (ty === 'pump') s.pOut = 0; } }
+      for (const e of this._el) { e.flow = 0; e.over = false; e.lowP = false; e.hiP = false; }
+      const items = store.list(); for (const b of items) { const s = this.ensure(b); for (const k in s) if (k.charCodeAt(0) === 95) delete s[k]; const ty = DEFS[b.d].type; if (ty === 'pump' || ty === 'separator' || ty === 'refinery') { s.pIn = 0; if (ty === 'pump') s.pOut = 0; } }
       for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
         if (def.type === 'well') {
           const ratio = s.reserve0 ? s.reserve / s.reserve0 : 0; if (s.reserve <= 0) { s.reserve = 0; s._depleted = true; continue; }
@@ -284,7 +285,7 @@
         if (def.type === 'refinery') { s.eff = s._eff == null ? s.eff * .8 : s._eff; s.temp = s._temp == null ? Math.max(60, s.temp - 40 * dt * 10) : s._temp; }
         if (def.type === 'pump') s.power = (s._in || 0) * (s.boost * s.eff) * 0.01269 / 1000 / Math.max(.01, s.eff);
       }
-      for (const e of new Set(this.edges.values())) if (e.line) { e.line.flow = e.flow; e.line.over = e.over; e.line.lowP = e.lowP; e.line.hiP = e.hiP; e.line.pressure = e.p || 0; }
+      for (const e of this._el) if (e.line) { e.line.flow = e.flow; e.line.over = e.over; e.line.lowP = e.lowP; e.line.hiP = e.hiP; e.line.pressure = e.p || 0; }
       this.lastStep = dt;
     }
     run(days, h) { h = h || 0.05; for (let t = 0; t < days - 1e-9; t += h) this.step(Math.min(h, days - t)); }

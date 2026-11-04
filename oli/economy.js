@@ -209,7 +209,10 @@
     }
 
     /* ---- inventory (read from the tanks; the cost is in the journal) ---- */
-    tanksOf(p) { return this.store.list().filter(b => b.st !== 'UNDER_CONSTRUCTION' && (DEFS[b.d].type === 'tank' || DEFS[b.d].type === 'gas') && DEFS[b.d].product === p); }   // a DAMAGED tank still holds its oil and its capacity: it is counted too (it only stops accepting)
+    tanksOf(p) {                                                                   // the tanks of one product, from an index rebuilt only when the building list changes
+      const L = this.store.list(); if (this._tkL !== L) { this._tkL = L; this._tk = new Map(); for (const b of L) { const d = DEFS[b.d]; if (d.type === 'tank' || d.type === 'gas') { const a = this._tk.get(d.product); if (a) a.push(b); else this._tk.set(d.product, [b]); } } }
+      const arr = this._tk.get(p); return arr ? arr.filter(b => b.st !== 'UNDER_CONSTRUCTION') : [];
+    }   // a DAMAGED tank still holds its oil and its capacity: it is counted too (it only stops accepting)
     physicalVol(p) { let v = 0; for (const b of this.tanksOf(p)) v += this.sim.ensure(b).vol; return v; }                                                                           // everything in the tanks, water included
     available(p) { let v = 0; for (const b of this.tanksOf(p)) { const s = this.sim.ensure(b); v += p === 'CRUDE' ? Math.max(0, s.vol - (s.wat || 0)) : s.vol; } return v; }
     capacity(p) { let v = 0; for (const b of this.tanksOf(p)) v += DEFS[b.d].capacity.value; return v; }
@@ -402,7 +405,7 @@
     /* ---- staff (a headcount per category, never individual workers) ---- */
     computeStaff() {
       const need = { operators: 0, engineers: 0, maintenance: 0, managers: 0 }, c = this.cfg.LABOR;
-      for (const b of this.store.list()) { if (b.st !== 'OPERATIONAL') continue; const sk = c.staff[this.staffKey(DEFS[b.d])]; if (sk) for (const k of Object.keys(sk)) need[k] += sk[k]; }
+      for (const b of this.store.list()) { if (b.st !== 'OPERATIONAL') continue; const sk = c.staff[this.staffKey(DEFS[b.d])]; if (sk) for (const k in sk) need[k] += sk[k]; }
       const crew = Math.ceil(need.operators) + Math.ceil(need.engineers) + Math.ceil(need.maintenance), s = { operators: Math.ceil(need.operators), engineers: Math.ceil(need.engineers), maintenance: Math.ceil(need.maintenance), managers: Math.ceil(need.managers + (crew ? crew / c.perManager : 0)) };
       const H = this.cfg.HR, req = { operators: s.operators, engineers: s.engineers, maintenance: s.maintenance, managers: s.managers };   // what the buildings need
       for (const r of HRROLES) s[r] = Math.max(0, req[r] + (this.hr[r] ? this.hr[r].extra : 0));                                       // what the company employs
@@ -437,7 +440,7 @@
       const pd = this._drawMaterial('PARTS', MU.PARTS.qty), od = this._drawMaterial('OPS', MU.REPAIR_OPS.qty), matCost = pd.cost + od.cost, rest = Math.max(0, cost - matCost);     // spare parts and operating materials taken from stock are part of the repair cost
       if (matCost > 0) this._post({ type: 'REPAIR_PART', desc: 'Repair parts and materials · ' + DEFS[b.d].name }, [['EXP_MAINT', matCost], ['INV_PARTS', -pd.cost], ['INV_OPS', -od.cost]]);
       this._clearMat('PARTS'); this._clearMat('OPS'); if (rest > 0) this._expense('maintenance', rest, 'Repair · ' + DEFS[b.d].name); b.c = 1; if (b.st === 'DAMAGED') b.st = 'OPERATIONAL'; return { ok: true, cost }; }
-    repairAll(threshold) { let n = 0, tot = 0; for (const b of this.store.list().sort((x, y) => x.c - y.c)) { if (b.st === 'UNDER_CONSTRUCTION' || b.c >= (threshold == null ? 0.999 : threshold)) continue; const cost = this.repairCost(b); if (this.store.cash - cost < 0) break; const r = this.repair(b.id); if (r.ok) { n++; tot += r.cost; } } return { ok: true, n, cost: tot }; }
+    repairAll(threshold) { let n = 0, tot = 0; for (const b of this.store.list().slice().sort((x, y) => x.c - y.c)) { if (b.st === 'UNDER_CONSTRUCTION' || b.c >= (threshold == null ? 0.999 : threshold)) continue; const cost = this.repairCost(b); if (this.store.cash - cost < 0) break; const r = this.repair(b.id); if (r.ok) { n++; tot += r.cost; } } return { ok: true, n, cost: tot }; }
 
     /* ---- power ---- */
     setPowerBuy(on) { this.powerBuy = !!on; return { ok: true, on: this.powerBuy }; }

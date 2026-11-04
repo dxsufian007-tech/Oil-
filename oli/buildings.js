@@ -128,7 +128,8 @@
       this.B = 16;                                                  // spatial bucket size (tiles) for viewport queries on the big world
     }
     get(id) { return this.items.get(id) || null; }
-    list() { return [...this.items.values()]; }
+    /* the building list is shared by every reader of a tick: it is rebuilt only when the set of buildings changes (not on a state change) */
+    list() { const c = this._lc; if (c && c.map === this.items && c.rev === this.rev && c.n === this.items.size) return c.arr; const arr = [...this.items.values()]; this._lc = { map: this.items, rev: this.rev, n: this.items.size, arr }; return arr; }
     at(x, y) { const id = this.occ.get(key(this.W, x, y)); return id ? this.items.get(id) : null; }
     inb(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H; }
     query(x0, y0, x1, y1) {                                        // buildings whose footprint touches the rectangle
