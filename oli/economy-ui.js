@@ -114,7 +114,7 @@
       + '<div><div class="es-sm">مستوى المخاطر</div><div class="es-big ' + (risk === 'مرتفع' ? 'neg' : risk === 'متوسط' ? 'warn' : 'pos') + '" style="font-size:17px">' + risk + '</div><div class="es-sm">' + f.score + ' من 8 مؤشرات</div></div></div>'
       + (act.length ? '<div class="es-sm">مؤشرات نشطة: ' + act.join('، ') + '</div>' : '<div class="es-sm">لا توجد مؤشرات خطر نشطة.</div>'));
     // the three screens
-    h += '<div class="es-grid" style="margin-top:6px"><button data-act="screen" data-v="buy">المشتريات</button><button data-act="screen" data-v="staff">الموظفون</button><button data-act="screen" data-v="rescue">الإنقاذ المالي</button><button data-act="screen" data-v="power">الكهرباء</button><button data-act="screen" data-v="budget">إدارة الميزانية</button><button data-act="screen" data-v="report">التقرير المالي</button><button data-act="screen" data-v="log" style="grid-column:1/3">سجل العمليات المالية</button></div>';
+    h += '<div class="es-grid" style="margin-top:6px"><button data-act="screen" data-v="buy">المشتريات</button><button data-act="screen" data-v="staff">الموظفون</button><button data-act="screen" data-v="rescue">الإنقاذ المالي</button><button data-act="screen" data-v="power">الكهرباء</button><button data-act="screen" data-v="ratios">المؤشرات المالية</button><button data-act="screen" data-v="budget">إدارة الميزانية</button><button data-act="screen" data-v="report">التقرير المالي</button><button data-act="screen" data-v="log" style="grid-column:1/3">سجل العمليات المالية</button></div>';
     return h;
   }
   const DEFS_TYPE = b => window.OliBuildings.DEFS[b.d].type;
@@ -227,7 +227,20 @@
     return h;
   }
   function P_BUY() { return EC.POWER_BUY; }
+  /* financial ratios of the last closed month: averages of the start and end balances; غير متاح when the denominator is zero */
+  function rRatios() {
+    let h = '<button data-act="screen" data-v="">← العودة للوحة الشركة</button>';
+    const r = CO.lastMonth && CO.lastMonth.ratios; if (!r) return h + '<div class="es-sm" style="margin-top:8px">تظهر المؤشرات بعد إغلاق أول شهر.</div>';
+    const v = (x, f) => x == null ? 'غير متاح' : f(x), pc = x => (+x).toFixed(1) + '%', xx = x => (+x).toFixed(2);
+    const rows = [['هامش صافي الربح', v(r.netMargin, pc), 'صافي الربح ÷ الإيرادات'], ['هامش التشغيل', v(r.operatingMargin, pc), 'ربح التشغيل قبل الفائدة والضريبة ÷ الإيرادات'],
+      ['العائد على الأصول ROA', v(r.roa, pc), 'صافي الربح ÷ متوسط الأصول'], ['العائد على حقوق الملكية ROE', v(r.roe, pc), 'صافي الربح ÷ متوسط حقوق الملكية'],
+      ['نسبة التداول', v(r.currentRatio, xx), 'الأصول المتداولة ÷ الالتزامات المتداولة'], ['الدين إلى الأصول', v(r.debtToAssets, xx), 'إجمالي الالتزامات ÷ إجمالي الأصول'],
+      ['تكلفة البرميل', v(r.costPerBarrel, d => '$' + d.toFixed(2)), 'التكاليف ÷ البراميل المنتجة']];
+    h += '<div class="es-sm" style="margin:8px 0">الشهر المغلق الأخير</div>' + rows.map(x => '<div class="es-card"><div class="es-kv"><span>' + x[0] + '</span><b class="' + (x[1] === 'غير متاح' ? 'warn' : '') + '">' + x[1] + '</b></div><div class="es-sm">' + x[2] + '</div></div>').join('');
+    return h;
+  }
   function rCompany() {
+    if (subScreen === 'ratios') return rRatios();
     if (subScreen === 'power') return rPower();
     if (subScreen === 'rescue') return rRescue();
     if (subScreen === 'staff') return rStaff();

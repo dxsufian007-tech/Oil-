@@ -65,6 +65,10 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   ok(/الطلب/.test(t) && /العجز/.test(t) && /تفعيل الشراء/.test(t), 'power screen: demand, supply, shortage and the purchase switch are shown');
   await tap('#es-body [data-act=pbuy][data-v="1"]'); ok(await co(() => __lab.company.powerBuy === true), 'power: bought power switched on');
   await tap('#es-body [data-act=screen][data-v=""]');
+  // 4f. financial ratios: seven ratios; the ones with no denominator say غير متاح
+  await tap('#es-body [data-act=screen][data-v=ratios]'); t = await body();
+  ok(/هامش صافي الربح/.test(t) && /ROA/.test(t) && /ROE/.test(t) && /نسبة التداول/.test(t) && /الدين إلى الأصول/.test(t) && /تكلفة البرميل/.test(t), 'ratios screen: margins, ROA, ROE, current ratio, debt to assets and cost per barrel are shown');
+  await tap('#es-body [data-act=screen][data-v=""]');
   // 5. nothing failed in the page
   ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
   await b.close(); srv.close(); console.log('\nECONOMY SCREENS TESTS PASSED (' + n + ' checks)');

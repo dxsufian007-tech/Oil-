@@ -102,14 +102,14 @@
     }
     _init() {
       const c = this.cfg; this.hours = 0; this.dayIdx = 0; this.acc = 0; this.market = new Market(c); this.assets = new Map(); this.loans = []; this.nextLoan = 1; this.closed = []; this.contracts = []; this.history = []; this.offers = []; this.nextContract = 1;
-      this.recv = []; this.nextRecv = 1; this.months = []; this.qty = PZERO(); this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1; this.cutUntil = -1; this.powerBuy = false; this.pwStop = null;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
+      this.recv = []; this.nextRecv = 1; this.months = []; this.bsStart = null; this.qty = PZERO(); this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1; this.cutUntil = -1; this.powerBuy = false; this.pwStop = null; this.bsStart = null;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
       this.crng = new Rng(c.MARKET.seed ^ 0x5bd1e995); this.modes = {}; for (const p of SELL) this.modes[p] = c.AUTOSELL && c.AUTOSELL.defaultMode || 'SPOT'; this.tier = c.POWER.startTier; this.autoRepair = c.MAINTENANCE.autoRepair;
       const cash = isFinite(this.store.cash) ? this.store.cash : 0;
       this.journal = new Journal(); this.led = { day: ledger(cash), month: ledger(cash), year: ledger(cash), life: ledger(cash) }; this.lastMonth = null; this.days = []; this.prodHist = []; this.crudeQ = 1;
       this.fin = { state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }; this.taxCarry = 0; this.bankrupt = false; this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.staff = { operators: 0, engineers: 0, maintenance: 0, managers: 0, total: 0, payroll: 0 };
       this.speed = 1; this.mirror = this.store.cash; this.lastSim = null; this.away = null; this.events = []; this.seen = new Set(); this.badClock = false;
       this._post({ type: 'OPENING', flow: 'NONE', desc: 'Opening balance', noProj: true }, [['CASH', cash], ['EQUITY', -cash]], { cashApplied: true });
-      this._refreshOffers(); this.computeStaff();
+      this._refreshOffers(); this.computeStaff(); this.bsStart = this._snap();
     }
     reset() { this._init(); }
     _wrap() {                                                                       // every purchase / demolition goes through the journal (the store and its validation are not changed)
@@ -231,6 +231,20 @@
     }
     _clearPool(p) { const acc = INVACC[p], left = this.journal.bal[acc]; if (this.qty[p] <= EPS2 && left > 0.01) this._post({ type: 'COGS', desc: 'Stock ' + p + ' empty: remaining cost written off' }, [['COGS', left], [acc, -left]]); }
 
+    /* ---- financial ratios (Phase 13). Averages use the balance at the start and at the end of the period. null = not available (zero denominator) ---- */
+    _snap() {
+      const bs = this.balanceSheet(), suppliers = -this.journal.bal.PAY_SUPPLIERS, loansDue = this.loans.reduce((a, l) => a + Math.min(l.remaining, l.payment * this.cfg.TIME.monthsPerYear), 0);
+      return { assets: bs.totalAssets, equity: bs.totalEquity, liabilities: bs.totalLiabilities, current: bs.cash + bs.receivables + bs.inventory, currentLiab: bs.payroll + bs.tax + suppliers + loansDue };
+    }
+    _ratios(c, start, end) {
+      const div = (a, b) => b > 0 ? a / b : null, pct = v => v == null ? null : v * 100, avg = (a, b) => (a + b) / 2, L = c.L || {};
+      const rev = c.revenue, net = c.netProfit, opProfit = c.grossProfit - c.opex, cost = c.variable + c.opex;               // operating profit = before interest and tax
+      const barrels = (L.produced ? L.produced.CRUDE + L.produced.GASOLINE + L.produced.DIESEL + L.produced.JET_FUEL + L.produced.GAS : 0);
+      const avgA = avg(start.assets, end.assets), avgE = avg(start.equity, end.equity);
+      return { netMargin: pct(div(net, rev)), operatingMargin: pct(div(opProfit, rev)), roa: pct(div(net, avgA)), roe: pct(div(net, avgE)),
+        currentRatio: div(end.current, end.currentLiab), debtToAssets: div(end.liabilities, end.assets), costPerBarrel: div(cost, barrels),
+        inputs: { revenue: rev, netProfit: net, operatingProfit: opProfit, avgAssets: avgA, avgEquity: avgE, currentAssets: end.current, currentLiabilities: end.currentLiab, liabilities: end.liabilities, assets: end.assets, cost, barrels } };
+    }
     /* ---- rescue measures (Phase 10): each one is a journal entry or a change to a loan / cost line ---- */
     inTrouble() { return this.store.cash < 0 || ['PRESSURE', 'LIQUIDITY', 'RESCUE', 'DEFAULT'].includes(this.fin.stage); }
     costCutOn() { return this.hours < this.cutUntil; }
@@ -525,7 +539,9 @@
       else { const used = C.TAX.lossCarryForward ? Math.min(this.taxCarry, taxable) : 0; this.taxCarry -= used; const tax = (taxable - used) * C.TAX.rate;
         if (tax > 0.005) { this._post({ type: 'TAX_ACCRUED', desc: 'Tax on the month' }, [['EXP_TAX', tax], ['PAY_TAX', -tax]]); this._post({ type: 'TAX_PAID', flow: 'OP', desc: 'Tax paid' }, [['PAY_TAX', tax], ['CASH', -tax]]); } }
       // 6. close the month
-      const cash = this.store.cash, closed = calc(this.led.month, cash); this.lastMonth = closed; delete this.lastMonth.L.produced; this.led.month = ledger(cash);
+      const cash = this.store.cash, closed = calc(this.led.month, cash), endSnap = this._snap(), startSnap = this.bsStart || endSnap;
+      closed.ratios = this._ratios(closed, startSnap, endSnap); this.bsStart = endSnap;                                   // ratios use the average of the start and end balances
+      this.lastMonth = closed; delete this.lastMonth.L.produced; this.led.month = ledger(cash);
       this.months.push({ n: this.months.length + 1, dayIdx: this.dayIdx, revenue: closed.revenue, expenses: closed.expenses, profit: closed.netProfit, cashIn: closed.cash.in, cashOut: closed.cash.out, cashEnd: cash }); while (this.months.length > 24) this.months.shift();
       if (this.dayIdx % (C.TIME.daysPerMonth * C.TIME.monthsPerYear) === 0) this.led.year = ledger(cash);
     }
@@ -652,7 +668,7 @@
     /* ---- save / load (the store and the pipes are saved by the lab as before; this is the company) ---- */
     toJSON() {
       return { v: 2, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
-        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, mats: this.mats, payables: this.payables, nextPay: this.nextPay, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, savedAt: this.lastSim };
+        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, mats: this.mats, payables: this.payables, nextPay: this.nextPay, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, savedAt: this.lastSim };
     }
     fromJSON(d) {
       if (!d || (d.v !== 1 && d.v !== 2)) return false; const c = this.cfg;
@@ -660,10 +676,10 @@
       this.contracts = d.contracts || []; this.history = d.history || []; this.offers = d.offers || []; this.nextContract = d.nextContract || 1; this.crng = new Rng(d.crng || 1); this.modes = Object.assign(this.modes, d.modes || {}); this.tier = d.tier || 0; this.autoRepair = d.autoRepair !== false;
       this.led = d.led || this.led; for (const k of ['day', 'month', 'year', 'life']) { const L = Object.assign(ledger(0), this.led[k]); L.produced = Object.assign(PZERO(), L.produced); L.sold = Object.assign(SZERO(), L.sold); L.pl = Object.assign(ledger(0).pl, L.pl || {}); L.cf = Object.assign(ledger(0).cf, L.cf || {}); this.led[k] = L; }
       this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSim = d.savedAt == null ? null : d.savedAt;
-      this.recv = d.recv || []; this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy;
+      this.recv = d.recv || []; this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy; this.bsStart = d.bsStart || null;
       if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); }
       else this._migrate();                                                         // a save from before the journal: the company starts from an opening balance sheet of what it holds now
-      this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.mirror = this.store.cash; this.away = null; this.events = []; this.seen = new Set(); this._refreshOffers(); this.computeStaff(); return true;
+      this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.mirror = this.store.cash; if (!this.bsStart) this.bsStart = this._snap(); this.away = null; this.events = []; this.seen = new Set(); this._refreshOffers(); this.computeStaff(); return true;
     }
     _migrate() {
       const j = new Journal(), cash = isFinite(this.store.cash) ? this.store.cash : 0; j.bal.CASH = cash; let fixed = this.pipeValue(), dep = 0;
