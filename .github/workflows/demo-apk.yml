@@ -1,5 +1,6 @@
 name: Demo APK (everything unlocked, $100M)
 
+# Beta build: current feature/building-system (commit e0f362d), OLI_DEMO on.
 # Manual only. A SEPARATE app (Oli Demo, id com.oli.oildemo): $100M, every building unlocked, every region open, every oil field drillable. Result: branch demo-apk-build (OliDemo.apk).
 on:
   workflow_dispatch:
