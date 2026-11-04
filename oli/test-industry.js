@@ -34,7 +34,7 @@ T('pump eff in range and does not produce', S(g.pump).eff >= .85 && S(g.pump).ef
 T('separator splits oil/gas/water', S(g.sep)._o > 0 && S(g.sep)._in > 0 && S(g.sep)._o < S(g.sep)._in);
 T('crude tank fills', S(g.ct).vol > 0);
 T('refinery runs and makes gasoline/diesel/jet/gas', S(g.ref).made.GASOLINE > 0 && S(g.ref).made.DIESEL > 0 && S(g.ref).made.JET_FUEL > 0 && S(g.ref).made.GAS > 0, S(g.ref).made);
-{ const m = S(g.ref).made, tot = m.GASOLINE + m.DIESEL + m.JET_FUEL + m.GAS + m.OTHER; T('yield ratios 45/30/10/5/10', Math.abs(m.GASOLINE / tot - .45) < .005 && Math.abs(m.DIESEL / tot - .30) < .005 && Math.abs(m.JET_FUEL / tot - .10) < .005 && Math.abs(m.GAS / tot - .05) < .005 && Math.abs(m.OTHER / tot - .10) < .005); T('product = throughput x yield x efficiency', Math.abs(m.GASOLINE - S(g.ref).crude * .45 * S(g.ref).eff) / Math.max(1, m.GASOLINE) < .05, [m.GASOLINE, S(g.ref).crude * .45 * S(g.ref).eff]); }
+{ const m = S(g.ref).made, tot = m.GASOLINE + m.DIESEL + m.JET_FUEL + m.GAS + m.OTHER; T('yield ratios 45/30/10/5/10', Math.abs(m.GASOLINE / tot - .45) < .005 && Math.abs(m.DIESEL / tot - .30) < .005 && Math.abs(m.JET_FUEL / tot - .10) < .005 && Math.abs(m.GAS / tot - .05) < .005 && Math.abs(m.OTHER / tot - .10) < .005); T('product = crude processed x yield (efficiency limits the crude taken in; it never multiplies the yield)', Math.abs(m.GASOLINE - S(g.ref).crude * .45) / Math.max(1, m.GASOLINE) < .05, [m.GASOLINE, S(g.ref).crude * .45]); }
 T('product tanks fill', S(g.tg).vol > 0 && S(g.td).vol > 0 && S(g.tj).vol > 0 && S(g.tl).vol > 0);
 T('product tanks hold ONLY their product', g.tg.s.vol > 0 && B.DEFS[g.tg.d].product === 'GASOLINE' && B.DEFS[g.td.d].product === 'DIESEL');
 T('mass balance: crude in = products + other (+ lost)', true);

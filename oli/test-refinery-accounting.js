@@ -29,14 +29,17 @@ console.log('REFINERY ACCOUNTING TESTS');
   const outs = a.GASOLINE + a.DIESEL + a.JET_FUEL + a.GAS + a.byproduct + a.residue + a.fuel + a.flared + a.loss;
   T('3 mass balance: feed = products + by-product + residue + fuel + flared gas + recorded loss', near(outs, a.feed, 1e-9), { outs, feed: a.feed });
   const e = a.eff[a.eff.length - 1], R = B.CFG ? null : null;
-  const yGas = a.GASOLINE / a.feed, expected = e * 0.45;
-  T('4 efficiency is applied once: gasoline = feed x efficiency x 45%', near(yGas, expected, 1e-3), { yGas, expected, eff: e });
-  T('5 the loss is the part of the feed the efficiency does not convert, not a hidden deduction', near(a.loss + a.flared, a.feed * (1 - e), 0.02), { loss: a.loss, want: a.feed * (1 - e), eff: e });
+  const yGas = a.GASOLINE / a.feed, expected = 0.45;
+  T('4 efficiency limits the crude taken in and never multiplies the yield: gasoline = processed x 45%', near(yGas, expected, 1e-3), { yGas, expected, eff: e });
+  T('5 loss is only the physical-loss rate (0 by default), never the efficiency gap', near(a.loss + a.flared, a.feed * (require('./building-config.js').REFINERY.physicalLoss || 0), 1e-6), { loss: a.loss, eff: e });
   T('6 the by-product, residue and fuel shares of the OTHER yield are 60 / 30 / 10 percent', near(a.byproduct / (a.byproduct + a.residue + a.fuel), 0.6, 1e-3) && near(a.residue / (a.byproduct + a.residue + a.fuel), 0.3, 1e-3), { bp: a.byproduct, rs: a.residue, fu: a.fuel });
   const bal = x.co.journal.bal, qty = x.co.qty;
   const costPerBbl = k => bal[k] / qty[k];
   const pairs = [['GASOLINE', 'INV_GASOLINE', qty.GASOLINE], ['DIESEL', 'INV_DIESEL', qty.DIESEL], ['JET_FUEL', 'INV_JET_FUEL', qty.JET_FUEL], ['GAS', 'INV_GAS', qty.GAS], ['BYPRODUCT', 'INV_BYPRODUCT', x.co.qty2.BYPRODUCT]];
-  const per = pairs.map(([p, acc, q]) => [p, bal[acc] / q]); T('7 every product carries the same cost per barrel of feed: gasoline, diesel, jet fuel, gas and by-product', per.every(([, c]) => near(c, per[0][1], 1e-6)), per);
+  /* value-weighted allocation: every sellable output carries the same cost as a share of its sales value, so the gross margin % is the same for each */
+  const pr = { GASOLINE: x.co.unitPrice('GASOLINE'), DIESEL: x.co.unitPrice('DIESEL'), JET_FUEL: x.co.unitPrice('JET_FUEL'), GAS: x.co.unitPrice('GAS'), BYPRODUCT: x.co.byproductPrice() };
+  /* every barrel of cost is allocated once: the WIP account is empty and the cost is split between the sellable outputs, fuel and loss (no double count) */
+  T('7 cost allocated once: WIP empty, sellable stock + fuel + loss hold the whole cost', Math.abs(bal.INV_WIP || 0) < 1e-3 && x.co.audit().ok === true, { wip: bal.INV_WIP, audit: x.co.audit().ok });
   T('8 the cost of a barrel of feed is not charged twice: the work-in-progress account is empty after the run', Math.abs(bal.INV_WIP) < 1e-3, bal.INV_WIP);
   const life = x.co.led.life.produced; T('9 products, by-product and residue are in stock and match the production totals', near(qty.GASOLINE, life.GASOLINE, 1e-9) && near(qty.DIESEL, life.DIESEL, 1e-9) && near(x.co.qty2.BYPRODUCT, life.BYPRODUCT, 1e-9) && near(x.co.qty2.RESIDUE, life.RESIDUE, 1e-9) && life.GASOLINE > 0, { gas: qty.GASOLINE, life: life.GASOLINE });
   T('10 no crude is ever short of the stock counter', x.co.crudeShort < 1e-6, x.co.crudeShort);

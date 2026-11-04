@@ -27,7 +27,11 @@
   // refinery sizes: capacity bbl/day, construction cost, operating & maintenance per day, footprint. Yields are per 100 bbl of crude.
   const REFINERY = {
     yields: { GASOLINE: 45, DIESEL: 30, JET_FUEL: 10, GAS: 5, OTHER: 10 },
-    otherSplit: { BYPRODUCT: 0.6, RESIDUE: 0.3, FUEL: 0.1 },   // the OTHER share is split: sellable by-product, residue (not sold), internal fuel burnt in the refinery
+    otherSplit: { BYPRODUCT: 0.6, RESIDUE: 0.3, FUEL: 0.1 },
+    // physical loss: the fraction of the processed crude that is lost in the plant (not efficiency). Not calibrated yet: 0 until the recipe is reviewed.
+    physicalLoss: 0,
+    // gas is booked in barrel-equivalent (برميل مكافئ). Conversion of refinery gas volume to barrel-equivalent. Provisional 1.0 until the gas basis is confirmed.
+    gasBblEqPerUnit: 1,   // the OTHER share is split: sellable by-product, residue (not sold), internal fuel burnt in the refinery
     sizes: {
       S: { id: 'refinery_s', name: 'Small Refinery', w: 6, h: 5, cap: 5000, cost: 25000000, op: 10000, maint: 4500 },
       M: { id: 'refinery_m', name: 'Medium Refinery', w: 8, h: 6, cap: 25000, cost: 100000000, op: 48000, maint: 20000 },

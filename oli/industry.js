@@ -242,21 +242,23 @@
     capOf(b) { return DEFS[b.d].params.cap * levelOf(b).capacityMultiplier; }                  // the refinery's throughput ceiling (bbl/day), used by the economy to gate it on materials
     refine(b, s, def, f, commit, vis) {
       const C = def.params, R = CFG.REFINERY, L = levelOf(b), cap = C.cap * L.capacityMultiplier, lim = Math.min(clamp(s.opLimit, 0, 1), s.matLim == null ? 1 : clamp(s.matLim, 0, 1)); s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;   // the player's throttle and the material limit (set by the economy), whichever is lower
-      const room = Math.max(0, cap * lim - (s._in || 0)); if (f.r > room + 1e-6 && lim >= 1) s._sat = true; let thr = Math.min(f.r, room); if (thr <= 1e-9) return 0;
-      const util = clamp((s._in || 0) / cap + thr / cap, 0, 1), water = f.wat || 0, gas = f.gas || 0, quality = clamp(1 - .6 * water - .3 * gas, 0.2, 1), temp = lerp(150, R.optimalTempC, clamp(util * 1.4, 0, 1)), tempF = temp > R.maxTempC ? .8 : 1,
+      const util = clamp(lim, 0, 1), water = f.wat || 0, gas = f.gas || 0, quality = clamp(1 - .6 * water - .3 * gas, 0.2, 1), temp = lerp(150, R.optimalTempC, clamp(util * 1.4, 0, 1)), tempF = temp > R.maxTempC ? .8 : 1,
         pressF = clamp(.6 + .4 * Math.min(1, f.p / R.minInletPsi), .6, 1), utilF = .85 + .15 * Math.min(1, util / .6), maintF = .7 + .3 * b.c, eff = clamp(R.baseEfficiency * quality * tempF * pressF * utilF * maintF * L.efficiencyMultiplier * eco(b), 0, 1);
+      // three separate things: the yield (R.yields, the recipe), the efficiency (eff: the share of nameplate capacity the plant can process in its current state; it limits the crude accepted, the rest stays in the feed/tank) and the physical loss (R.physicalLoss, a separate, calibrated fraction of what is processed). Efficiency is never booked as a loss.
+      const room = Math.max(0, cap * lim * eff - (s._in || 0)); if (f.r > room + 1e-6 && lim >= 1) s._sat = true; let thr = Math.min(f.r, room); if (thr <= 1e-9) return 0;
+      const passF = 1 - (R.physicalLoss || 0);
       const outs = [['GASOLINE', 'GASOLINE_OUT', P.GASOLINE], ['DIESEL', 'DIESEL_OUT', P.DIESEL], ['JET_FUEL', 'JET_OUT', P.JET_FUEL], ['GAS', 'GAS_OUT', P.GAS]];
       let connected = 0; for (const [, port] of outs) if (this.edgeOf(b, port)) connected++; if (!connected) { if (commit) s._noOut = true; return 0; }
       let th = 1; const pOut = Math.max(20, f.p * .6);
-      for (const [y, port, prod] of outs) { if (!this.edgeOf(b, port)) continue; const want = thr * R.yields[y] / 100 * eff; if (want > 0) th = Math.min(th, this.offer(b, port, { prod, r: want, p: pOut }, false, vis) / want); }
+      for (const [y, port, prod] of outs) { if (!this.edgeOf(b, port)) continue; const want = thr * R.yields[y] / 100 * passF; if (want > 0) th = Math.min(th, this.offer(b, port, { prod, r: want, p: pOut }, false, vis) / want); }
       if (th <= 1e-9) { if (commit) s._blocked = true; return 0; }
-      thr *= th;
+      thr *= th; const consumed = thr;   // the crude actually taken from the feed (all of it is processed; efficiency limited how much was accepted)
       if (commit) {
-        for (const [y, port, prod] of outs) { const rate = thr * R.yields[y] / 100 * eff; if (this.edgeOf(b, port)) { const a = this.offer(b, port, { prod, r: rate, p: pOut }, true, vis); s.made[y] += a * this.dt; (s._p = s._p || {})[y] = (s._p[y] || 0) + a; } else if (y === 'GAS') s.flared += rate * this.dt; }
-        const oth = thr * R.yields.OTHER / 100 * eff; for (const [k, sh] of Object.entries(R.otherSplit)) { const a = oth * sh; s.made[k] = (s.made[k] || 0) + a * this.dt; (s._p = s._p || {})[k] = (s._p[k] || 0) + a; }
-        s.made.OTHER += oth * this.dt; s._p = s._p || {}; s._p.OTHER = (s._p.OTHER || 0) + oth; s._in = (s._in || 0) + thr; s.crude += thr * this.dt; s._eff = eff; s._temp = temp; s._quality = quality; s._pressF = pressF;
+        for (const [y, port, prod] of outs) { const rate = thr * R.yields[y] / 100 * passF; if (this.edgeOf(b, port)) { const a = this.offer(b, port, { prod, r: rate, p: pOut }, true, vis); s.made[y] += a * this.dt; (s._p = s._p || {})[y] = (s._p[y] || 0) + a; } else if (y === 'GAS') s.flared += rate * this.dt; }
+        const oth = thr * R.yields.OTHER / 100 * passF; for (const [k, sh] of Object.entries(R.otherSplit)) { const a = oth * sh; s.made[k] = (s.made[k] || 0) + a * this.dt; (s._p = s._p || {})[k] = (s._p[k] || 0) + a; }
+        s.made.OTHER += oth * this.dt; s._p = s._p || {}; s._p.OTHER = (s._p.OTHER || 0) + oth; s._in = (s._in || 0) + consumed; s.crude += consumed * this.dt; s._eff = eff; s._temp = temp; s._quality = quality; s._pressF = pressF;
       }
-      return thr;
+      return consumed;
     }
 
     /* ---- one step of dt days ---- */

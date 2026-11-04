@@ -37,6 +37,8 @@
         { id: 'TRANSPORT_UP', label: 'ارتفاع تكلفة النقل والطاقة', days: 15, cost: { freight: 1.30, energy: 1.20 } }   // purchases carry more freight, power costs more
       ] },   // selling a lot pushes the price down (Supply factor), then it recovers
     FEES: { spot: 0.01, contract: 0.0025 },
+    // by-products: sold at this share of the current crude price (PROVISIONAL: to be reviewed; no market history yet)
+    BYPRODUCT: { priceRatioToCrude: 0.8 },
     QUALITY: { mult: { HIGH: 1.10, NORMAL: 1.00, LOW: 0.90 }, refinery: { HIGH: 1.03, NORMAL: 1.00, LOW: 0.95 }, share: { HIGH: 0.25, LOW: 0.25 }, highAt: 1.05, lowAt: 0.95 },
 
     // ---- costs

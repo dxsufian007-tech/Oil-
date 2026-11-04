@@ -347,6 +347,22 @@
       this._cogs(p, got); this.market.sold(p, got); this._L(L => { L.sold[p] += got; L.soldRev += gross; });
       return { ok: true, product: p, qty: got, gross, fee, net: gross - fee, price: qt.unitPrice, kind: kind || 'SPOT' };
     }
+    /* ---- by-products: sellable; own inventory and revenue accounts; no physical tank yet (book stock only) ---- */
+    byproductPrice() { return Math.max(0, this.unitPrice('CRUDE') || 0) * this.cfg.BYPRODUCT.priceRatioToCrude; }
+    byproductUnitCost() { const q = this.qty2.BYPRODUCT; return q > EPS2 ? Math.max(0, this.journal.bal.INV_BYPRODUCT) / q : 0; }
+    byproducts() { return { qty: this.qty2.BYPRODUCT, unitCost: this.byproductUnitCost(), value: Math.max(0, this.journal.bal.INV_BYPRODUCT), price: this.byproductPrice(), residue: this.qty2.RESIDUE, residueValue: Math.max(0, this.journal.bal.INV_RESIDUE) }; }
+    sellByproduct(qty) {
+      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); const have = this.qty2.BYPRODUCT;
+      if (!(qty > 0) || have <= 1e-6) return { ok: false, reason: 'nothingToSell' }; if (qty > have + 1e-6) return { ok: false, reason: 'notEnough' };
+      const got = Math.min(qty, have), price = this.byproductPrice(), gross = got * price, fee = gross * this.cfg.FEES.spot, unit = this.byproductUnitCost();
+      const cost = Math.min(Math.max(0, this.journal.bal.INV_BYPRODUCT), got * unit);
+      this.qty2.BYPRODUCT = Math.max(0, have - got);
+      this._post({ type: 'SALE_BYPRODUCT', flow: 'OP', desc: 'By-product sale', src: 'SPOT' }, [['CASH', gross], ['REV_BYPRODUCT', -gross]]);
+      if (cost > 0) this._post({ type: 'COGS', desc: 'Cost of by-products sold' }, [['COGS', cost], ['INV_BYPRODUCT', -cost]]);
+      if (this.qty2.BYPRODUCT <= EPS2 && this.journal.bal.INV_BYPRODUCT > 0.01) this._post({ type: 'COGS', desc: 'By-product stock empty: remaining cost written off' }, [['COGS', this.journal.bal.INV_BYPRODUCT], ['INV_BYPRODUCT', -this.journal.bal.INV_BYPRODUCT]]);
+      this._expense('fees', fee, 'By-product sale fee'); this._L(L => { L.soldRev += gross; });
+      return { ok: true, product: 'BYPRODUCT', qty: got, gross, fee, net: gross - fee, price, cost };
+    }
     setMode(p, mode) { if (!SELL.includes(p) || !['WAIT', 'SPOT', 'CONTRACT'].includes(mode)) return false; this.modes[p] = mode; return true; }
 
     /* ---- contracts: revenue on delivery, paid after CONTRACTS.payDays (receivable until then) ---- */
@@ -487,7 +503,8 @@
       if (prod.THRU > 0) { const ch = this._drawMaterial('CHEM', prod.THRU * MU.CHEM.qty), op = this._drawMaterial('OPS', prod.THRU * MU.OPS.qty); chemStock = ch.cost; opsStock = op.cost; }
       refin.chem = chemStock + chemCash; refin.ops = opsStock + opsCash;
       const refCash = refin.operating + refin.maintenance + refin.energy + chemCash + opsCash, refCost = refCash + chemStock + opsStock;
-      if (refCost > 0) this._post({ type: 'PROD_REFINERY', flow: 'OP', desc: 'Refinery operation', inc: { operating: refin.operating, maintenance: refin.maintenance, energy: refin.energy, chem: refin.chem, ops: refin.ops } },
+      if (refCost > 0 && prod.THRU <= 0) { this._expense('operating', refin.operating, 'Refinery · idle operation'); this._expense('maintenance', refin.maintenance, 'Refinery · idle maintenance'); this._expense('energy', refin.energy, 'Refinery · idle energy'); }   // no crude processed this hour: a period cost, not carried in stock (otherwise it waits in WIP until the next barrel)
+      else if (refCost > 0) this._post({ type: 'PROD_REFINERY', flow: 'OP', desc: 'Refinery operation', inc: { operating: refin.operating, maintenance: refin.maintenance, energy: refin.energy, chem: refin.chem, ops: refin.ops } },
         [['INV_WIP', refCost], ['CASH', -refCash], ['INV_CHEM', -chemStock], ['INV_OPS', -opsStock]]);
       this._clearMat('CHEM'); this._clearMat('OPS');
       this._expense('operating', tankOpex * (this.costCutOn() ? 1 - C.RESCUE.costCutShare : 1), 'Tanks · operation'); this._expense('maintenance', tankMaint, 'Tanks · maintenance'); this._expense('storage', storageCost, 'Oil kept in tanks (per barrel per day)');
@@ -501,14 +518,21 @@
       // every barrel of feed is accounted for. The cost of a barrel of feed is the same for all outputs; the fuel, the flare and the loss are expensed, the rest is carried in stock
       const T = prod.THRU, wip = Math.max(0, this.journal.bal.INV_WIP), outs = PRODS.reduce((a, q) => a + refOut[q], 0) + rf.BYPRODUCT + rf.RESIDUE + rf.FUEL + rf.FLARED, loss = Math.max(0, T - outs);
       this.refLast = { feed: T, products: Object.assign({}, refOut), byproduct: rf.BYPRODUCT, residue: rf.RESIDUE, fuel: rf.FUEL, flared: rf.FLARED, loss };
-      for (const q of PRODS) this.qty[q] += refOut[q]; this.qty2.BYPRODUCT += rf.BYPRODUCT; this.qty2.RESIDUE += rf.RESIDUE;
-      if (T > 0 && wip > 0) { const per = wip / T, costOf = v => Math.min(wip, per * Math.max(0, v));
-        for (const q of PRODS) { const amt = costOf(refOut[q]); if (amt > 0.005) this._post({ type: 'REFINE_OUT', desc: 'Products · ' + q }, [[INVACC[q], amt], ['INV_WIP', -amt]]); }
-        const bp = costOf(rf.BYPRODUCT); if (bp > 0.005) this._post({ type: 'REFINE_BYPRODUCT', desc: 'By-product (sellable)' }, [['INV_BYPRODUCT', bp], ['INV_WIP', -bp]]);
-        const rs = costOf(rf.RESIDUE); if (rs > 0.005) this._post({ type: 'REFINE_RESIDUE', desc: 'Residue (not for sale)' }, [['INV_RESIDUE', rs], ['INV_WIP', -rs]]);
-        const fu = costOf(rf.FUEL); if (fu > 0.005) this._post({ type: 'REFINE_FUEL', desc: 'Refinery internal fuel' }, [['EXP_FUEL', fu], ['INV_WIP', -fu]]);
-        const ls = costOf(loss + rf.FLARED); if (ls > 0.005) this._post({ type: 'REFINE_LOSS', desc: 'Refinery losses (recorded)' }, [['EXP_LOSS', ls], ['INV_WIP', -ls]]); }
-      if (sepGas > 0) { const amt = Math.min(sepGas * this.unitCost('CRUDE'), Math.max(0, this.journal.bal.INV_CRUDE)); if (amt > 0.005) this._post({ type: 'SEP_GAS', desc: 'Gas from separators' }, [['INV_GAS', amt], ['INV_CRUDE', -amt]]); this.qty.GAS += sepGas; }
+      for (const q of PRODS) this.qty[q] += refOut[q] * (q === 'GAS' ? BC.REFINERY.gasBblEqPerUnit : 1); this.qty2.BYPRODUCT += rf.BYPRODUCT; this.qty2.RESIDUE += rf.RESIDUE;
+      // cost allocation: every barrel of crude cost lands exactly once. Fuel and losses are expensed at the average cost of a barrel of feed.
+      // Residue has no market value, so it carries no cost (net realisable value). The rest is shared by the sellable outputs in proportion to their sales value
+      // (relative sales-value method), so every sellable output keeps the same gross margin %: a cheap barrel does not inherit the cost of an expensive one.
+      if (T > 0 && wip > 0) {
+        const avg = wip / T, fuCost = Math.min(wip, avg * rf.FUEL), lsCost = Math.min(wip - fuCost, avg * (loss + rf.FLARED)), pool = Math.max(0, wip - fuCost - lsCost);
+        const sellable = PRODS.map(q => ({ v: refOut[q] * (q === 'GAS' ? BC.REFINERY.gasBblEqPerUnit : 1), price: this.unitPrice(q), acc: INVACC[q], desc: 'Products · ' + q }))
+          .concat([{ v: rf.BYPRODUCT, price: this.byproductPrice(), acc: 'INV_BYPRODUCT', desc: 'By-product (sellable)' }]);
+        const wsum = sellable.reduce((a, x) => a + Math.max(0, x.v) * Math.max(0, x.price), 0);
+        if (wsum > 0) for (const x of sellable) { const amt = pool * Math.max(0, x.v) * Math.max(0, x.price) / wsum; if (amt > 0.005) this._post({ type: 'REFINE_OUT', desc: x.desc }, [[x.acc, amt], ['INV_WIP', -amt]]); }
+        else if (pool > 0.005) this._post({ type: 'REFINE_LOSS', desc: 'Refinery output with no sales value (expensed)' }, [['EXP_LOSS', pool], ['INV_WIP', -pool]]);
+        if (fuCost > 0.005) this._post({ type: 'REFINE_FUEL', desc: 'Refinery internal fuel (expense)' }, [['EXP_FUEL', fuCost], ['INV_WIP', -fuCost]]);
+        if (lsCost > 0.005) this._post({ type: 'REFINE_LOSS', desc: 'Refinery losses (recorded)' }, [['EXP_LOSS', lsCost], ['INV_WIP', -lsCost]]);
+      }
+      if (sepGas > 0) { const amt = Math.min(sepGas * this.unitCost('CRUDE'), Math.max(0, this.journal.bal.INV_CRUDE)); if (amt > 0.005) this._post({ type: 'SEP_GAS', desc: 'Gas from separators' }, [['INV_GAS', amt], ['INV_CRUDE', -amt]]); this.qty.GAS += sepGas * BC.REFINERY.gasBblEqPerUnit; }
       this._L(L => { for (const k of Object.keys(prod)) L.produced[k] += prod[k]; for (const k of ['BYPRODUCT', 'RESIDUE', 'FUEL', 'FLARED']) L.produced[k] = (L.produced[k] || 0) + rf[k]; });
 
       const qNow = this._qNow(items), onHand = this.crudeOnHand(); if (onHand > 0 && prod.CRUDE > 0) { const sh = Math.min(1, prod.CRUDE / onHand); this.crudeQ = this.crudeQ * (1 - sh) + qNow * sh; } else if (onHand <= 0) this.crudeQ = qNow;

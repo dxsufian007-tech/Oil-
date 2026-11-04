@@ -37,6 +37,7 @@
     LOANS: ['liab', 'Loans'],
     EQUITY: ['equity', 'Paid-in capital'],
     REV_SPOT: ['rev', 'Sales · spot'],
+    REV_BYPRODUCT: ['rev', 'Sales · by-products'],
     REV_CONTRACT: ['rev', 'Sales · contracts'],
     REV_OTHER: ['rev', 'Other income'],
     COGS: ['exp', 'Cost of goods sold'],
