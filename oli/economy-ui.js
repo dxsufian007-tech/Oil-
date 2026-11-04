@@ -114,7 +114,7 @@
       + '<div><div class="es-sm">مستوى المخاطر</div><div class="es-big ' + (risk === 'مرتفع' ? 'neg' : risk === 'متوسط' ? 'warn' : 'pos') + '" style="font-size:17px">' + risk + '</div><div class="es-sm">' + f.score + ' من 8 مؤشرات</div></div></div>'
       + (act.length ? '<div class="es-sm">مؤشرات نشطة: ' + act.join('، ') + '</div>' : '<div class="es-sm">لا توجد مؤشرات خطر نشطة.</div>'));
     // the three screens
-    h += '<div class="es-grid" style="margin-top:6px"><button data-act="screen" data-v="buy">المشتريات</button><button data-act="screen" data-v="staff">الموظفون</button><button data-act="screen" data-v="rescue">الإنقاذ المالي</button><button data-act="screen" data-v="budget">إدارة الميزانية</button><button data-act="screen" data-v="report">التقرير المالي</button><button data-act="screen" data-v="log" style="grid-column:1/3">سجل العمليات المالية</button></div>';
+    h += '<div class="es-grid" style="margin-top:6px"><button data-act="screen" data-v="buy">المشتريات</button><button data-act="screen" data-v="staff">الموظفون</button><button data-act="screen" data-v="rescue">الإنقاذ المالي</button><button data-act="screen" data-v="power">الكهرباء</button><button data-act="screen" data-v="budget">إدارة الميزانية</button><button data-act="screen" data-v="report">التقرير المالي</button><button data-act="screen" data-v="log" style="grid-column:1/3">سجل العمليات المالية</button></div>';
     return h;
   }
   const DEFS_TYPE = b => window.OliBuildings.DEFS[b.d].type;
@@ -214,7 +214,21 @@
     h += '<div style="margin:10px 0"><b>بيع المخزون لتوفير السيولة</b><div class="es-grid" style="margin-top:6px">' + SELL.map(p => '<button data-act="liquid" data-p="' + p + '"' + (CO.available(p) > 0 ? '' : ' disabled') + '>' + EC.LABEL[p] + ' · ' + n0(CO.available(p)) + '</button>').join('') + '</div></div>';
     return h;
   }
+  /* power: demand, supply, bought power, shortage, what stops, and the grid */
+  function rPower() {
+    const p = CO.pw, P = EC.POWER, nx = P.tiers[CO.tier + 1], pct = v => Math.round(v * 100) + '%';
+    const stopName = { 6: 'الخزانات والصمامات', 4: 'المصافي والغاز', 2: 'الفواصل' };
+    let h = '<button data-act="screen" data-v="">← العودة للوحة الشركة</button>';
+    h += '<div class="es-row" style="margin:8px 0"><div><div class="es-sm">الطلب</div><div class="es-big">' + n0(p.demand) + ' kW</div></div><div><div class="es-sm">الشبكة</div><div class="es-big">' + n0(p.cap) + ' kW</div></div><div><div class="es-sm">مشتراة</div><div class="es-big">' + n0(p.bought || 0) + ' kW</div></div></div>';
+    h += '<div class="es-sm">المتاح = الشبكة + المشتراة = ' + n0(p.supplied || 0) + ' kW · العجز = ' + n0(p.shortage || 0) + ' kW · عامل الكهرباء ' + pct(p.factor) + '</div>';
+    h += '<div class="es-sm" style="margin-top:6px">' + (p.stopFrom == null ? 'لا توقف للمنشآت.' : '<span class="neg">توقف بسبب العجز: ' + (stopName[p.stopFrom] || '') + ' (حسب الأولوية)</span>') + '</div>';
+    h += '<div style="margin:12px 0"><b>شراء الكهرباء</b><div class="es-sm">عند العجز يُشترى حتى ' + n0(P_BUY().maxKW) + ' kW بسعر ' + P_BUY().priceMult + ' × سعر الشبكة لكل kWh.</div><div class="es-grid" style="margin-top:6px"><button data-act="pbuy" data-v="' + (CO.powerBuy ? '0' : '1') + '"' + (CO.powerBuy ? ' style="outline:2px solid currentColor"' : '') + '>' + (CO.powerBuy ? 'الشراء مفعّل — إيقاف' : 'تفعيل الشراء') + '</button></div></div>';
+    h += '<div style="margin:12px 0"><b>الشبكة</b><div class="es-sm">' + (nx ? 'الشبكة التالية: ' + n0(nx.kw) + ' kW · رسوم الربط ' + M(nx.connect) + ' · الشهري ' + M(nx.monthly) : 'أعلى شبكة.') + '</div>' + (nx ? '<button data-act="grid">ربط الشبكة التالية</button>' : '') + '</div>';
+    return h;
+  }
+  function P_BUY() { return EC.POWER_BUY; }
   function rCompany() {
+    if (subScreen === 'power') return rPower();
     if (subScreen === 'rescue') return rRescue();
     if (subScreen === 'staff') return rStaff();
     if (subScreen === 'buy') return rBuy();
@@ -300,6 +314,7 @@
     else if (a === 'auto') { CO.autoRepair = !CO.autoRepair; } else if (a === 'repairall') { const r = CO.repairAll(); msg = 'Repaired ' + r.n + ' · −' + M(r.cost); }
     else if (a === 'screen') { subScreen = v || ''; $('es-body').scrollTop = 0; }
     else if (a === 'supp') buySup = v; else if (a === 'terms') buyTerms = v;
+    else if (a === 'pbuy') { CO.setPowerBuy(v === '1'); msg = CO.powerBuy ? 'Bought power switched on' : 'Bought power switched off'; }
     else if (a === 'sellasset') { const r = CO.sellAsset(id); msg = r.ok ? 'Sold · ' + (r.gainOrLoss >= 0 ? 'gain ' : 'loss ') + M(Math.abs(r.gainOrLoss)) : r.reason === 'pipes' ? 'Disconnect its pipes first' : 'Cannot sell'; }
     else if (a === 'resched') { const r = CO.rescheduleLoan(id, +v); msg = r.ok ? 'Rescheduled · new installment ' + M(r.payment) : r.reason === 'cash' ? 'Not enough cash for the fee' : 'Cannot reschedule'; }
     else if (a === 'rescue') { const r = CO.rescueLoan(+v); msg = r.ok ? 'Rescue loan +' + M(r.amount) : r.reason === 'already' ? 'A rescue loan is already running' : r.reason === 'notInTrouble' ? 'Rescue loan is for a financial crisis only' : r.reason === 'collateral' ? 'Not enough collateral' : 'Rescue loan refused'; }

@@ -102,7 +102,7 @@
     }
     _init() {
       const c = this.cfg; this.hours = 0; this.dayIdx = 0; this.acc = 0; this.market = new Market(c); this.assets = new Map(); this.loans = []; this.nextLoan = 1; this.closed = []; this.contracts = []; this.history = []; this.offers = []; this.nextContract = 1;
-      this.recv = []; this.nextRecv = 1; this.months = []; this.qty = PZERO(); this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1; this.cutUntil = -1;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
+      this.recv = []; this.nextRecv = 1; this.months = []; this.qty = PZERO(); this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1; this.cutUntil = -1; this.powerBuy = false; this.pwStop = null;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
       this.crng = new Rng(c.MARKET.seed ^ 0x5bd1e995); this.modes = {}; for (const p of SELL) this.modes[p] = c.AUTOSELL && c.AUTOSELL.defaultMode || 'SPOT'; this.tier = c.POWER.startTier; this.autoRepair = c.MAINTENANCE.autoRepair;
       const cash = isFinite(this.store.cash) ? this.store.cash : 0;
       this.journal = new Journal(); this.led = { day: ledger(cash), month: ledger(cash), year: ledger(cash), life: ledger(cash) }; this.lastMonth = null; this.days = []; this.prodHist = []; this.crudeQ = 1;
@@ -202,6 +202,7 @@
       const t = DEFS[b.d].type, P = this.cfg.POWER; if (t === 'well' && b.s && b.s.started === false) return 0;      // a new well waits for the player's "start production"
       const elec = this.pw.factor >= 1 ? 1 : P.efficiencyFloor + (1 - P.efficiencyFloor) * this.pw.factor;
       const q = t === 'refinery' ? this.cfg.QUALITY.refinery[this.crudeLabel()] : 1, cond = (t === 'refinery' || t === 'separator') ? 1 : 0.8 + 0.2 * b.c;     // refinery / separator already read b.c inside the Sim
+      if (this.pwStop != null && (this.cfg.POWER_PRIORITY[t] || 9) >= this.pwStop) return 0;                    // power shortage: the least important facilities stop
       return clamp(elec * q * cond * this.staffF, 0.05, 1.05);
     }
 
@@ -416,6 +417,7 @@
     repairAll(threshold) { let n = 0, tot = 0; for (const b of this.store.list().sort((x, y) => x.c - y.c)) { if (b.st === 'UNDER_CONSTRUCTION' || b.c >= (threshold == null ? 0.999 : threshold)) continue; const cost = this.repairCost(b); if (this.store.cash - cost < 0) break; const r = this.repair(b.id); if (r.ok) { n++; tot += r.cost; } } return { ok: true, n, cost: tot }; }
 
     /* ---- power ---- */
+    setPowerBuy(on) { this.powerBuy = !!on; return { ok: true, on: this.powerBuy }; }
     gridUpgrade() { const P = this.cfg.POWER; if (this.tier + 1 >= P.tiers.length) return { ok: false, reason: 'max' }; const t = P.tiers[this.tier + 1]; this.sync(); if (this.store.cash < t.connect) return { ok: false, reason: 'cash', need: t.connect }; this._post({ type: 'GRID_CONNECT', flow: 'INV', desc: 'Grid upgrade · ' + t.name }, [['FIXED', t.connect], ['CASH', -t.connect]]); this.tier++; this.pw.cap = t.kw; return { ok: true, tier: t }; }
 
     /* ---- one simulation tick of h game hours ---- */
@@ -437,7 +439,13 @@
         else if (t === 'separator' && S.edgeOf(b, 'GAS_OUT')) { const g = (s._g || 0) * dt; prod.GAS += g; sepGas += g; }
       }
       for (const b of items) { const def = DEFS[b.d]; if ((def.type === 'tank' || def.type === 'gas') && b.s && b.s.vol > 0) storageCost += b.s.vol * C.STORAGE_COST[def.product] * dt; }
-      const tier = C.POWER.tiers[this.tier], target = kw > 0 ? Math.min(1, tier.kw / kw) : 1; this.pw.factor = target >= 1 && this.pw.factor > 0.98 ? 1 : this.pw.factor + (target - this.pw.factor) * 0.5; this.pw.demand = kw; this.pw.cap = tier.kw; this.pw.limited = this.pw.factor < 0.995;
+      // energy balance: available = grid supply + bought power; consumed = demand. Bought power costs kWh x price x premium.
+      const tier = C.POWER.tiers[this.tier], gridKW = tier.kw, bought = this.powerBuy && kw > gridKW ? Math.min(C.POWER_BUY.maxKW, kw - gridKW) : 0;
+      if (bought > 0) this._expense('energy', bought * h * price * C.POWER_BUY.priceMult, 'Bought power · ' + Math.round(bought) + ' kW');
+      const supplied = Math.min(kw, gridKW + bought), target = kw > 0 ? Math.min(1, supplied / kw) : 1;
+      this.pw.factor = target >= 1 && this.pw.factor > 0.98 ? 1 : this.pw.factor + (target - this.pw.factor) * 0.5;
+      this.pwStop = null; const hit = C.POWER_STOP.filter(r => this.pw.factor < r.below); if (hit.length) this.pwStop = Math.min(...hit.map(r => r.fromPriority));
+      this.pw.demand = kw; this.pw.cap = gridKW; this.pw.supplied = supplied; this.pw.bought = bought; this.pw.shortage = Math.max(0, kw - supplied); this.pw.stopFrom = this.pwStop; this.pw.limited = this.pw.factor < 0.995;
 
       // ---- production costs: incurred now, carried in inventory, expensed when the barrel is sold
       const crudeCost = crude.operating + crude.maintenance + crude.energy + crude.lifting;
@@ -644,7 +652,7 @@
     /* ---- save / load (the store and the pipes are saved by the lab as before; this is the company) ---- */
     toJSON() {
       return { v: 2, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
-        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, mats: this.mats, payables: this.payables, nextPay: this.nextPay, hr: this.hr, cutUntil: this.cutUntil, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, savedAt: this.lastSim };
+        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, mats: this.mats, payables: this.payables, nextPay: this.nextPay, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, savedAt: this.lastSim };
     }
     fromJSON(d) {
       if (!d || (d.v !== 1 && d.v !== 2)) return false; const c = this.cfg;
@@ -652,7 +660,7 @@
       this.contracts = d.contracts || []; this.history = d.history || []; this.offers = d.offers || []; this.nextContract = d.nextContract || 1; this.crng = new Rng(d.crng || 1); this.modes = Object.assign(this.modes, d.modes || {}); this.tier = d.tier || 0; this.autoRepair = d.autoRepair !== false;
       this.led = d.led || this.led; for (const k of ['day', 'month', 'year', 'life']) { const L = Object.assign(ledger(0), this.led[k]); L.produced = Object.assign(PZERO(), L.produced); L.sold = Object.assign(SZERO(), L.sold); L.pl = Object.assign(ledger(0).pl, L.pl || {}); L.cf = Object.assign(ledger(0).cf, L.cf || {}); this.led[k] = L; }
       this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSim = d.savedAt == null ? null : d.savedAt;
-      this.recv = d.recv || []; this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil;
+      this.recv = d.recv || []; this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy;
       if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); }
       else this._migrate();                                                         // a save from before the journal: the company starts from an opening balance sheet of what it holds now
       this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.mirror = this.store.cash; this.away = null; this.events = []; this.seen = new Set(); this._refreshOffers(); this.computeStaff(); return true;

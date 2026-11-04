@@ -43,6 +43,10 @@
     STORAGE_COST: { CRUDE: 0.015, GASOLINE: 0.025, DIESEL: 0.025, JET_FUEL: 0.03, GAS: 0.06 },   // $ per stored bbl per day
     ENERGY: { pricePerKWh: 0.08 },
     POWER: { tiers: [{ name: 'شبكة 1', kw: 8000, monthly: 25000, connect: 0 }, { name: 'شبكة 2', kw: 25000, monthly: 90000, connect: 400000 }, { name: 'شبكة 3', kw: 80000, monthly: 260000, connect: 1500000 }, { name: 'شبكة 4', kw: 250000, monthly: 700000, connect: 5000000 }], startTier: 0, efficiencyFloor: 0.3 },
+    // power (Phase 12): supply = grid capacity + bought power (if switched on); shortage stops the least important facilities first
+    POWER_PRIORITY: { well: 1, separator: 2, pump: 3, refinery: 4, gas: 5, tank: 6, valve: 6, junction: 6 },   // 1 = most important, stopped last
+    POWER_STOP: [{ below: 0.2, fromPriority: 6 }, { below: 0.1, fromPriority: 4 }, { below: 0.05, fromPriority: 2 }],   // normally efficiency falls gradually; only in severe shortage: below 20% supply tanks and valves stop, below 10% refineries and gas, below 5% separators too
+    POWER_BUY: { maxKW: 5000, priceMult: 1.5 },                                      // bought power: at most 5,000 kW, at 1.5 x the grid price per kWh
     POWER_KW: { well: 25, pump: { S: 120, L: 300 }, separator: 350, refinery: { S: 2500, M: 8000, L: 28000, X: 65000 }, gas: 40, idleShare: 0.35 },
     OPERATING: { fixedShare: 0.4, conditionPenalty: 0.5 },                           // DailyOperatingCost = Base x (fixed + (1-fixed) x Load) x (1 + penalty x (1-Condition))
     MAINTENANCE: { damage: 2.5, utilBase: 0.6, utilSlope: 0.8,                       // MaintenanceCost = Base x DamageFactor x UtilizationFactor

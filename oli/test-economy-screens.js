@@ -60,6 +60,11 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   if (avail > 0) { await tap('#es-body [data-act=liquid][data-p=CRUDE]'); ok(await co(() => __lab.company.store.cash) > cashR0, 'rescue: selling crude brings cash'); }
   ok(await co(() => __lab.company.audit().ok), 'rescue: the audit passes after the actions');
   await tap('#es-body [data-act=screen][data-v=""]');
+  // 4e. power: the screen shows the balance; switching on bought power works
+  await tap('#es-body [data-act=screen][data-v=power]'); t = await body();
+  ok(/الطلب/.test(t) && /العجز/.test(t) && /تفعيل الشراء/.test(t), 'power screen: demand, supply, shortage and the purchase switch are shown');
+  await tap('#es-body [data-act=pbuy][data-v="1"]'); ok(await co(() => __lab.company.powerBuy === true), 'power: bought power switched on');
+  await tap('#es-body [data-act=screen][data-v=""]');
   // 5. nothing failed in the page
   ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
   await b.close(); srv.close(); console.log('\nECONOMY SCREENS TESTS PASSED (' + n + ' checks)');
