@@ -17,14 +17,25 @@
     // ---- prices ($/bbl, gas $/boe).  Actual price = Base x Demand x Supply x Volatility, moved at most +-dailyChangeLimit per 24 h
     PRICE: { base: { CRUDE: 72, GASOLINE: 110, DIESEL: 104, JET_FUEL: 106, GAS: 48 },
       range: { CRUDE: [60, 90], GASOLINE: [80, 130], DIESEL: [75, 120], JET_FUEL: [75, 125], GAS: [30, 60] } },
-    MARKET: { seed: 7013, warmupHours: 720, historyHours: 720, dailyChangeLimit: 0.05,
+    MARKET: { seed: 7013, warmupHours: 720, historyHours: 720, dailyChangeLimit: 0.05, hourlyChangeLimit: 0.01,   // a price moves at most 1% an hour (bounded change)
       meanRevert: 0.004,                                                            // per hour, pulls the demand factor back to 1 (half-life about 7 days)
       sharedSigma: 0.0042, sharedWeight: 0.6,                                       // one crude-driven factor moves every product (refined products follow crude)
       sigma: { CRUDE: 0.0050, GASOLINE: 0.0052, DIESEL: 0.0050, JET_FUEL: 0.0056, GAS: 0.0070 },
       noise: 0.0035,                                                                // the Volatility factor: small hourly noise around the target
       regimeDrift: 0.00055, regimeHours: [72, 240],                                 // a slow up / flat / down trend that lasts days: the price has a direction, it is not white noise
       smooth: 0.35, floorMult: 1.0, ceilMult: 1.0, trendEps: 0.006,
-      depth: { CRUDE: 600000, GASOLINE: 250000, DIESEL: 250000, JET_FUEL: 120000, GAS: 150000 }, impact: 0.35, impactHalfLifeDays: 5 },   // selling a lot pushes the price down (Supply factor), then it recovers
+      depth: { CRUDE: 600000, GASOLINE: 250000, DIESEL: 250000, JET_FUEL: 120000, GAS: 150000 }, impact: 0.35, impactHalfLifeDays: 5,
+      // Phase 11: competition level per product (a multiplier on the target price), stock pressure above 80% full, and economic events (own random stream)
+      competition: { CRUDE: 'MEDIUM', GASOLINE: 'HIGH', DIESEL: 'MEDIUM', JET_FUEL: 'LOW', GAS: 'HIGH' }, competitionMult: { LOW: 1.005, MEDIUM: 1.0, HIGH: 0.99 },
+      stockPressure: 0.05, stockFrom: 0.8, eventChancePerDay: 1 / 60, maxEvents: 2,
+      events: [
+        { id: 'DEMAND_UP', label: 'ارتفاع الطلب العالمي', days: 12, demand: { ALL: 1.10 } },
+        { id: 'DEMAND_DOWN', label: 'انخفاض الطلب العالمي', days: 12, demand: { ALL: 0.90 } },
+        { id: 'PRODUCTION_UP', label: 'زيادة الإنتاج العالمي', days: 10, supply: { ALL: 0.93 } },          // more oil on the market: the price falls
+        { id: 'SHORTAGE', label: 'نقص في المعروض', days: 8, supply: { ALL: 1.08 } },
+        { id: 'OIL_CRISIS', label: 'أزمة نفطية', days: 20, demand: { CRUDE: 1.20, GASOLINE: 1.08, DIESEL: 1.08, JET_FUEL: 1.08, GAS: 1.04 }, supply: { CRUDE: 1.10 } },
+        { id: 'TRANSPORT_UP', label: 'ارتفاع تكلفة النقل والطاقة', days: 15, cost: { freight: 1.30, energy: 1.20 } }   // purchases carry more freight, power costs more
+      ] },   // selling a lot pushes the price down (Supply factor), then it recovers
     FEES: { spot: 0.01, contract: 0.0025 },
     QUALITY: { mult: { HIGH: 1.10, NORMAL: 1.00, LOW: 0.90 }, refinery: { HIGH: 1.03, NORMAL: 1.00, LOW: 0.95 }, share: { HIGH: 0.25, LOW: 0.25 }, highAt: 1.05, lowAt: 0.95 },
 
