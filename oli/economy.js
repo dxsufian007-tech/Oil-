@@ -260,11 +260,13 @@
       f.state = 'WARNING';
     }
     _newDay() {
+      // Month-end charges (payroll, insurance, admin, upkeep, power tier, loan payments, tax) belong to the day that ENDS the month,
+      // so they are booked before that day is closed. Booking them after closing put them into the first day of the next month.
+      if (this.dayIdx % this.cfg.TIME.daysPerMonth === 0) this._monthEnd();
       const cash = this.store.cash; this.days.push(Object.assign({ d: this.dayIdx - 1 }, (() => { const c = calc(this.led.day, cash); return { revenue: c.revenue, expenses: c.expenses, profit: c.netProfit, cashIn: c.cash.in, cashOut: c.cash.out, storage: this.led.day.storage, opex: c.opex + c.variable }; })()));
       while (this.days.length > 60) this.days.shift(); this.led.day = ledger(cash);
       if (this.autoRepair) { const M = this.cfg.MAINTENANCE; for (const b of this.store.list()) if (b.st !== 'UNDER_CONSTRUCTION' && b.c < M.autoRepairBelow && this.store.cash - this.repairCost(b) >= M.cashReserve) this.repair(b.id); }
       this._refreshOffers();                                                          // expired offers leave, new ones take their place: there are always 3 to choose from
-      if (this.dayIdx % this.cfg.TIME.daysPerMonth === 0) this._monthEnd();
     }
     _monthEnd() {
       const C = this.cfg, F = C.FIXED, st = this.staff, assets = this.assetsTotal(), pipes = this.pipeValue(), tier = C.POWER.tiers[this.tier];
