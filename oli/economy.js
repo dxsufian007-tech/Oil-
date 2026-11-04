@@ -299,6 +299,11 @@
       for (const { b, s } of tanks) { if (left <= 1e-9) break; const room = DEFS[b.d].capacity.value - s.vol; if (room <= 0) continue; const put = Math.min(room, left); s.vol += put; left -= put; }
       return qty - left;
     }
+    /* the refinery's material limit: the share of its capacity that the chemicals and operating materials on hand allow for a step of dt days. Set BEFORE the simulator draws crude (no crude leaves the tanks without being processed) and again when materials arrive, so a purchase lifts the limit at once instead of at the next hourly tick */
+    _gateMaterials(items, dt) { const S = this.sim;
+      this.matLimit = 1; { const MUg = this.cfg.MATERIAL_USE, rem = { CHEM: this.mats.CHEM || 0, OPS: this.mats.OPS || 0 }; for (const b of items) { if (DEFS[b.d].type !== 'refinery' || b.st !== 'OPERATIONAL') continue; const s = S.ensure(b), cap = S.capOf(b); let lim = 1;
+        if (cap > 0) { const need = { CHEM: cap * dt * MUg.CHEM.qty, OPS: cap * dt * MUg.OPS.qty }; const fr = k => (need[k] > 0 ? Math.min(1, rem[k] / need[k]) : 1); lim = Math.min(fr('CHEM'), fr('OPS')); for (const k of ['CHEM', 'OPS']) rem[k] = Math.max(0, rem[k] - lim * need[k]); }
+        s.matLim = lim; this.matLimit = Math.min(this.matLimit, lim); } } }
     buy(item, qty, supplierId, terms) {
       if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync();
       const qt = this.buyQuote(item, qty, supplierId); if (!qt.ok) return qt; if (!(qt.qty > 0)) return { ok: false, reason: 'nothingToBuy', quote: qt };
@@ -317,7 +322,7 @@
         const onHand = this.crudeOnHand(), add = this.addTo(item, got); got = add;
         if (item === 'CRUDE' && add > 0) this.crudeQ = (this.crudeQ * onHand + 1 * add) / (onHand + add);                                    // purchased crude is NORMAL quality: it blends into the tanks
         this.qty[item] += got;
-      } else this.mats[item] += got;
+      } else { this.mats[item] += got; if (item === 'CHEM' || item === 'OPS') this._gateMaterials(this.store.list(), 1 / 24); }
       this._event('info', 'Purchase: ' + name + ' ' + Math.round(got).toLocaleString('en-US') + ' · ' + fmtMoney(qt.total));
       return { ok: true, item, qty: got, cost: qt.total, unitCost: got > 0 ? qt.total / qt.qty : qt.landedUnit, terms: credit ? 'CREDIT' : 'CASH', supplier: qt.supplierName };
     }
@@ -350,7 +355,7 @@
     /* ---- by-products: sellable; own inventory and revenue accounts; no physical tank yet (book stock only) ---- */
     byproductPrice() { return Math.max(0, this.unitPrice('CRUDE') || 0) * this.cfg.BYPRODUCT.priceRatioToCrude; }
     byproductUnitCost() { const q = this.qty2.BYPRODUCT; return q > EPS2 ? Math.max(0, this.journal.bal.INV_BYPRODUCT) / q : 0; }
-    byproducts() { return { qty: this.qty2.BYPRODUCT, unitCost: this.byproductUnitCost(), value: Math.max(0, this.journal.bal.INV_BYPRODUCT), price: this.byproductPrice(), residue: this.qty2.RESIDUE, residueValue: Math.max(0, this.journal.bal.INV_RESIDUE) }; }
+    byproducts() { return { qty: this.qty2.BYPRODUCT, unitCost: this.byproductUnitCost(), value: Math.max(0, this.journal.bal.INV_BYPRODUCT), price: this.byproductPrice(), residue: this.qty2.RESIDUE, residueValue: Math.max(0, this.journal.bal.INV_RESIDUE), fuelBurned: (this.led.life.produced.FUEL || 0), fuelCost: Math.max(0, this.journal.bal.EXP_FUEL) }; }
     sellByproduct(qty) {
       if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); const have = this.qty2.BYPRODUCT;
       if (!(qty > 0) || have <= 1e-6) return { ok: false, reason: 'nothingToSell' }; if (qty > have + 1e-6) return { ok: false, reason: 'notEnough' };
@@ -467,9 +472,7 @@
       const S = this.sim, st = this.store, C = this.cfg, dt = h / 24, price = C.ENERGY.pricePerKWh * this.market.costMult().energy; this.sync(); this._collect(); st.tick(h); const items = st.list();
       for (const b of items) { const s = S.ensure(b); s.ecoEff = this.effOf(b); }
       // refineries may only run on the chemicals and operating materials on hand; the limit is set BEFORE the simulator draws crude, so no crude leaves the tanks without being processed
-      this.matLimit = 1; { const MUg = this.cfg.MATERIAL_USE, rem = { CHEM: this.mats.CHEM || 0, OPS: this.mats.OPS || 0 }; for (const b of items) { if (DEFS[b.d].type !== 'refinery' || b.st !== 'OPERATIONAL') continue; const s = S.ensure(b), cap = S.capOf(b); let lim = 1;
-        if (cap > 0) { const need = { CHEM: cap * dt * MUg.CHEM.qty, OPS: cap * dt * MUg.OPS.qty }; const fr = k => (need[k] > 0 ? Math.min(1, rem[k] / need[k]) : 1); lim = Math.min(fr('CHEM'), fr('OPS')); for (const k of ['CHEM', 'OPS']) rem[k] = Math.max(0, rem[k] - lim * need[k]); }
-        s.matLim = lim; this.matLimit = Math.min(this.matLimit, lim); } }
+      this._gateMaterials(items, dt);
       S.step(dt);
       const prod = PZERO(), refOut = { GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 }, crude = { operating: 0, maintenance: 0, energy: 0, lifting: 0 }, refin = { operating: 0, maintenance: 0, energy: 0, chem: 0, ops: 0 }, rf = { BYPRODUCT: 0, RESIDUE: 0, FUEL: 0, FLARED: 0 };
       let kw = 0, storageCost = 0, tankOpex = 0, tankMaint = 0, powerCost = 0, sepGas = 0;
@@ -683,7 +686,7 @@
       if (t === 'well') { const oil = (s._out || 0) * Math.max(0, 1 - (s._wc || 0) - (s._gas || 0)), px = this.market.price.CRUDE * C.QUALITY.mult[this.wellQuality(b)]; o.quality = this.wellQuality(b); o.oilDay = oil; o.revenuePotentialDay = oil * px; o.liftingDay = oil * C.VARIABLE.liftingPerBbl; o.marginDay = o.revenuePotentialDay - o.liftingDay - op - mt - energy - labor; }
       else if (t === 'pump') { o.production = 'Moves ' + Math.round(s._in || 0) + ' bbl/day · +' + Math.round(s.boost * s.eff) + ' psi'; o.productionImpact = s._in || 0; }
       else if (t === 'tank' || t === 'gas') { const p = def.product, vol = s.vol || 0, px = this.unitPrice(p); o.product = p; o.stored = vol; o.storageCostDay = vol * C.STORAGE_COST[p]; o.storedValue = vol * px; }
-      else if (t === 'refinery') { const pr = s._p || {}, px = this.market.price, thr = s._in || 0; o.throughputDay = thr; o.productRevenueDay = (pr.GASOLINE || 0) * px.GASOLINE + (pr.DIESEL || 0) * px.DIESEL + (pr.JET_FUEL || 0) * px.JET_FUEL + (pr.GAS || 0) * px.GAS;
+      else if (t === 'refinery') { const pr = s._p || {}, px = this.market.price, thr = s._in || 0; o.throughputDay = thr; o.byproductDay = pr.BYPRODUCT || 0; o.residueDay = pr.RESIDUE || 0; o.fuelDay = pr.FUEL || 0; o.productRevenueDay = (pr.GASOLINE || 0) * px.GASOLINE + (pr.DIESEL || 0) * px.DIESEL + (pr.JET_FUEL || 0) * px.JET_FUEL + (pr.GAS || 0) * px.GAS;
         o.crudeOpportunityDay = thr * this.unitPrice('CRUDE'); o.chemicalsDay = thr * C.VARIABLE.chemicalsPerBbl; o.refiningMarginDay = active ? o.productRevenueDay - o.crudeOpportunityDay - energy - labor - mt - op - o.chemicalsDay : 0; }   // RefiningProfit = ProductRevenue - CrudeOpportunityCost - Energy - Labor - Maintenance - Operating
       else if (t === 'separator') { o.feedDay = s._in || 0; }
       o.totalCostDay = op + mt + energy + labor + (o.liftingDay || 0) + (o.storageCostDay || 0) + (o.chemicalsDay || 0);

@@ -275,8 +275,14 @@
   function sellQuoteHtml() {
     const q = CO.quote(sellP, sellQ), bad = q.available <= 0 || q.qty <= 0; return kv('Gross', M(q.gross)) + kv('Fees (' + (EC.FEES.spot * 100).toFixed(1) + '%)', '−' + M(q.fee)) + kv('<b>Net</b>', '<b class="pos">' + M(q.net) + '</b>') + '<div class="es-row"><button data-act="sell"' + (bad ? ' disabled' : '') + ' style="' + (bad ? '' : 'background:#2f9e5a;border-color:#2f9e5a;color:#fff') + '">SELL ' + n0(q.qty) + '</button></div>' + (q.available <= 0 ? '<div class="warn">Nothing in storage to sell.</div>' : '');
   }
+  function rByproducts() {
+    const bp = CO.byproducts();
+    return '<div class="es-card"><div class="es-prod"><span class="dot" style="background:#9a7ec8"></span><span class="nm">By-products</span><b>' + n0(bp.qty) + ' bbl</b></div>' + kv('By-product in stock', n0(bp.qty) + ' bbl') + kv('Cost per bbl', '$' + bp.unitCost.toFixed(2)) + kv('Sale price', '$' + bp.price.toFixed(2)) + kv('Book value', M(bp.value))
+      + '<div class="es-row"><button data-act="sellbp"' + (bp.qty > 0.5 ? '' : ' disabled') + ' style="' + (bp.qty > 0.5 ? 'background:#2f9e5a;border-color:#2f9e5a;color:#fff' : '') + '">SELL ALL BY-PRODUCT</button></div>'
+      + kv('Residue (not for sale)', n0(bp.residue) + ' bbl · value ' + M(bp.residueValue)) + kv('Internal fuel burned (expense)', n0(bp.fuelBurned) + ' bbl · ' + M(bp.fuelCost)) + '</div>';
+  }
   function rInventory() {
-    return CO.inventory().map(v => '<div class="es-card"><div class="es-prod"><span class="dot" style="background:' + COL[v.product] + '"></span><span class="nm">' + v.label + '</span><b>' + Math.round(v.fill * 100) + '%</b></div><div class="es-bar"><i style="width:' + Math.min(100, v.fill * 100) + '%;background:' + (v.fill >= 0.9 ? '#d9453a' : COL[v.product]) + '"></i></div>'
+    return rByproducts() + CO.inventory().map(v => '<div class="es-card"><div class="es-prod"><span class="dot" style="background:' + COL[v.product] + '"></span><span class="nm">' + v.label + '</span><b>' + Math.round(v.fill * 100) + '%</b></div><div class="es-bar"><i style="width:' + Math.min(100, v.fill * 100) + '%;background:' + (v.fill >= 0.9 ? '#d9453a' : COL[v.product]) + '"></i></div>'
       + kv('Current volume', n0(v.volume + (v.water || 0)) + ' ' + v.unit) + (v.water > 0 ? kv('of which water', n0(v.water) + ' ' + v.unit) : '') + kv('Capacity', n0(v.capacity) + ' ' + v.unit) + kv('Market value', M(v.value)) + kv('Storage cost', M(v.storageCostDay) + ' / day') + '</div>').join('');
   }
   function rProduction() {
@@ -321,6 +327,7 @@
     else if (a === 'sellnow') { sellP = p; sellQ = null; tab = 'sell'; } else if (a === 'sellp') { sellP = p; sellQ = null; }
     else if (a === 'sellpct') { sellQ = Math.floor(CO.available(sellP) * +v / 100); }
     else if (a === 'sell') { const inp = $('sq-in'), q = inp ? +inp.value : sellQ, r = CO.sell(sellP, q); msg = r.ok ? 'Sold ' + n0(r.qty) + ' ' + EC.LABEL[sellP] + ' · +' + M(r.net) : 'Cannot sell: ' + r.reason; if (r.ok) sellQ = Math.floor(CO.available(sellP)); }
+    else if (a === 'sellbp') { const r = CO.sellByproduct(CO.qty2.BYPRODUCT); msg = r.ok ? 'Sold ' + n0(r.qty) + ' By-products · +' + M(r.net) : 'Cannot sell: ' + r.reason; }
     else if (a === 'prodr') prodRange = v; else if (a === 'accept') { const r = CO.acceptContract(id); msg = r.ok ? 'Contract accepted' : r.reason === 'tooMany' ? 'Too many active contracts' : 'Offer gone'; }
     else if (a === 'deliver') { const r = CO.deliver(id); msg = r.ok ? 'Delivered ' + n0(r.qty) + ' · +' + M(r.revenue + r.reward) : 'Nothing to deliver'; }
     else if (a === 'lamt') loanAmt = +v; else if (a === 'lterm') loanTerm = +v; else if (a === 'borrow') { const r = CO.takeLoan(loanAmt, loanTerm, 'Expansion'); msg = r.ok ? 'Loan approved · +' + M(loanAmt) : 'Loan refused'; }
@@ -369,6 +376,7 @@
   function buildingHtml(id) {
     const o = CO.economics(id); if (!o) return ''; const d = '<span class="es-sm"> /day</span>', rows = [];
     rows.push(['Condition', Math.round(o.condition * 100) + '% · ' + o.conditionLabel]);
+    if (o.type === 'refinery') rows.push(['By-product made', n0(o.byproductDay) + ' bbl/day'], ['Residue made (not for sale)', n0(o.residueDay) + ' bbl/day'], ['Internal fuel burned', n0(o.fuelDay) + ' bbl/day']);
     if (o.type === 'refinery') { rows.push(['Revenue (products)', M(o.productRevenueDay) + '/day'], ['Crude opportunity cost', '−' + M(o.crudeOpportunityDay) + '/day']); }
     if (o.type === 'well') rows.push(['Crude quality', o.quality], ['Revenue if sold', M(o.revenuePotentialDay) + '/day'], ['Lifting cost', '−' + M(o.liftingDay) + '/day']);
     rows.push(['Operating cost', '−' + M(o.operatingDay) + '/day'], ['Maintenance', '−' + M(o.maintenanceDay) + '/day'], ['Energy (' + n0(o.kw) + ' kW)', '−' + M(o.energyDay) + '/day'], ['Labor share', '−' + M(o.laborDay) + '/day']);
