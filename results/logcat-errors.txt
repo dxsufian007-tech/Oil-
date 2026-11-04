@@ -1,0 +1,11 @@
+11-04 10:24:26.812  6917  6952 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.buildlab/cache/WebView/Default/HTTP Cache/Code Cache/wasm: No such file or directory (2)
+11-04 10:24:26.812  6917  6952 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+11-04 10:24:26.813  6917  6953 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.buildlab/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+11-04 10:24:26.813  6917  6953 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+11-04 10:25:23.866  7081  7111 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.buildlab/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+11-04 10:25:23.866  7081  7111 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+11-04 10:25:23.868  7081  7109 E chromium: [ERROR:simple_version_upgrade.cc(152)] Failed to write a new fake index.
+11-04 10:25:24.459  7081  7081 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-04 10:25:24.461  7081  7081 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-04 10:25:24.464  7081  7081 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-04 10:25:24.464  7081  7081 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')

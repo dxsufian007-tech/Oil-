@@ -1,0 +1,19 @@
+{
+ "env": {
+  "ua": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36",
+  "dpr": 2.625,
+  "w": 412,
+  "h": 866
+ },
+ "sellQuote": "نفط خام\nبنزين\nديزل\nوقود طائرات\nغاز\nSELL بنزين\nAvailable\n25,279 برميل\nMarket price\n$100.72\nQUANTITY\n25%\n50%\n75%\n100%\nGross\n$1.27M\nFees (1.0%)\n−$12.7K\nNet\n$1.26M\nSELL 12,639\nRevenue only comes from selling a product. Oil sitting in a tank is not revenue yet. Selling a lot lowers the price for a few days.",
+ "loanDbg": "{\"debt\":10000000,\"loans\":1,\"cash\":115713283.31569438,\"amt\":\"10000000\",\"term\":\"24\"}",
+ "econText": "مصفاة متوسطة ● يعمل\nFeed\t4,433 bbl/day\nThroughput\t4,433 bbl/day\nGasoline\t1,672 bbl/day\nDiesel\t1,115 bbl/day\nJet Fuel\t372 bbl/day\nEfficiency\t84 %\nالاقتصاد\nCondition\t97% · ممتازة\nRevenue (products)\t$323K/day\nCrude opportunity cost\t−$352K/day\nOperating cost\t−$24.6K/day\nMaintenance\t−$15K/day\nEnergy (3,722 kW)\t−$7.1K/day\nLabor share\t−$21.7K/day\nChemicals\t−$4K/day\nREFINING MARGIN\t-$101K/day\nPurchase / value\t$100M / $98.6M\nRepair · $958K\nالاقتصاد\nتفاصيل\nحد التشغيل 100%\nهدم…",
+ "preReload": "{\"len\":98222,\"v\":2,\"nb\":12,\"sv\":2,\"err\":null,\"noSave\":false}",
+ "postReload": "{\"len\":98222,\"restored\":{\"from\":\"save\",\"loaded\":12,\"dropped\":[]},\"nb\":12}",
+ "ecoTickMs": 0.6783333333334061,
+ "offlineMs": 234.60000000000582,
+ "renderMs": 5.79999999999806,
+ "fps10x": 53.5,
+ "p95": 37,
+ "heapMB": 10
+}
