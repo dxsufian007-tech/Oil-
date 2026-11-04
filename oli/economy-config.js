@@ -12,7 +12,7 @@
     PRODUCTS,
     LABEL: { CRUDE: 'نفط خام', GASOLINE: 'بنزين', DIESEL: 'ديزل', JET_FUEL: 'وقود طائرات', GAS: 'غاز' },
     UNIT: { CRUDE: 'برميل', GASOLINE: 'برميل', DIESEL: 'برميل', JET_FUEL: 'برميل', GAS: 'برميل مكافئ' },
-    TIME: { hoursPerDay: 24, daysPerMonth: 30, monthsPerYear: 12, dayRealSeconds: 12, speeds: [0, 1, 2, 5, 10], tickMs: 250, maxCatchUpHours: 240, maxStepsPerTick: 60 },
+    TIME: { hoursPerDay: 24, daysPerMonth: 30, monthsPerYear: 12, dayRealSeconds: 12, speeds: [0, 0.5, 1, 2, 5, 10], tickMs: 250, maxCatchUpHours: 240, maxStepsPerTick: 60 },
 
     // ---- prices ($/bbl, gas $/boe).  Actual price = Base x Demand x Supply x Volatility, moved at most +-dailyChangeLimit per 24 h
     PRICE: { base: { CRUDE: 72, GASOLINE: 110, DIESEL: 104, JET_FUEL: 106, GAS: 48 },

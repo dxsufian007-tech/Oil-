@@ -7,9 +7,9 @@
  * No DOM here (economy-ui.js is the screen).  Everything the player can tune is in economy-config.js.
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./buildings.js'), require('./building-config.js'), require('./industry.js'), require('./economy-config.js'), require('./ledger.js'));
-  else root.OliEconomy = factory(root.OliBuildings, root.OliBuildingConfig, root.OliIndustry, root.OliEconomyConfig, root.OliLedger);
-})(typeof self !== 'undefined' ? self : this, function (B, BC, I, EC, LG) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./buildings.js'), require('./building-config.js'), require('./industry.js'), require('./economy-config.js'), require('./ledger.js'), require('./game-calendar.js'));
+  else root.OliEconomy = factory(root.OliBuildings, root.OliBuildingConfig, root.OliIndustry, root.OliEconomyConfig, root.OliLedger, root.OliCalendar);
+})(typeof self !== 'undefined' ? self : this, function (B, BC, I, EC, LG, CAL) {
   'use strict';
   const DEFS = B.DEFS, SELL = EC.PRODUCTS, clamp = (v, a, b) => v < a ? a : v > b ? b : v, r2 = v => Math.round(v * 100) / 100;
   const hash = (a, b, c) => { let h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
@@ -108,7 +108,7 @@
       const cash = isFinite(this.store.cash) ? this.store.cash : 0;
       this.journal = new Journal(); this.led = { day: ledger(cash), month: ledger(cash), year: ledger(cash), life: ledger(cash) }; this.lastMonth = null; this.days = []; this.prodHist = []; this.crudeQ = 1;
       this.fin = { state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }; this.taxCarry = 0; this.bankrupt = false; this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.staff = { operators: 0, engineers: 0, maintenance: 0, managers: 0, total: 0, payroll: 0 };
-      this.speed = 1; this.mirror = this.store.cash; this.lastSim = null; this.away = null; this.events = []; this.seen = new Set(); this.badClock = false;
+      this.speed = 1; this.lastSpeed = 1; this.mirror = this.store.cash; this.lastSim = null; this.away = null; this.events = []; this.seen = new Set(); this.badClock = false;
       this._post({ type: 'OPENING', flow: 'NONE', desc: 'Opening balance', noProj: true }, [['CASH', cash], ['EQUITY', -cash]], { cashApplied: true });
       this._refreshOffers(); this.computeStaff(); this.bsStart = this._snap();
     }
@@ -333,7 +333,7 @@
       this._cashIn('LOAN_IN', amt, 'Rescue loan', 'LOANS', 'FIN'); return { ok: true, amount: amt, payment: pay, term: R.loanTerm };
     }
     /* 4. cost cut: administration and tank operation lower for a few months */
-    costCut() { if (this.costCutOn()) return { ok: false, reason: 'on' }; this.cutUntil = this.hours + this.cfg.RESCUE.costCutMonths * this.cfg.TIME.daysPerMonth * 24; return { ok: true, until: this.cutUntil, share: this.cfg.RESCUE.costCutShare }; }
+    costCut() { if (this.costCutOn()) return { ok: false, reason: 'on' }; this.cutUntil = CAL.addMonths(this.hours, this.cfg.RESCUE.costCutMonths); return { ok: true, until: this.cutUntil, share: this.cfg.RESCUE.costCutShare }; }
     /* 5. sell stock for cash now (spot), the same sale the market makes */
     liquidate(p) { const a = this.available(p); if (!(a > 0)) return { ok: false, reason: 'nothingToSell' }; return this.sell(p, a, 'RESCUE'); }
 
@@ -481,7 +481,7 @@
       this._post({ type: 'LOAN_REPAY', flow: 'FIN', desc: 'Loan repaid early' }, [['LOANS', l.remaining], ['CASH', -l.remaining]]); this._expense('interest', fee, 'Early repayment fee');
       this.loans = this.loans.filter(x => x !== l); this.closed.unshift(l); return { ok: true, paid: tot };
     }
-    nextPaymentInDays() { const m = this.cfg.TIME.daysPerMonth; return m - (this.hours / 24) % m; }
+    nextPaymentInDays() { return CAL.daysToMonthEnd(this.hours); }
 
     /* ---- staff (a headcount per category, never individual workers) ---- */
     computeStaff() {
@@ -609,7 +609,7 @@
       const row = [prod.CRUDE / h, prod.THRU / h, prod.GASOLINE / h, prod.DIESEL / h, prod.JET_FUEL / h, prod.GAS / h].map(v => Math.round(v * 100) / 100); for (let i = 0; i < h; i++) this.prodHist.push(row); while (this.prodHist.length > C.MARKET.historyHours) this.prodHist.shift();
       this.computeStaff();
       this._paySuppliers(); this._trainHr(h); this.computeStaff();
-      const pay = this.staff.payroll * h / (C.TIME.daysPerMonth * C.TIME.hoursPerDay);                             // salaries are earned every hour and paid every 30 days
+      const pay = this.staff.payroll * h / (CAL.fromHours(this.hours).daysInMonth * C.TIME.hoursPerDay);          // salaries are earned every hour of the month, so a month always costs the same salary whatever its length; the cash leaves on the 1st
       if (pay > 0) this._post({ type: 'PAYROLL_EARNED', desc: 'Salaries earned' }, [['EXP_LABOR', pay], ['PAY_PAYROLL', -pay]]);
       for (const p of SELL) { const cap = this.capacity(p); this.market.stock[p] = cap ? this.physicalVol(p) / cap : 0; }
       for (let i = 0; i < h; i++) this.market.tick();
@@ -628,7 +628,7 @@
     }
     _newDay() {
       // Month-end charges (salaries, running costs, depreciation, loans, tax) belong to the day that ENDS the month: they are booked before that day is closed.
-      if (this.dayIdx % this.cfg.TIME.daysPerMonth === 0) this._monthEnd();
+      if (CAL.isMonthStart(this.dayIdx)) this._monthEnd();                                 // the real calendar decides: the 1st of a month closes the month before it
       const cash = this.store.cash; this.days.push(Object.assign({ d: this.dayIdx - 1 }, (() => { const c = calc(this.led.day, cash); return { revenue: c.revenue, expenses: c.expenses, profit: c.netProfit, cashIn: c.cash.in, cashOut: c.cash.out, storage: this.led.day.storage, opex: c.opex + c.variable }; })()));
       while (this.days.length > 60) this.days.shift(); this.led.day = ledger(cash);
       if (this.autoRepair) { const M = this.cfg.MAINTENANCE; for (const b of this.store.list()) if (b.st !== 'UNDER_CONSTRUCTION' && b.c < M.autoRepairBelow && this.store.cash - this.repairCost(b) >= M.cashReserve) this.repair(b.id); }
@@ -663,7 +663,7 @@
       closed.ratios = this._ratios(closed, startSnap, endSnap); this.bsStart = endSnap;                                   // ratios use the average of the start and end balances
       this.lastMonth = closed; delete this.lastMonth.L.produced; this.led.month = ledger(cash);
       this.months.push({ n: this.months.length + 1, dayIdx: this.dayIdx, revenue: closed.revenue, expenses: closed.expenses, profit: closed.netProfit, cashIn: closed.cash.in, cashOut: closed.cash.out, cashEnd: cash }); while (this.months.length > 24) this.months.shift();
-      if (this.dayIdx % (C.TIME.daysPerMonth * C.TIME.monthsPerYear) === 0) this.led.year = ledger(cash);
+      if (CAL.isYearStart(this.dayIdx)) this.led.year = ledger(cash);
     }
     _finance(h) {
       const F = this.cfg.FINANCE, f = this.fin, cash = this.store.cash; if (this.bankrupt) return;
@@ -696,7 +696,8 @@
     netPerDay() {                                                                   // the number in the HUD: the trailing profit per day (a live estimate during the first day)
       const r = this.recent(30), d = this.led.day, hrs = this.hours % 24; if (r.n >= 3) return r.profit / r.n; const c = calc(d, this.store.cash); return hrs >= 2 ? c.netProfit / (hrs / 24) : c.netProfit * 0;
     }
-    clock() { const T = this.cfg.TIME, d = Math.floor(this.hours / 24), m = Math.floor(d / T.daysPerMonth), y = Math.floor(m / T.monthsPerYear); return { hours: this.hours, day: d, hour: Math.floor(this.hours % 24), dayOfMonth: d % T.daysPerMonth + 1, month: m % T.monthsPerYear + 1, year: y + 1, text: 'Y' + (y + 1) + ' M' + (m % T.monthsPerYear + 1) + ' D' + (d % T.daysPerMonth + 1) + ' ' + String(Math.floor(this.hours % 24)).padStart(2, '0') + ':00' }; }
+    /* the date of the game: the real calendar read from the one clock (this.hours).  year/month/dayOfMonth are the calendar year, month and day of month */
+    clock() { const d = CAL.fromHours(this.hours); return { hours: this.hours, day: d.dayIdx, hour: d.hour, dayOfMonth: d.day, month: d.month, year: d.year, weekday: d.weekday, weekdayName: d.weekdayName, monthName: d.monthName, daysInMonth: d.daysInMonth, text: d.text, textAr: d.textAr, speed: this.speed, paused: this.speed === 0 }; }
     _event(level, msg) { this.events.push({ level, msg, hour: this.hours }); if (this.events.length > 40) this.events.shift(); }
     drainEvents() { const e = this.events; this.events = []; return e; }
     _notify() {                                                                     // a toast only when an alert APPEARS (not every tick), and only for warn / crit
@@ -770,8 +771,15 @@
 
     /* ---- running time ---- */
     advanceHours(n, step) { step = step || 1; let left = n; while (left > 1e-9 && !this.bankrupt) { const h = Math.min(step, left); this._tick(h); left -= h; } }
+    /* time control: ONE place sets the speed.  0 = paused: nothing that depends on time moves (run, offline catch-up and the loop in the lab all read this) */
+    setSpeed(v) { const sp = this.cfg.TIME.speeds; v = +v; if (!sp.includes(v)) return { ok: false, reason: 'speed' }; if (v > 0) this.lastSpeed = v; else if (this.speed > 0) this.lastSpeed = this.speed; this.speed = v; return { ok: true, speed: v }; }
+    pause() { return this.setSpeed(0); }
+    resume() { return this.setSpeed(this.lastSpeed > 0 ? this.lastSpeed : 1); }
+    togglePause() { return this.speed === 0 ? this.resume() : this.pause(); }
+    faster() { const sp = this.cfg.TIME.speeds.filter(x => x > 0), cur = this.speed || this.lastSpeed || 1, i = sp.indexOf(cur); return this.setSpeed(sp[Math.min(sp.length - 1, i < 0 ? 0 : i + 1)]); }
+    slower() { const sp = this.cfg.TIME.speeds.filter(x => x > 0), cur = this.speed || this.lastSpeed || 1, i = sp.indexOf(cur); return this.setSpeed(sp[Math.max(0, i < 0 ? 0 : i - 1)]); }
     run(hours) {                                                                   // the lab calls this with real time x speed; whole hours only, the remainder waits for the next call
-      if (this.bankrupt || !(hours > 0)) return 0; this.acc = Math.min(this.acc + hours, this.cfg.TIME.maxCatchUpHours); let n = 0; while (this.acc >= 1 && n < this.cfg.TIME.maxStepsPerTick && !this.bankrupt) { this._tick(1); this.acc -= 1; n++; } return n;
+      if (this.bankrupt || !(hours > 0) || this.speed === 0) return 0; this.acc = Math.min(this.acc + hours, this.cfg.TIME.maxCatchUpHours); let n = 0; while (this.acc >= 1 && n < this.cfg.TIME.maxStepsPerTick && !this.bankrupt) { this._tick(1); this.acc -= 1; n++; } return n;
     }
 
     /* ---- offline simulation ---- */
@@ -781,6 +789,7 @@
       if (this.lastSim == null || !isFinite(this.lastSim)) { this.lastSim = nowMs; return null; }
       const elapsedS = (nowMs - this.lastSim) / 1000;
       if (!isFinite(elapsedS) || elapsedS < 0) { this.badClock = true; this.lastSim = nowMs; return { ok: false, reason: 'clock', elapsedSeconds: elapsedS }; }        // the clock went backwards (or is not a number): no time is granted
+      if (this.speed === 0) { this.lastSim = nowMs; return null; }                                            // paused when the game was closed: no time passes while it is closed
       if (elapsedS < O.minSeconds) { return null; }
       const realH = Math.min(elapsedS / 3600, O.capHours), capped = elapsedS / 3600 > O.capHours, gameH = Math.floor(realH * O.gameDaysPerRealHour * 24 / O.stepHours) * O.stepHours;
       const before = clone(this.led.life), cash0 = this.store.cash, day0 = this.dayIdx, alerts0 = new Set(this.alerts().map(a => a.key)); this.advanceHours(gameH, O.stepHours); this.lastSim = nowMs;
@@ -795,14 +804,14 @@
     /* ---- save / load (the store and the pipes are saved by the lab as before; this is the company) ---- */
     toJSON() {
       return { v: 2, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0, a.useStart == null ? null : a.useStart]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
-        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, savedAt: this.lastSim };
+        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
     }
     fromJSON(d) {
       if (!d || (d.v !== 1 && d.v !== 2)) return false; const c = this.cfg;
       this.hours = d.hours || 0; this.dayIdx = d.dayIdx || 0; this.acc = 0; this.market = new Market(c, d.market); this.assets = new Map((d.assets || []).map(a => [a[0], { cost: a[1], t: a[2], dep: a[3] || 0, useStart: a.length > 4 ? a[4] : a[2] }])); /* saves before Phase 14: in use from the purchase */ this.loans = d.loans || []; this.nextLoan = d.nextLoan || 1; this.closed = d.closed || [];
       this.contracts = d.contracts || []; this.history = d.history || []; this.offers = d.offers || []; this.nextContract = d.nextContract || 1; this.crng = new Rng(d.crng || 1); this.modes = Object.assign(this.modes, d.modes || {}); this.tier = d.tier || 0; this.autoRepair = d.autoRepair !== false;
       this.led = d.led || this.led; for (const k of ['day', 'month', 'year', 'life']) { const L = Object.assign(ledger(0), this.led[k]); L.produced = Object.assign(PZERO(), L.produced); L.sold = Object.assign(SZERO(), L.sold); L.pl = Object.assign(ledger(0).pl, L.pl || {}); L.cf = Object.assign(ledger(0).cf, L.cf || {}); this.led[k] = L; }
-      this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSim = d.savedAt == null ? null : d.savedAt;
+      this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSpeed = d.lastSpeed > 0 ? d.lastSpeed : (this.speed > 0 ? this.speed : 1); this.lastSim = d.savedAt == null ? null : d.savedAt;
       this.recv = (d.recv || []).map(r => Object.assign({ late: false, payOn: r.due }, r)); this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.purchases = d.purchases || []; this.nextPur = d.nextPur || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy; this.bsStart = d.bsStart || null;
       if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); this.qty2 = Object.assign({ BYPRODUCT: 0, RESIDUE: 0 }, d.qty2 || {}); }
       this.bq = d.bq || 0; this.tradeLog = d.tradeLog || []; this.nextTrade = d.nextTrade || 1; this.boughtUsed = d.boughtUsed || 0;

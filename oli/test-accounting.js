@@ -1,7 +1,7 @@
 /* Oli - test-accounting.js  (Economy Phases 2-7: the mandatory accounting tests of the spec + invariants of the double-entry journal)
  * Run: NODE_PATH=/opt/npm-tools/node_modules node test-accounting.js
  */
-const { B, I, E, EC, game, put, pipe, chain } = require('./test-economy-helpers.js'), assert = require('assert');
+const { B, I, E, EC, game, put, pipe, chain, nextMonth } = require('./test-economy-helpers.js'), assert = require('assert');
 const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-6 : tol) * Math.max(1, Math.abs(a), Math.abs(b));
 const days = (g, d) => g.co.advanceHours(24 * d);
 let pass = 0, fail = 0; const T = (n, c, x) => { if (c) pass++; else { fail++; console.log('FAIL', n, x === undefined ? '' : JSON.stringify(x)); } };
@@ -44,7 +44,7 @@ const cashOf = g => g.store.cash;
   T('M4 cash decreases by the purchase price', near(c0 - cashOf(g), cost, 1e-9), [c0 - cashOf(g), cost]);
   T('M4a fixed assets increase by the purchase price', near(co.journal.bal.FIXED - fx0, cost, 1e-9));
   T('M4b no expense is recorded at purchase', near(co.summary().life.expenses, pl0, 1e-9));
-  co.sync(); co.advanceHours(24 * 30);
+  co.sync(); nextMonth(co);
   T('M4c depreciation starts with the first month (accumulated depreciation > 0)', co.journal.bal.ACC_DEP < 0 && co.assets.get(b.id).dep > 0, co.assets.get(b.id)); }
 
 /* 5. 10,000 barrels produced and not sold: stock up at cost, no sales revenue, no sales profit */
@@ -56,10 +56,10 @@ const cashOf = g => g.store.cash;
   T('M5c no cost of sales and no sales profit', co.led.life.pl.cogs === 0 && co.summary().life.grossProfit === 0);
   T('M5d stock quantity = what was produced - what the refinery took - the crude lost before it reached a tank (separator slop, written off), and it equals the oil in the tanks', near(co.qty.CRUDE, co.led.life.produced.CRUDE - co.led.life.produced.THRU - (co.crudeLoss || 0), 1e-3) && near(co.qty.CRUDE, co.crudeOnHand(), 1e-3), [co.qty.CRUDE, co.crudeOnHand(), co.crudeLoss, co.led.life.produced]); }
 
-/* 6. salaries: earned every hour, paid every 30 days, cash moves only when paid */
+/* 6. salaries: earned every hour, paid on the 1st of the next month, cash moves only when paid */
 { const g = game(500e6), co = g.co; chain(g, false, false); const c0 = cashOf(g);
-  co.advanceHours(24 * 29 + 23); const owedBefore = -co.journal.bal.PAY_PAYROLL; T('S1 salaries accrue during the month (payable > 0 before payday)', owedBefore > 0, owedBefore);
-  const c1 = cashOf(g); co.advanceHours(1); T('S2 the payday (hour 720) pays the payable: payable goes to zero and cash falls by it', near(co.journal.bal.PAY_PAYROLL, 0, 1e-6) && cashOf(g) < c1 - owedBefore * 0.9, [co.journal.bal.PAY_PAYROLL, c1 - cashOf(g), owedBefore]);
+  co.advanceHours(24 * 30 + 23); const owedBefore = -co.journal.bal.PAY_PAYROLL; T('S1 salaries accrue during the month (payable > 0 before payday)', owedBefore > 0, owedBefore);
+  const c1 = cashOf(g); co.advanceHours(1); T('S2 the payday (hour 744, the 1st of February) pays the payable: payable goes to zero and cash falls by it', near(co.journal.bal.PAY_PAYROLL, 0, 1e-6) && cashOf(g) < c1 - owedBefore * 0.9, [co.journal.bal.PAY_PAYROLL, c1 - cashOf(g), owedBefore]);
   T('S3 the expense is the salaries earned (not the cash paid twice)', co.led.life.labor > 0 && near(co.led.life.labor, co.led.life.pl.labor, 1e-9)); }
 
 /* 7. contract revenue is a receivable until it is paid */
@@ -72,7 +72,7 @@ const cashOf = g => g.store.cash;
 { const g = game(500e6), co = g.co; const c = chain(g, true, true); co.injectEquity(1e6, 'test');
   for (const p of EC.PRODUCTS) co.setMode(p, 'SPOT');
   co.takeLoan(5e6, 12, 'run'); co.repairAll(1.01); let bad = null; let prevSum = null;
-  for (let m = 0; m < 24 && !bad; m++) { co.advanceHours(24 * 30);
+  for (let m = 0; m < 24 && !bad; m++) { nextMonth(co);
     const a = co.audit(); if (!a.ok) bad = { month: m, errors: a.errors };
     if (co.lastMonth) { const cf = co.lastMonth.cash; if (!near(cf.flows.OP.net + cf.flows.INV.net + cf.flows.FIN.net, cf.in - cf.out, 1e-6)) bad = { month: m, cf }; } }
   T('I1 the audit passes every month for two years (journal balances, balance sheet balances, cash = journal)', !bad, bad);
@@ -83,7 +83,7 @@ const cashOf = g => g.store.cash;
   const sd = JSON.parse(JSON.stringify(co.toJSON())); const co2 = game(500e6).co; co2.fromJSON(sd); T('I6 save and load keeps the journal (balance sheet gap 0 after load)', near(co2.balanceSheet().gap, 0, 1e-3) && co2.journal.n === co.journal.n); }
 
 /* the period rule: month-end charges are booked on the day that ends the month, not on the next one */
-{ const g = game(500e6), co = g.co; chain(g, false, false); days(g, 29.5); co.advanceHours(12);
+{ const g = game(500e6), co = g.co; chain(g, false, false); days(g, 30.5); co.advanceHours(12);
   const rec = co.days.slice(-1)[0]; T('P1 the day that ends the month carries the month-end costs (not the next day)', co.lastMonth && co.lastMonth.L.labor > 0 && co.led.day.pl.depreciation === 0 && co.led.day.pl.labor < co.lastMonth.L.labor); }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
