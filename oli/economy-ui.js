@@ -172,11 +172,12 @@
   const BUY_QTY = { CRUDE: 1000, GASOLINE: 1000, DIESEL: 1000, JET_FUEL: 1000, GAS: 1000, CHEM: 1000, PARTS: 10, OPS: 100 };
   function rBuy() {
     const sup = CO.supplierOf(buySup), items = EC.PRODUCTS.concat(EC.MATERIALS), names = Object.assign({}, EC.LABEL, EC.MATERIAL_LABEL);
+    const uOf = it => EC.PRODUCTS.includes(it) ? (EC.UNIT[it] || 'برميل') : ({ kg: 'كجم', pcs: 'قطعة', unit: 'وحدة' })[EC.MATERIAL_UNIT[it]] || 'وحدة';
     let h = '<button data-act="screen" data-v="">← العودة للوحة الشركة</button><div class="es-sm" style="margin-bottom:8px">المورد</div><div class="es-grid">' + EC.SUPPLIERS.map(x => '<button data-act="supp" data-v="' + x.id + '"' + (x.id === buySup ? ' style="outline:2px solid currentColor"' : '') + '>' + x.name + (x.creditDays ? ' · آجل ' + x.creditDays + ' يوم' : ' · نقداً فقط') + '</button>').join('') + '</div>';
     h += '<div class="es-sm" style="margin:10px 0 6px">طريقة الدفع</div><div class="es-grid"><button data-act="terms" data-v="CASH"' + (buyTerms === 'CASH' ? ' style="outline:2px solid currentColor"' : '') + '>نقداً</button><button data-act="terms" data-v="CREDIT"' + (buyTerms === 'CREDIT' ? ' style="outline:2px solid currentColor"' : '') + (sup.creditDays ? '' : ' disabled') + '>آجل</button></div>';
     h += '<div class="es-sm" style="margin:10px 0 6px">الأسعار تتبع السوق (المنتجات) أو سعر المادة القابل للتعديل في الإعدادات، والمورد يضيف علاوته ونقل ورسومه.</div>';
-    for (const it of items) { const q = BUY_QTY[it], qt = CO.buyQuote(it, q, buySup), have = it === 'CRUDE' || EC.PRODUCTS.includes(it) ? CO.available(it) : CO.mats[it] || 0, room = EC.PRODUCTS.includes(it) ? CO.roomFor(it) : Infinity;
-      h += '<div class="es-row" style="margin:8px 0;padding:8px 0;border-bottom:1px solid #0002"><div><b>' + names[it] + '</b> <span class="es-sm">المخزون ' + n0(have) + ' ' + (EC.UNIT[it] || 'وحدة') + '</span><div class="es-sm">' + n0(q) + ' ' + (EC.UNIT[it] || 'وحدة') + ' × ' + qt.unitPrice.toFixed(2) + ' + نقل ' + M(qt.freight) + ' + رسوم ' + M(qt.fee) + ' = <b>' + M(qt.total) + '</b></div>'
+    for (const it of items) { const q = BUY_QTY[it], qt = CO.buyQuote(it, q, buySup), have = it === 'CRUDE' || EC.PRODUCTS.includes(it) ? CO.available(it) : CO.mats[it] || 0, room = CO.roomFor(it);
+      h += '<div class="es-row" style="margin:8px 0;padding:8px 0;border-bottom:1px solid #0002"><div><b>' + names[it] + '</b> <span class="es-sm">المخزون ' + n0(have) + ' ' + uOf(it) + '</span><div class="es-sm">' + n0(q) + ' ' + uOf(it) + ' × ' + qt.unitPrice.toFixed(2) + ' + نقل ' + M(qt.freight) + ' + رسوم ' + M(qt.fee) + ' = <b>' + M(qt.total) + '</b></div>'
         + (room < q ? '<div class="es-sm neg">لا توجد سعة كافية في الخزانات (' + n0(room) + ' متاح)</div>' : '') + '</div>'
         + '<button data-act="buy" data-p="' + it + '" data-q="' + q + '"' + (room < q ? ' disabled' : '') + '>شراء</button></div>'; }
     return h;

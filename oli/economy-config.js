@@ -85,8 +85,10 @@
     //      Purchase total = qty x unit price + freight + fees.  Freight and fees are part of the cost of the goods (capitalised into stock).
     MATERIALS: ['CHEM', 'PARTS', 'OPS'],                                              // chemicals · spare parts · operating materials (stock pools, not tanks)
     MATERIAL_LABEL: { CHEM: 'مواد كيميائية', PARTS: 'قطع غيار', OPS: 'مواد تشغيل' },
+    MATERIAL_UNIT: { CHEM: 'kg', PARTS: 'pcs', OPS: 'unit' },                         // the unit each price refers to (UI keys: u.kg, u.pcs, u.unit)
+    MATERIAL_STORE: { CHEM: 20000, PARTS: 200, OPS: 5000 },                           // warehouse capacity per material, in its unit: a purchase above it is refused
     MATERIAL_PRICE: { CHEM: 2.5, PARTS: 1200, OPS: 40 },                             // editable starting prices ($ per unit): change them here, the engine reads them
-    MATERIAL_USE: { CHEM: { per: 'refinedBbl', qty: 0.36 }, OPS: { per: 'refinedBbl', qty: 0.002 }, PARTS: { per: 'repair', qty: 1 } },   // units used: chemicals 0.36 per refined bbl (= 0.90 $/bbl at 2.5 $/unit, the existing cost); operating materials 0.002 per bbl; one spare part per repair
+    MATERIAL_USE: { CHEM: { per: 'refinedBbl', qty: 0.36 }, OPS: { per: 'refinedBbl', qty: 0.002 }, PARTS: { per: 'repair', qty: 1 }, REPAIR_OPS: { per: 'repair', qty: 2 } },   // units used: chemicals 0.36 per refined bbl (= 0.90 $/bbl at 2.5 $/unit, the existing cost); operating materials 0.002 per bbl; one spare part per repair
     SUPPLIERS: [
       { id: 'A', name: 'مورد أ', premium: 0.00, freightPerUnit: { crude: 0.40, product: 0.50, material: 0.05 }, feeRate: 0.005, creditDays: 30 },   // cheapest, pays 30 days after delivery
       { id: 'B', name: 'مورد ب', premium: 0.02, freightPerUnit: { crude: 0.25, product: 0.35, material: 0.03 }, feeRate: 0.003, creditDays: 15 },
