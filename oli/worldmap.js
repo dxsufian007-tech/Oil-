@@ -58,6 +58,10 @@
     /* ---- wells (Phase 4): four kinds. Exploratory and appraisal wells are the paid versions of the discovery steps, injection wells are recorded for the pressure support of Phase 5,
        production wells are the oil_well buildings, which draw from the ONE reserve of their field. Cost = depth x costPer100m x terrain x the kind's factor. */
     WELLS: { costPer100m: 25000, minCost: 150000, EXPLORATORY: { factor: 0.8 }, APPRAISAL: { factor: 0.7 }, PRODUCTION: { factor: 1.0 }, INJECTION: { factor: 0.6 }, APPRAISAL_NARROWING: 0.6, MIN_ESTIMATE_K: 0.15, WATER_CUT_WEIGHT: 0.35 },   // WATER_CUT_WEIGHT: how much the field's own water cut counts against the old fixed start (kept low so the production of the game keeps its balance)
+    /* ---- production and depletion (Phase 5). Every field has a reservoir pressure (pr = 1 at the start). Taking oil lowers it, in proportion to the share of the reserve taken and to the field's own decline rate;
+       the output of every well follows the pressure (0.4 + 0.6 x pr); injection wells share the support S = min(INJ_MAX, 1 - exp(-INJ_K x n)): they cut the pressure loss by (1 - S) and every barrel produced brings
+       RECOVERY_BONUS x S extra recoverable barrels (a better recovery factor). Lifting cost per barrel = the field's cost / EXTRACT_REF x the old flat cost, and rises as the pressure falls (LIFT_PRESSURE). */
+    PRODUCTION: { PRESSURE_DROP: 0.7, DROP_REF_DECLINE: 0.15, PR_FLOOR: 0.08, INJ_K: 0.35, INJ_MAX: 0.8, RECOVERY_BONUS: 0.15, INJ_OP_DAY: 3000, EXTRACT_REF: 12.5, LIFT_PRESSURE: 0.6 },
     DRY_RATIO: 0.6,                                                             // dry "promising" zones per real field
     MIN_GAP: 3,                                                                 // tiles between two oil sites
     DRILL: { baseCostPer100m: 1500, preview: true },                            // estimated cost = depth/100 x base x terrain cost; PREVIEW ONLY, never charged
@@ -265,9 +269,18 @@
     const evaluateZone = rid => { const z = regions[rid]; if (!z) return { ok: false, reason: 'unknown' }; if (zoneEval.has(rid)) return { ok: false, reason: 'done' }; zoneEval.add(rid); return { ok: true, cost: Math.round(exploreCostOf(rid) * CONFIG.ZONE_COST.evaluateShare) }; };   // the cost is reported, the caller charges it
     const zoneSnapshot = () => Array.from(zoneEval).sort((a, b) => a - b), restoreZones = arr => { zoneEval.clear(); for (const id of arr || []) if (regions[id]) zoneEval.add(id); };
     // ---- the shared reserve of a field and the well registry. The reserve belongs to the FIELD: every production well draws from it, so more wells give more capacity but never more oil.
+    const injectionSupport = s => { const n = s.injectors || 0; return n > 0 ? Math.min(CONFIG.PRODUCTION.INJ_MAX, 1 - Math.exp(-CONFIG.PRODUCTION.INJ_K * n)) : 0; };
+    const pressureOf = id => { const s = siteById(id); return s && s.kind === 'FIELD' ? (s.pr == null ? 1 : s.pr) : null; };
+    const injectorsTotal = () => allSites().reduce((a, s) => a + (s.kind === 'FIELD' && stateOf(s.id) === 'PRODUCING' ? (s.injectors || 0) : 0), 0);
+    const liftFactor = id => { const s = siteById(id); if (!s || s.kind !== 'FIELD' || !s.props) return 1; const P = CONFIG.PRODUCTION; return s.props.extractCost / P.EXTRACT_REF * (1 + P.LIFT_PRESSURE * (1 - (s.pr == null ? 1 : s.pr))); };
     function take(id, bbl) {
       const s = siteById(id); if (!s || s.kind !== 'FIELD') return 0; const st = stateOf(id); if (st !== 'DRILLABLE' && st !== 'PRODUCING') return 0;
       const took = Math.max(0, Math.min(bbl, s.remainingReserve)); if (took > 0 && st === 'DRILLABLE') advance(id, 'PRODUCING'); s.remainingReserve -= took;
+      if (took > 0) {                                                                               // what taking oil does to the reservoir
+        const P = CONFIG.PRODUCTION, S = injectionSupport(s); s.produced = (s.produced || 0) + took;
+        s.pr = Math.max(P.PR_FLOOR, (s.pr == null ? 1 : s.pr) - took / Math.max(1, s.initialReserve) * P.PRESSURE_DROP * (s.props.decline / P.DROP_REF_DECLINE) * (1 - S));
+        if (S > 0) { const g = took * P.RECOVERY_BONUS * S; s.remainingReserve += g; s.gain = (s.gain || 0) + g; }   // injection: more of the oil in place is recovered
+      }
       if (s.remainingReserve <= 1e-6) { s.remainingReserve = 0; if (stateOf(id) === 'PRODUCING') advance(id, 'DEPLETED'); } return took;
     }
     const wellRec = new Map(); let wellNext = 1;
@@ -281,8 +294,8 @@
       const rec = { id: 'W' + wellNext++, type, siteId, regionId: s.regionId, depth: s.depth, cost: drillCost(type, siteId), t: t || 0, result }; wellRec.set(rec.id, rec); return Object.assign({ ok: true }, rec);
     }
     const wellsOf = siteId => Array.from(wellRec.values()).filter(w => w.siteId === siteId);
-    const reserveSnapshot = () => ({ n: wellNext, w: Array.from(wellRec.values()), f: allSites().filter(s => s.kind === 'FIELD' && (s.remainingReserve !== s.initialReserve || s.appraisals || s.injectors)).map(s => [s.id, s.remainingReserve, s.appraisals || 0, s.injectors || 0, s.estK == null ? 1 : s.estK]) });
-    const restoreReserve = d => { wellRec.clear(); wellNext = (d && d.n) || 1; for (const w of (d && d.w) || []) wellRec.set(w.id, w); for (const [id, rem, ap, inj, k] of (d && d.f) || []) { const s = siteById(id); if (s) { s.remainingReserve = rem; s.appraisals = ap; s.injectors = inj; s.estK = k; } } };
+    const reserveSnapshot = () => ({ n: wellNext, w: Array.from(wellRec.values()), f: allSites().filter(s => s.kind === 'FIELD' && (s.remainingReserve !== s.initialReserve || s.appraisals || s.injectors || s.pr != null)).map(s => [s.id, s.remainingReserve, s.appraisals || 0, s.injectors || 0, s.estK == null ? 1 : s.estK, s.pr == null ? 1 : +s.pr.toFixed(6), +(s.gain || 0).toFixed(3), +(s.produced || 0).toFixed(3)]) });
+    const restoreReserve = d => { wellRec.clear(); wellNext = (d && d.n) || 1; for (const w of (d && d.w) || []) wellRec.set(w.id, w); for (const [id, rem, ap, inj, k, pr, gain, prod] of (d && d.f) || []) { const s = siteById(id); if (s) { s.remainingReserve = rem; s.appraisals = ap; s.injectors = inj; s.estK = k; s.pr = pr == null ? undefined : pr; s.gain = gain || 0; s.produced = prod || 0; } } };   /* older saves have no pressure: they start at 1 */
     const progressSnapshot = () => Array.from(progress.entries()).sort();
     const restoreProgress = arr => { progress.clear(); for (const [id, st] of arr || []) if (STATES.includes(st) && siteById(id)) progress.set(id, st); };
 
@@ -410,7 +423,7 @@
     const oilFieldAt = (x, y) => { for (const s of sitesNear(x, y, 2)) if (s.kind === 'FIELD' && Math.hypot(s.x - x, s.y - y) <= s.radius) return s; return null; };
 
     return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
-      zoneInfo, evaluateZone, zoneSnapshot, restoreZones, take, drillWell, drillCost, wellsOf, reserveSnapshot, restoreReserve, discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
+      zoneInfo, evaluateZone, zoneSnapshot, restoreZones, pressureOf, injectionSupport, injectorsTotal, liftFactor, take, drillWell, drillCost, wellsOf, reserveSnapshot, restoreReserve, discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
       scale: () => (W * H) / (CONFIG.LEGACY.W * CONFIG.LEGACY.H) };
   }
   const api = { CONFIG, STATES, LAYERS, TBYID, createWorld, hash, vnoise, fbm, mulberry32 };

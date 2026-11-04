@@ -162,6 +162,8 @@
         totalAssets: bs.assets, payroll: -b.PAY_PAYROLL, tax: -b.PAY_TAX, loans: -b.LOANS, totalLiabilities: bs.liabilities, paidIn: bs.paidIn, result: bs.result, totalEquity: bs.equity, gap: bs.gap };
     }
     inventoryBook() { let v = 0; for (const p of SELL) v += this.journal.bal[INVACC[p]]; return v; }
+    /* lifting cost of a well relative to the old flat cost: its field's cost per barrel (deeper = dearer) and the pressure the field has left; 1 for wells without field data */
+    liftFactor(b) { const ts = this.store.ts; return b && b.field && ts && ts.liftFactor ? ts.liftFactor(b.field) : 1; }
     unitCost(p) { const q = this.qty[p]; return q > EPS2 ? Math.max(0, this.journal.bal[INVACC[p]]) / q : 0; }
 
     /* ---- assets: cost in FIXED, depreciation in ACC_DEP; a building is recorded when bought and removed when demolished ---- */
@@ -483,7 +485,7 @@
         if (CHAIN[t]) { crude.operating += op; crude.maintenance += mt; crude.energy += en; }                    // wells, pumps, separators: capitalised into crude
         else if (t === 'refinery') { refin.operating += op; refin.maintenance += mt; refin.energy += en; }        // refinery: capitalised into products
         else { tankOpex += op; tankMaint += mt; powerCost += en; }                                                 // tanks / gas storage: period expenses
-        if (t === 'well') { const oil = (s._out || 0) * Math.max(0, 1 - (s._wc || 0) - (s._gas || 0)) * dt; prod.CRUDE += oil; crude.lifting += oil * C.VARIABLE.liftingPerBbl; }
+        if (t === 'well') { const oil = (s._out || 0) * Math.max(0, 1 - (s._wc || 0) - (s._gas || 0)) * dt; prod.CRUDE += oil; crude.lifting += oil * C.VARIABLE.liftingPerBbl * this.liftFactor(b); }
         else if (t === 'refinery') { const thr = (s._in || 0) * dt, p = s._p || {}; prod.THRU += thr; for (const q of PRODS) { const v = (p[q] || 0) * dt; prod[q] += v; refOut[q] += v; }
           for (const k of REF_OTHER) rf[k] += (p[k] || 0) * dt; const fl = (s.flared || 0) - (s._flSeen || 0); s._flSeen = s.flared || 0; rf.FLARED += Math.max(0, fl); }
         else if (t === 'separator' && S.edgeOf(b, 'GAS_OUT')) { const g = (s._g || 0) * dt; prod.GAS += g; sepGas += g; }
@@ -498,6 +500,7 @@
       this.pw.demand = kw; this.pw.cap = gridKW; this.pw.supplied = supplied; this.pw.bought = bought; this.pw.shortage = Math.max(0, kw - supplied); this.pw.stopFrom = this.pwStop; this.pw.limited = this.pw.factor < 0.995;
 
       // ---- production costs: incurred now, carried in inventory, expensed when the barrel is sold
+      { const ts = this.store.ts; if (ts && ts.injectionCostDay) crude.operating += ts.injectionCostDay() * dt; }                // the running cost of the injection wells
       const crudeCost = crude.operating + crude.maintenance + crude.energy + crude.lifting;
       if (crudeCost > 0) this._post({ type: 'PROD_CRUDE', flow: 'OP', desc: 'Wells · pumps · separators', inc: { operating: crude.operating, maintenance: crude.maintenance, energy: crude.energy, lifting: crude.lifting } }, [['INV_CRUDE', crudeCost], ['CASH', -crudeCost]]);
       // chemicals and operating materials: used from stock first (at average cost); only the shortfall is paid in cash at the material price
@@ -691,7 +694,7 @@
       const op = active ? this.opDay(b, load) : 0, mt = active ? this.maintDay(b, load) : 0, kw = active ? this.kwOf(b, load) : 0, energy = kw * 24 * C.ENERGY.pricePerKWh, sk = C.LABOR.staff[this.staffKey(def)] || {}, L = C.LABOR.salary;
       const labor = active ? ((sk.operators || 0) * L.operators + (sk.engineers || 0) * L.engineers + (sk.maintenance || 0) * L.maintenance + (sk.managers || 0) * L.managers) / C.TIME.daysPerMonth : 0;
       const o = { id, name: def.name, type: t, status: this.sim.status(b), active, load, condition: b.c, conditionLabel: this.conditionLabel(b.c), purchase: a.cost, value: this.assetValue(b), ageDays: Math.floor((this.hours - a.t) / 24), operatingDay: op, maintenanceDay: mt, energyDay: energy, laborDay: labor, kw };
-      if (t === 'well') { const oil = (s._out || 0) * Math.max(0, 1 - (s._wc || 0) - (s._gas || 0)), px = this.market.price.CRUDE * C.QUALITY.mult[this.wellQuality(b)]; o.quality = this.wellQuality(b); o.oilDay = oil; o.revenuePotentialDay = oil * px; o.liftingDay = oil * C.VARIABLE.liftingPerBbl; o.marginDay = o.revenuePotentialDay - o.liftingDay - op - mt - energy - labor; }
+      if (t === 'well') { const oil = (s._out || 0) * Math.max(0, 1 - (s._wc || 0) - (s._gas || 0)), px = this.market.price.CRUDE * C.QUALITY.mult[this.wellQuality(b)]; o.quality = this.wellQuality(b); o.oilDay = oil; o.revenuePotentialDay = oil * px; o.liftingDay = oil * C.VARIABLE.liftingPerBbl * this.liftFactor(b); o.marginDay = o.revenuePotentialDay - o.liftingDay - op - mt - energy - labor; }
       else if (t === 'pump') { o.production = 'Moves ' + Math.round(s._in || 0) + ' bbl/day · +' + Math.round(s.boost * s.eff) + ' psi'; o.productionImpact = s._in || 0; }
       else if (t === 'tank' || t === 'gas') { const p = def.product, vol = s.vol || 0, px = this.unitPrice(p); o.product = p; o.stored = vol; o.storageCostDay = vol * C.STORAGE_COST[p]; o.storedValue = vol * px; }
       else if (t === 'refinery') { const pr = s._p || {}, px = this.market.price, thr = s._in || 0; o.throughputDay = thr; o.byproductDay = pr.BYPRODUCT || 0; o.residueDay = pr.RESIDUE || 0; o.fuelDay = pr.FUEL || 0; o.productRevenueDay = (pr.GASOLINE || 0) * px.GASOLINE + (pr.DIESEL || 0) * px.DIESEL + (pr.JET_FUEL || 0) * px.JET_FUEL + (pr.GAS || 0) * px.GAS;

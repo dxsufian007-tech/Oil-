@@ -117,7 +117,7 @@
   function fromWorld(world, CFG) {
     CFG = CFG || (typeof OliWorld !== 'undefined' ? OliWorld.CONFIG : require('./worldmap.js').CONFIG);
     return { W: world.W, H: world.H, tile: (x, y) => world.tile(x, y), terrain: CFG.TERRAIN, slopeK: CFG.SLOPE_K, oilFieldAt: (x, y) => world.oilFieldAt(x, y), stateOf: id => world.stateOf(id),
-      zoneAt: (kind, x, y, w, h) => { if (kind !== 'REFINERY') return null; for (const z of world.refineryZones(world.regionIdAt(x, y))) if (x >= z.x && y >= z.y && x + w <= z.x + z.w && y + h <= z.y + z.h) return z; return null; }, site: id => world.siteById(id), take: (id, bbl) => world.take(id, bbl), fieldState: id => world.stateOf(id) };
+      zoneAt: (kind, x, y, w, h) => { if (kind !== 'REFINERY') return null; for (const z of world.refineryZones(world.regionIdAt(x, y))) if (x >= z.x && y >= z.y && x + w <= z.x + z.w && y + h <= z.y + z.h) return z; return null; }, site: id => world.siteById(id), take: (id, bbl) => world.take(id, bbl), fieldState: id => world.stateOf(id), liftFactor: id => world.liftFactor(id), injectionCostDay: () => world.injectorsTotal() * CFG.PRODUCTION.INJ_OP_DAY };
   }
 
   /* ---------------------------------------------------------------- the store (instances + occupancy) */
