@@ -307,7 +307,7 @@
       if (t === 'tank' || t === 'gas') { if (s._badProduct) return 'BLOCKED'; return ((s._in || 0) > 0 || (s._out || 0) > 0) ? 'RUNNING' : 'READY'; }
       if (t === 'separator' || t === 'refinery') {
         if (!hasIn) return 'NO_INPUT'; if (t === 'refinery' ? !outs.some(has) : !has('OIL_OUT')) return 'NO_OUTPUT'; if (s._lowIn) return 'LOW_PRESSURE'; if (s._blocked) return 'BLOCKED';
-        if (s._sat && (s._in || 0) > 0) return 'OVER_CAPACITY'; if ((s._in || 0) > 0) return (s.pIn != null && s.pIn < CFG.REFINERY.minInletPsi && t === 'refinery') ? 'LOW_PRESSURE' : 'RUNNING'; return (s._off || 0) > 0 ? 'NO_INPUT' : 'READY';
+        if (s._sat && (s._in || 0) > 0) return 'OVER_CAPACITY'; if ((s._in || 0) > 0) return (s.pIn != null && s.pIn < CFG.REFINERY.minInletPsi && t === 'refinery') ? 'LOW_PRESSURE' : 'RUNNING'; return (s._off || 0) > 0 ? ((t === 'refinery' && s.matLim != null && s.matLim <= 0 && clamp(s.opLimit, 0, 1) > 0) ? 'NO_MATERIALS' : 'NO_INPUT') : 'READY';   /* oil is offered but none is taken: with no chemicals / operating materials in stock say so, instead of "no oil reaches it" */
       }
       return 'READY';
     }

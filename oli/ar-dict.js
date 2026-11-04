@@ -73,7 +73,7 @@
   const WORDS = [
     ...Object.entries(unit), ['tiles', 'مربعًا'], ['tile', 'مربع'], ['Crude oil', 'النفط الخام'], ['Jet fuel', 'وقود الطائرات'], ['Gas / LPG', 'الغاز'], ['Crude', 'النفط الخام'], ['Gasoline', 'البنزين'], ['Diesel', 'الديزل'], ['Jet Fuel', 'وقود الطائرات'], ['Water', 'الماء'],
     ['HIGH', 'عالية'], ['NORMAL', 'عادية'], ['LOW', 'منخفضة'], ['EMPTY', 'فارغ'], ['OVERFLOW RISK', 'خطر الفيضان'], ['FULL', 'ممتلئ'], ['NEAR LIMIT', 'قرب الحد'], ['HIGH TEMPERATURE', 'حرارة مرتفعة'], ['HIGH PRESSURE', 'ضغط مرتفع'], ['LOW PRESSURE', 'ضغط منخفض'], ['OPEN', 'مفتوح'], ['CLOSED', 'مغلق'], ['PARTIAL', 'جزئي'], ['FAULT', 'عطل'],
-    ['RUNNING', 'يعمل'], ['READY', 'جاهز'], ['OFFLINE', 'متوقف'], ['UNDER CONSTRUCTION', 'قيد البناء'], ['DEPLETED', 'نضب'], ['BLOCKED', 'مسدود'], ['NO INPUT', 'لا يصله نفط'], ['NO OUTPUT', 'غير متصل'], ['OVER CAPACITY', 'فوق السعة'], ['DAMAGED', 'تالف'], ['EMERGENCY', 'طوارئ'], ['WARNING', 'تحذير'], ['NEAR FULL', 'شبه ممتلئ'],
+    ['RUNNING', 'يعمل'], ['READY', 'جاهز'], ['OFFLINE', 'متوقف'], ['UNDER CONSTRUCTION', 'قيد البناء'], ['DEPLETED', 'نضب'], ['BLOCKED', 'مسدود'], ['NO INPUT', 'لا يصله نفط'], ['NO MATERIALS', 'ينقصها كيماويات/مواد تشغيل'], ['NO OUTPUT', 'غير متصل'], ['OVER CAPACITY', 'فوق السعة'], ['DAMAGED', 'تالف'], ['EMERGENCY', 'طوارئ'], ['WARNING', 'تحذير'], ['NEAR FULL', 'شبه ممتلئ'],
     ['Pipe', 'أنبوب'], ['Pipeline', 'خط أنابيب'], ['Junction', 'نقطة ربط'], ['Valve', 'صمام'], ['Separator', 'فاصل'], ['Refinery', 'مصفاة'], ['Well', 'بئر'], ['Pump Station', 'محطة ضخ'], ['Expansion', 'توسع'], ['Economics', 'الاقتصاد'], ['ECONOMICS', 'الاقتصاد']
   ];
   return { EXACT, RULES, WORDS };
