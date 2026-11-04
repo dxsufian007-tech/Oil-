@@ -30,8 +30,9 @@
     ELEV_LEVELS: 8,                                                             // elevation is also reported as a coarse level 0..7 (the "height" concept)
     /* ---- oil fields (Phase 3): five size classes, the design ranges of the oil-system spec x RESERVE_SCALE (0.25 = the middle option between the nominal ranges and a heavily shrunk world;
        at 1 the ranges are the nominal ones). Keys are kept (MAJOR = giant) so saves and tests keep working; MARGINAL is new. Every number is meant to be tuned. */
-    RESERVE_SCALE: 0.25,
-    FIELD_NOMINAL: { MAJOR: [1e9, 5e9], LARGE: [3e8, 1e9], MEDIUM: [5e7, 3e8], SMALL: [5e6, 5e7], MARGINAL: [5e5, 5e6] },   // barrels: giant 1-5 bn, large 300 m-1 bn, medium 50-300 m, small 5-50 m, marginal under 5 m
+    RESERVE_SCALE: 1,                                                           // the class ranges below are the real ones now (no scaling)
+    FIELD_NOMINAL: { MAJOR: [2e9, 4e9], LARGE: [6e8, 2e9], MEDIUM: [1.5e8, 6e8], SMALL: [4e7, 1.5e8], MARGINAL: [2e7, 4e7] },   // barrels per field (the field's own reserve): 20 million (marginal) up to 4 billion (giant): marginal 20-40 m, small 40-150 m, medium 150-600 m, large 600 m-2 bn, giant 2-4 bn
+    ZONE_SCALE: 2.5,                                                            // the zone class thresholds below (min / prior) are multiplied by this: they follow the total of the zone's fields
     OILFIELD: {                                                                 // reserve in barrels (filled from FIELD_NOMINAL), radius in tiles, pressure in bar, depth in metres
       MARGINAL: { weight: 0.18, reserve: null, radius: [2, 3],   pressure: [30, 60],   depth: [200, 900],   prod: 'very low' },
       SMALL:  { weight: 0.52, reserve: null, radius: [3, 5],   pressure: [40, 90],   depth: [300, 1200],  prod: 'low' },
@@ -99,7 +100,7 @@
     ZOOM: { MIN: 0.0038, MAX: 2.0, FAR: { max: 0.2 }, MEDIUM: { min: 0.2, max: 0.6 }, CLOSE: { min: 0.6 } }   // camera zoom -> level (the preview uses the same table)
   };
   for (const k in CONFIG.FIELD_NOMINAL) CONFIG.OILFIELD[k].reserve = CONFIG.FIELD_NOMINAL[k].map(v => v * CONFIG.RESERVE_SCALE);
-  for (const k in CONFIG.ZONE_CLASS) { const z = CONFIG.ZONE_CLASS[k]; z.min *= CONFIG.RESERVE_SCALE; z.prior = z.prior.map(v => v * CONFIG.RESERVE_SCALE); }
+  for (const k in CONFIG.ZONE_CLASS) { const z = CONFIG.ZONE_CLASS[k]; z.min *= CONFIG.ZONE_SCALE; z.prior = z.prior.map(v => v * CONFIG.ZONE_SCALE); }
   const T = CONFIG.TERRAIN, TNAME = Object.keys(T), TBYID = []; for (const k of TNAME) TBYID[T[k].id] = k;
   const STATES = ['UNDISCOVERED', 'DISCOVERED', 'SURVEYED', 'DRILLABLE', 'PRODUCING', 'DEPLETED'];
   const LAYERS = { NORMAL: { implemented: true }, OIL: { implemented: false }, PRESSURE: { implemented: false }, FLOW: { implemented: false }, TERRAIN: { implemented: false } };

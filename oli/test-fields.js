@@ -7,13 +7,13 @@ const O = CONFIG.OILFIELD, N = CONFIG.FIELD_NOMINAL, SC = CONFIG.RESERVE_SCALE, 
 const mean = a => a.reduce((p, q) => p + q, 0) / a.length, sd = a => { const m = mean(a); return Math.sqrt(mean(a.map(v => (v - m) ** 2))); };
 
 console.log('1. five size classes with the spec ranges x the scale');
-T('1a the scale is the middle option (' + SC + ') and is a single tunable number', SC === 0.25);
-T('1b every class range = the nominal range of the spec x scale (giant 1-5 bn, large 300 m-1 bn, medium 50-300 m, small 5-50 m, marginal under 5 m)', CL.every(k => O[k].reserve[0] === N[k][0] * SC && O[k].reserve[1] === N[k][1] * SC) && N.MAJOR[0] === 1e9 && N.MAJOR[1] === 5e9 && N.LARGE[0] === 3e8 && N.MEDIUM[0] === 5e7 && N.SMALL[0] === 5e6 && N.MARGINAL[1] === 5e6);
+T('1a the class ranges are used as they are (scale ' + SC + ' = 1, a single tunable number): a field holds 20 million to 4 billion barrels', SC === 1);
+T('1b every class range = the nominal range x scale: marginal 20-40 m, small 40-150 m, medium 150-600 m, large 600 m-2 bn, giant 2-4 bn (overall 20 million to 4 billion)', CL.every(k => O[k].reserve[0] === N[k][0] * SC && O[k].reserve[1] === N[k][1] * SC) && N.MAJOR[0] === 2e9 && N.MAJOR[1] === 4e9 && N.LARGE[0] === 6e8 && N.MEDIUM[0] === 1.5e8 && N.SMALL[0] === 4e7 && N.MARGINAL[0] === 2e7 && N.MARGINAL[1] === 4e7);
 T('1c the classes do not overlap: each one starts where the smaller one ends', CL.slice(1).every((k, i) => N[k][0] >= N[CL[i]][1] - 1));
 T('1d all five classes occur (' + CL.map(k => k + ' ' + fields.filter(f => f.type === k).length).join(', ') + ' in ' + fields.length + ' fields on ' + SEEDS.length + ' maps)', CL.every(k => fields.some(f => f.type === k)));
 T('1e every field lies inside the range of its class', fields.every(f => f.initialReserve >= O[f.type].reserve[0] * 0.999 && f.initialReserve <= O[f.type].reserve[1] * 1.001));
 T('1f small fields are common, giants are rare', fields.filter(f => f.type === 'MAJOR').length < fields.filter(f => f.type === 'SMALL').length / 5 && fields.filter(f => f.type === 'MAJOR').length >= 1);
-T('1g the biggest field holds at least 500 times the oil of the smallest', Math.max(...fields.map(f => f.initialReserve)) / Math.max(1, Math.min(...fields.map(f => f.initialReserve))) >= 500);
+T('1g the biggest field holds at least 50 times the oil of the smallest (the range is 20 million to 4 billion)', Math.max(...fields.map(f => f.initialReserve)) / Math.max(1, Math.min(...fields.map(f => f.initialReserve))) >= 50 && Math.min(...fields.map(f => f.initialReserve)) >= 2e7 && Math.max(...fields.map(f => f.initialReserve)) <= 4e9);
 
 console.log('2. every field is different');
 const prop = (f, k) => k === 'depth' ? f.depth : k === 'pressure' ? f.pressurePotential : f.props[k];

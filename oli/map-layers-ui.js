@@ -19,6 +19,7 @@
     '#lyPanel .lg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-left:4px;vertical-align:-1px}#lyPanel .nt{font-size:11px;color:#ffd27a;padding:0 8px 4px}' +
     '#secPanel{display:none;position:absolute;left:6px;right:6px;bottom:6px;height:48%;background:rgba(18,23,30,.98);border:1px solid #4b5a6b;border-radius:12px;z-index:8;direction:rtl}#secPanel canvas{position:static;width:100%;height:calc(100% - 34px);display:block}' +
     '#secPanel .hd{display:flex;align-items:center;gap:8px;padding:4px 10px;height:34px;font-weight:600}#secPanel .hd span{flex:1;font-size:12px;color:var(--mut);font-weight:400}#secPanel button{min-height:28px;padding:2px 10px}';
+  css.textContent += '#lyFab{display:none;position:absolute;right:8px;top:146px;z-index:7;min-height:40px;padding:4px 12px;border-radius:12px;background:rgba(27,34,44,.95);border:1px solid #4b5a6b;color:#fff;font-weight:700}body:not(.dev) #lyFab{display:block}body:not(.dev) #lyPanel{top:192px;max-height:calc(100% - 280px)}#lyFab.on{background:var(--acc,#e6a13a);color:#222}';
   document.head.appendChild(css);
   const bar = $('bar'), btn = document.createElement('button'); btn.id = 'lyBtn'; btn.textContent = 'طبقات الخريطة'; bar.insertBefore(btn, bar.firstChild);
   const panel = document.createElement('div'); panel.id = 'lyPanel'; document.body.appendChild(panel);
@@ -30,7 +31,9 @@
     h += '<div class="row"><button id="lySec">مقطع جيولوجي تحت الأرض</button><button id="lyOff">إيقاف الكل</button></div>' + (ui.pick ? '<div class="nt">' + (ui.pick.a ? 'اضغط على النقطة الثانية من المقطع' : 'اضغط على النقطة الأولى من المقطع') + '</div>' : '');
     panel.innerHTML = h;
   }
-  btn.onclick = () => { ui.open = !ui.open; panel.style.display = ui.open ? 'block' : 'none'; btn.classList.toggle('on', ui.open); if (ui.open) renderMenu(); };
+  const fab = document.createElement('button'); fab.id = 'lyFab'; fab.textContent = '🗺 طبقات الخريطة'; document.body.appendChild(fab);      // the player's game hides the developer bar: the layers get their own button there
+  for (const ev of ['pointerdown', 'touchstart']) fab.addEventListener(ev, e => e.stopPropagation(), { passive: true });
+  btn.onclick = fab.onclick = () => { ui.open = !ui.open; panel.style.display = ui.open ? 'block' : 'none'; btn.classList.toggle('on', ui.open); fab.classList.toggle('on', ui.open); if (ui.open) renderMenu(); };
   panel.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.ly) { layers.toggle(b.dataset.ly); cache.delete(b.dataset.ly); persist(); }
