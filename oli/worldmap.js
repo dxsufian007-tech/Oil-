@@ -35,6 +35,20 @@
       MAJOR:  { weight: 0.04, reserve: [80e6, 400e6],   radius: [12, 18], pressure: [130, 220], depth: [2000, 5000], prod: 'very high' }
     },
     RICHNESS: { POOR: { mult: 0.55, fields: [3, 5] }, MEDIUM: { mult: 1.0, fields: [6, 9] }, RICH: { mult: 1.6, fields: [10, 14] } },
+    /* ---- exploration zones (Phase 2 of the oil system): every region is one zone. The CLASS comes from what is really in the ground, the player only sees a rough prior until the zone is evaluated.
+       Every number is meant to be tuned. Reserves are in barrels at THIS world's scale (the nominal design ranges of the spec are scaled by RESERVE_SCALE, see FIELD_CLASS below). */
+    ZONE_CLASS: {                                                               // min = total reserve of the zone's real fields, discovery = share of exploration sites that hold oil (prior), prior = reserve range shown before evaluation
+      RICH:           { min: 100e6, discovery: 0.78, prior: [80e6, 400e6],  quality: { LOW: .10, MEDIUM: .40, HIGH: .50 } },
+      PROMISING:      { min: 45e6,  discovery: 0.58, prior: [40e6, 150e6],  quality: { LOW: .20, MEDIUM: .45, HIGH: .35 } },
+      MEDIUM:         { min: 20e6,  discovery: 0.40, prior: [15e6, 60e6],   quality: { LOW: .30, MEDIUM: .50, HIGH: .20 } },
+      WEAK:           { min: 0.001, discovery: 0.20, prior: [2e6, 25e6],    quality: { LOW: .50, MEDIUM: .40, HIGH: .10 } },
+      NON_COMMERCIAL: { min: 0,     discovery: 0.0,  prior: [0, 5e6],       quality: { LOW: .60, MEDIUM: .30, HIGH: .10 } }
+    },
+    ZONE_NONCOMMERCIAL_SHARE: 0.12,                                             // share of the regions that are closed off at the start and hold no commercial oil at all
+    ZONE_PRIOR_ACCURACY: 0.6,                                                   // chance that the rough prior class shown before evaluation is the true one (otherwise it is one class off)
+    ZONE_DEPTH: { 'DESERT PLAINS': [400, 2500], 'DUNE SEA': [500, 2500], 'ROCKY BADLANDS': [800, 3500], 'MOUNTAIN BELT': [1500, 5000], 'VALLEY BASIN': [600, 3000], 'HIGH PLATEAU': [1000, 4000], 'COASTAL SHELF': [300, 2000] },
+    ZONE_COST: { base: 250000, kind: { 'DESERT PLAINS': 1, 'DUNE SEA': 1.1, 'ROCKY BADLANDS': 1.3, 'MOUNTAIN BELT': 1.6, 'VALLEY BASIN': 0.9, 'HIGH PLATEAU': 1.4, 'COASTAL SHELF': 1.2 }, evaluateShare: 0.4 },   // survey a zone = base x kind; the evaluation (seismic study) costs this share on top
+    ZONE_FORMATIONS: ['Sandstone anticline', 'Carbonate reef', 'Fault-bounded trap', 'Salt dome flank', 'Stratigraphic pinch-out', 'Fractured basement'],
     DRY_RATIO: 0.6,                                                             // dry "promising" zones per real field
     MIN_GAP: 3,                                                                 // tiles between two oil sites
     DRILL: { baseCostPer100m: 1500, preview: true },                            // estimated cost = depth/100 x base x terrain cost; PREVIEW ONLY, never charged
@@ -143,7 +157,8 @@
       const richness = starter ? 'MEDIUM' : h < .30 ? 'POOR' : h < .72 ? 'MEDIUM' : 'RICH';
       const cxm = (rx + .5) * RC * C, cym = (ry + .5) * RC * C, e = elevAt(cxm, cym), coastal = rx === 0;
       const kind = coastal ? 'COASTAL SHELF' : e > .62 ? 'MOUNTAIN BELT' : e < .38 ? 'VALLEY BASIN' : KINDS[Math.floor(hash(S.kind, rx, ry) * 5)];
-      regions.push({ id, rx, ry, x0: rx * RC * C, y0: ry * RC * C, w: RC * C, h: RC * C, kind, richness, starter, unlocked: starter || (Math.abs(rx - 2) + Math.abs(ry - 2) === 1 ? true : false), name: String.fromCharCode(65 + ry) + (rx + 1) });
+      const unlockedAtStart = starter || (Math.abs(rx - 2) + Math.abs(ry - 2) === 1), nonCommercial = !unlockedAtStart && hash(S.kind, rx + 50, ry + 50) < CONFIG.ZONE_NONCOMMERCIAL_SHARE;   // a closed-off zone with no real oil, only dry prospects
+      regions.push({ id, rx, ry, nonCommercial, x0: rx * RC * C, y0: ry * RC * C, w: RC * C, h: RC * C, kind, richness, starter, unlocked: starter || (Math.abs(rx - 2) + Math.abs(ry - 2) === 1 ? true : false), name: String.fromCharCode(65 + ry) + (rx + 1) });
     }
     function regionIdAt(x, y) { return Math.floor(y / (RC * C)) * RX + Math.floor(x / (RC * C)); }
 
@@ -160,7 +175,7 @@
     function pickType(rng, p, rich) { const W_ = CONFIG.OILFIELD; let w = {}; let tot = 0; for (const k in W_) { let v = W_[k].weight; if (k === 'MAJOR') v *= p > .62 ? 2.2 * rich : .15; if (k === 'LARGE') v *= .5 + p; w[k] = v; tot += v; } let r = rng() * tot; for (const k in w) { r -= w[k]; if (r <= 0) return k; } return 'SMALL'; }
     function regionSites(rid) {
       if (siteCache.has(rid)) return siteCache.get(rid); if (external) return []; const reg = regions[rid], rng = mulberry32((seed ^ 0x5eed) + rid * 7919), R = CONFIG.RICHNESS[reg.richness], out = [];
-      const nReal = R.fields[0] + Math.floor(rng() * (R.fields[1] - R.fields[0] + 1)), nDry = Math.round(nReal * CONFIG.DRY_RATIO), want = nReal + nDry, margin = 22;
+      const nReal = reg.nonCommercial ? 0 : R.fields[0] + Math.floor(rng() * (R.fields[1] - R.fields[0] + 1)), nDry = reg.nonCommercial ? 3 : Math.round(nReal * CONFIG.DRY_RATIO), want = nReal + nDry, margin = 22;
       const spaced = (x, y, r) => out.every(s => Math.hypot(s.x - x, s.y - y) >= s.radius + r + CONFIG.MIN_GAP);
       let tries = 0, real = 0, dry = 0;
       while ((real < nReal || dry < nDry) && tries++ < 3000) {
@@ -208,6 +223,32 @@
       if (st === 'DRILLABLE' || st === 'PRODUCING' || st === 'DEPLETED') Object.assign(out, { depletionPct: +(100 * (1 - s.remainingReserve / Math.max(1, s.initialReserve))).toFixed(1), depth: s.depth, pressurePotential: s.pressurePotential, estimatedCost: drillEstimate(s), costNote: 'estimate only, not charged', remainingReserve: s.remainingReserve });
       return out;
     }
+    // ---- exploration zones: the true data stays inside, zoneInfo() is the only thing the player gets
+    const ZC_ORDER = ['NON_COMMERCIAL', 'WEAK', 'MEDIUM', 'PROMISING', 'RICH'], zoneEval = new Set(), zoneCache2 = new Map();
+    function zoneTruth(rid) {
+      if (zoneCache2.has(rid)) return zoneCache2.get(rid); const reg = regions[rid], sites = regionSites(rid), real = sites.filter(q => q.kind === 'FIELD'), total = real.reduce((a, q) => a + q.initialReserve, 0);
+      let cls = 'NON_COMMERCIAL'; if (!reg.nonCommercial && real.length) for (const k of ['RICH', 'PROMISING', 'MEDIUM', 'WEAK']) if (total >= CONFIG.ZONE_CLASS[k].min) { cls = k; break; }
+      const depths = sites.map(q => q.depth), q = { LOW: 0, MEDIUM: 0, HIGH: 0 }; for (const f of real) q[f.quality]++;
+      const out = { cls, total, real: real.length, sites: sites.length, depth: depths.length ? [Math.min(...depths), Math.max(...depths)] : null, quality: real.length ? { LOW: q.LOW / real.length, MEDIUM: q.MEDIUM / real.length, HIGH: q.HIGH / real.length } : null,
+        err: .2 + hash(S.rich, reg.rx + 90, reg.ry + 90) * .15, bias: (hash(S.rich, reg.rx + 120, reg.ry + 120) * 2 - 1) * .15 };
+      zoneCache2.set(rid, out); return out;
+    }
+    const exploreCostOf = rid => Math.round(CONFIG.ZONE_COST.base * (CONFIG.ZONE_COST.kind[regions[rid].kind] || 1));
+    function zoneInfo(rid) {
+      const reg = regions[rid]; if (!reg) return null; const t = zoneTruth(rid), ev = zoneEval.has(rid), ZC = CONFIG.ZONE_CLASS;
+      const i = ZC_ORDER.indexOf(t.cls), ok = hash(S.kind, reg.rx + 150, reg.ry + 150) < CONFIG.ZONE_PRIOR_ACCURACY, off = hash(S.kind, reg.rx + 180, reg.ry + 180) < .5 ? -1 : 1;
+      let pi = ok ? i : Math.min(ZC_ORDER.length - 2, Math.max(1, i + off)); if (!ok && i === 0) pi = 1; const priorCls = ZC_ORDER[pi], P = ZC[priorCls], D = CONFIG.ZONE_DEPTH[reg.kind] || [500, 3000];
+      const base = { id: rid, name: reg.name, kind: reg.kind, unlocked: !!reg.unlocked, areaTiles: reg.w * reg.h, areaKm2: +(reg.w * reg.h * Math.pow(CONFIG.SCALE.TILE_M / 1000, 2)).toFixed(1),
+        geology: { basin: reg.kind, formation: CONFIG.ZONE_FORMATIONS[Math.floor(hash(S.kind, reg.rx + 210, reg.ry + 210) * CONFIG.ZONE_FORMATIONS.length)] },
+        exploreCost: exploreCostOf(rid), evaluateCost: Math.round(exploreCostOf(rid) * CONFIG.ZONE_COST.evaluateShare), evaluated: ev,
+        drillingDifficulty: Math.max(1, Math.min(5, Math.round((CONFIG.ZONE_COST.kind[reg.kind] || 1) * 2 + (D[1] - 2500) / 2500))) };
+      if (!ev) return Object.assign(base, { assessment: 'PRIOR', potentialClass: priorCls === 'NON_COMMERCIAL' ? 'WEAK' : priorCls, reserveRange: P.prior.slice(), depthRange: D.slice(), discoveryProbability: P.discovery, expectedQuality: Object.assign({}, P.quality) });
+      const lo = Math.round(t.total * (1 + t.bias) * (1 - t.err)), hi = Math.round(t.total * (1 + t.bias) * (1 + t.err));
+      return Object.assign(base, { assessment: 'EVALUATED', potentialClass: t.cls, commercial: t.cls !== 'NON_COMMERCIAL', reserveRange: t.real ? [lo, hi] : [0, 0], estimatedReserve: t.real ? Math.round((lo + hi) / 2) : 0,
+        depthRange: t.depth ? [Math.round(t.depth[0] * .9), Math.round(t.depth[1] * 1.1)] : D.slice(), discoveryProbability: +(t.real / Math.max(1, t.sites)).toFixed(2), fieldCountRange: [Math.max(0, t.real - 1), t.real + 1], expectedQuality: t.quality || Object.assign({}, ZC.NON_COMMERCIAL.quality) });
+    }
+    const evaluateZone = rid => { const z = regions[rid]; if (!z) return { ok: false, reason: 'unknown' }; if (zoneEval.has(rid)) return { ok: false, reason: 'done' }; zoneEval.add(rid); return { ok: true, cost: Math.round(exploreCostOf(rid) * CONFIG.ZONE_COST.evaluateShare) }; };   // the cost is reported, the caller charges it
+    const zoneSnapshot = () => Array.from(zoneEval).sort((a, b) => a - b), restoreZones = arr => { zoneEval.clear(); for (const id of arr || []) if (regions[id]) zoneEval.add(id); };
     const progressSnapshot = () => Array.from(progress.entries()).sort();
     const restoreProgress = arr => { progress.clear(); for (const [id, st] of arr || []) if (STATES.includes(st) && siteById(id)) progress.set(id, st); };
 
@@ -335,7 +376,7 @@
     const oilFieldAt = (x, y) => { for (const s of sitesNear(x, y, 2)) if (s.kind === 'FIELD' && Math.hypot(s.x - x, s.y - y) <= s.radius) return s; return null; };
 
     return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
-      discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
+      zoneInfo, evaluateZone, zoneSnapshot, restoreZones, discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
       scale: () => (W * H) / (CONFIG.LEGACY.W * CONFIG.LEGACY.H) };
   }
   const api = { CONFIG, STATES, LAYERS, TBYID, createWorld, hash, vnoise, fbm, mulberry32 };
