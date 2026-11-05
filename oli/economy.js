@@ -125,7 +125,7 @@
   const EXPACC = { operating: 'EXP_OPERATING', labor: 'EXP_LABOR', maintenance: 'EXP_MAINT', energy: 'EXP_ENERGY', storage: 'EXP_STORAGE', insurance: 'EXP_INSURANCE', admin: 'EXP_ADMIN', infra: 'EXP_INFRA', fees: 'EXP_FEES', penalty: 'EXP_PENALTY', interest: 'EXP_INTEREST', tax: 'EXP_TAX', depreciation: 'EXP_DEP', disposal: 'EXP_DISPOSAL', cogs: 'COGS', exploration: 'EXP_EXPLORATION', refFuel: 'EXP_FUEL', refLoss: 'EXP_LOSS' };
   const EXPKEY = {}; for (const k of Object.keys(EXPACC)) EXPKEY[EXPACC[k]] = k;
   const REVKEY = { REV_SPOT: 'spot', REV_CONTRACT: 'contract', REV_OTHER: 'other' };
-  const TKA = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
+  const TKA = { RESERVE: 'احتياطي استراتيجي', COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
   const INVACC = { CRUDE: 'INV_CRUDE', GASOLINE: 'INV_GASOLINE', DIESEL: 'INV_DIESEL', JET_FUEL: 'INV_JET_FUEL', GAS: 'INV_GAS' };
   const MATACC = { CHEM: 'INV_CHEM', PARTS: 'INV_PARTS', OPS: 'INV_OPS' }, MZERO = () => ({ CHEM: 0, PARTS: 0, OPS: 0 });
   const HRROLES = ['operators', 'engineers', 'maintenance', 'managers'], HRZERO = () => { const o = {}; for (const r of HRROLES) o[r] = { extra: 0, training: 1, hours: 48, exp: 5 }; return o; };
@@ -136,6 +136,7 @@
       opts = opts || {}; this.mseed = opts.marketSeed; this.cfg = opts.config || EC; this.store = store; this.net = net; this.sim = sim; this.now = opts.now || (() => Date.now()); this._init(); this._wrap();
     }
     _init() {
+      this.reserve = { v: 1, lv: 0, log: [] }; this._hookReserve();                       // the Strategic Reserve: one fixed zone, its open-area level and a small audit log
       const c = this.cfg; this.hours = 0; this.dayIdx = 0; this.acc = 0; this.market = new Market(c, null, this.mseed); this.assets = new Map(); this.loans = []; this.nextLoan = 1; this.closed = []; this.contracts = []; this.history = []; this.offers = []; this.nextContract = 1;
       this.recv = []; this.nextRecv = 1; this.months = []; this.bsStart = null; this.qty = PZERO(); this.qty2 = { BYPRODUCT: 0, RESIDUE: 0 }; this.crudeShort = 0; this.crudeLoss = 0; this.bq = 0; this.explLog = []; this.bprod = {}; this.tradeLog = []; this.nextTrade = 1; this.boughtUsed = 0; this.refLast = null; this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.purchases = []; this.nextPur = 1; this.matLimit = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1; this.cutUntil = -1; this.powerBuy = false; this.pwStop = null; this.bsStart = null;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
       this.crng = new Rng(c.MARKET.seed ^ 0x5bd1e995); this.modes = {}; for (const p of SELL) this.modes[p] = c.AUTOSELL && c.AUTOSELL.defaultMode || 'SPOT'; this.tier = c.POWER.startTier; this.autoRepair = c.MAINTENANCE.autoRepair;
@@ -243,9 +244,37 @@
 
     /* ---- inventory (read from the tanks; the cost is in the journal) ---- */
     tanksOf(p) {                                                                   // the tanks of one product, from an index rebuilt only when the building list changes
-      const L = this.store.list(); if (this._tkL !== L) { this._tkL = L; this._tk = new Map(); for (const b of L) { const d = DEFS[b.d]; if (d.type === 'tank' || d.type === 'gas') { const a = this._tk.get(d.product); if (a) a.push(b); else this._tk.set(d.product, [b]); } } }
+      const L = this.store.list(); if (this._tkL !== L) { this._tkL = L; this._tk = new Map(); for (const b of L) { const d = DEFS[b.d]; if (d.type === 'tank' || d.type === 'gas') { if (b.rs) { const k = 'R:' + d.product, a = this._tk.get(k); if (a) a.push(b); else this._tk.set(k, [b]); continue; } const a = this._tk.get(d.product); if (a) a.push(b); else this._tk.set(d.product, [b]); } } }
       const arr = this._tk.get(p); return arr ? arr.filter(b => b.st !== 'UNDER_CONSTRUCTION') : [];
     }   // a DAMAGED tank still holds its oil and its capacity: it is counted too (it only stops accepting)
+    _hookReserve() { const ts = this.store && this.store.ts; if (ts) ts.reserveLevel = () => this.reserve.lv; }
+    /* the zone itself comes from the world (one fixed place); the company only remembers how far it has been opened */
+    reserveZone() { const ts = this.store.ts; return ts && ts.reserve ? ts.reserve() : null; }
+    reserveArea() { const z = this.reserveZone(); return z ? z.levels[Math.max(0, Math.min(z.levels.length - 1, this.reserve.lv))] : null; }
+    reserveExpandCost() { const z = this.reserveZone(), c = this.cfg.RESERVE.expand; return z && this.reserve.lv < z.levels.length - 1 ? c[Math.min(c.length - 1, this.reserve.lv)] : null; }
+    reserveExpand() {
+      const z = this.reserveZone(); if (!z) return { ok: false, reason: 'noZone' }; if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; const cost = this.reserveExpandCost(); if (cost == null) return { ok: false, reason: 'maxLevel' };
+      this.sync(); if (isFinite(this.store.cash) && this.store.cash < cost) return { ok: false, reason: 'cash', cost };
+      this._post({ type: 'RESERVE_EXPAND', flow: 'INV', desc: 'Strategic Reserve · open area level ' + (this.reserve.lv + 1) }, [['FIXED', cost], ['CASH', -cost]]);      // land / site works: a fixed asset like the buildings, in the same ledger
+      this.reserve.lv++; this.reserve.log.push({ t: this.hours, kind: 'EXPAND', lv: this.reserve.lv, cost }); while (this.reserve.log.length > 200) this.reserve.log.shift(); return { ok: true, cost, level: this.reserve.lv, area: this.reserveArea() };
+    }
+    reserveInfo() {
+      const z = this.reserveZone(), f = this.fills(), A = this.reserveArea(); if (!z) return { exists: false, fills: f };
+      const tanks = this.reserveTanks().map(b => { const d = DEFS[b.d], s = this.sim.ensure(b); return { id: b.id, name: d.name, product: d.product, capacity: d.capacity.value, volume: s.vol, fill: s.vol / d.capacity.value, status: this.sim.status(b), x: b.x, y: b.y }; });
+      const used = tanks.reduce((n, t) => n + 1, 0), area = A.w * A.h, full = z.levels[z.levels.length - 1];
+      return { exists: true, zone: { id: z.id, name: z.name, x: z.x, y: z.y, w: z.w, h: z.h }, level: this.reserve.lv, maxLevel: z.levels.length - 1, area: A, areaTiles: area, maxAreaTiles: full.w * full.h, expandCost: this.reserveExpandCost(), tanks, fills: f };
+    }
+    /* ---- the Strategic Reserve: its own tanks (b.rs = 1, built inside the fixed zone), never counted with the commercial ones.
+     * tanksOf() is the COMMERCIAL index only, so selling, auto-selling, buying, capacity and the commercial fill % can never see a reserve tank. */
+    reserveTanksOf(p) { this.tanksOf(p); const a = this._tk.get('R:' + p); return a ? a.filter(b => b.st !== 'UNDER_CONSTRUCTION') : []; }
+    reserveTanks() { const o = []; for (const p of SELL) for (const b of this.reserveTanksOf(p)) o.push(b); return o; }
+    reserveCapacity(p) { let v = 0; for (const b of p ? this.reserveTanksOf(p) : this.reserveTanks()) v += DEFS[b.d].capacity.value; return v; }
+    reserveVolume(p) { let v = 0; for (const b of p ? this.reserveTanksOf(p) : this.reserveTanks()) v += this.sim.ensure(b).vol; return v; }
+    commercialCapacity() { let v = 0; for (const p of SELL) v += this.capacity(p); return v; }
+    commercialVolume() { let v = 0; for (const p of SELL) v += this.physicalVol(p); return v; }
+    fillOf(vol, cap) { return cap > 0 ? vol / cap : 0; }
+    /* two separate gauges, never added together */
+    fills() { const cc = this.commercialCapacity(), cv = this.commercialVolume(), rc = this.reserveCapacity(), rv = this.reserveVolume(); return { commercial: { volume: cv, capacity: cc, fill: this.fillOf(cv, cc), tanks: SELL.reduce((n, p) => n + this.tanksOf(p).length, 0) }, reserve: { volume: rv, capacity: rc, fill: this.fillOf(rv, rc), tanks: this.reserveTanks().length } }; }
     physicalVol(p) { let v = 0; for (const b of this.tanksOf(p)) v += this.sim.ensure(b).vol; return v; }                                                                           // everything in the tanks, water included
     available(p) { let v = 0; for (const b of this.tanksOf(p)) { const s = this.sim.ensure(b); v += p === 'CRUDE' ? Math.max(0, s.vol - (s.wat || 0)) : s.vol; } return v; }
     capacity(p) { let v = 0; for (const b of this.tanksOf(p)) v += DEFS[b.d].capacity.value; return v; }
@@ -858,7 +887,7 @@
     /* ---- save / load (the store and the pipes are saved by the lab as before; this is the company) ---- */
     toJSON() {
       return { v: 2, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0, a.useStart == null ? null : a.useStart]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
-        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
+        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, reserve: this.reserve, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
     }
     fromJSON(d) {
       this._restoreWear = true;
@@ -869,6 +898,7 @@
       this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.dlog = d.dlog || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSpeed = d.lastSpeed > 0 ? d.lastSpeed : (this.speed > 0 ? this.speed : 1); this.lastSim = d.savedAt == null ? null : d.savedAt;
       this.recv = (d.recv || []).map(r => Object.assign({ late: false, payOn: r.due }, r)); this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.purchases = d.purchases || []; this.nextPur = d.nextPur || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy; this.bsStart = d.bsStart || null;
       if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); this.qty2 = Object.assign({ BYPRODUCT: 0, RESIDUE: 0 }, d.qty2 || {}); }
+      this.reserve = Object.assign({ v: 1, lv: 0, log: [] }, d.reserve || {}); { const z = this.reserveZone(); this.reserve.lv = Math.max(0, Math.min(z ? z.levels.length - 1 : 0, this.reserve.lv | 0)); if (!Array.isArray(this.reserve.log)) this.reserve.log = []; } this._hookReserve();   // an old save has no reserve: it starts closed at level 0, with nothing moved into it
       this.bq = d.bq || 0; this.explLog = d.explLog || []; this.bprod = d.bprod || {}; this.tradeLog = d.tradeLog || []; this.nextTrade = d.nextTrade || 1; this.boughtUsed = d.boughtUsed || 0;
       if (!d.journal) this._migrate();                                                         // a save from before the journal: the company starts from an opening balance sheet of what it holds now
       this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.mirror = this.store.cash; if (!this.bsStart) this.bsStart = this._snap(); this.away = null; this.events = []; this.seen = new Set(); this._refreshOffers(); this.computeStaff(); return true;

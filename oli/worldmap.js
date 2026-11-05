@@ -66,7 +66,7 @@
     DRY_RATIO: 0.6,                                                             // dry "promising" zones per real field
     MIN_GAP: 3,                                                                 // tiles between two oil sites
     DRILL: { baseCostPer100m: 1500, preview: true },                            // estimated cost = depth/100 x base x terrain cost; PREVIEW ONLY, never charged
-    ZONES: { REFINERY: { w: 28, h: 18, maxSlope: 3, margin: 8 }, TANK_FARM: { w: 18, h: 12, maxSlope: 3, margin: 5 } },
+    ZONES: { REFINERY: { w: 28, h: 18, maxSlope: 3, margin: 8 }, TANK_FARM: { w: 18, h: 12, maxSlope: 3, margin: 5 }, RESERVE: { base: [20, 14], step: [4, 3], levels: 4, maxSlope: 3, margin: 2 } },
     SCALE: { TILE_M: 12, PIPE_TILE: 0.18, ICON_MIN_PX: 10, ICON_MAX_PX: 22 },     // ONE world scale: 1 tile = 12 m. Footprints are in tiles and are the SAME numbers the game uses (well 1x1, tank 2x2, pump 1x1, see core.js FOOTPRINT).
     FACILITIES: {                                                               // fp [w,h] tiles, look = shape + height in tiles (for the scale chart), maxSlope, terrains, ports (data for the later systems), cat = building category
       well:            { cat: 'EXTRACTION',  fp: [1, 1], look: ['derrick', 2.2], maxSlope: 8, ports: { all: 'out' } },
@@ -332,7 +332,7 @@
       if (tfCache.has(rid)) return tfCache.get(rid); if (external) return []; const reg = regions[rid], Z = CONFIG.ZONES.TANK_FARM, rz = refineryZones(rid), fs = regionSites(rid).filter(q => q.kind === 'FIELD'), cand = [];
       for (let y = reg.y0 + 20; y < reg.y0 + reg.h - Z.h - 20; y += 6) for (let x = reg.x0 + 20; x < reg.x0 + reg.w - Z.w - 20; x += 6) {
         let ok = true, ss = 0, n = 0; for (let j = 0; j < Z.h && ok; j += 2) for (let i = 0; i < Z.w; i += 2) { const t = tile(x + i, y + j); if (!t || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU' || t.slope > Z.maxSlope * CONFIG.SLOPE_K) { ok = false; break; } ss += t.slope; n++; }
-        if (!ok) continue; const cx = x + Z.w / 2, cy = y + Z.h / 2; if (sitesNear(cx, cy, Math.max(Z.w, Z.h) / 2 + 4).length) continue; if (rz.some(r => x < r.x + r.w + 4 && x + Z.w > r.x - 4 && y < r.y + r.h + 4 && y + Z.h > r.y - 4)) continue;
+        if (!ok) continue; const cx = x + Z.w / 2, cy = y + Z.h / 2; if (sitesNear(cx, cy, Math.max(Z.w, Z.h) / 2 + 4).length) continue; if (rz.some(r => x < r.x + r.w + 4 && x + Z.w > r.x - 4 && y < r.y + r.h + 4 && y + Z.h > r.y - 4)) continue; const rv = reserveZone(rid); if (rv && x < rv.x + rv.w + 2 && x + Z.w > rv.x - 2 && y < rv.y + rv.h + 2 && y + Z.h > rv.y - 2) continue;       // the Strategic Reserve zone is THE storage zone of the world: no second, overlapping tank-farm hint
         const dRef = rz.length ? Math.min(...rz.map(r => Math.hypot(r.x + r.w / 2 - cx, r.y + r.h / 2 - cy))) : 200, dFld = fs.length ? Math.min(...fs.map(q => Math.hypot(q.x - cx, q.y - cy))) : 200;
         cand.push({ x, y, w: Z.w, h: Z.h, flatness: +(1 - ss / n / (Z.maxSlope * CONFIG.SLOPE_K)).toFixed(3), nearRefinery: Math.round(dRef), nearField: Math.round(dFld), score: (1 - ss / n / (Z.maxSlope * CONFIG.SLOPE_K)) * 2 - dRef / 150 - dFld / 300 });
       }
@@ -385,12 +385,38 @@
       return out;
     }
 
+    /* ---- the Strategic Reserve zone: ONE fixed place in the starter region (a pure function of the world seed, so every save and every device sees the same place).
+     * It is chosen on flat, buildable land close to the coast and to the first refinery zone, clear of oil fields, refinery zones and tracks, with free ground around it for expansion.
+     * `levels[0]` is the starting area; every expansion step grows it around the same centre up to the full rectangle {x,y,w,h}. */
+    const rvCache = new Map();
+    function reserveZone(rid) {
+      if (rvCache.has(rid)) return rvCache.get(rid); if (external) return null; const reg = regions[rid]; if (!reg || !reg.starter) { rvCache.set(rid, null); return null; }
+      const Z = CONFIG.ZONES.RESERVE, MW = Z.base[0] + Z.step[0] * Z.levels, MH = Z.base[1] + Z.step[1] * Z.levels, rz = refineryZones(rid), trk = tracks(rid), fs = regionSites(rid), cand = [];
+      const nearTrack = (x0, y0, x1, y1) => trk.some(t => t.pts.some(([px, py], i) => { for (let q = 0; q <= 4; q++) { const nx = i ? t.pts[i - 1][0] + (px - t.pts[i - 1][0]) * q / 4 : px, ny = i ? t.pts[i - 1][1] + (py - t.pts[i - 1][1]) * q / 4 : py; if (nx > x0 - 3 && nx < x1 + 3 && ny > y0 - 3 && ny < y1 + 3) return true; } return false; }));
+      for (const [slopeMax, margin] of [[3, Z.margin], [4, Z.margin], [5, 1], [6, 0]]) {                // strict first; relaxed only when the world has no flatter place (still within what a tank can be built on)
+        for (let y = reg.y0 + 20; y < reg.y0 + reg.h - MH - 20; y += 4) for (let x = reg.x0 + 20; x < reg.x0 + reg.w - MW - 20; x += 4) {
+          let ok = true, ss = 0, n = 0; for (let j = -margin; j < MH + margin && ok; j += 2) for (let i = -margin; i < MW + margin; i += 2) { const t = tile(x + i, y + j); if (!t || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU' || t.terrain === 'VALLEY' || t.slope > slopeMax * CONFIG.SLOPE_K) { ok = false; break; } ss += t.slope; n++; }
+          if (!ok) continue; const cx = x + MW / 2, cy = y + MH / 2;
+          if (fs.some(q => q.x > x - 10 && q.x < x + MW + 10 && q.y > y - 10 && q.y < y + MH + 10)) continue;
+          if (rz.some(r => x < r.x + r.w + margin && x + MW > r.x - margin && y < r.y + r.h + margin && y + MH > r.y - margin)) continue; if (nearTrack(x, y, x + MW, y + MH)) continue;
+          const dCoast = Math.max(0, cx - coastLine(cy)), dRef = rz.length ? Math.min(...rz.map(r => Math.hypot(r.x + r.w / 2 - cx, r.y + r.h / 2 - cy))) : 200, flat = 1 - ss / n / (slopeMax * CONFIG.SLOPE_K);
+          cand.push({ x, y, score: flat * 2 - dCoast / 120 - dRef / 120 });
+        }
+        if (cand.length) break;
+      }
+      cand.sort((a, b) => b.score - a.score || a.y - b.y || a.x - b.x); const c = cand[0]; let out = null;
+      if (c) { const levels = []; for (let l = 0; l <= Z.levels; l++) { const w = Z.base[0] + Z.step[0] * l, h = Z.base[1] + Z.step[1] * l; levels.push({ lv: l, x: c.x + Math.round((MW - w) / 2), y: c.y + Math.round((MH - h) / 2), w, h }); }
+        out = { id: 'RESERVE', kind: 'STRATEGIC_RESERVE', name: 'منطقة الاحتياطي الاستراتيجي', regionId: rid, x: c.x, y: c.y, w: MW, h: MH, levels }; }
+      rvCache.set(rid, out); return out;
+    }
+    /* the one reserve zone of the world (null while the starter region's data is not here yet) */
+    const reserveZoneOfWorld = () => { const sr = regions.find(r => r.starter); return sr ? reserveZone(sr.id) : null; };
     // ---- worker support: chunk / region data can be computed elsewhere (a Web Worker) and injected into an `external` world, so the drawing thread never generates anything
     const exportChunk = (cx, cy) => { const c = chunk(cx, cy); return c && { cx, cy, terrain: c.terrain.slice(), elev: c.elev.slice(), slope: c.slope.slice() }; };
     const injectChunk = d => { chunks.set(d.cy * CONFIG.CHUNKS_X + d.cx, { cx: d.cx, cy: d.cy, terrain: d.terrain, elev: d.elev, slope: d.slope }); if (chunks.size > 220) chunks.delete(chunks.keys().next().value); };
-    const regionData = rid => ({ rid, sites: regionSites(rid), refinery: refineryZones(rid), tank: tankZones(rid), strategic: strategicPoints(rid), tracks: tracks(rid) });
-    const injectRegion = d => { siteCache.set(d.rid, d.sites); zoneCache.set(d.rid, d.refinery); tfCache.set(d.rid, d.tank); spCache.set(d.rid, d.strategic); trCache.set(d.rid, d.tracks); };
-    const hasRegion = rid => siteCache.has(rid) && zoneCache.has(rid) && tfCache.has(rid) && spCache.has(rid) && trCache.has(rid);
+    const regionData = rid => ({ rid, sites: regionSites(rid), refinery: refineryZones(rid), tank: tankZones(rid), strategic: strategicPoints(rid), tracks: tracks(rid), reserve: reserveZone(rid) });
+    const injectRegion = d => { siteCache.set(d.rid, d.sites); zoneCache.set(d.rid, d.refinery); tfCache.set(d.rid, d.tank); spCache.set(d.rid, d.strategic); trCache.set(d.rid, d.tracks); rvCache.set(d.rid, d.reserve || null); };
+    const hasRegion = rid => siteCache.has(rid) && zoneCache.has(rid) && tfCache.has(rid) && spCache.has(rid) && trCache.has(rid) && rvCache.has(rid);
     /* a cheap whole-world picture: one sample per `step` tiles (no chunks), shaded like the real renderer; the FAR level draws this instead of 600 chunk images */
     function renderOverview(step) {
       const ow = Math.ceil(W / step), oh = Math.ceil(H / step), out = new Uint8ClampedArray(ow * oh * 4), eL = new Float32Array(ow * oh), id = new Uint8Array(ow * oh);
@@ -423,7 +449,7 @@
     };
     const oilFieldAt = (x, y) => { for (const s of sitesNear(x, y, 2)) if (s.kind === 'FIELD' && Math.hypot(s.x - x, s.y - y) <= s.radius) return s; return null; };
 
-    return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
+    return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, reserveZone, reserveZoneOfWorld, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
       zoneInfo, evaluateZone, zoneSnapshot, restoreZones, pressureOf, injectionSupport, injectorsTotal, liftFactor, take, drillWell, drillCost, wellsOf, reserveSnapshot, restoreReserve, discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
       scale: () => (W * H) / (CONFIG.LEGACY.W * CONFIG.LEGACY.H) };
   }

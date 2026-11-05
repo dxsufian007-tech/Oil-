@@ -43,7 +43,7 @@
       + '<text x="' + pad + '" y="11" fill="#9aa3ad" font-size="10">$' + mx.toFixed(2) + '</text><text x="' + pad + '" y="' + (h - 3) + '" fill="#9aa3ad" font-size="10">$' + mn.toFixed(2) + '</text></svg>';
   }
   const arrow = t => t === 'UP' ? '<span class="pos">▲ UP</span>' : t === 'DOWN' ? '<span class="neg">▼ DOWN</span>' : '<span class="es-sm">■ STABLE</span>';
-  const SECTIONS = [['company', 'COMPANY'], ['market', 'MARKET'], ['sell', 'SELL'], ['inventory', 'INVENTORY'], ['storage', 'STORAGE'], ['production', 'PRODUCTION'], ['contracts', 'CONTRACTS'], ['loans', 'LOANS'], ['alerts', 'ALERTS']];
+  const SECTIONS = [['company', 'COMPANY'], ['market', 'MARKET'], ['sell', 'SELL'], ['inventory', 'INVENTORY'], ['storage', 'STORAGE'], ['reserve', 'RESERVE'], ['production', 'PRODUCTION'], ['contracts', 'CONTRACTS'], ['loans', 'LOANS'], ['alerts', 'ALERTS']];
 
   /* ------------------------------------------------------------ screens */
   /* ------------------------------------------------------------ Economy Phase 6: the company dashboard (every number comes from the journal and the period ledgers) */
@@ -285,9 +285,22 @@
     if (e.kind === 'TRANSFER') return 'يوم ' + t + ' · نقل ' + q + ' بين خزانين · أجرة ' + M(e.cost) + ' أُضيفت إلى تكلفة المخزون';
     if (e.kind === 'SALE') return 'يوم ' + t + ' · بيع ' + q + ' (' + (e.source === 'BOUGHT' ? 'مشترى' : e.source === 'OWN' ? 'منتج' : 'خليط') + ') بإيراد ' + M(e.revenue) + ' · ' + (e.profit >= 0 ? 'ربح ' : 'خسارة ') + M(Math.abs(e.profit));
     return 'يوم ' + t + ' · دخل المصفاة ' + q + ' من النفط المشترى بتكلفة ' + M(e.cost); };
+  /* two separate gauges, never added together: the commercial stores and the Strategic Reserve */
+  const gaugeCard = (title, g, note) => card(title, '<div class="es-prod"><span class="nm">' + n0(g.volume) + ' من ' + n0(g.capacity) + '</span><b>' + (g.capacity > 0 ? Math.round(g.fill * 100) + '%' : '—') + '</b></div><div class="es-bar"><i style="width:' + Math.min(100, g.fill * 100) + '%;background:' + (g.fill >= .9 ? '#d9453a' : '#8f9aa6') + '"></i></div><div class="es-sm">' + (g.tanks ? g.tanks + ' خزان' : 'لا توجد خزانات بعد') + (note ? ' · ' + note : '') + '</div>');
+  function rReserve() {
+    const I = CO.reserveInfo(), f = I.fills; let h = '';
+    if (!I.exists) return card('منطقة الاحتياطي الاستراتيجي', '<div class="es-sm">لا توجد منطقة احتياطي في هذا العالم بعد.</div>');
+    h += card('منطقة الاحتياطي الاستراتيجي', kv('الموقع الثابت', I.zone.x + '، ' + I.zone.y + ' (على الخريطة بالأصفر)') + kv('المساحة المفتوحة', '<bdi dir="ltr">' + I.area.w + '×' + I.area.h + '</bdi> مربع (المستوى ' + I.level + ' من ' + I.maxLevel + ')') + kv('أقصى مساحة', '<bdi dir="ltr">' + I.zone.w + '×' + I.zone.h + '</bdi> مربع') + '<div class="es-sm" style="margin:6px 0">منشأة تخزين فقط: تُبنى فيها الخزانات والمضخات والصمامات. لا يدخل ما فيها في البيع التلقائي، ولا يخرج نفطها إلا بقرارك.</div>');
+    h += gaugeCard('امتلاء الاحتياطي الاستراتيجي', f.reserve, 'مستقل تماماً عن المخزون التجاري');
+    h += gaugeCard('امتلاء المخزون التجاري (للمقارنة)', f.commercial, 'لا يشمل خزانات الاحتياطي');
+    const c = I.expandCost; h += card('توسعة المنطقة', c == null ? '<div class="es-sm">فُتحت المساحة كاملة.</div>' : '<div class="es-sm">فتح الحلقة التالية من الأرض يتيح بناء خزانات أكثر. التكلفة تُسجَّل أصلاً ثابتاً في دفتر الشركة.</div><button data-act="rvexp"' + (CO.store.cash < c ? ' disabled' : '') + '>توسيع المنطقة · ' + M(c) + '</button>' + (CO.store.cash < c ? '<div class="es-sm neg">الرصيد لا يكفي</div>' : ''));
+    h += card('خزانات الاحتياطي (' + I.tanks.length + ')', I.tanks.length ? I.tanks.map(t => '<div class="es-prod"><span class="nm">' + t.name + ' #' + t.id + ' — ' + EC.LABEL[t.product] + '</span><b>' + Math.round(t.fill * 100) + '%</b></div><div class="es-bar"><i style="width:' + Math.min(100, t.fill * 100) + '%;background:#f0b429"></i></div><div class="es-sm">' + n0(t.volume) + ' من ' + n0(t.capacity) + (t.product === 'GAS' ? ' برميل مكافئ' : ' برميل') + '</div>').join('') : '<div class="es-sm">لا توجد خزانات بعد. اختر خزاناً من لوحة البناء وضعه داخل الإطار الأصفر.</div>');
+    return h;
+  }
   function rStorage() {
     const rep = CO.tankReport(), inv = CO.inventory().find(r => r.product === 'CRUDE'), can = rep.filter(r => r.canBuy), sel = id => id === trFrom ? ' style="outline:2px solid #3b82c4"' : id === trTo ? ' style="outline:2px solid #2f9e5a"' : '';
-    let h = card('أنواع المخازن', '<div class="es-sm">' + ['COMMERCIAL', 'PRODUCTION', 'TRADE'].map(k => '<div style="margin:4px 0"><b>' + ({ COMMERCIAL: 'تخزين تجاري', PRODUCTION: 'مخزن إنتاج', TRADE: 'مخزن تجارة ونقل' })[k] + ':</b> ' + KIND_HELP[k] + '</div>').join('') + '<div style="margin-top:6px">وجود أنبوب لا يكفي لتحديد النوع: يُحدَّد من مصدر النفط الذي يصل إلى الخزان.</div></div>');
+    let h = gaugeCard('امتلاء المخزون التجاري', CO.fills().commercial, 'الاحتياطي الاستراتيجي له مؤشر منفصل في تبويب الاحتياطي');
+    h += card('أنواع المخازن', '<div class="es-sm">' + ['COMMERCIAL', 'PRODUCTION', 'TRADE'].map(k => '<div style="margin:4px 0"><b>' + ({ COMMERCIAL: 'تخزين تجاري', PRODUCTION: 'مخزن إنتاج', TRADE: 'مخزن تجارة ونقل' })[k] + ':</b> ' + KIND_HELP[k] + '</div>').join('') + '<div style="margin-top:6px">وجود أنبوب لا يكفي لتحديد النوع: يُحدَّد من مصدر النفط الذي يصل إلى الخزان.</div></div>');
     h += card('النفط المشترى مقابل النفط المنتج', kv('نفط منتج في المخازن', n0(inv.ownVolume) + ' برميل') + kv('نفط مشترى في المخازن', n0(inv.boughtVolume) + ' برميل') + kv('المخزون المشترى (دفتر)', n0(inv.boughtQty) + ' برميل · ' + M(inv.boughtBook)) + kv('متوسط تكلفة البرميل المشترى', M(inv.boughtUnitCost)) + kv('استهلكته المصفاة حتى الآن', n0(inv.boughtUsed) + ' برميل') + kv('سعة متاحة للشراء', n0(inv.tradeRoom) + ' برميل'));
     if (!rep.length) h += '<div class="es-card es-sm">لا توجد خزانات نفط خام بعد.</div>';
     for (const r of rep) h += '<div class="es-card"><div class="es-prod"><span class="nm">' + r.name + ' #' + r.id + ' — <b>' + r.kindAr + '</b></span><b>' + Math.round(r.fill * 100) + '%</b></div><div class="es-bar"><i style="width:' + Math.min(100, r.fill * 100) + '%;background:' + (r.fill >= .9 ? '#d9453a' : '#8f9aa6') + '"></i></div>'
@@ -334,7 +347,7 @@
   function rAlerts() {
     const a = CO.alerts(); return a.length ? a.map(x => '<div class="es-alert ' + x.level + '"><b>' + x.title + '</b><span class="es-sm">' + x.detail + '</span></div>').join('') : '<div class="es-card">All clear. No alerts.</div>';
   }
-  const R = { company: rCompany, market: rMarket, sell: rSell, inventory: rInventory, storage: rStorage, production: rProduction, contracts: rContracts, loans: rLoans, alerts: rAlerts };
+  const R = { company: rCompany, market: rMarket, sell: rSell, inventory: rInventory, storage: rStorage, reserve: rReserve, production: rProduction, contracts: rContracts, loans: rLoans, alerts: rAlerts };
 
   /* ------------------------------------------------------------ sheet */
   function render(force) {
@@ -376,6 +389,7 @@
     else if (a === 'train') { const r = CO.train(p); msg = r.ok ? 'Training done · −' + M(r.cost) : r.reason === 'cash' ? 'Not enough cash for training' : 'Nobody to train'; }
     else if (a === 'hours') { const cur = CO.hr[p].hours; const r = CO.setHours(p, cur + (+el.dataset.d)); msg = r.ok ? 'Weekly hours: ' + r.hours : 'Cannot change hours'; }
     else if (a === 'buy') { const r = CO.buy(p, +el.dataset.q, buySup, buyTerms); msg = r.ok ? 'Bought ' + n0(r.qty) + ' · ' + M(r.cost) + (r.terms === 'CREDIT' ? ' (آجل)' : '') : r.reason === 'cash' ? 'Not enough cash' : r.reason === 'noTradeTank' ? 'لا يوجد مخزن تجاري أو تجارة لاستقبال النفط المشترى' : r.reason === 'noRoom' ? 'Not enough tank room' : r.reason === 'noCredit' ? 'This supplier sells for cash only' : 'Purchase refused: ' + r.reason; }
+    else if (a === 'rvexp') { const r = CO.reserveExpand(); msg = r.ok ? 'تم فتح مساحة أكبر من الاحتياطي · ' + M(r.cost) : r.reason === 'cash' ? 'الرصيد لا يكفي للتوسعة' : 'لا يمكن التوسعة'; }
     else if (a === 'trsel') { if (v === 'from') trFrom = id; else trTo = id; } else if (a === 'trq') trQty = +v; else if (a === 'stq') stBuyQty = +v;
     else if (a === 'transfer') { const r = CO.transfer(trFrom, trTo, trQty); msg = r.ok ? 'نُقل ' + n0(r.qty) + ' برميل · أجرة ' + M(r.cost) : ({ productionTank: 'لا يمكن النقل من/إلى مخزن الإنتاج', notEnough: 'الخزان المصدر فيه نفط مشترى أقل من المطلوب (' + n0(r.have || 0) + ')', nothingToMove: 'لا يوجد نفط مشترى في الخزان المصدر', noRoom: 'لا توجد مساحة كافية في الخزان الوجهة', cash: 'الرصيد لا يكفي لأجرة النقل', notReady: 'أحد الخزانين غير جاهز', tank: 'اختر خزانين مختلفين' })[r.reason] || 'تعذّر النقل'; }
     else if (a === 'sellsrc') { const all = el.dataset.q === 'all', q = all ? CO.crudeAvailable(v) : +el.dataset.q, r = CO.sell('CRUDE', q, 'SPOT', { source: v }); msg = r.ok ? 'بيع ' + n0(r.qty) + ' برميل · ' + (r.profit >= 0 ? 'ربح ' : 'خسارة ') + M(Math.abs(r.profit)) : r.reason === 'notEnough' ? 'الكمية المتاحة من هذا المصدر أقل' : 'تعذّر البيع'; }

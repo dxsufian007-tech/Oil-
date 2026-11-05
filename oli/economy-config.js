@@ -73,9 +73,10 @@
       shortageFloor: 0.5,                                                                                             // staffing cannot cut output below half
       surplusShare: 0.25, surplusMin: 2,                                                                              // extra hires are capped (a facility has room for a limited crew)
       engineerDecay: 0.5, engineerSurplusCut: 0.3, decayBounds: [0.7, 1.5] },                                        // missing engineers raise the failure rate; extra engineers lower it (bounded)
-    // assets: there is NO useful life and no time-based depreciation - equipment never expires or stops because of its age. It only wears with use (MAINTENANCE.decayPerDay x load),
-    // can break down, and is repaired or replaced by the player.  conditionWeight = how much a worn building's market value falls below its book value.
-    ASSET: { conditionWeight: 0.5 },
+    // assets: there is NO useful life, no wear and no time-based depreciation - equipment never expires, stops or breaks. conditionWeight is kept only for old saves.
+
+  ASSET: { conditionWeight: 0.5 },
+    RESERVE: { expand: [4e6, 9e6, 16e6, 26e6] },       // opening the next ring of the Strategic Reserve zone (dollars)
     TAX: { rate: 0.2, lossCarryForward: true },                                       // Tax = max(0, Revenue - AllowedExpenses - carried losses) x rate, settled monthly
 
     // ---- finance

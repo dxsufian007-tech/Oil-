@@ -296,7 +296,9 @@
       }
       for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
         if (def.type === 'tank' || def.type === 'gas') {
-          const hasOut = def.connections.some(c => c.role === 'out' && this.edgeOf(b, c.id)); if (!hasOut || s.vol <= 1e-6) continue; const gasT = def.type === 'gas', cap = def.capacity.value * levelOf(b).capacityMultiplier;
+          const hasOut = def.connections.some(c => c.role === 'out' && this.edgeOf(b, c.id)); if (!hasOut || s.vol <= 1e-6) continue;
+          if (b.rs && !(s.rel > 0)) continue;                                  // a reserve tank never lets oil out by itself: only a release the player ordered (s.rel, stage 2) opens its outlet
+          const gasT = def.type === 'gas', cap = def.capacity.value * levelOf(b).capacityMultiplier;
           const maxOut = cap * .5, r = Math.min(s.vol / dt, maxOut), fill = s.vol / cap, wf = def.product === P.CRUDE && s.vol > 0 ? s.wat / s.vol : 0, press = gasT ? this.gasPressure(def, fill, b) : SIM.tankHeadPsi;
           const bf = def.product === P.CRUDE && s.vol > 0 ? clamp((s.bv || 0) / s.vol, 0, 1) : 0;                      // the share of the tank's oil that was bought (not produced)
           const acc = this.split(b, def.connections.filter(c => c.role === 'out').map(c => c.id), { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, p: Math.max(press, SIM.tankHeadPsi) }, true, new Set([b.id])); s._out = acc;
@@ -323,7 +325,7 @@
      *   TRADE       connected by pipes, but no well is upstream: it belongs to a transport / trade network (bought oil, moving to a refinery or onward)
      * Product tanks and gas storage have no kind (null). */
     tankKind(b) {
-      const def = DEFS[b.d]; if (!def || def.type !== 'tank' || def.product !== P.CRUDE) return null; if (this.dirty()) this.build();
+      const def = DEFS[b.d]; if (!def || def.type !== 'tank' || def.product !== P.CRUDE) return null; if (b.rs) return 'RESERVE'; if (this.dirty()) this.build();
       let any = false, hasIn = false; for (const c of def.connections) if (this.edgeOf(b, c.id)) { any = true; if (c.role !== 'out') hasIn = true; }
       if (!any) return 'COMMERCIAL'; if (!hasIn) return 'TRADE';
       return this._wellUpstream(b, null, new Set([b.id])) ? 'PRODUCTION' : 'TRADE';

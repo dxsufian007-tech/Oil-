@@ -1,0 +1,39 @@
+// Strategic Reserve - stage 1 screens in a real browser (phone viewport): the zone on the map, a tap opens it, two separate gauges, expansion, save/reload.
+//   NODE_PATH=/opt/npm-tools/node_modules node test-reserve-ui.js [shots-dir]
+const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path'), assert = require('assert');
+const shots = process.argv[2] && path.resolve(process.argv[2]); if (shots) fs.mkdirSync(shots, { recursive: true });
+const srv = http.createServer((q, r) => { const u = q.url.split('?')[0], f = path.join(__dirname, u === '/' ? 'world-preview.html' : u); fs.readFile(f, (e, d) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : f.endsWith('.html') ? 'text/html' : 'application/octet-stream' }); r.end(d); }); }).listen(0);
+let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); };
+(async () => {
+  const b = await chromium.launch(), ctx = await b.newContext({ viewport: { width: 412, height: 866 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true }), p = await ctx.newPage(), errs = [];
+  p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/status of 404/.test(m.text())) errs.push(m.text()); });
+  const url = 'http://localhost:' + srv.address().port + '/?lab=1', shot = async nm => { if (shots) await p.screenshot({ path: path.join(shots, nm + '.png') }); }, tap = async sel => { await p.locator(sel).first().tap(); await p.waitForTimeout(150); };
+  const body = () => p.evaluate(() => document.getElementById('es-body').innerText), co = (f, a) => p.evaluate(f, a);
+  await p.goto(url); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 }); await p.evaluate(() => { localStorage.clear(); __lab.reset(); });
+  console.log('THE ZONE ON THE MAP');
+  const zn = await co(() => { const z = __wp.world.reserveZoneOfWorld(); return z && { x: z.x, y: z.y, w: z.w, h: z.h, name: z.name }; }); ok(zn && zn.name === 'منطقة الاحتياطي الاستراتيجي', 'the world has the one fixed reserve zone: ' + JSON.stringify(zn));
+  await co(([x, y]) => { __wp.goto(x, y, .6); }, [zn.x + zn.w / 2, zn.y + zn.h / 2]); await p.waitForTimeout(1200); await shot('reserve-map');
+  await p.touchscreen.tap(206, 433); await p.waitForTimeout(400);
+  ok(await p.locator('#eco-sheet.open').count() === 1 && (await co(() => document.querySelector('#es-tabs .on').dataset.tab)) === 'reserve', 'a tap on the zone\'s ground opens the Strategic Reserve screen');
+  let t = await body(); await shot('reserve-screen'); ok(/منطقة الاحتياطي الاستراتيجي/.test(t) && /امتلاء الاحتياطي الاستراتيجي/.test(t) && /امتلاء المخزون التجاري/.test(t), 'the screen shows the reserve gauge and the commercial gauge as two separate cards');
+  ok(/المساحة المفتوحة/.test(t) && /20×14/.test(t) && /36×26/.test(t), 'it shows the open area (20×14) and the maximum area (36×26)');
+  const tabs = await co(() => [...document.querySelectorAll('#es-tabs button')].map(x => x.textContent)); ok(tabs.includes('الاحتياطي'), 'the tab list has an Arabic "الاحتياطي" tab');
+  console.log('TWO SEPARATE GAUGES');
+  const ids = await co(([zx, zy]) => { const S = __lab.store, CO = __lab.company, lv = CO.reserve.lv; const z = __wp.world.reserveZoneOfWorld(), A = z.levels[lv];
+    const rt = S.place('crude_tank_s', A.x + 2, A.y + 2, 0, { instant: true }), ct = S.place('crude_tank_s', z.x - 8, z.y + 4, 0, { instant: true }); return { rt: rt.ok && rt.building.id, ct: ct.ok && ct.building.id, why: [rt.reason, ct.reason] }; }, [zn.x, zn.y]);
+  ok(ids.rt && ids.ct, 'a reserve tank (inside the zone) and a commercial tank (outside) were built: ' + JSON.stringify(ids));
+  await co(({ rt, ct }) => { __lab.company.sync(); __lab.sim.ensure(__lab.store.get(rt)).vol = 3000; __lab.sim.ensure(__lab.store.get(ct)).vol = 7500; }, ids);
+  await co(() => __lab.EU.render()); t = await body();
+  const f = await co(() => __lab.company.fills()); ok(Math.abs(f.reserve.fill - 0.3) < 1e-9 && Math.abs(f.commercial.fill - 0.75) < 1e-9, 'engine: reserve 3,000/10,000 = 30%, commercial 7,500/10,000 = 75%');
+  ok(/30%/.test(t) && /75%/.test(t), 'the reserve screen shows 30% (reserve) and 75% (commercial) side by side');
+  await co(() => __lab.EU.open('storage')); await p.waitForTimeout(200); const ts = await body(); ok(/75%/.test(ts) && !/30%/.test(ts.split('أنواع المخازن')[0]), 'the commercial screen shows 75% and its gauge does not include the reserve tank');
+  await shot('storage-screen');
+  console.log('EXPANSION AND SAVING');
+  await co(() => __lab.EU.open('reserve')); await p.waitForTimeout(150); const c0 = await co(() => __lab.store.cash); await tap('[data-act=rvexp]'); const c1 = await co(() => __lab.store.cash), lv = await co(() => __lab.company.reserve.lv);
+  ok(lv === 1 && c0 - c1 === 4e6, 'tapping "توسيع المنطقة" opens the next ring: level 1, cash −$4M'); t = await body(); ok(/24×17/.test(t), 'the screen shows the new open area 24×17');
+  await co(() => __lab.save()); await p.reload(); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 }); await p.waitForTimeout(800);
+  const after = await co(() => ({ lv: __lab.company.reserve.lv, f: __lab.company.fills(), n: __lab.company.reserveTanks().length, rs: __lab.store.list().filter(x => x.rs).length }));
+  ok(after.lv === 1 && after.n === 1 && after.rs === 1 && Math.abs(after.f.reserve.fill - 0.3) < 1e-9 && Math.abs(after.f.commercial.fill - 0.75) < 1e-3, 'after a real reload: level, reserve tank, and both gauges are exactly the same: ' + JSON.stringify(after));
+  ok(errs.length === 0, 'no page errors: ' + errs.slice(0, 3).join(' | '));
+  await b.close(); srv.close(); console.log('\nRESERVE UI TESTS: ' + n + ' passed');
+})().catch(e => { console.error('FAILED:', e.message); process.exit(1); });

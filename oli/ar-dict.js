@@ -5,7 +5,7 @@
   'use strict';
   const $ = '([+\\-−]?\\$[\\d.,]+[KMB]?)', N = '([\\d.,]+)', P = '([+\\-−]?[\\d.,]+%)';
   const EXACT = {
-    'OLI OIL COMPANY': 'شركة أويلي للنفط', COMPANY: 'الشركة', MARKET: 'السوق', SELL: 'بيع', INVENTORY: 'المخزون', STORAGE: 'المخازن والتجارة', PRODUCTION: 'الإنتاج', CONTRACTS: 'العقود', LOANS: 'القروض', ALERTS: 'التنبيهات',
+    'OLI OIL COMPANY': 'شركة أويلي للنفط', COMPANY: 'الشركة', MARKET: 'السوق', SELL: 'بيع', INVENTORY: 'المخزون', STORAGE: 'المخازن والتجارة', RESERVE: 'الاحتياطي', PRODUCTION: 'الإنتاج', CONTRACTS: 'العقود', LOANS: 'القروض', ALERTS: 'التنبيهات',
     'COMPANY VALUE': 'قيمة الشركة', CASH: 'الرصيد', ASSETS: 'الأصول', DEBT: 'الديون', 'Assets + Cash + Inventory − Debt': 'الأصول + الرصيد + المخزون − الديون', 'at market prices': 'بأسعار السوق',
     'THIS MONTH': 'هذا الشهر', 'Net profit': 'صافي الربح', 'REVENUE · EXPENSES · PROFIT': 'الإيرادات · المصاريف · الأرباح', Today: 'اليوم', Month: 'الشهر', Year: 'السنة', Revenue: 'الإيرادات', Expenses: 'المصاريف',
     'CASH FLOW · THIS MONTH': 'التدفق النقدي · هذا الشهر', 'Starting cash': 'رصيد البداية', 'Cash in': 'الداخل', 'Cash out': 'الخارج', 'Ending cash': 'رصيد النهاية',

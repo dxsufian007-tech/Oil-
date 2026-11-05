@@ -117,6 +117,11 @@
   function fromWorld(world, CFG) {
     CFG = CFG || (typeof OliWorld !== 'undefined' ? OliWorld.CONFIG : require('./worldmap.js').CONFIG);
     return { W: world.W, H: world.H, tile: (x, y) => world.tile(x, y), terrain: CFG.TERRAIN, slopeK: CFG.SLOPE_K, oilFieldAt: (x, y) => world.oilFieldAt(x, y), stateOf: id => world.stateOf(id),
+      /* the Strategic Reserve zone: a storage-only place. Tanks fully inside the AREA OPEN SO FAR become reserve tanks (b.rs = 1); other plant is refused inside it; ground outside it is untouched */
+      reserve: () => (world.reserveZoneOfWorld ? world.reserveZoneOfWorld() : null), reserveLevel: () => 0,
+      reserveRule: function (def, x, y, w, h) { const z = this.reserve(); if (!z || !(x < z.x + z.w && x + w > z.x && y < z.y + z.h && y + h > z.y)) return null;
+        if (def.type === 'tank' || def.type === 'gas') { const L = z.levels[Math.max(0, Math.min(z.levels.length - 1, this.reserveLevel() | 0))]; return x >= L.x && y >= L.y && x + w <= L.x + L.w && y + h <= L.y + L.h ? { ok: true } : { ok: false, reason: 'reserveBounds' }; }
+        return def.type === 'pump' || def.type === 'valve' || def.type === 'junction' ? { ok: true, infra: true } : { ok: false, reason: 'reserveOnly' }; },
       zoneAt: (kind, x, y, w, h) => { if (kind !== 'REFINERY') return null; for (const z of world.refineryZones(world.regionIdAt(x, y))) if (x >= z.x && y >= z.y && x + w <= z.x + z.w && y + h <= z.y + z.h) return z; return null; }, site: id => world.siteById(id), take: (id, bbl) => world.take(id, bbl), fieldState: id => world.stateOf(id), liftFactor: id => world.liftFactor(id), injectionCostDay: () => world.injectorsTotal() * CFG.PRODUCTION.INJ_OP_DAY };
   }
 
@@ -170,6 +175,7 @@
         if (o.id === opts.ignoreId) continue; const od = DEFS[o.d]; if (!od.clearance) continue; const [ow, oh] = dimsOf(od, o.r), c = od.clearance;
         if (x < o.x + ow + c && x + w > o.x - c && y < o.y + oh + c && y + h > o.y - c) return fail('CLEARANCE', 'tooClose', { with: o.id });
       }
+      if (ts.reserveRule) { const rr = ts.reserveRule(def, x, y, w, h); if (rr) { if (!rr.ok) return fail('ZONE', rr.reason, { zone: 'RESERVE' }); if (!rr.infra) res.reserve = true; } }
       if (def.zone) { const z = ts.zoneAt(def.zone, x, y, w, h); if (!z) return fail('ZONE', 'needsZone', { zone: def.zone }); res.zoneId = z.id || null; }
       if (def.requires.oilField) {
         const s = ts.oilFieldAt(x, y); if (!s || s.kind !== 'FIELD') return fail('OIL', 'noOilField');
@@ -207,7 +213,7 @@
     place(defId, x, y, r, opts) {
       opts = opts || {}; const v = this.validate(defId, x, y, r, opts); if (!v.ok) return v;
       const def = DEFS[defId], b = { id: this.nextId++, d: defId, x, y, r: v.r, st: STATUS.UNDER_CONSTRUCTION, c: 1, t0: this.time };
-      if (v.linkTo) b.link = v.linkTo; if (v.field) b.field = v.field;
+      if (v.linkTo) b.link = v.linkTo; if (v.field) b.field = v.field; if (v.reserve) b.rs = 1;
       if (opts.instant) b.st = STATUS.OPERATIONAL;
       this.items.set(b.id, b); this._index(b, true); if (this.cash !== Infinity) this.cash -= v.cost; return { ok: true, building: b, cost: v.cost, verdict: v };
     }
@@ -216,6 +222,7 @@
     }
     move(id, x, y, r) {                                                              // drag an existing building: validated against everything except itself
       const b = this.items.get(id); if (!b) return { ok: false, reason: 'nothing' }; const v = this.validate(b.d, x, y, r == null ? b.r : r, { ignoreId: id, ignoreCash: true }); if (!v.ok) return v;
+      if (!!v.reserve !== !!b.rs) return { ok: false, state: 'INVALID', kind: 'ZONE', reason: 'reserveMove' };      // a tank never changes system by being dragged: its stock would silently change owner
       this._index(b, false); b.x = x; b.y = y; b.r = v.r; this._index(b, true); return { ok: true, building: b };
     }
 
@@ -279,13 +286,13 @@
     }
 
     /* ---- save / load: compact, versioned, validated on load (nothing is trusted) */
-    toJSON() { return { v: 2, next: this.nextId, time: this.time, b: this.list().map(b => [b.id, b.d, b.x, b.y, b.r, b.st, b.c, b.t0, b.link || 0, b.field || 0, b.s ? JSON.parse(JSON.stringify(b.s)) : null, b.lv || 1]) }; }
+    toJSON() { return { v: 2, next: this.nextId, time: this.time, b: this.list().map(b => [b.id, b.d, b.x, b.y, b.r, b.st, b.c, b.t0, b.link || 0, b.field || 0, b.s ? JSON.parse(JSON.stringify(b.s)) : null, b.lv || 1].concat(b.rs ? [1] : [])) }; }   // rows stay 12 long; only a reserve tank carries a 13th field
     static fromJSON(ts, data, opts) {
       const s = new BuildingStore(ts, opts), rep = { loaded: 0, dropped: [] }; if (!data || (data.v !== 1 && data.v !== 2) || !Array.isArray(data.b)) return { store: s, report: { loaded: 0, dropped: ['badFormat'] } };
       s.time = data.time || 0; let maxId = 0;
-      for (const a of data.b) { const [id, d, x, y, r, st, c, t0, link, field, dyn, lv] = a; const def = DEFS[d];
+      for (const a of data.b) { const [id, d, x, y, r, st, c, t0, link, field, dyn, lv, rs] = a; const def = DEFS[d];
         if (!def || !s.inb(x, y) || s.at(x, y)) { rep.dropped.push(id + ':' + (def ? 'overlap' : 'unknownType')); continue; }
-        const b = { id, d, x, y, r: def.rotatable ? r & 3 : 0, st: STATUS[st] ? st : STATUS.OPERATIONAL, c: Math.min(1, Math.max(0, c)), t0: t0 || 0 }; if (link) b.link = link; if (field) b.field = field; if (dyn && typeof dyn === 'object') b.s = dyn; b.lv = lv || 1;
+        const b = { id, d, x, y, r: def.rotatable ? r & 3 : 0, st: STATUS[st] ? st : STATUS.OPERATIONAL, c: Math.min(1, Math.max(0, c)), t0: t0 || 0 }; if (link) b.link = link; if (field) b.field = field; if (dyn && typeof dyn === 'object') b.s = dyn; b.lv = lv || 1; if (rs) b.rs = 1;
         const cells = cellsOf(def, x, y, b.r); if (cells.some(([cx, cy]) => !s.inb(cx, cy) || s.occ.has(key(s.W, cx, cy)))) { rep.dropped.push(id + ':overlap'); continue; }
         s.items.set(id, b); s._index(b, true); maxId = Math.max(maxId, id); rep.loaded++; }
       s.nextId = Math.max(data.next || 1, maxId + 1); return { store: s, report: rep };
