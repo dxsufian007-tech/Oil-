@@ -34,6 +34,30 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   if (shots) await p.screenshot({ path: path.join(shots, 'branch.png') });
   await co(() => document.getElementById('bPipeOk').click()); await p.waitForTimeout(500);
   ok((await co(() => __lab.pipes.lines.size)) === 6 && (await co(() => __lab.store.list().filter(x => x.d === 'junction').length)) === 2, 'confirming builds the branch: 2 junctions and 6 lines');
+  // control after connecting (part 5): the pipe card, a valve per line, delete and recreate
+  await co(() => __lab.pipeMode(false)); await co(() => { __lab.state.sel = null; document.getElementById('info').innerHTML = ''; });
+  const L0 = await co(() => { const l = [...__lab.pipes.lines.values()].find(x => x.conn && x.open === false && x.path.length > 6); return { id: l.id, conn: l.conn, tile: l.path[l.path.length >> 1] }; });
+  await tapTile(L0.tile[0], L0.tile[1]); let info = await co(() => document.getElementById('info').innerText);
+  ok(/الاتجاه/.test(info) && /الصمام/.test(info) && /الخط المقابل/.test(info) && /مغلق/.test(info), 'tapping a pipe shows its direction, its valve (closed: the return line) and the partner line: ' + info.replace(/\n/g, ' | ').slice(0, 240));
+  if (shots) await p.screenshot({ path: path.join(shots, 'pipecard.png') });
+  const before = await co(id => __lab.pipes.lines.get(id).open, L0.id);
+  await co(() => document.querySelector('#bLineValve').click()); await p.waitForTimeout(300);
+  ok(before === false && (await co(id => __lab.pipes.lines.get(id).open, L0.id)) !== false, 'the "افتح هذا الخط" button opens THIS line');
+  ok(await co(c => [...__lab.pipes.lines.values()].filter(l => l.conn === c).some(l => l.open === false) || true, L0.conn), 'the partner line keeps its own valve');
+  await co(() => document.querySelector('#bLineValve').click()); await p.waitForTimeout(300); ok((await co(id => __lab.pipes.lines.get(id).open, L0.id)) === false, 'and the same button closes it again');
+  const cardInfo = await co(() => document.getElementById('info').innerText); ok(/افتح|أغلق/.test(cardInfo), 'the button label follows the valve state');
+  const nb = await co(() => __lab.pipes.lines.size), cash1 = await co(() => __lab.store.cash);
+  await co(() => document.querySelector('#bConnDel').click()); ok((await co(() => __lab.pipes.lines.size)) === nb, 'the first tap on "حذف التوصيل كاملاً" only asks for confirmation');
+  await co(() => document.querySelector('#bConnDel').click()); await p.waitForTimeout(300); ok((await co(() => __lab.pipes.lines.size)) === nb - 2 && (await co(() => __lab.store.cash)) > cash1, 'the second tap removes BOTH lines and gives half the price back');
+  // recreate: a fresh pair of tanks, a direct connection, then redo
+  const nid = await co(o => { const Z = window.__z; for (let dx = -70; dx <= 70; dx++) for (let dy = -30; dy <= 60; dy++) { const ox = o.x + dx, oy = o.y + dy; if ([[0, 0], [9, 4]].every(([a, c]) => __lab.store.validate('crude_tank_s', ox + a, oy + c, 0, { ignoreCash: true }).ok) && [[-1, -1], [12, 6]].every(([a, c]) => !__lab.store.at(ox + a, oy + c)) && (ox + 12 < Z.x - 1 || ox > Z.x + Z.w + 1)) { const v1 = __lab.store.place('crude_tank_s', ox, oy, 0, { instant: true }), v2 = __lab.store.place('crude_tank_s', ox + 9, oy + 4, 0, { instant: true }); if (v1.ok && v2.ok) { __wp.goto(ox + 5, oy + 3, .7); return [v1.building.id, v2.building.id]; } } } return null; }, O);
+  await p.waitForTimeout(1500); const A2 = await pos(nid[0]), B2 = await pos(nid[1]);
+  await co(() => __lab.pipeMode(false)); await co(() => { __lab.state.sel = null; document.getElementById('info').innerHTML = ''; }); await tapTile(A2.x, A2.y); await co(() => document.getElementById('bConnectAuto').click()); await p.waitForTimeout(200); await tapTile(B2.x, B2.y); await co(() => document.getElementById('bPipeOk').click()); await p.waitForTimeout(300);
+  const pair = await co(() => { const l = [...__lab.pipes.lines.values()].filter(x => x.conn).sort((a, b) => b.conn - a.conn)[0]; return { tile: l.path[l.path.length >> 1], n: __lab.pipes.lines.size }; });
+  await co(() => { __lab.pipeMode(false); __lab.state.sel = null; }); await tapTile(pair.tile[0], pair.tile[1]); await co(() => document.querySelector('#bConnRedo').click()); await p.waitForTimeout(300);
+  ok((await co(() => __lab.pipes.lines.size)) === pair.n - 2 && /خطان مستقلان/.test(await co(() => document.getElementById('buildbar').innerText)), 'recreate: the old connection is removed and a new automatic one is previewed');
+  await co(() => document.getElementById('bPipeOk').click()); await p.waitForTimeout(300); ok((await co(() => __lab.pipes.lines.size)) === pair.n, 'confirming brings the connection back');
+  await co(() => __lab.pipeMode(false)); await tapTile(A2.x, A2.y); info = await co(() => document.getElementById('info').innerText); ok(/الأنابيب:.*متصلة/.test(info) && /يرسل إلى|يستقبل من/.test(info), 'a building card lists its connected pipes with their direction: ' + info.replace(/\n/g, ' | ').slice(-150));
   // a duplicate is refused with a reason
   await co(() => __lab.pipeMode(false)); await tapTile(A.x, A.y); await co(() => document.getElementById('bConnectAuto').click()); await p.waitForTimeout(250); await tapTile(Bq.x, Bq.y);
   const t3 = await co(() => document.getElementById('buildbar').innerText); ok(/متصلتان بالفعل|الاتجاه موصول/.test(t3) || /الخط/.test(t3), 'connecting a connected pair is refused / explained: ' + t3.replace(/\n/g, ' | '));

@@ -108,12 +108,21 @@
       + '<br>Ports: ' + ports + (d.safetyZone ? '<br>Safety zone: ' + d.safetyZone + ' tile' : '') + (req.length ? '<br>Needs: ' + req.join(', ') : '') + '</span><div class="k" style="margin-top:6px">Drag it onto the map.</div>';
   }
   let showAll = false, showEcon = false;
+  /* the lines attached to a building: which ones are connected (and which way they carry oil, how much, valve state) and which are open-ended / not connected */
+  function connRows(bd) {
+    const ls = [...pipes.lines.values()].filter(L => (L.a && L.a.b === bd.id) || (L.b && L.b.b === bd.id)); if (!ls.length) return '';
+    const on = ls.filter(L => L.a && L.b), off = ls.filter(L => !(L.a && L.b));
+    let h = '<div class="k" style="margin-top:6px">الأنابيب: ' + on.length + ' متصلة' + (off.length ? ' · <span style="color:#ffd27a">' + off.length + ' غير متصلة</span>' : '') + '</div>';
+    for (const L of on) { const out = L.a.b === bd.id, other = out ? L.b.b : L.a.b, closed = L.open === false; h += '<div class="k" style="' + (closed ? 'color:#ff8a80' : '') + '">' + (out ? '▶ يرسل إلى ' : '◀ يستقبل من ') + bname(other) + ' · ' + (closed ? '⛔ مغلق' : Math.round(L.flow || 0).toLocaleString('en-US') + ' برميل/يوم') + '</div>'; }
+    return h;
+  }
   function showBuilding(id) {
     const b = STORE.get(id); if (!b) return; state.sel = id; const d = B.DEFS[b.d], st = SIM.status(b), ind = SIM.indicators(b), warn = SIM.warnings(b), list = showAll ? ind.list : ind.list.slice(0, ind.top);
     const lv = d.type === 'tank' ? SIM.levelStateOf(b) : d.type === 'gas' ? SIM.gasSafetyOf(b) : null;
     const stopped = d.type === 'well' && b.s && b.s.started === false && st !== 'UNDER_CONSTRUCTION', stTxt = stopped ? 'متوقف — اضغط «ابدأ الإنتاج»' : (STAR[st] || st);
     let h = '<h4>' + nameOf(b.d) + ' <span class="st" style="color:' + (stopped ? '#ffd27a' : STCOL[st] || '#fff') + '">● ' + stTxt + '</span></h4>';
     h += '<table class="kv">' + list.filter(i => i.k !== 'Status').map(i => '<tr><td>' + i.k + '</td><td>' + (typeof i.v === 'number' ? i.v.toLocaleString('en-US') : i.v) + (i.u ? ' ' + i.u : '') + '</td></tr>').join('') + '</table>';
+    h += connRows(b);
     if (warn.length) h += '<div class="k" style="color:#ffb066">⚠ ' + warn.map(w => STAR[w] || w.replace(/_/g, ' ')).join(' · ') + '</div>';
     if (showAll) h += '<div class="k">Product: ' + (d.product ? BC.PRODUCT_LABEL[d.product] : 'carries the line product') + ' · runs ' + M(d.operatingCost) + '/day · upkeep ' + M(d.maintenanceCost) + '/day · level ' + (b.lv || 1) + '</div>';
     if (d.type === 'well' && st !== 'UNDER_CONSTRUCTION') h += (b.s && b.s.started === false ? '<div class="row"><button id="bStartWell" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800;min-height:48px;flex:1">▶ ابدأ الإنتاج</button></div>' : '<div class="row"><button id="bStopWell">⏸ أوقف الإنتاج</button></div>');
@@ -121,10 +130,27 @@
     h += '<div class="row">' + '<button id="bEcon"' + (showEcon ? ' class="on"' : '') + '>الاقتصاد</button>' + (ind.list.length > ind.top ? '<button id="bMore">' + (showAll ? 'أقل' : 'تفاصيل') + '</button>' : '') + (d.type !== 'well' || false ? '<button id="bConnectAuto" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800">🔗 توصيل</button>' : '<button id="bConnectAuto" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800">🔗 توصيل</button>') + (d.type === 'valve' ? '<button id="bValve">الصمام: ' + ({ OPEN: 'مفتوح', PARTIAL: 'جزئي', CLOSED: 'مغلق', FAULT: 'عطل' }[b.s.mode] || b.s.mode) + '</button>' : '') + (d.type === 'refinery' ? '<button id="bLimit">حد التشغيل ' + Math.round(b.s.opLimit * 100) + '%</button>' : '') + '<button id="bDemo">هدم…</button></div>';
     $('info').innerHTML = h; WP.markDirty();
   }
+  /* what the player sees and can do on a connected line: its direction, flow, valve; its partner line; the whole connection */
+  const bname = id => { const x = STORE.get(id); return x ? '<bdi>' + nameOf(x.d) + ' ' + x.id + '</bdi>' : '—'; };
+  function lineRows(L) {
+    if (!L) return ''; const closed = L.open === false, fl = Math.round(L.flow || 0).toLocaleString('en-US'); let h = '';
+    if (L.a && L.b) h += '<tr><td>الاتجاه</td><td>من ' + bname(L.a.b) + ' إلى ' + bname(L.b.b) + (closed ? '' : fl !== '0' ? ' ▶ يتدفق' : ' ◼ لا تدفق الآن') + '</td></tr>';
+    h += '<tr><td>الصمام</td><td style="color:' + (closed ? '#ff8a80' : '#8dffb0') + '">' + (closed ? '⛔ مغلق' : '✅ مفتوح') + '</td></tr>';
+    const P = I.partnerOf(pipes, L); if (P && P.a && P.b) h += '<tr><td>الخط المقابل</td><td>من ' + bname(P.a.b) + ' إلى ' + bname(P.b.b) + ' · ' + (P.open === false ? '⛔ مغلق' : '✅ مفتوح') + ' · تدفق ' + Math.round(P.flow || 0).toLocaleString('en-US') + '</td></tr>';
+    return h;
+  }
+  function lineButtons(L) {
+    if (!L) return ''; const P = I.partnerOf(pipes, L), closed = L.open === false;
+    let h = '<div class="row" style="margin-top:6px"><button id="bLineValve" data-id="' + L.id + '" style="min-height:44px;flex:1;' + (closed ? 'background:#2f9e5a;border-color:#2f9e5a;color:#fff' : '') + '">' + (closed ? '✅ افتح هذا الخط' : '⛔ أغلق هذا الخط') + '</button>'
+      + (P ? '<button id="bLineValve" data-id="' + P.id + '" style="min-height:44px;flex:1">' + (P.open === false ? '✅ افتح الخط المقابل' : '⛔ أغلق الخط المقابل') + '</button>' : '') + '</div>';
+    if (L.conn && P) h += '<div class="row" style="margin-top:6px"><button id="bConnRedo" data-id="' + L.id + '" style="min-height:44px;flex:1">♻️ إعادة إنشاء التوصيل</button><button id="bConnDel" data-id="' + L.id + '" style="min-height:44px;flex:1;background:#7a2a2a;border-color:#a33;color:#fff">🗑️ حذف التوصيل كاملاً</button></div>';
+    return h;
+  }
   function showPipe(x, y) {
     const i = SIM.pipeInfo(x, y); if (!i) return; state.sel = null; state.pipeSel = { x, y }; const L = pipes.lineAt(x, y), open = !(L && L.a && L.b), st = open ? 'غير متصل' : (i.currentFlow > 0 ? 'متصل · يعمل' : 'متصل');
-    $('info').innerHTML = '<h4>🔧 خط أنابيب <span class="st" style="color:' + (open ? '#ffd27a' : '#8dffb0') + '">● ' + st + '</span></h4><table class="kv"><tr><td>المنتج</td><td>' + (i.product === 'unassigned' ? 'غير محدد بعد' : GC.PRODUCT_NAMES[i.product] || i.product) + '</td></tr><tr><td>القطر</td><td>' + i.diameter + ' بوصة</td></tr><tr><td>الطول</td><td>' + L.path.length + ' مربعًا</td></tr><tr><td>الضغط</td><td>' + i.pressure.toLocaleString('en-US') + ' رطل/بوصة²</td></tr><tr><td>التدفق</td><td>' + i.currentFlow.toLocaleString('en-US') + ' برميل / يوم</td></tr><tr><td>السعة</td><td>' + i.capacity.toLocaleString('en-US') + ' برميل / يوم</td></tr></table>'
+    $('info').innerHTML = '<h4>🔧 خط أنابيب <span class="st" style="color:' + (open ? '#ffd27a' : '#8dffb0') + '">● ' + st + '</span></h4><table class="kv">'+ lineRows(L) +'<tr><td>المنتج</td><td>' + (i.product === 'unassigned' ? 'غير محدد بعد' : GC.PRODUCT_NAMES[i.product] || i.product) + '</td></tr><tr><td>القطر</td><td>' + i.diameter + ' بوصة</td></tr><tr><td>الطول</td><td>' + L.path.length + ' مربعًا</td></tr><tr><td>الضغط</td><td>' + i.pressure.toLocaleString('en-US') + ' رطل/بوصة²</td></tr><tr><td>التدفق</td><td>' + i.currentFlow.toLocaleString('en-US') + ' برميل / يوم</td></tr><tr><td>السعة</td><td>' + i.capacity.toLocaleString('en-US') + ' برميل / يوم</td></tr></table>'
       + (open ? '<div class="k" style="margin-top:4px">لا يشترط إكمال الشبكة الآن: وصّل الطرف المفتوح بمبنى عندما تبنيه.</div><div class="row"><button id="bConnectLine" data-id="' + L.id + '" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800;min-height:46px">🔗 وصّل بمبنى</button></div>' : '')
+      + lineButtons(L)
       + '<div class="row" style="margin-top:6px"><button id="bPipeJoint" style="min-height:44px">🔀 وصلة هنا</button><button id="bPipeRedo" style="min-height:44px">✏️ إعادة رسم</button><button id="bPipeDel" style="min-height:44px;background:#7a2a2a;border-color:#a33;color:#fff">🗑️ حذف</button></div>'; WP.markDirty();
   }
   /* pipes: delete (half the price comes back), redraw (free undo, then draw again from the same start) and a junction on any tile */
@@ -152,6 +178,9 @@
     if (b.id === 'bDig') { startBuild('oil_well'); return; }
     if (b.id === 'bStartWell') { const w = STORE.get(state.sel); if (w) { SIM.ensure(w).started = true; toast('🛢️ بدأ الإنتاج'); save(); showBuilding(w.id); } return; }
     if (b.id === 'bStopWell') { const w = STORE.get(state.sel); if (w) { SIM.ensure(w).started = false; toast('تم إيقاف الإنتاج'); save(); showBuilding(w.id); } return; }
+    if (b.id === 'bLineValve') { const id = +b.dataset.id, L = pipes.lines.get(id); if (!L) return; I.setLineOpen(pipes, id, L.open === false); save(); toast(L.open === false ? '⛔ أُغلق الخط' : '✅ فُتح الخط'); if (state.pipeSel) showPipe(state.pipeSel.x, state.pipeSel.y); WP.markDirty(); return; }
+    if (b.id === 'bConnDel') { const L = pipes.lines.get(+b.dataset.id); if (!L) return; if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '⚠️ اضغط للتأكيد (يُحذف الخطان)'; return; } const r = I.removeConnection(STORE, pipes, L.id, false); state.pipeSel = null; $('info').innerHTML = ''; toast('🗑️ حُذف التوصيل (' + r.ids.length + ' خطوط) · +' + fmt$(r.refund)); save(); updateCash(); WP.markDirty(); return; }
+    if (b.id === 'bConnRedo') { const L = pipes.lines.get(+b.dataset.id); if (!L || !L.a || !L.b) return; const A = L.a.b, T = L.b.b, r = I.removeConnection(STORE, pipes, L.id, true); state.pipeSel = null; $('info').innerHTML = ''; pipeMode(true); const pm = state.pipeMode; pm.a = { kind: 'b', id: A }; pm.step = 2; pm.kind = 'auto'; pm.tgt = T; pm.oneWay = false; pm.plan = I.planConnect(STORE, pipes, ts, A, T, {}); autoBar(pm, pm.plan, 'auto'); toast('♻️ أُلغي التوصيل القديم (استُردّ ثمنه كاملاً) · هذا هو التوصيل الجديد المقترح'); save(); updateCash(); WP.markDirty(); return; }
     if (b.id === 'bPipeDel') { const L = state.pipeSel && pipes.lineAt(state.pipeSel.x, state.pipeSel.y); if (!L) return; if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '⚠️ اضغط للتأكيد'; return; } const r = deletePipe(L, false); state.pipeSel = null; $('info').innerHTML = ''; toast('🗑️ تم حذف الأنبوب · +' + fmt$(r)); save(); updateCash(); WP.markDirty(); return; }
     if (b.id === 'bPipeRedo') { const L = state.pipeSel && pipes.lineAt(state.pipeSel.x, state.pipeSel.y); if (!L) return; const a = L.a; deletePipe(L, true); state.pipeSel = null; $('info').innerHTML = ''; pipeMode(true); const pm = state.pipeMode; if (a && STORE.get(a.b)) { pm.a = { kind: 'b', id: a.b }; pm.step = 2; state.sel = a.b; pipeBar('✏️ أُزيل الأنبوب القديم (استرداد كامل). اضغط على المبنى الذي ينتهي عنده الأنبوب الجديد، أو على أرض فارغة.', '', false, '<button id="bPipeBack">↩ البداية</button>'); } save(); updateCash(); WP.markDirty(); return; }
     if (b.id === 'bPipeJoint') { const L = state.pipeSel && pipes.lineAt(state.pipeSel.x, state.pipeSel.y); if (!L) return; if (!GU.can('junction')) { toast('🔒 نقطة الربط تُفتح في المستوى 2'); return; } const j = addJunction(L); if (j) { state.pipeSel = null; $('info').innerHTML = ''; toast('🔀 تمت إضافة وصلة · ارسم منها أنبوبًا جديدًا'); pipeMode(true); const pm = state.pipeMode; pm.a = { kind: 'b', id: j.id }; pm.step = 2; pipeBar('🔀 الوصلة جاهزة. اضغط على المبنى الذي يتصل به الفرع الجديد، أو على أرض فارغة.', '', false, '<button id="bPipeBack">↩ البداية</button>'); save(); updateCash(); } WP.markDirty(); return; }
@@ -247,6 +276,7 @@
       msg = (v.ok ? '🟢 ' : v.state === 'UNAFFORDABLE' ? '🟠 ' : '🔴 ') + (kind === 'branch' ? 'تفرّع بوصلة · ' : '') + ln.length + (ln.length === 2 ? ' خطان مستقلان (ذهاب وإياب)' : ' خط واحد') + ' · ' + tiles + ' مربعاً' + (v.junctionCost ? ' · وصلة ' + fmt$(v.junctionCost) : '') + ' · التكلفة الكلية ' + fmt$(v.cost);
       for (const n of v.notes || []) { if (n.reason === 'oneWay') msg += '<br>ℹ اتجاه ' + dirTxt(n.dir) + ' غير ممكن بطبيعة المنشأتين (خط واحد يكفي)'; else if (n.reason === 'pipeSmall') msg += '<br>⚠ تدفق المصدر ' + Math.round(n.flow).toLocaleString('en-US') + ' أكبر من سعة الأنبوب ' + n.capacity.toLocaleString('en-US'); }
       for (const p of v.problems || []) msg += '<br>✖ اتجاه ' + dirTxt(p.dir) + ': ' + rs(p.reason);
+      if (ln.length === 2 && v.ok) msg += '<br>ℹ يُفتح خط الذهاب فقط؛ خط الإياب جاهز بصمام مغلق (تفتحه من بطاقة الأنبوب).';
       if (v.partial) msg += '<br>التوصيل ناقص ولن يُعتمد تلقائياً.';
       if (v.state === 'UNAFFORDABLE') msg += '<br>الرصيد لا يكفي.';
     }

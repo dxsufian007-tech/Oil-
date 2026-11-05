@@ -20,14 +20,15 @@ const contiguous = L => L.path.every((t, i) => i === 0 || Math.abs(t[0] - L.path
   ok(r.made[0].conn && r.made[0].conn === r.made[1].conn, 'the two lines share one connection id');
   const again = I.planConnect(g.store, g.net, g.ts, a.id, b.id);
   ok(!again.ok && again.reason === 'alreadyConnected', 'connecting the same two buildings again is refused (no duplicate): ' + again.reason);
-  // 8. flow in both directions + no oil created or lost
+  // 8. default valves, flow in both directions (one at a time) and no oil created or lost
+  ok(r.made.find(l => l.a.b === a.id).open !== false && r.made.find(l => l.a.b === b.id).open === false, 'by default the first line (A -> B) is open and the return line is built with its valve CLOSED');
   const sim = g.sim; sim.build();
   const sa = sim.ensure(a), sb = sim.ensure(b), capA = B.DEFS[a.d].capacity.value; sa.vol = capA * .8; sb.vol = 0; sa.prod = 'CRUDE'; sb.prod = 'CRUDE'; const tot0 = sa.vol + sb.vol; sim.run(3);
   const t1 = sim.ensure(a).vol + sim.ensure(b).vol;
   ok(Math.abs(t1 - tot0) < 1e-3 * tot0, 'oil is conserved while it moves A -> B (' + Math.round(tot0) + ' -> ' + Math.round(t1) + ': nothing created, nothing lost)');
-  ok(sim.ensure(b).vol > 1, 'oil really flowed A -> B: B holds ' + Math.round(sim.ensure(b).vol));
-  const g2 = game(), a2 = put(g2, 'crude_tank_s', 50, 50), b2 = put(g2, 'crude_tank_s', 60, 54); I.layConnect(g2.store, g2.net, g2.ts, a2.id, b2.id); g2.sim.build(); const x = g2.sim.ensure(a2), y = g2.sim.ensure(b2); x.vol = 0; y.vol = capA * .8; x.prod = y.prod = 'CRUDE'; g2.sim.run(3);
-  ok(g2.sim.ensure(a2).vol > 1 && Math.abs(g2.sim.ensure(a2).vol + g2.sim.ensure(b2).vol - capA * .8) < 1e-3 * capA, 'and the other way, B -> A: A holds ' + Math.round(g2.sim.ensure(a2).vol) + ' and the total is unchanged');
+  ok(sim.ensure(b).vol > 0.9 * capA * .8, 'oil really flowed A -> B: B holds ' + Math.round(sim.ensure(b).vol));
+  const back = r.made.find(l => l.a.b === b.id), fwd = r.made.find(l => l.a.b === a.id); I.setLineOpen(g.net, back.id, true); I.setLineOpen(g.net, fwd.id, false); sim.build(); sim.ensure(a).vol = 0; sim.ensure(b).vol = capA * .8; sim.run(3);
+  ok(sim.ensure(a).vol > 0.9 * capA * .8 && Math.abs(sim.ensure(a).vol + sim.ensure(b).vol - capA * .8) < 1e-3 * capA, 'and the other way, B -> A, once the return valve is opened: A holds ' + Math.round(sim.ensure(a).vol) + ', total unchanged');
 }
 { // 2/3. tank <-> pump, pump <-> tank
   for (const order of [0, 1]) {
@@ -65,7 +66,7 @@ const contiguous = L => L.path.every((t, i) => i === 0 || Math.abs(t[0] - L.path
   const used = new Map(); let clash = false; for (const L of g.net.lines.values()) for (const e of [L.a, L.b]) { const k = e.b + ':' + e.port; if (used.has(k)) clash = true; used.set(k, 1); } ok(!clash, 'no port is used twice');
   const tiles = new Set(); let overlap = false; for (const L of g.net.lines.values()) for (const t of L.path) { const k = t.join(','); if (tiles.has(k)) overlap = true; tiles.add(k); } ok(!overlap, 'no two lines share a tile');
   g.sim.build(); const s = g.sim.ensure(ts[0]); s.vol = B.DEFS[ts[0].d].capacity.value * .9; s.prod = 'CRUDE'; for (const t of ts) g.sim.ensure(t).prod = 'CRUDE'; const tot = ts.reduce((q, t) => q + g.sim.ensure(t).vol, 0); g.sim.run(20); const tot2 = ts.reduce((q, t) => q + g.sim.ensure(t).vol, 0);
-  ok(Math.abs(tot - tot2) < 1e-3 * tot && ts.slice(1).every(t => g.sim.ensure(t).vol > 1), 'the oil spreads to all other tanks and the total never changes (' + Math.round(tot) + ' -> ' + Math.round(tot2) + ')');
+  ok(Math.abs(tot - tot2) < 1e-3 * tot && ts.slice(2).every(t => g.sim.ensure(t).vol > 1), 'the oil travels along the open lines to the tanks at the end of the network and the total never changes (' + Math.round(tot) + ' -> ' + Math.round(tot2) + ': ' + ts.map(t => Math.round(g.sim.ensure(t).vol)).join(' / ') + ')');
 }
 { // 9/10. save and load, and an old save
   const g = game(), a = put(g, 'crude_tank_s', 50, 50), b = put(g, 'crude_tank_s', 60, 54), r = I.layConnect(g.store, g.net, g.ts, a.id, b.id), j = JSON.parse(JSON.stringify(g.net.toJSON())), n2 = I.PipeNet.fromJSON(g.ts.W, j);
@@ -86,11 +87,26 @@ console.log('AUTO CONNECT TESTS PASSED (' + n + ' checks)');
   const used = new Map(); let clash = false; for (const L of g.net.lines.values()) for (const e of [L.a, L.b]) { const k = e.b + ':' + e.port; if (used.has(k)) clash = true; used.set(k, 1); } ok(!clash, 'no port is used twice after the branch');
   const dup = I2.branchTo(g.store, g.net, g.ts, c.id, { building: a.id }, { commit: false }); ok(dup.ok !== undefined, 'a branch plus a direct connection can both be planned (no crash)');
   g.sim.build(); for (const t of [a, b, c]) { g.sim.ensure(t).prod = 'CRUDE'; } g.sim.ensure(a).vol = B2.DEFS[a.d].capacity.value * .9; const tot = [a, b, c].reduce((q, t) => q + g.sim.ensure(t).vol, 0); g.sim.run(30); const tot2 = [a, b, c].reduce((q, t) => q + g.sim.ensure(t).vol, 0);
-  ok(Math.abs(tot - tot2) < 1e-3 * tot && g.sim.ensure(c).vol > 1, 'through the branch the third tank receives oil, and the total is unchanged (' + Math.round(tot) + ' -> ' + Math.round(tot2) + ')');
+  ok(Math.abs(tot - tot2) < 1e-3 * tot && g.sim.ensure(c).vol > 1, 'through the branch oil reaches the third tank (' + Math.round(g.sim.ensure(c).vol) + '), and the total is unchanged (' + Math.round(tot) + ' -> ' + Math.round(tot2) + ')');
   const nj = I2.PipeNet.fromJSON(g.ts.W, JSON.parse(JSON.stringify(g.net.toJSON()))); ok(nj.lines.size === g.net.lines.size, 'the branched network survives save and load');
   const g3 = game2(), a3 = put2(g3, 'crude_tank_s', 50, 50), b3 = put2(g3, 'crude_tank_s', 70, 50), c3 = put2(g3, 'crude_tank_s', 60, 64); I2.layConnect(g3.store, g3.net, g3.ts, a3.id, b3.id); g3.store.cash = 100;
   const poor = I2.branchTo(g3.store, g3.net, g3.ts, c3.id, { line: [...g3.net.lines.values()][0].id }); ok(!poor.ok && poor.reason === 'cash' && g3.net.lines.size === 2 && g3.store.list().filter(x => x.d === 'junction').length === 0 && g3.store.cash === 100, 'branch without enough cash: refused, the total is shown, nothing built');
   const self = I2.branchTo(g.store, g.net, g.ts, a.id, { line: ab.id }); ok(!self.ok, 'a building cannot be branched onto a line it already ends');
   const th = put2(g, 'crude_tank_s', 80, 64), tb = I2.layConnect(g.store, g.net, g.ts, th.id, c.id); ok(tb.ok, 'a fourth tank connects directly to the third (building target)');
 }
-console.log('AUTO CONNECT + BRANCH TESTS PASSED (' + n + ' checks)');
+// ---- part 5: control after connecting: a valve per line
+{ const H3 = require('./test-reserve-helpers.js'), { game: game3, put: put3 } = H3, I3 = H3.I, B3 = H3.B;
+  const g = game3(), a = put3(g, 'crude_tank_s', 50, 50), b = put3(g, 'crude_tank_s', 60, 54), r = I3.layConnect(g.store, g.net, g.ts, a.id, b.id), [l1, l2] = r.made, cap = B3.DEFS[a.d].capacity.value;
+  const prep = (va, vb) => { g.sim.build(); const x = g.sim.ensure(a), y = g.sim.ensure(b); x.vol = va; y.vol = vb; x.prod = y.prod = 'CRUDE'; };
+  ok(I3.partnerOf(g.net, l1) === l2 && I3.partnerOf(g.net, l2) === l1, 'each line knows its partner line');
+  I3.setLineOpen(g.net, l2.id, true); ok(l1.open !== false && l2.open !== false, 'both valves can be opened (they are independent)');
+  I3.setLineOpen(g.net, l1.id, false); ok(l1.open === false && l2.open !== false, 'closing one line leaves the other open');
+  prep(cap * .8, 0); g.sim.run(3); ok(g.sim.ensure(b).vol < 1, 'with the A -> B line closed, nothing flows A -> B (' + Math.round(g.sim.ensure(b).vol) + ')');
+  prep(0, cap * .8); g.sim.run(3); ok(g.sim.ensure(a).vol > 1, 'but the B -> A line, with its own valve open, still carries oil (' + Math.round(g.sim.ensure(a).vol) + ')');
+  I3.setLineOpen(g.net, l2.id, false); prep(0, cap * .8); g.sim.run(3); ok(g.sim.ensure(a).vol < 1, 'with both closed nothing moves at all (both valves are independent)');
+  I3.setLineOpen(g.net, l1.id, true); I3.setLineOpen(g.net, l2.id, true); prep(cap * .8, 0); g.sim.run(3); ok(g.sim.ensure(b).vol > 1, 'reopened: oil flows again');
+  I3.setLineOpen(g.net, l1.id, false); const j = JSON.parse(JSON.stringify(g.net.toJSON())), n2 = I3.PipeNet.fromJSON(g.ts.W, j); ok([...n2.lines.values()].filter(l => l.open === false).length === 1 && n2.lines.size === 2, 'a closed valve is saved and comes back closed (the other line is still open)');
+  const cash0 = g.store.cash, rm = I3.removeConnection(g.store, g.net, l1.id, false); ok(rm.ok && g.net.lines.size === 0 && Math.abs(g.store.cash - cash0 - r.cost / 2) < 1, 'deleting the connection removes both lines and gives half the price back (' + rm.refund + ')');
+  const again = I3.layConnect(g.store, g.net, g.ts, a.id, b.id); ok(again.ok && g.net.lines.size === 2, 'and the connection can be created again from scratch');
+}
+console.log('AUTO CONNECT + BRANCH + CONTROL TESTS PASSED (' + n + ' checks)');
