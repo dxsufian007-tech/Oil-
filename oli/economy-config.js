@@ -38,7 +38,7 @@
       ] },   // selling a lot pushes the price down (Supply factor), then it recovers
     // Historical Brent market (brent-data.js / brent-market.js): CRUDE follows the real EIA daily Brent price of the market day; refined products follow crude at their original price ratio.
     // enabled:false = the old synthetic random walk (kept for the lab and for unit tests of unrelated systems).  startDay = how many market days the game is shifted (0 = the cycle opens on its first record).
-    BRENT: { enabled: true, startDay: 0, productHourlyLimit: 0.04, productDailyLimit: 0.30 },
+    BRENT: { enabled: true, simulation: true, world: {}, candleDays: 1500, startDay: 0, productHourlyLimit: 0.04, productDailyLimit: 0.30 },
     FEES: { spot: 0.01, contract: 0.0025 },
     // by-products: sold at this share of the current crude price (PROVISIONAL: to be reviewed; no market history yet)
     BYPRODUCT: { priceRatioToCrude: 0.8 },

@@ -48,11 +48,18 @@
     if (opt.upto != null) all = aggregate(frame, opt.upto); else all = cache[frame] || (cache[frame] = aggregate(frame, null));
     let a = all; if (opt.from) a = a.filter(c => c.end >= opt.from); if (opt.to) a = a.filter(c => c.start <= opt.to); return a.map(c => Object.assign({}, c));
   }
+  /* candles of the GAME price: rows = [{ d: 'YYYY-MM-DD' (market date), o, h, l, c }] per game day (Open / High / Low / Close of the traded price).
+     A period: Open = the first day's Open, High = the highest High, Low = the lowest Low, Close = the last day's Close (a real OHLC aggregation, no assumption). */
+  function groupOHLC(rows, frame) {
+    frame = FRAMES[frame] ? frame : 'D'; const out = []; let cur = null;
+    for (const r of rows) { const k = keyOf(r.d, frame); if (!cur || cur.key !== k) { cur = { key: k, start: r.d, end: r.d, o: r.o, h: r.h, l: r.l, c: r.c, v: null, n: 0 }; out.push(cur); } cur.end = r.d; cur.n++; cur.c = r.c; if (r.h > cur.h) cur.h = r.h; if (r.l < cur.l) cur.l = r.l; }
+    return out;
+  }
   /* compare two periods (e.g. 2008 vs 2020): change, range and average of the official closes inside each */
   function period(from, to) {
     const rows = ROWS.filter(r => r[0] >= from && r[0] <= to); if (!rows.length) return null; const px = rows.map(r => r[1]), first = px[0], last = px[px.length - 1];
     let hi = px[0], lo = px[0], hiD = rows[0][0], loD = rows[0][0]; for (const r of rows) { if (r[1] > hi) { hi = r[1]; hiD = r[0]; } if (r[1] < lo) { lo = r[1]; loD = r[0]; } }
     return { from, to, days: rows.length, first, last, change: last / first - 1, high: hi, highDate: hiD, low: lo, lowDate: loD, avg: px.reduce((a, b) => a + b, 0) / px.length };
   }
-  return { META, START, END, L, FIRST: ROWS[0][0], LAST: ROWS[ROWS.length - 1][0], FRAMES, position, priceAtPos, priceOn, closeOn, candles, period, num, iso, count: ROWS.length };
+  return { META, START, END, L, FIRST: ROWS[0][0], LAST: ROWS[ROWS.length - 1][0], FRAMES, position, priceAtPos, priceOn, closeOn, candles, groupOHLC, period, num, iso, count: ROWS.length };
 });

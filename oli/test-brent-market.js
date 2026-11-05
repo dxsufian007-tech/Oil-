@@ -2,6 +2,7 @@
  *   NODE_PATH=/opt/npm-tools/node_modules node oli/test-brent-market.js */
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { B, E, EC, game, put } = require('./test-economy-helpers.js'); const BD = require('./brent-data.js'), BM = require('./brent-market.js'), CAL = require('./game-calendar.js');
+EC.BRENT.simulation = false;   // this file tests the OFFICIAL price path (price = the EIA close of the market day): the world-balance / news layer on top of it has its own tests in test-oil-news.js
 let pass = 0, fail = 0; const T = (n, c, x) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail++; console.log('FAIL ' + n + (x === undefined ? '' : ' ' + JSON.stringify(x))); } };
 const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-6 : tol) * Math.max(1, Math.abs(a), Math.abs(b));
 const SRC = fs.readFileSync(path.join(__dirname, 'test-data', 'brent-daily-source-2000-2026.csv'), 'utf8').trim().split(/\r?\n/).slice(1).map(l => l.split(','));   // the raw EIA file (2000 on), parsed here independently of the game's module

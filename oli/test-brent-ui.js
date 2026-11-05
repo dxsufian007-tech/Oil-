@@ -11,7 +11,8 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   await p.locator('#eh-menu').tap(); await p.locator('#es-tabs [data-tab=market]').tap();
   let body = await p.textContent('#es-body');
   ok(await p.locator('[data-brent=main] svg[data-brent-chart]').count() === 1, 'the Market tab shows the candlestick chart for crude');
-  ok(/2000-01-04/.test(body) && /الدورة 1/.test(body) && /\$23\.95/.test(body), 'it shows the market date (2000-01-04), the cycle and the price used in trading ($23.95)');
+  const px0 = await ev(() => __lab.company.market.price.CRUDE); ok(/2000-01-04/.test(body) && /الدورة 1/.test(body) && body.includes('$' + px0.toFixed(2)) && body.includes('23.95'), 'it shows the market date (2000-01-04), the cycle, the price used in trading ($' + px0.toFixed(2) + ') and the official close (23.95)');
+  ok(await p.locator('[data-brent=world]').count() === 1 && await p.locator('[data-brent=news]').count() === 1, 'the Market tab shows the world stock / hoarding card and the news card'); ok(/المخزون التجاري المعروض للبيع/.test(body) && /النفط المحبوس خارج السوق/.test(body) && /الاحتياطي الاستراتيجي/.test(body), 'the world card lists the commercial stock, the hoarded oil and the strategic reserve');
   ok(/غير متوفر في المصدر الرسمي/.test(body), 'volume is shown as not available in the source (not invented)');
   const gameDate = await ev(() => __lab.company.clock().text.slice(0, 10)); ok(body.includes(gameDate), 'the game date is shown next to the market date: ' + gameDate);
   for (const [fr, lab] of [['W', 'أسبوعي'], ['M', 'شهري'], ['Y', 'سنوي'], ['D', 'يومي']]) { await p.locator('[data-act=bframe][data-v=' + fr + ']').tap(); body = await p.textContent('[data-brent=main]'); ok(body.includes(lab + ' ·'), 'frame ' + lab + ' selected'); }
@@ -26,9 +27,10 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   // the chart follows the central clock
   await ev(() => { __lab.company.advanceHours(24 * 40); }); await p.locator('[data-act=bmode][data-v=live]').tap(); body = await p.textContent('[data-brent=main]');
   const bd = await ev(() => __lab.company.market.brent); ok(body.includes(bd.date) && bd.pos === 39, 'after 40 game days the chart shows market day ' + bd.date);
-  ok(await ev(() => __lab.company.market.price.CRUDE) === bd.ref && body.includes(bd.ref.toFixed(2)), 'the displayed price equals the market price used by the economy');
+  const pxN = await ev(() => __lab.company.market.price.CRUDE); ok(body.includes(pxN.toFixed(2)) && bd.sim > 0, 'the displayed price equals the market price used by the economy ($' + pxN.toFixed(2) + ')');
+  await p.locator('[data-act=bsrc][data-v=game]').tap(); ok(await p.locator('[data-brent-chart] rect[data-act=bsel]').count() > 0, 'the chart can show the game price candles (open / high / low / close of the traded price)'); await p.locator('[data-act=bsrc][data-v=official]').tap();
   // the sell screen shows the same number
-  await p.locator('#es-tabs [data-tab=sell]').tap(); body = await p.textContent('#es-body'); ok(body.includes(bd.ref.toFixed(2)), 'the Sell screen shows the same crude price');
+  await p.locator('#es-tabs [data-tab=sell]').tap(); body = await p.textContent('#es-body'); ok(body.includes(pxN.toFixed(2)), 'the Sell screen shows the same crude price');
   ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
   // the player's game (no developer bar): the map layers button is visible and opens the menu
   const q = await (await b.newContext({ viewport: { width: 412, height: 800 }, hasTouch: true, isMobile: true })).newPage(); const e2 = []; q.on('pageerror', e => e2.push(e.message));
