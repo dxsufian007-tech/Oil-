@@ -151,12 +151,17 @@
     if (best) { const cap = CFG.PIPES[best.dia].capacity, flow = DEFS[src.d].capacity && /day/.test(DEFS[src.d].capacity.unit || '') ? DEFS[src.d].capacity.value : 0; return { plan: best, warn: flow > cap ? { reason: 'pipeSmall', capacity: cap, flow } : null }; }
     return { fail: worst || { reason: 'noPort' } };
   }
+  /* is dst already fed from src through existing lines (directly, or through junctions / valves / pumps)?  Then another line for that direction would be a duplicate. */
+  function reaches(store, net, srcId, dstId) {
+    const seen = new Set([srcId]), q = [srcId]; while (q.length) { const cur = q.pop(); for (const L of net.lines.values()) { if (!L.a || !L.b || L.a.b !== cur) continue; const nx = L.b.b; if (nx === dstId) return true; if (seen.has(nx)) continue; const b = store.get(nx); if (b && /^(junction|valve|pump)/.test(DEFS[b.d].type) ) { seen.add(nx); q.push(nx); } } }
+    return false;
+  }
   function planDirs(store, net, ts, specs, o) {                                              // specs: [[srcBuilding, dstBuilding, dirName], ...]
     o = o || {}; const res = { ok: false, state: 'INVALID', lines: [], problems: [], notes: [], cost: 0, length: 0 };
     const saveNext = net.nextId, saveRev = net.rev, laid = [];
     try {
       for (const [src, dst, dir] of specs) {
-        if ([...net.lines.values()].some(L => L.a && L.b && L.a.b === src.id && L.b.b === dst.id)) { res.notes.push({ dir, reason: 'exists', from: src.id, to: dst.id }); continue; }      // never a second line for the same direction
+        if (reaches(store, net, src.id, dst.id)) { res.notes.push({ dir, reason: 'exists', from: src.id, to: dst.id }); continue; }      // never a second line for the same direction
         const r = planDirection(store, net, ts, src, dst, o);
         if (r.plan) { const v = r.plan, L = net.lay({ a: v.a, b: v.b, path: v.path, product: v.product, dia: v.dia }); laid.push(L.id); res.lines.push({ dir, from: src.id, to: dst.id, a: v.a, b: v.b, path: v.path, product: v.product, dia: v.dia, cost: v.cost, length: v.length, warn: r.warn }); res.cost += v.cost; res.length += v.length; if (r.warn) res.notes.push(Object.assign({ dir }, r.warn)); }
         else if (r.natural) res.notes.push({ dir, reason: 'oneWay', from: src.id, to: dst.id }); else res.problems.push(Object.assign({ dir, from: src.id, to: dst.id }, r.fail));
