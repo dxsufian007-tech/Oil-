@@ -38,7 +38,7 @@
   const pk = (b, port) => b + ':' + port;
   class PipeNet extends Set {                                       // a Set of tile keys (so the Phase 2 link helpers keep working) + the explicit lines
     constructor(W) { super(); this.W = W; this.lines = new Map(); this.at = new Map(); this.nextId = 1; this.nextConn = 1; this.rev = 0; }
-    lay(line) { const id = this.nextId++, L = Object.assign({ id, flow: 0 }, line); this.lines.set(id, L); for (const [x, y] of L.path) { const k = key(this.W, x, y); this.add(k); this.at.set(k, id); } this.rev++; return L; }
+    lay(line) { const id = line.id != null && !this.lines.has(line.id) ? line.id : this.nextId++; if (id >= this.nextId) this.nextId = id + 1; const L = Object.assign({ flow: 0 }, line, { id }); this.lines.set(id, L); for (const [x, y] of L.path) { const k = key(this.W, x, y); this.add(k); this.at.set(k, id); } this.rev++; return L; }
     remove(id) { const L = this.lines.get(id); if (!L) return false; for (const [x, y] of L.path) { const k = key(this.W, x, y); this.delete(k); this.at.delete(k); } this.lines.delete(id); this.rev++; return true; }
     lineAt(x, y) { const id = this.at.get(key(this.W, x, y)); return id ? this.lines.get(id) : null; }
     productAt(x, y) { const L = this.lineAt(x, y); return L ? L.product : null; }
@@ -151,12 +151,11 @@
     if (best) { const cap = CFG.PIPES[best.dia].capacity, flow = DEFS[src.d].capacity && /day/.test(DEFS[src.d].capacity.unit || '') ? DEFS[src.d].capacity.value : 0; return { plan: best, warn: flow > cap ? { reason: 'pipeSmall', capacity: cap, flow } : null }; }
     return { fail: worst || { reason: 'noPort' } };
   }
-  function planConnect(store, net, ts, idA, idB, o) {
-    o = o || {}; const A = store.get(idA), Bb = store.get(idB), res = { ok: false, state: 'INVALID', lines: [], problems: [], notes: [], cost: 0, length: 0 };
-    if (!A || !Bb) { res.reason = 'noPort'; return res; } if (A.id === Bb.id) { res.reason = 'sameBuilding'; return res; }
+  function planDirs(store, net, ts, specs, o) {                                              // specs: [[srcBuilding, dstBuilding, dirName], ...]
+    o = o || {}; const res = { ok: false, state: 'INVALID', lines: [], problems: [], notes: [], cost: 0, length: 0 };
     const saveNext = net.nextId, saveRev = net.rev, laid = [];
     try {
-      for (const [src, dst, dir] of [[A, Bb, 'ab'], [Bb, A, 'ba']]) {
+      for (const [src, dst, dir] of specs) {
         if ([...net.lines.values()].some(L => L.a && L.b && L.a.b === src.id && L.b.b === dst.id)) { res.notes.push({ dir, reason: 'exists', from: src.id, to: dst.id }); continue; }      // never a second line for the same direction
         const r = planDirection(store, net, ts, src, dst, o);
         if (r.plan) { const v = r.plan, L = net.lay({ a: v.a, b: v.b, path: v.path, product: v.product, dia: v.dia }); laid.push(L.id); res.lines.push({ dir, from: src.id, to: dst.id, a: v.a, b: v.b, path: v.path, product: v.product, dia: v.dia, cost: v.cost, length: v.length, warn: r.warn }); res.cost += v.cost; res.length += v.length; if (r.warn) res.notes.push(Object.assign({ dir }, r.warn)); }
@@ -168,11 +167,57 @@
     if (res.ok && store.cash < res.cost && !o.ignoreCash) { res.ok = false; res.state = 'UNAFFORDABLE'; res.reason = 'cash'; }
     return res;
   }
-  function layConnect(store, net, ts, idA, idB, o) {
-    o = o || {}; const v = planConnect(store, net, ts, idA, idB, o); if (!v.lines.length) return v; if (!v.ok && !(o.allowOneWay && v.partial)) return v;
-    if (store.cash < v.cost && !o.ignoreCash) return Object.assign({}, v, { ok: false, state: 'UNAFFORDABLE', reason: 'cash' });
-    const conn = net.nextConn++, made = []; for (const l of v.lines) made.push(net.lay({ a: l.a, b: l.b, path: l.path, product: l.product, dia: l.dia, conn, dir: l.dir }));
+  function planConnect(store, net, ts, idA, idB, o) {
+    const A = store.get(idA), Bb = store.get(idB); if (!A || !Bb) return { ok: false, state: 'INVALID', reason: 'noPort', lines: [], problems: [], notes: [], cost: 0 }; if (A.id === Bb.id) return { ok: false, state: 'INVALID', reason: 'sameBuilding', lines: [], problems: [], notes: [], cost: 0 };
+    return planDirs(store, net, ts, [[A, Bb, 'ab'], [Bb, A, 'ba']], o);
+  }
+  function commitPlan(store, net, v, o) {                                                    // lay a plan that planDirs() returned (paths are already routed around each other, in the same order)
+    o = o || {}; if (!v.lines.length) return v; if (!v.ok && !(o.allowOneWay && v.partial)) return v; if (store.cash < v.cost && !o.ignoreCash) return Object.assign({}, v, { ok: false, state: 'UNAFFORDABLE', reason: 'cash' });
+    const conn = net.nextConn++, made = []; for (const l of v.lines) made.push(net.lay({ a: l.a, b: l.b, path: l.path, product: l.product, dia: l.dia, conn }));
     if (store.cash !== Infinity) store.cash -= v.cost; return Object.assign({}, v, { ok: true, state: 'BUILT', conn, made });
+  }
+  function layConnect(store, net, ts, idA, idB, o) { o = o || {}; return commitPlan(store, net, planConnect(store, net, ts, idA, idB, o), o); }
+
+
+
+  /* ---- branching: a building is connected to an EXISTING line by putting a junction on that line (the only place where lines merge or split, as before), then the ordinary two-line connection */
+  const lineCopy = L => ({ id: L.id, a: L.a, b: L.b, path: L.path.map(p => p.slice()), product: L.product, dia: L.dia, conn: L.conn, open: L.open });
+  function insertJunction(store, net, ts, lineId, idx, o) {
+    o = o || {}; const L = net.lines.get(lineId), fail = reason => ({ ok: false, reason }); if (!L || !L.a || !L.b) return fail('noPort'); const n = L.path.length; if (n < 3) return fail('tooShort');
+    const cost = CFG.JUNCTION.cost; if (store.cash < cost && !o.ignoreCash) return { ok: false, reason: 'cash', cost };
+    const bk = lineCopy(L), cash0 = store.cash, sNext = store.nextId, sRev = store.rev, nNext = net.nextId, nRev = net.rev, before = new Set(net.lines.keys());
+    const undo = j => { for (const id of [...net.lines.keys()]) if (!before.has(id)) net.remove(id); if (j) store.demolish(j.id, { building: true, pipes: true, pipeSet: net }); if (!net.lines.has(bk.id)) net.lay(bk); store.cash = cash0; store.nextId = sNext; store.rev = sRev; net.nextId = nNext; net.rev = nRev; };
+    idx = Math.max(1, Math.min(n - 2, idx == null ? n >> 1 : idx)); net.remove(L.id); const order = [idx]; for (let k = 1; k <= n - 2; k++) if (k !== idx) order.push(k); order.sort((p, q) => Math.abs(p - idx) - Math.abs(q - idx));
+    let T = null; for (const k of order) { const t = bk.path[k]; if (store.validate('junction', t[0], t[1], 0, { ignoreCash: true }).ok) { T = t; break; } } if (!T) { undo(null); return fail('noSpot'); }
+    const pr = store.place('junction', T[0], T[1], 0, { instant: true, ignoreCash: true }); if (!pr.ok) { undo(null); return fail('noSpot'); } const j = pr.building, ports = portsOf(j).map(q => q.id);
+    const opts = { ignoreCash: true }; let best = null; for (const p of ports) { const v = planPipe(store, net, ts, bk.a, { b: j.id, port: p }, bk.dia, opts); if (v.ok && (!best || v.path.length < best.v.path.length)) best = { p, v }; }
+    if (!best) { undo(j); return fail('noRoute'); } const r1 = layPipe(store, net, ts, bk.a, { b: j.id, port: best.p }, bk.dia, opts); if (!r1.ok) { undo(j); return fail('noRoute'); }
+    let r2 = null; for (const p of ports) { if (p === best.p) continue; const v = planPipe(store, net, ts, { b: j.id, port: p }, bk.b, bk.dia, opts); if (v.ok) { r2 = layPipe(store, net, ts, { b: j.id, port: p }, bk.b, bk.dia, opts); if (r2.ok) break; r2 = null; } }
+    if (!r2) { undo(j); return fail('noRoute'); }
+    for (const l of [r1.line, r2.line]) { if (bk.conn) l.conn = bk.conn; if (bk.open === false) l.open = false; }
+    store.cash = cash0 - cost; return { ok: true, junction: j, lines: [r1.line, r2.line], cost, undo: () => undo(j) };
+  }
+  /* connect a building to an existing network.  target = { building: id }  (an ordinary two-line connection to that building)
+   *                                                  or { line: id, idx? }  (the junction is put on that line first).  commit=false: nothing stays changed, the verdict and the full cost are returned. */
+  function branchTo(store, net, ts, idX, target, o) {
+    o = o || {}; const empty = reason => ({ ok: false, state: 'INVALID', reason, lines: [], problems: [], notes: [], cost: 0 }), X = store.get(idX); if (!X) return empty('noPort');
+    if (target.building != null) return o.commit === false ? planConnect(store, net, ts, idX, target.building, o) : layConnect(store, net, ts, idX, target.building, o);
+    const L = net.lines.get(target.line); if (!L || !L.a || !L.b) return empty('noPort'); if (L.a.b === idX || L.b.b === idX) return empty('alreadyConnected');       // already an end of that line
+    const partner = L.conn ? [...net.lines.values()].find(l => l !== L && l.conn === L.conn && l.a && l.b) : null;
+    const run = () => {                                                                       // tap the connection: a junction on the line (and one on its partner), then the two branch lines; everything laid here is undone by undo()
+      const js = []; const jr1 = insertJunction(store, net, ts, L.id, target.idx, { ignoreCash: true }); if (!jr1.ok) return { err: jr1.reason }; js.push(jr1);
+      let jOut = jr1.junction, jIn = jr1.junction;
+      if (partner) { const jr2 = insertJunction(store, net, ts, partner.id, null, { ignoreCash: true }); if (!jr2.ok) { jr1.undo(); return { err: jr2.reason }; } js.push(jr2); jIn = jr2.junction; }
+      const undo = () => { for (const j of js.reverse()) j.undo(); }, plan = planDirs(store, net, ts, [[X, jOut, 'ab'], [jIn, X, 'ba']], Object.assign({}, o, { ignoreCash: true }));
+      return { js, plan, undo, jcost: js.reduce((q, j) => q + j.cost, 0) };
+    };
+    const p = run(); if (p.err) return empty(p.err); const v0 = p.plan, total = v0.cost + p.jcost, jcost = p.jcost; p.undo();
+    const res = Object.assign({}, v0, { cost: total, junctionCost: jcost }); if (!v0.lines.length) return res;
+    const broke = store.cash < total && !o.ignoreCash; if (v0.ok && broke) { res.ok = false; res.state = 'UNAFFORDABLE'; res.reason = 'cash'; }
+    if (o.commit === false || broke || !(v0.ok || (o.allowOneWay && v0.partial))) return res;
+    const q = run(); if (q.err) return empty(q.err); const done = commitPlan(store, net, q.plan, { ignoreCash: true, allowOneWay: o.allowOneWay });
+    if (!done.made) { q.undo(); return Object.assign(res, { ok: false }); }
+    return Object.assign({}, done, { cost: total, junctionCost: jcost, junctions: q.js.map(j => j.junction.id) });
   }
 
   /* ------------------------------------------------------------ levels, safety helpers */
@@ -426,5 +471,5 @@
   }
 
   const TANK_KIND_AR = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
-  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, planConnect, layConnect, autoDia, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
+  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, planConnect, layConnect, insertJunction, branchTo, autoDia, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });

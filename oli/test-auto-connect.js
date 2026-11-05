@@ -73,3 +73,24 @@ const contiguous = L => L.path.every((t, i) => i === 0 || Math.abs(t[0] - L.path
   const old = JSON.parse(JSON.stringify(j)); for (const L of old.lines) delete L.conn; delete old.nc; const n3 = I.PipeNet.fromJSON(g.ts.W, old); ok(n3.lines.size === 2 && n3.nextConn >= 1, 'a save made before this stage (no connection ids) loads unchanged');
 }
 console.log('AUTO CONNECT TESTS PASSED (' + n + ' checks)');
+// ---- part 3: a third tank joins an existing network by itself (branch)
+{ const H2 = require('./test-reserve-helpers.js'), { game: game2, put: put2 } = H2, I2 = H2.I, B2 = H2.B;
+  const g = game2(), a = put2(g, 'crude_tank_s', 50, 50), b = put2(g, 'crude_tank_s', 70, 50), c = put2(g, 'crude_tank_s', 60, 64); I2.layConnect(g.store, g.net, g.ts, a.id, b.id);
+  const ab = [...g.net.lines.values()].sort((p, q) => q.path.length - p.path.length)[0], SN = () => JSON.stringify([...g.net.lines.values()].sort((p, q) => p.id - q.id).map(l => [l.id, l.a, l.b, l.path, l.conn, l.dia])), snap = SN(), cash0 = g.store.cash, nb0 = g.store.list().length, nid0 = g.net.nextId, sid0 = g.store.nextId;
+  const pl = I2.branchTo(g.store, g.net, g.ts, c.id, { line: ab.id }, { commit: false });
+  ok(pl.ok && pl.lines.length === 2 && pl.junctionCost > 0 && pl.cost > pl.junctionCost, 'branch preview: a junction + two lines, one total shown (junction ' + pl.junctionCost + ', total ' + pl.cost + ')');
+  ok(SN() === snap && [...g.net.lines.keys()].every(k => g.net.lines.get(k).id === k) && g.store.cash === cash0 && g.store.list().length === nb0 && g.net.nextId === nid0 && g.store.nextId === sid0, 'the preview leaves the network, the buildings, the ids and the cash exactly as they were');
+  const r = I2.branchTo(g.store, g.net, g.ts, c.id, { line: ab.id });
+  ok(r.ok && g.store.list().filter(x => x.d === 'junction').length === 2 && Math.abs(cash0 - g.store.cash - pl.cost) < 1e-6, 'branch built: one junction on each of the two lines of the connection, and the cash charged is exactly the previewed total');
+  ok(g.net.lines.size === 6 && [...g.net.lines.values()].every(l => l.a && l.b), 'the two old lines are split in two each + the two branch lines = 6 lines, every one with both ends');
+  const used = new Map(); let clash = false; for (const L of g.net.lines.values()) for (const e of [L.a, L.b]) { const k = e.b + ':' + e.port; if (used.has(k)) clash = true; used.set(k, 1); } ok(!clash, 'no port is used twice after the branch');
+  const dup = I2.branchTo(g.store, g.net, g.ts, c.id, { building: a.id }, { commit: false }); ok(dup.ok !== undefined, 'a branch plus a direct connection can both be planned (no crash)');
+  g.sim.build(); for (const t of [a, b, c]) { g.sim.ensure(t).prod = 'CRUDE'; } g.sim.ensure(a).vol = B2.DEFS[a.d].capacity.value * .9; const tot = [a, b, c].reduce((q, t) => q + g.sim.ensure(t).vol, 0); g.sim.run(30); const tot2 = [a, b, c].reduce((q, t) => q + g.sim.ensure(t).vol, 0);
+  ok(Math.abs(tot - tot2) < 1e-3 * tot && g.sim.ensure(c).vol > 1, 'through the branch the third tank receives oil, and the total is unchanged (' + Math.round(tot) + ' -> ' + Math.round(tot2) + ')');
+  const nj = I2.PipeNet.fromJSON(g.ts.W, JSON.parse(JSON.stringify(g.net.toJSON()))); ok(nj.lines.size === g.net.lines.size, 'the branched network survives save and load');
+  const g3 = game2(), a3 = put2(g3, 'crude_tank_s', 50, 50), b3 = put2(g3, 'crude_tank_s', 70, 50), c3 = put2(g3, 'crude_tank_s', 60, 64); I2.layConnect(g3.store, g3.net, g3.ts, a3.id, b3.id); g3.store.cash = 100;
+  const poor = I2.branchTo(g3.store, g3.net, g3.ts, c3.id, { line: [...g3.net.lines.values()][0].id }); ok(!poor.ok && poor.reason === 'cash' && g3.net.lines.size === 2 && g3.store.list().filter(x => x.d === 'junction').length === 0 && g3.store.cash === 100, 'branch without enough cash: refused, the total is shown, nothing built');
+  const self = I2.branchTo(g.store, g.net, g.ts, a.id, { line: ab.id }); ok(!self.ok, 'a building cannot be branched onto a line it already ends');
+  const th = put2(g, 'crude_tank_s', 80, 64), tb = I2.layConnect(g.store, g.net, g.ts, th.id, c.id); ok(tb.ok, 'a fourth tank connects directly to the third (building target)');
+}
+console.log('AUTO CONNECT + BRANCH TESTS PASSED (' + n + ' checks)');
