@@ -233,7 +233,7 @@
       if (t === 'well') base = K.well; else if (t === 'pump') base = K.pump[def.size]; else if (t === 'separator') base = K.separator; else if (t === 'refinery') base = K.refinery[def.size]; else if (t === 'gas') base = K.gas;
       return base * (K.idleShare + (1 - K.idleShare) * load);
     }
-    staffKey(def) { const t = def.type; return t === 'well' || t === 'valve' || t === 'junction' || t === 'separator' ? t : t + '_' + def.size; }
+    staffKey(def) { const t = def.type; if (def.family === 'MANIFOLD') return 'manifold'; return t === 'well' || t === 'valve' || t === 'junction' || t === 'separator' ? t : t + '_' + def.size; }
     opDay(b, load) { const O = this.cfg.OPERATING; return DEFS[b.d].operatingCost * (O.fixedShare + (1 - O.fixedShare) * load) * (1 + O.conditionPenalty * (1 - b.c)); }     // DailyOperatingCost = Base x Load x Condition
     maintDay(b, load) { const M = this.cfg.MAINTENANCE; return DEFS[b.d].maintenanceCost * (1 + M.damage * Math.pow(1 - b.c, 1.5)) * (M.utilBase + M.utilSlope * load); }   // MaintenanceCost = Base x Damage x Utilization
     wellQuality(b) { const q = this.cfg.QUALITY, u = hash(b.x, b.y, 11); return u < q.share.HIGH ? 'HIGH' : u > 1 - q.share.LOW ? 'LOW' : 'NORMAL'; }

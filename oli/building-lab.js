@@ -274,7 +274,7 @@
     if (!ln.length) msg = '🔴 تعذّر التوصيل: ' + (v.state === 'UNAFFORDABLE' ? 'الرصيد لا يكفي' : rs(v.reason));
     else {
       msg = (v.ok ? '🟢 ' : v.state === 'UNAFFORDABLE' ? '🟠 ' : '🔴 ') + (kind === 'branch' ? 'تفرّع بوصلة · ' : '') + ln.length + (ln.length === 2 ? ' خطان مستقلان (ذهاب وإياب)' : ' خط واحد') + ' · ' + tiles + ' مربعاً' + (v.junctionCost ? ' · وصلة ' + fmt$(v.junctionCost) : '') + ' · التكلفة الكلية ' + fmt$(v.cost);
-      for (const n of v.notes || []) { if (n.reason === 'oneWay') msg += '<br>ℹ اتجاه ' + dirTxt(n.dir) + ' غير ممكن بطبيعة المنشأتين (خط واحد يكفي)'; else if (n.reason === 'pipeSmall') msg += '<br>⚠ تدفق المصدر ' + Math.round(n.flow).toLocaleString('en-US') + ' أكبر من سعة الأنبوب ' + n.capacity.toLocaleString('en-US'); }
+      for (const n of v.notes || []) { if (n.reason === 'oneWay') msg += n.why === 'directionalDevice' ? '<br>ℹ المضخة/التفريعة تدفع باتجاه واحد، لذلك يكفي خط واحد' : '<br>ℹ اتجاه ' + dirTxt(n.dir) + ' غير ممكن بطبيعة المنشأتين (خط واحد يكفي)'; else if (n.reason === 'pipeSmall') msg += '<br>⚠ تدفق المصدر ' + Math.round(n.flow).toLocaleString('en-US') + ' أكبر من سعة الأنبوب ' + n.capacity.toLocaleString('en-US'); }
       for (const p of v.problems || []) msg += '<br>✖ اتجاه ' + dirTxt(p.dir) + ': ' + rs(p.reason);
       if (ln.length === 2 && v.ok) msg += '<br>ℹ يُفتح خط الذهاب فقط؛ خط الإياب جاهز بصمام مغلق (تفتحه من بطاقة الأنبوب).';
       if (v.partial) msg += '<br>التوصيل ناقص ولن يُعتمد تلقائياً.';

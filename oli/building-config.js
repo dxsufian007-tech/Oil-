@@ -51,10 +51,11 @@
   };
   const VALVE = { cost: 60000, op: 50, maint: 150, maxFlow: 40000, pressureRating: 3000, w: 1, h: 1 };
   const JUNCTION = { cost: 120000, op: 0, maint: 100, maxTotalFlow: 60000, pressureLimit: 3000, w: 1, h: 1 };
+  const MANIFOLD = { id: 'main_manifold', name: 'Main Manifold', w: 3, h: 9, cost: 8000000, op: 1500, maint: 800, maxTotalFlow: 300000, pressureLimit: 3000, inputs: 9, outputs: 3 };   // Stage 5: PRICE PENDING the owner's approval (a placeholder, easy to change here)
   const SEPARATOR = { cost: 2500000, op: 3500, maint: 1500, cap: 50000, w: 4, h: 3, oilSep: 0.94, gasSep: 0.92, waterSep: 0.88, minInletPsi: 30 };
   const SAFETY = { tankNearFull: 0.95, tankFull: 1.0, tankHigh: 0.8, tankLow: 0.2, gasHighPressure: 0.85, gasNearLimit: 0.95, gasHighTempC: 60, ambientC: 30 };
   const LEVELS = { 1: { capacityMultiplier: 1, efficiencyMultiplier: 1, pressureMultiplier: 1, maintenanceMultiplier: 1 } };   // architecture only: Level 1 exists, no upgrade system yet
   const SIM = { dayRealSeconds: 12, tankHeadPsi: 60, frictionPsiPerTile: 0.5, frictionExp: 1.8 };
 
-  return { PRODUCTS, PRODUCT_LABEL, PRODUCT_COLOR, PIPES, PIPE_DEFAULT, TILE_METERS, TANK, REFINERY, WELL, PUMP, VALVE, JUNCTION, SEPARATOR, SAFETY, LEVELS, SIM };
+  return { PRODUCTS, PRODUCT_LABEL, PRODUCT_COLOR, PIPES, PIPE_DEFAULT, TILE_METERS, TANK, REFINERY, WELL, PUMP, VALVE, JUNCTION, MANIFOLD, SEPARATOR, SAFETY, LEVELS, SIM };
 });

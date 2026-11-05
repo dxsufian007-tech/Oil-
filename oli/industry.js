@@ -144,7 +144,8 @@
   function planDirection(store, net, ts, src, dst, o) {
     const pairs = []; for (const pa of portsOf(src)) if (canSend(pa)) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product)) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
     if (!pairs.length) return { natural: true };
-    pairs.sort((x, y) => x.d - y.d); const dia = o.dia || Math.max(autoDia(DEFS[src.d]), autoDia(DEFS[dst.d])); let best = null, worst = null, tried = 0;
+    const sp = (b, free) => q => { if (portTaken(net, { b: b.id, port: q.id })) return 0; const nb = portsOf(b).filter(z => z.id !== q.id && z.side === q.side && z.role === q.role && z.group === q.group && Math.abs(z.ax - q.ax) + Math.abs(z.ay - q.ay) === 1 && !portTaken(net, { b: b.id, port: z.id })); return nb.length >= 2 ? 1 : 0; };    // a port in the MIDDLE of a run of free ports would wall the others in: take the ends of the run first
+    const spS = sp(src), spD = sp(dst); for (const q of pairs) q.k = q.d + 1000 * (spS(q.pa) + spD(q.pb)); pairs.sort((x, y) => x.k - y.k); const dia = o.dia || Math.max(autoDia(DEFS[src.d]), autoDia(DEFS[dst.d])); let best = null, worst = null, tried = 0;
     for (const q of pairs) { if (tried >= (o.tries || 10)) break; if (portTaken(net, { b: src.id, port: q.pa.id }) || portTaken(net, { b: dst.id, port: q.pb.id })) { worst = worst || { reason: 'portTaken' }; continue; } tried++;
       const v = planPipe(store, net, ts, { b: src.id, port: q.pa.id }, { b: dst.id, port: q.pb.id }, dia, { ignoreCash: true, margin: o.margin || 22 });
       if (v.ok) { if (!best || v.path.length < best.path.length) best = v; } else if (!worst || (REASON_RANK[v.reason] || 0) > (REASON_RANK[worst.reason] || 0)) worst = { reason: v.reason, wants: v.wants, has: v.has, products: v.products }; }
@@ -178,11 +179,11 @@
   }
   function planConnect(store, net, ts, idA, idB, o) {
     const A = store.get(idA), Bb = store.get(idB); if (!A || !Bb) return { ok: false, state: 'INVALID', reason: 'noPort', lines: [], problems: [], notes: [], cost: 0 }; if (A.id === Bb.id) return { ok: false, state: 'INVALID', reason: 'sameBuilding', lines: [], problems: [], notes: [], cost: 0 };
-    const isP = b => /^pump/.test(DEFS[b.d].type), free = (b, role) => portsOf(b).some(q => (role === 'out' ? canSend(q) : canTake(q)) && !portTaken(net, { b: b.id, port: q.id }));
+    const isP = b => /^pump/.test(DEFS[b.d].type) || DEFS[b.d].family === 'MANIFOLD', free = (b, role) => portsOf(b).some(q => (role === 'out' ? canSend(q) : canTake(q)) && !portTaken(net, { b: b.id, port: q.id }));
     if (isP(A) !== isP(Bb)) {                                                                  // a pump only pushes one way: ONE line, towards its free side (a return line into the pump's own feed is meaningless)
       const P = isP(A) ? A : Bb, O = P === A ? Bb : A; let spec = P === A ? [P, O, 'ab'] : [O, P, 'ab'];
       if (P === A && !free(P, 'out') && free(P, 'in')) spec = [O, P, 'ba']; else if (P === Bb && !free(P, 'in') && free(P, 'out')) spec = [P, O, 'ba'];
-      return planDirs(store, net, ts, [spec], o);
+      const r = planDirs(store, net, ts, [spec], o); r.notes.push({ dir: spec[2] === 'ab' ? 'ba' : 'ab', reason: 'oneWay', why: 'directionalDevice', from: spec[1].id, to: spec[0].id }); return r;     // the decision is by device kind (a pump / manifold has a feed side and a delivery side) - everything else keeps BOTH lines
     }
     return planDirs(store, net, ts, [[A, Bb, 'ab'], [Bb, A, 'ba']], o);
   }
@@ -324,7 +325,7 @@
             break;
           }
           case 'junction': {
-            const cap = def.params.maxTotalFlow, room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); const outs = def.connections.map(z => z.id).filter(id => id !== port);
+            const cap = def.params.maxTotalFlow, room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); const outs = def.connections.filter(z => z.role !== 'in').map(z => z.id).filter(id => id !== port);
             acc = this.split(b, outs, Object.assign({}, f, { r: Math.min(f.r, room), p: f.p - 1 }), commit, vis); if (commit && acc > 0) { s._in = (s._in || 0) + acc; if (f.p > def.params.pressureLimit) s._hiP = true; }
             break;
           }
