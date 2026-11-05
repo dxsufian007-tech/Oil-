@@ -33,9 +33,9 @@ const contiguous = L => L.path.every((t, i) => i === 0 || Math.abs(t[0] - L.path
 { // 2/3. tank <-> pump, pump <-> tank
   for (const order of [0, 1]) {
     const g = game(), t = put(g, 'crude_tank_s', 50, 50), p = put(g, 'pump_station_s', 58, 52), [first, second] = order ? [p, t] : [t, p], v = I.planConnect(g.store, g.net, g.ts, first.id, second.id);
-    const tl = v.lines.find(l => l.from === t.id), pl = v.lines.find(l => l.from === p.id);
-    ok(v.ok && v.lines.length === 2 && tl && pl && roleOf(t, tl.a.port) === 'out' && tl.b.port === 'INPUT' && pl.a.port === 'OUTPUT' && roleOf(t, pl.b.port) === 'in', (order ? 'pump <-> tank' : 'tank <-> pump') + ': the tank output goes to the pump INPUT and the pump OUTPUT comes back to a tank input');
-    ok(v.lines.every(l => l.dia === I.autoDia(B.DEFS[l.from === p.id ? p.d : t.d])), 'the pipe diameter is chosen automatically from the sender (' + v.lines.map(l => l.dia).join('/') + ')');
+    const tl = v.lines.find(l => l.from === t.id), pl = v.lines.find(l => l.from === p.id);      // Stage 5-6: a pump pushes one way, so it gets ONE line (no meaningless return into its own feed)
+    ok(v.ok && v.lines.length === 1 && (order ? (pl && pl.a.port === 'OUTPUT' && roleOf(t, pl.b.port) === 'in') : (tl && roleOf(t, tl.a.port) === 'out' && tl.b.port === 'INPUT')), (order ? 'pump -> tank' : 'tank -> pump') + ': ONE line, from the sender to the receiver (pump is one-way)');
+    ok(v.lines.every(l => l.dia === Math.max(I.autoDia(B.DEFS[p.d]), I.autoDia(B.DEFS[t.d]))), 'the pipe diameter is chosen automatically from the larger end (' + v.lines.map(l => l.dia).join('/') + ')');
   }
 }
 { // 4. tank <-> refinery
@@ -44,12 +44,17 @@ const contiguous = L => L.path.every((t, i) => i === 0 || Math.abs(t[0] - L.path
   ok(v.notes.some(x => x.reason === 'oneWay' && x.from === rf.id), 'the return direction is reported as a natural one-way (a refinery product cannot enter a crude tank), not hidden');
   const r = I.layConnect(g.store, g.net, g.ts, t.id, rf.id); ok(r.ok && g.net.lines.size === 1, 'it is built as one line');
 }
-{ // 5. an incomplete connection is never adopted silently
+{ // 5. an incomplete connection is never adopted silently (all INPUT ports of A are already used, so B -> A cannot be built)
+  const g = game(), a = put(g, 'crude_tank_s', 50, 50), t = put(g, 'crude_tank_s', 62, 52), ins = I.portsOf(a).filter(q => I.canTake(q)); let k = 0;
+  for (const q of ins) g.net.lay({ a: { b: 900 + k, port: 'OUTPUT' }, b: { b: a.id, port: q.id }, path: [[40 + k, 40], [41 + k, 40], [42 + k, 40]], product: 'CRUDE', dia: 16 }), k++;
+  const v = I.planConnect(g.store, g.net, g.ts, a.id, t.id);
+  ok(!v.ok && v.state === 'INCOMPLETE' && v.partial && v.problems.length === 1 && v.problems[0].reason === 'portTaken' && v.lines.length === 1 && v.cost > 0, 'tank <-> tank when every INPUT of A is used: INCOMPLETE, the problem is named (portTaken) and the cost of what is possible is shown: ' + v.cost);
+  const n0 = g.net.lines.size, r = I.layConnect(g.store, g.net, g.ts, a.id, t.id); ok(!r.ok && g.net.lines.size === n0, 'layConnect refuses it and builds nothing');
+  const r2 = I.layConnect(g.store, g.net, g.ts, a.id, t.id, { allowOneWay: true }); ok(r2.ok && g.net.lines.size === n0 + 1, 'only when the player explicitly chooses "build what is possible" is the one line built');
+}
+{ // 5b. pump whose input is used: the connection to the next building uses its free OUTPUT (one line, complete)
   const g = game(), w = put(g, 'oil_well', 40, 50), p = put(g, 'pump_station_s', 46, 50), t = put(g, 'crude_tank_s', 56, 52); I.layConnect(g.store, g.net, g.ts, w.id, p.id);
-  const v = I.planConnect(g.store, g.net, g.ts, p.id, t.id);
-  ok(!v.ok && v.state === 'INCOMPLETE' && v.partial && v.problems.length === 1 && v.problems[0].reason === 'portTaken' && v.lines.length === 1 && v.cost > 0, 'pump <-> tank when the pump input is already used: INCOMPLETE, the problem is named (portTaken) and the cost of what is possible is shown: ' + v.cost);
-  const n0 = g.net.lines.size, r = I.layConnect(g.store, g.net, g.ts, p.id, t.id); ok(!r.ok && g.net.lines.size === n0, 'layConnect refuses it and builds nothing');
-  const r2 = I.layConnect(g.store, g.net, g.ts, p.id, t.id, { allowOneWay: true }); ok(r2.ok && g.net.lines.size === n0 + 1, 'only when the player explicitly chooses "build what is possible" is the one line built');
+  const v = I.planConnect(g.store, g.net, g.ts, p.id, t.id); ok(v.ok && v.lines.length === 1 && v.lines[0].from === p.id, 'pump with a used input -> tank: one complete line from the pump OUTPUT');
 }
 { // 6. cash
   const g = game(), a = put(g, 'crude_tank_s', 50, 50), b = put(g, 'crude_tank_s', 70, 54); g.store.cash = 10; const v = I.planConnect(g.store, g.net, g.ts, a.id, b.id), r = I.layConnect(g.store, g.net, g.ts, a.id, b.id);

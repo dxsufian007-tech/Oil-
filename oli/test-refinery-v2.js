@@ -4,7 +4,7 @@
 const { B, I, E, EC, game, put, pipe } = require('./test-economy-helpers.js'), BC = require('./building-config.js');
 let pass = 0, fail = 0; const CHK = (n, c, x) => { if (c) pass++; else { fail++; console.log('FAIL', n, x === undefined ? '' : JSON.stringify(x)); } };
 const near = (a, b, t) => Math.abs(a - b) <= (t == null ? 1e-6 : t) * Math.max(1, Math.abs(a), Math.abs(b));
-const PRODS = ['GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'], TARGET = 30000, R0 = x => Math.round(x);
+const PRODS = ['GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'], TARGET = 3 * B.DEFS.pump_station_l.params.maxFlow, R0 = x => Math.round(x);
 
 /* layout: three crude tanks, three pumps (10,000 each), a junction, one pipe into the refinery, product tanks */
 function plant(size, cfg) {
@@ -65,7 +65,7 @@ function CHECKS(tag, R) {
 /* 1. full design load: 30,000 bbl/day, full power */
 let S1;
 { const P = plant('x', fullCfg()); const R = run(P, 5); S1 = R; report('1. الحمل التصميمي الكامل (30,000 برميل/يوم)', R); CHECKS('1', R);
-  CHK('1 processes the full 30,000 bbl/day', near(R.tot.processed, TARGET * 5, 1e-6), R.tot.processed);
+  CHK('1 processes the full feed (3 pumps, 30,000 before the pump upgrade)', near(R.tot.processed, TARGET * 5, 1e-6), R.tot.processed);
   CHK('1 full power: power factor 1', R.power >= 0.999, R.power);
   CHK('1 yields exact (gasoline 45%, diesel 30%)', near(R.tot.products.GASOLINE, R.tot.processed * .45, 1e-6) && near(R.tot.products.DIESEL, R.tot.processed * .30, 1e-6), R.tot.products);
   CHK('1 no physical loss at rate 0; efficiency not booked as loss', R.tot.loss === 0 && R.eff > 0 && R.eff < 1, { loss: R.tot.loss, eff: R.eff }); }
@@ -75,7 +75,7 @@ const P2 = {};
 for (const frac of [0.75, 0.5]) { const P = plant('x', cfgPower(frac)); const R = run(P, 5); P2[frac] = R; report('2. الطاقة المتاحة ' + Math.round(frac * 100) + '% من المطلوب (المصفاة الكبيرة)', R); CHECKS('2.' + frac, R);
   CHK('2.' + frac + ' power factor follows the available power', Math.abs(R.power - frac) < 0.05, R.power);
   CHK('2.' + frac + ' efficiency falls with the power (not a loss)', R.eff < S1.eff - 1e-9, { eff: R.eff, full: S1.eff });
-  CHK('2.' + frac + ' processing capacity is not limiting here: throughput stays 30,000 and yields are unchanged', near(R.tot.processed, TARGET * 5, 1e-6) && near(R.tot.products.GASOLINE, R.tot.processed * .45, 1e-6), R.tot.processed); }
+  CHK('2.' + frac + ' processing capacity is not limiting here: throughput stays at the feed rate and yields are unchanged', near(R.tot.processed, TARGET * 5, 1e-6) && near(R.tot.products.GASOLINE, R.tot.processed * .45, 1e-6), R.tot.processed); }
 
 /* 2b. the same power cut where capacity binds (refinery_s, 5,000 bbl/day nameplate): efficiency limits what is taken in, the rest stays in the tanks */
 const SMALL = {};

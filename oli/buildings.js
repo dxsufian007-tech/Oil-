@@ -56,10 +56,10 @@
   define({ id: 'oil_well', name: 'Oil Well', category: 'EXTRACTION', section: 'EXTRACTION', family: 'WELL', type: 'well', footprint: [1, 1], cost: CFG.WELL.cost[0], costRange: CFG.WELL.cost, maintenanceCost: CFG.WELL.maint, operatingCost: CFG.WELL.op, buildTime: 20, visual: 'oil_well',
     allowedTerrain: SOLID.concat(['VALLEY']), maxSlope: 8, capacity: { value: CFG.WELL.production[1], unit: 'bbl/day' }, requires: { oilField: true }, rotatable: false,
     connections: anySide('pipe', 'out', 'OIL_OUT', 1, 1).map(c => Object.assign(c, { product: P.CRUDE })) });
-  for (const k of ['S', 'L']) {
+  for (const k of ['S', 'L', 'C']) {
     const c = CFG.PUMP[k]; define({ id: c.id, name: c.name, category: 'EXTRACTION', section: 'EXTRACTION', family: 'PUMP', type: 'pump', size: k, footprint: [c.w, c.h], cost: c.cost, maintenanceCost: c.maint, operatingCost: c.op, buildTime: k === 'S' ? 30 : 60, visual: 'pump_station',
       allowedTerrain: SOLID, maxSlope: 5, capacity: { value: c.maxFlow, unit: 'bbl/day' }, params: c,
-      connections: [pt('INPUT', 'pipe', 'in', [0, 0], 1, { product: '*' }), pt('OUTPUT', 'pipe', 'out', [c.w - 1, 0], 0, { product: '*' })] });
+      connections: c.inputs ? [].concat(Array.from({ length: c.inputs }, (_, i) => pt('INPUT_' + (i + 1), 'pipe', 'in', [0, i], 1, { group: 'INPUT', product: '*' })), Array.from({ length: c.outputs }, (_, i) => pt('OUTPUT_' + (i + 1), 'pipe', 'out', [c.w - 1, i], 0, { group: 'OUTPUT', required: false, product: '*' }))) : [pt('INPUT', 'pipe', 'in', [0, 0], 1, { product: '*' }), pt('OUTPUT', 'pipe', 'out', [c.w - 1, 0], 0, { product: '*' })] });
   }
   define({ id: 'valve', name: 'Valve', category: 'PIPELINE', section: 'PIPELINE', family: 'VALVE', type: 'valve', footprint: [1, 1], cost: CFG.VALVE.cost, maintenanceCost: CFG.VALVE.maint, operatingCost: CFG.VALVE.op, buildTime: 10, visual: 'valve_station',
     allowedTerrain: SOLID.concat(['VALLEY']), maxSlope: 6, capacity: { value: CFG.VALVE.maxFlow, unit: 'bbl/day' }, params: CFG.VALVE,
@@ -76,9 +76,9 @@
     pt('OUTPUT_W', 'pipe', 'out', [0, other(h)], 1, { group: 'OUTPUT', required: false, product: prod }), pt('OUTPUT_N', 'pipe', 'out', [other(w), 0], 3, { group: 'OUTPUT', required: false, product: prod })];
   const VIS = { CRUDE: 'crude_tank', GASOLINE: 'gasoline_tank', DIESEL: 'diesel_tank', JET_FUEL: 'jet_tank', GAS: 'gas_sphere' };
   for (const fam of Object.keys(CFG.TANK)) { const F = CFG.TANK[fam];
-    for (const k of ['S', 'M', 'L']) { const z = F.sizes[k], gas = fam === 'GAS';
-      define({ id: F.prefix + '_' + k.toLowerCase(), name: F.name + ' (' + { S: 'small', M: 'medium', L: 'large' }[k] + ')', category: gas ? 'PRODUCT_STORAGE' : fam === 'CRUDE' ? 'CRUDE_STORAGE' : 'PRODUCT_STORAGE', section: fam === 'CRUDE' ? 'CRUDE STORAGE' : 'PRODUCT STORAGE', family: gas ? 'GAS_STORAGE' : 'TANK', type: gas ? 'gas' : 'tank', product: P[fam], size: k,
-        footprint: [z.w, z.h], cost: z.base + z.cap * F.perBbl, baseCost: z.base, costPerBarrel: F.perBbl, maintenanceCost: z.maint, operatingCost: z.op, buildTime: 25 + z.w * 8, visual: VIS[fam], clearance: gas || k === 'L' ? 1 : 0,
+    for (const k of ['S', 'M', 'L', 'C']) { const z = F.sizes[k], gas = fam === 'GAS'; if (!z) continue;
+      define({ id: F.prefix + '_' + k.toLowerCase(), name: F.name + ' (' + { S: 'small', M: 'medium', L: 'large', C: 'central' }[k] + ')', category: gas ? 'PRODUCT_STORAGE' : fam === 'CRUDE' ? 'CRUDE_STORAGE' : 'PRODUCT_STORAGE', section: fam === 'CRUDE' ? 'CRUDE STORAGE' : 'PRODUCT STORAGE', family: gas ? 'GAS_STORAGE' : 'TANK', type: gas ? 'gas' : 'tank', product: P[fam], size: k,
+        footprint: [z.w, z.h], cost: z.base + z.cap * (z.perBbl || F.perBbl), baseCost: z.base, costPerBarrel: z.perBbl || F.perBbl, maintenanceCost: z.maint, operatingCost: z.op, buildTime: 25 + z.w * 8, visual: VIS[fam], clearance: gas || k === 'L' || k === 'C' ? 1 : 0,
         allowedTerrain: STABLE, maxSlope: gas ? 3 : 4, capacity: { value: z.cap, unit: gas ? 'boe' : 'bbl' }, params: Object.assign({ maxPressure: gas ? F.maxPressure[k] : 0 }, z), connections: tankPorts(z.w, z.h, P[fam]) }); } }
   define({ id: 'separator', name: 'Separator', category: 'PROCESSING', section: 'PROCESSING', family: 'SEPARATOR', type: 'separator', footprint: [CFG.SEPARATOR.w, CFG.SEPARATOR.h], cost: CFG.SEPARATOR.cost, maintenanceCost: CFG.SEPARATOR.maint, operatingCost: CFG.SEPARATOR.op, buildTime: 60, visual: 'separator',
     allowedTerrain: SOLID, maxSlope: 3, capacity: { value: CFG.SEPARATOR.cap, unit: 'bbl/day' }, params: CFG.SEPARATOR,

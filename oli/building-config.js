@@ -16,8 +16,10 @@
   const PIPE_DEFAULT = 16, TILE_METERS = 12;
 
   // sizes: S / M / L share one tank formula
+  /* Stage 5: crude size C = the central store, 4,000,000 bbl (8x8, 30 per barrel on top of its base price) */
   const TANK = { // family: { sizes: { code: {w,h,cap,base,perBbl,op,maint,name}} }
-    CRUDE: { prefix: 'crude_tank', name: 'Crude Tank', perBbl: 100, sizes: { S: { w: 2, h: 2, cap: 10000, base: 400000, op: 300, maint: 150 }, M: { w: 3, h: 3, cap: 50000, base: 1500000, op: 900, maint: 450 }, L: { w: 4, h: 4, cap: 250000, base: 4000000, op: 2500, maint: 1200 } } },
+    CRUDE: { prefix: 'crude_tank', name: 'Crude Tank', perBbl: 100, sizes: { S: { w: 2, h: 2, cap: 10000, base: 400000, op: 300, maint: 150 }, M: { w: 3, h: 3, cap: 50000, base: 1500000, op: 900, maint: 450 }, L: { w: 4, h: 4, cap: 250000, base: 4000000, op: 2500, maint: 1200 },
+      C: { w: 8, h: 8, cap: 4000000, base: 30000000, perBbl: 30, op: 25000, maint: 10000 } } },
     GASOLINE: { prefix: 'gasoline_tank', name: 'Gasoline Tank', perBbl: 120, sizes: { S: { w: 2, h: 2, cap: 10000, base: 500000, op: 360, maint: 180 }, M: { w: 3, h: 3, cap: 50000, base: 1800000, op: 1100, maint: 540 }, L: { w: 4, h: 4, cap: 250000, base: 4800000, op: 3000, maint: 1450 } } },
     DIESEL: { prefix: 'diesel_tank', name: 'Diesel Tank', perBbl: 120, sizes: { S: { w: 2, h: 2, cap: 10000, base: 500000, op: 360, maint: 180 }, M: { w: 3, h: 3, cap: 50000, base: 1800000, op: 1100, maint: 540 }, L: { w: 4, h: 4, cap: 250000, base: 4800000, op: 3000, maint: 1450 } } },
     JET_FUEL: { prefix: 'jet_tank', name: 'Jet Fuel Tank', perBbl: 130, sizes: { S: { w: 2, h: 2, cap: 10000, base: 600000, op: 400, maint: 200 }, M: { w: 3, h: 3, cap: 50000, base: 2000000, op: 1200, maint: 600 }, L: { w: 4, h: 4, cap: 250000, base: 5200000, op: 3300, maint: 1600 } } },
@@ -44,7 +46,8 @@
   const WELL = { cost: [250000, 1500000], production: [500, 2500], pressure: [500, 2500], reserve: [100000, 5000000], op: 800, maint: 400, waterCutStart: 0.04, waterCutEnd: 0.55, gorStart: 0.03 };
   const PUMP = {
     S: { id: 'pump_station_s', name: 'Pump Station (small)', w: 2, h: 2, cost: 1000000, op: 1200, maint: 600, maxFlow: 5000, boost: [100, 250], eff: [0.75, 0.85], minInletPsi: 15 },
-    L: { id: 'pump_station_l', name: 'Pump Station (large)', w: 3, h: 2, cost: 3500000, op: 3000, maint: 1500, maxFlow: 10000, boost: [300, 500], eff: [0.85, 0.92], minInletPsi: 15 }
+    L: { id: 'pump_station_l', name: 'Pump Station (large)', w: 3, h: 2, cost: 3500000, op: 3000, maint: 1500, maxFlow: 20000, boost: [300, 500], eff: [0.85, 0.92], minInletPsi: 15 },      // Stage 5: the regular pump is upgraded from 10,000 to 20,000 bbl/day
+    C: { id: 'pump_station_c', name: 'Central Pump Station', w: 4, h: 5, cost: 45000000, op: 9000, maint: 4500, maxFlow: 200000, boost: [300, 600], eff: [0.88, 0.94], minInletPsi: 15, inputs: 5, outputs: 5 }      // Stage 5: central pump, five inputs and five outputs, 200,000 bbl/day
   };
   const VALVE = { cost: 60000, op: 50, maint: 150, maxFlow: 40000, pressureRating: 3000, w: 1, h: 1 };
   const JUNCTION = { cost: 120000, op: 0, maint: 100, maxTotalFlow: 60000, pressureLimit: 3000, w: 1, h: 1 };

@@ -58,8 +58,8 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   ok((await co(() => __lab.pipes.lines.size)) === pair.n - 2 && /خطان مستقلان/.test(await co(() => document.getElementById('buildbar').innerText)), 'recreate: the old connection is removed and a new automatic one is previewed');
   await co(() => document.getElementById('bPipeOk').click()); await p.waitForTimeout(300); ok((await co(() => __lab.pipes.lines.size)) === pair.n, 'confirming brings the connection back');
   await co(() => __lab.pipeMode(false)); await tapTile(A2.x, A2.y); info = await co(() => document.getElementById('info').innerText); ok(/الأنابيب:.*متصلة/.test(info) && /يرسل إلى|يستقبل من/.test(info), 'a building card lists its connected pipes with their direction: ' + info.replace(/\n/g, ' | ').slice(-150));
-  // a duplicate is refused with a reason
-  await co(() => __lab.pipeMode(false)); await tapTile(A.x, A.y); await co(() => document.getElementById('bConnectAuto').click()); await p.waitForTimeout(250); await tapTile(Bq.x, Bq.y);
-  const t3 = await co(() => document.getElementById('buildbar').innerText); ok(/متصلتان بالفعل|الاتجاه موصول/.test(t3) || /الخط/.test(t3), 'connecting a connected pair is refused / explained: ' + t3.replace(/\n/g, ' | '));
+  // a duplicate is refused with a reason (the freshly connected pair)
+  await co(() => __lab.pipeMode(false)); await co(() => { __lab.state.sel = null; document.getElementById('info').innerHTML = ''; }); await tapTile(A2.x, A2.y); await co(() => document.getElementById('bConnectAuto').click()); await p.waitForTimeout(250); await tapTile(B2.x, B2.y);
+  const t3 = await co(() => document.getElementById('buildbar').innerText); ok(/متصلتان بالفعل/.test(t3) && !(await co(() => !!document.getElementById('bPipeOk'))), 'connecting a connected pair is refused with the reason and no build button: ' + t3.replace(/\n/g, ' | '));
   ok(!errs.length, 'no page errors: ' + errs.join('|')); console.log('AUTO CONNECT UI TESTS PASSED (' + n + ' checks)'); await b.close(); srv.close();
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });

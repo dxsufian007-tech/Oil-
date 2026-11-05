@@ -144,7 +144,7 @@
   function planDirection(store, net, ts, src, dst, o) {
     const pairs = []; for (const pa of portsOf(src)) if (canSend(pa)) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product)) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
     if (!pairs.length) return { natural: true };
-    pairs.sort((x, y) => x.d - y.d); const dia = o.dia || autoDia(DEFS[src.d]); let best = null, worst = null, tried = 0;
+    pairs.sort((x, y) => x.d - y.d); const dia = o.dia || Math.max(autoDia(DEFS[src.d]), autoDia(DEFS[dst.d])); let best = null, worst = null, tried = 0;
     for (const q of pairs) { if (tried >= (o.tries || 10)) break; if (portTaken(net, { b: src.id, port: q.pa.id }) || portTaken(net, { b: dst.id, port: q.pb.id })) { worst = worst || { reason: 'portTaken' }; continue; } tried++;
       const v = planPipe(store, net, ts, { b: src.id, port: q.pa.id }, { b: dst.id, port: q.pb.id }, dia, { ignoreCash: true, margin: o.margin || 22 });
       if (v.ok) { if (!best || v.path.length < best.path.length) best = v; } else if (!worst || (REASON_RANK[v.reason] || 0) > (REASON_RANK[worst.reason] || 0)) worst = { reason: v.reason, wants: v.wants, has: v.has, products: v.products }; }
@@ -178,6 +178,12 @@
   }
   function planConnect(store, net, ts, idA, idB, o) {
     const A = store.get(idA), Bb = store.get(idB); if (!A || !Bb) return { ok: false, state: 'INVALID', reason: 'noPort', lines: [], problems: [], notes: [], cost: 0 }; if (A.id === Bb.id) return { ok: false, state: 'INVALID', reason: 'sameBuilding', lines: [], problems: [], notes: [], cost: 0 };
+    const isP = b => /^pump/.test(DEFS[b.d].type), free = (b, role) => portsOf(b).some(q => (role === 'out' ? canSend(q) : canTake(q)) && !portTaken(net, { b: b.id, port: q.id }));
+    if (isP(A) !== isP(Bb)) {                                                                  // a pump only pushes one way: ONE line, towards its free side (a return line into the pump's own feed is meaningless)
+      const P = isP(A) ? A : Bb, O = P === A ? Bb : A; let spec = P === A ? [P, O, 'ab'] : [O, P, 'ab'];
+      if (P === A && !free(P, 'out') && free(P, 'in')) spec = [O, P, 'ba']; else if (P === Bb && !free(P, 'in') && free(P, 'out')) spec = [P, O, 'ba'];
+      return planDirs(store, net, ts, [spec], o);
+    }
     return planDirs(store, net, ts, [[A, Bb, 'ab'], [Bb, A, 'ba']], o);
   }
   function commitPlan(store, net, v, o) {                                                    // lay a plan that planDirs() returned (paths are already routed around each other, in the same order)
@@ -307,7 +313,7 @@
           case 'pump': {
             const c0 = def.params, cap = c0.maxFlow * levelOf(b).capacityMultiplier; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;
             if (f.p < c0.minInletPsi) { if (commit) { s._lowIn = true; } break; }
-            const room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; const boost = s.boost * levelOf(b).pressureMultiplier * s.eff * levelOf(b).efficiencyMultiplier * eco(b); acc = this.offer(b, 'OUTPUT', Object.assign({}, f, { r: Math.min(f.r, room), p: f.p + boost }), commit, vis);
+            const room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; const boost = s.boost * levelOf(b).pressureMultiplier * s.eff * levelOf(b).efficiencyMultiplier * eco(b); const outs = def.connections.filter(z => z.role === 'out').map(z => z.id), ff = Object.assign({}, f, { r: Math.min(f.r, room), p: f.p + boost }); acc = outs.length > 1 ? this.split(b, outs, ff, commit, vis) : this.offer(b, outs[0] || 'OUTPUT', ff, commit, vis);
             if (commit && acc > 0) { s._in = (s._in || 0) + acc; s.pOut = f.p + boost; }
             break;
           }
@@ -484,5 +490,5 @@
   }
 
   const TANK_KIND_AR = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
-  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, planConnect, layConnect, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
+  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, planConnect, layConnect, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });
