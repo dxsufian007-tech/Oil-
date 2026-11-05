@@ -16,7 +16,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   await p.touchscreen.tap(206, 433); await p.waitForTimeout(400);
   ok(await p.locator('#eco-sheet.open').count() === 1 && (await co(() => document.querySelector('#es-tabs .on').dataset.tab)) === 'reserve', 'a tap on the zone\'s ground opens the Strategic Reserve screen');
   let t = await body(); await shot('reserve-screen'); ok(/منطقة الاحتياطي الاستراتيجي/.test(t) && /امتلاء الاحتياطي الاستراتيجي/.test(t) && /امتلاء المخزون التجاري/.test(t), 'the screen shows the reserve gauge and the commercial gauge as two separate cards');
-  ok(/المساحة المفتوحة/.test(t) && /20×14/.test(t) && /36×26/.test(t), 'it shows the open area (20×14) and the maximum area (36×26)');
+  ok(/المساحة المفتوحة/.test(t) && /20×14/.test(t) && new RegExp(zn.w + '×' + zn.h).test(t), 'it shows the open area (20×14) and the maximum area of the whole zone (' + zn.w + '×' + zn.h + ')');
   const tabs = await co(() => [...document.querySelectorAll('#es-tabs button')].map(x => x.textContent)); ok(tabs.includes('الاحتياطي'), 'the tab list has an Arabic "الاحتياطي" tab');
   console.log('TWO SEPARATE GAUGES');
   const ids = await co(([zx, zy]) => { const S = __lab.store, CO = __lab.company, lv = CO.reserve.lv; const z = __wp.world.reserveZoneOfWorld(), A = z.levels[lv];

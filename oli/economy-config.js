@@ -76,7 +76,7 @@
     // assets: there is NO useful life, no wear and no time-based depreciation - equipment never expires, stops or breaks. conditionWeight is kept only for old saves.
 
   ASSET: { conditionWeight: 0.5 },
-    RESERVE: { expand: [4e6, 9e6, 16e6, 26e6] },       // opening the next ring of the Strategic Reserve zone (dollars)
+    RESERVE: { expand: [4e6, 9e6, 16e6, 26e6, 38e6, 52e6, 68e6, 90e6] },       // opening the next ring of the Strategic Reserve zone (dollars)
     TAX: { rate: 0.2, lossCarryForward: true },                                       // Tax = max(0, Revenue - AllowedExpenses - carried losses) x rate, settled monthly
 
     // ---- finance

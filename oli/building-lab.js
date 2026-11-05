@@ -323,11 +323,26 @@
 
   /* ------------------------------------------------------------ cash, save / load, keys, test handle */
   function updateCash() { $('cash').textContent = fmt$(STORE.cash); EU.hud(); }
-  function save() { if (window.__noSave || !window.__lab || !window.__lab.restored) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } })); window.__saveError = null; } catch (e) { window.__saveError = String(e && e.message || e); } }
+  function save() { if (window.__noSave || !window.__lab || !window.__lab.restored) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); const out = JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } });
+      try { const prev = localStorage.getItem(SAVE_KEY), now = Date.now(); if (prev && prev.length > 200 && now - bakAt > 60000) { localStorage.setItem(SAVE_KEY + '-bak', prev); bakAt = now; } } catch (_) { }   /* a rolling copy of the previous good save (at most once a minute) */
+      localStorage.setItem(SAVE_KEY, out); window.__saveError = null; saveFailShown = false; } catch (e) { window.__saveError = String(e && e.message || e); if (!saveFailShown) { saveFailShown = true; try { toast('⚠ تعذّر حفظ اللعبة: ' + window.__saveError); } catch (_) { } } } }
+  let bakAt = 0, saveFailShown = false;
   function swapNet(n2) { pipes.clear(); pipes.lines = n2.lines; pipes.at = n2.at; pipes.nextId = n2.nextId; for (const k of n2) pipes.add(k); pipes.rev++; }
   function load(o) {
-    o = o || {};
-    let raw = null; try { raw = localStorage.getItem(SAVE_KEY); } catch (_) { } if (!raw) return { loaded: 0, from: 'none' };
+    o = o || {}; const keys = [SAVE_KEY, SAVE_KEY + '-bak']; let last = { loaded: 0, from: 'none' }, soft = null;
+    for (const k of keys) {
+      let r; try { r = loadFrom(k, o); } catch (e) { window.__loadError = String(e && e.message || e); r = { loaded: 0, from: 'error', error: window.__loadError }; }
+      if (r.from === 'save' && r.loaded === 0 && r.dropped && r.dropped.length) { if (!soft) soft = r; if (k === keys[keys.length - 1]) { reset0(); try { return loadFrom(SAVE_KEY, o); } catch (_) { return soft; } } reset0(); continue; }   /* a save whose buildings were all rejected is not a good save: the backup is tried first */
+      if (r.from === 'save') { if (k !== SAVE_KEY) { r.fromBackup = true; try { toast('تمت استعادة نسخة الحفظ الاحتياطية'); } catch (_) { } } return r; }
+      if (r.from !== 'none') last = r; else if (last.from === 'none') last = r;
+      if (r.from === 'error') { try { reset0(); } catch (_) { } }               // a half-loaded game is cleared before the backup is tried
+    }
+    if (soft) { reset0(); try { return loadFrom(SAVE_KEY, o); } catch (_) { return soft; } }              // only a rejected-buildings save exists: load it as it was
+    return last;
+  }
+  function reset0() { const ns = window.__noSave; window.__noSave = true; try { reset(); } finally { window.__noSave = ns; } }
+  function loadFrom(key, o) {
+    let raw = null; try { raw = localStorage.getItem(key); } catch (_) { } if (!raw) return { loaded: 0, from: 'none' };
     let d; try { d = JSON.parse(raw); } catch (_) { return { loaded: 0, from: 'corrupt' }; } if (!d || d.v !== 2) return { loaded: 0, from: 'oldFormat' };
     if (d.wd) { try { world.restoreProgress(d.wd.p); world.restoreReserve(d.wd.r); world.restoreZones(d.wd.z); } catch (_) { } }      /* the fields' discovery state, what is left in each field, the wells drilled and the evaluated zones */
     const r = B.BuildingStore.fromJSON(ts, d.store); STORE.items = r.store.items; STORE.occ = r.store.occ; STORE.bucket = r.store.bucket; STORE.nextId = r.store.nextId; STORE.time = r.store.time; STORE.rev = (STORE.rev | 0) + 1; STORE.cash = d.cash == null ? STORE.cash : d.cash;
