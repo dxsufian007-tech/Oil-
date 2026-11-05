@@ -13,7 +13,7 @@
 (function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(); else root.OliNews = factory(); })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
   const CATS = { OPEC: 'أوبك+ والإنتاج', WAR: 'الحروب والعقوبات', ECON: 'الاقتصاد العالمي', DEMAND: 'الطلب الصيني والعالمي', SUPPLY: 'الحقول والمنشآت', STOCK: 'المخزونات', WEATHER: 'الطقس والكوارث', SHIP: 'النقل والموانئ والأنابيب', FIN: 'الدولار والفائدة والأسواق', TECH: 'الطاقة والتكنولوجيا' };
-  const L = []; const e = (cat, text, p, days, o) => L.push(Object.assign({ cat, text, p, days, sup: 0, dem: 0, sent: 0, hoard: 0, rel: 0, m: null, rq: null, b: null, cost: null }, o || {}));
+  const L = []; const e = (cat, text, p, days, o) => L.push(Object.assign({ cat, text, p, days, sup: 0, dem: 0, sent: 0, hoard: 0, rel: 0, m: null, rq: null, b: null, cost: null }, o || {}));      // rq / b use the market-state names of oil-engine.js
   // ---- OPEC+ and production decisions (10)
   e('OPEC', 'أوبك+ تقرر خفض الإنتاج بمقدار مليوني برميل يوميًا', 0.25, 120, { sup: -2, sent: 0.03 });
   e('OPEC', 'أوبك+ تمدد خفض الإنتاج حتى نهاية العام', 0.3, 90, { sup: -1, sent: 0.02 });
@@ -37,14 +37,14 @@
   e('WAR', 'هجوم بطائرات مسيّرة على منشأة نفطية', 0.15, 25, { sup: -1, sent: 0.04 });
   e('WAR', 'مفاوضات سياسية تفتح باب عودة صادرات دولة منتجة', 0.12, 120, { sup: 1, sent: -0.025 });
   // ---- global economy (10)
-  e('ECON', 'بيانات تُظهر دخول اقتصادات كبرى في ركود', 0.15, 150, { dem: -2.5, sent: -0.03, b: 'CONTRACTION' });
-  e('ECON', 'نمو اقتصادي عالمي يفوق التوقعات', 0.25, 120, { dem: 1.5, sent: 0.02, b: 'EXPANSION' });
+  e('ECON', 'بيانات تُظهر دخول اقتصادات كبرى في ركود', 0.15, 150, { dem: -2.5, sent: -0.03, b: 'RECESSION' });
+  e('ECON', 'نمو اقتصادي عالمي يفوق التوقعات', 0.25, 120, { dem: 1.5, sent: 0.02, b: 'DEMAND_SURGE' });
   e('ECON', 'انكماش في النشاط الصناعي حسب مؤشرات المديرين', 0.35, 45, { dem: -0.8, sent: -0.015 });
   e('ECON', 'تعافٍ سريع في الاستهلاك بعد فترة الركود', 0.2, 150, { dem: 1.5, sent: 0.015, rq: 'RECOVERY' });
   e('ECON', 'أزمة مالية تضرب أسواق الائتمان وتجمّد الاستثمار', 0.04, 200, { dem: -4, sent: -0.07, hoard: 0.02 });
   e('ECON', 'تباطؤ التجارة العالمية بسبب الرسوم الجمركية', 0.25, 120, { dem: -1, sent: -0.02 });
   e('ECON', 'ارتفاع التضخم يضغط على إنفاق المستهلكين', 0.3, 90, { dem: -0.6, sent: -0.01 });
-  e('ECON', 'حزمة تحفيز حكومية ضخمة تنعش الطلب', 0.15, 120, { dem: 1.2, sent: 0.02, b: 'CONTRACTION' });
+  e('ECON', 'حزمة تحفيز حكومية ضخمة تنعش الطلب', 0.15, 120, { dem: 1.2, sent: 0.02, b: 'RECESSION' });
   e('ECON', 'ارتفاع البطالة وتراجع الاستهلاك', 0.25, 70, { dem: -0.8 });
   e('ECON', 'اتفاق تجاري كبير يدعم النمو', 0.2, 100, { dem: 0.8, sent: 0.015 });
   // ---- China and world demand (10)
@@ -70,15 +70,15 @@
   e('SUPPLY', 'انخفاض مفاجئ في إنتاج الحقول الناضجة', 0.25, 150, { sup: -0.6, sent: 0.01 });
   e('SUPPLY', 'إعلان احتياطيات جديدة يرفع التوقعات', 0.2, 100, { sup: 0.3, sent: -0.01 });
   // ---- inventories (10)
-  e('STOCK', 'المخزونات الأمريكية ترتفع أكثر من المتوقع', 0.6, 15, { sent: -0.02, hoard: 0.003, b: 'HIGH_STOCK' });
-  e('STOCK', 'المخزونات الأمريكية تهبط إلى أدنى مستوى منذ سنوات', 0.5, 15, { sent: 0.03, b: 'LOW_STOCK' });
+  e('STOCK', 'المخزونات الأمريكية ترتفع أكثر من المتوقع', 0.6, 15, { sup: 0.3, sent: -0.02, hoard: 0.003, b: 'HIGH_STOCK' });
+  e('STOCK', 'المخزونات الأمريكية تهبط إلى أدنى مستوى منذ سنوات', 0.5, 15, { sup: -0.3, sent: 0.03, b: 'LOW_STOCK' });
   e('STOCK', 'دول مستهلكة تعلن سحبًا من المخزون الاستراتيجي', 0.1, 60, { rel: 120, sent: -0.02, b: 'HIGH_PRICE' });
   e('STOCK', 'الولايات المتحدة تبدأ إعادة ملء الاحتياطي الاستراتيجي', 0.12, 90, { dem: 0.5, hoard: 0.006, b: 'LOW_PRICE' });
   e('STOCK', 'تجار يخزنون النفط في ناقلات عائمة بسبب فارق الأسعار', 0.15, 90, { hoard: 0.02, sent: 0.01, b: 'LOW_PRICE' });
   e('STOCK', 'منتجون يحتفظون بنفطهم في انتظار أسعار أفضل', 0.2, 70, { hoard: 0.015 });
   e('STOCK', 'شركات كبرى تطرح مخزونها في السوق', 0.2, 40, { hoard: -0.02, sent: -0.015, b: 'HIGH_PRICE' });
   e('STOCK', 'تقرير يشير إلى فائض مخزون عالمي مستمر', 0.3, 90, { sup: 0.3, sent: -0.03, b: 'HIGH_STOCK' });
-  e('STOCK', 'نقص حاد في المخزونات التجارية يقلل المعروض', 0.12, 60, { hoard: 0.01, sent: 0.04, b: 'LOW_STOCK' });
+  e('STOCK', 'نقص حاد في المخزونات التجارية يقلل المعروض', 0.12, 60, { sup: -0.6, hoard: 0.01, sent: 0.04, b: 'LOW_STOCK' });
   e('STOCK', 'الصين تفرغ جزءًا من مخزونها بعد ارتفاع الأسعار', 0.15, 45, { hoard: -0.015, sent: -0.01, b: 'HIGH_PRICE' });
   // ---- weather and disasters (10)
   e('WEATHER', 'إعصار في خليج المكسيك يوقف المنصات', 0.3, 14, { sup: -1.2, m: [8, 9, 10], cost: { freight: 1.1 } });
@@ -124,6 +124,29 @@
   e('TECH', 'تباطؤ استثمارات الاستكشاف يقلص الإمدادات المستقبلية', 0.2, 200, { sup: -0.5, sent: 0.015 });
   e('TECH', 'تحسن كفاءة المحركات يخفض استهلاك الوقود', 0.25, 220, { dem: -0.3 });
   e('TECH', 'مراكز البيانات والذكاء الاصطناعي ترفع الطلب على الطاقة', 0.2, 200, { dem: 0.4 });
-  L.forEach((x, i) => { x.id = 'N' + String(i + 1).padStart(3, '0'); x.rare = x.p <= 0.06; Object.freeze(x); });
-  return { CATS, EVENTS: Object.freeze(L), COUNT: L.length };
+  /* product-specific effects, matched by a piece of the headline:  pd = multiplier of the item's demand effect for that product (default: the category weight in oil-engine.js),
+     ps = extra risk premium on that product only, rc = share of the world's REFINING capacity lost (+) or gained (-) while it acts */
+  const TAGS = [
+    ['ارتفاع الطلب الموسمي على وقود الطيران', { pd: { JET_FUEL: 9, GASOLINE: 0.3 }, ps: { JET_FUEL: 0.03 } }], ['تقدم في الوقود الحيوي', { pd: { JET_FUEL: 4 } }], ['موجة برد شديدة', { pd: { GAS: 4, DIESEL: 1.5, GASOLINE: 0.2, JET_FUEL: 0.1, BYPRODUCT: 0.2 } }],
+    ['موجة حر شديدة', { pd: { GASOLINE: 1.5, JET_FUEL: 0.8, GAS: 0.1 } }], ['شتاء معتدل', { pd: { GAS: 4, DIESEL: 1.5 } }], ['ارتفاع الطلب على البتروكيماويات', { pd: { BYPRODUCT: 5, GAS: 2 } }],
+    ['تراجع مبيعات السيارات التقليدية', { pd: { GASOLINE: 5, DIESEL: 2 } }], ['طفرة في مبيعات السيارات الكهربائية', { pd: { GASOLINE: 5, DIESEL: 1.5 } }], ['تحسن كفاءة المحركات', { pd: { GASOLINE: 3, DIESEL: 2.5 } }],
+    ['الصين تقيّد حصص تصدير المنتجات المكررة', { ps: { GASOLINE: 0.03, DIESEL: 0.035, JET_FUEL: 0.025 } }], ['انفجار في مصفاة كبرى', { rc: 0.035, ps: { GASOLINE: 0.02, DIESEL: 0.02, JET_FUEL: 0.015 } }], ['مصافٍ جديدة تدخل الخدمة', { rc: -0.025, pd: { BYPRODUCT: 0.5 } }],
+    ['إعصار في خليج المكسيك', { rc: 0.03, ps: { GASOLINE: 0.015, DIESEL: 0.015 } }], ['زلزال يوقف موانئ', { rc: 0.03 }], ['إضراب في الموانئ الأوروبية', { rc: 0.01, ps: { DIESEL: 0.01 } }], ['عاصفة رملية', { rc: 0.01 }],
+    ['الصين تعيد فتح اقتصادها', { pd: { JET_FUEL: 4, GASOLINE: 1.5 } }], ['الصين تفرض إغلاقات صحية', { pd: { JET_FUEL: 4, GASOLINE: 1.5 } }], ['الهند تسجل نموًا', { pd: { DIESEL: 2, GASOLINE: 1.5 } }],
+    ['نمو اقتصادي عالمي', { pd: { DIESEL: 1.6, BYPRODUCT: 1.8 } }], ['ركود', { pd: { JET_FUEL: 2, DIESEL: 1.5, BYPRODUCT: 1.8 } }], ['انكماش في النشاط الصناعي', { pd: { DIESEL: 2, BYPRODUCT: 2 } }],
+    ['مراكز البيانات', { pd: { GAS: 1.2 } }], ['قيود بيئية جديدة', { ps: { DIESEL: 0.01 } }], ['سياسة تسعير الكربون', { pd: { GASOLINE: 2, DIESEL: 2 } }], ['اتفاق تجاري كبير', { pd: { DIESEL: 1.5, BYPRODUCT: 1.5 } }]
+  ];
+  const AR_PROD = { GASOLINE: 'البنزين', DIESEL: 'الديزل', JET_FUEL: 'وقود الطائرات', GAS: 'الغاز المسال', BYPRODUCT: 'المنتجات الثانوية' };
+  L.forEach((x, i) => {
+    x.id = 'N' + String(i + 1).padStart(3, '0'); x.rare = x.p <= 0.06; x.name = x.text; x.pd = null; x.ps = null; x.rc = 0;
+    for (const [k, v] of TAGS) if (x.text.includes(k)) { x.pd = v.pd || x.pd; x.ps = v.ps || x.ps; x.rc = v.rc || x.rc; }
+    // the news' net push on the price (positive = dearer): a rough sign and size for the screen; the engine computes the real effect from the whole market state
+    const bias = x.sent + 0.01 * (x.dem - x.sup) - 0.5 * x.hoard * -1 + 0.00004 * -x.rel; x.bias = Math.round(bias * 10000) / 10000; x.dir = bias > 0.004 ? 'UP' : bias < -0.004 ? 'DOWN' : 'NEUTRAL'; x.power = Math.abs(bias) > 0.03 ? 'STRONG' : Math.abs(bias) > 0.012 ? 'MEDIUM' : 'WEAK';
+    const parts = []; if (x.sup) parts.push((x.sup < 0 ? 'يقلّل' : 'يزيد') + ' الإمداد العالمي بنحو ' + Math.abs(x.sup) + ' مليون برميل يوميًا'); if (x.dem) parts.push((x.dem < 0 ? 'يخفض' : 'يرفع') + ' الطلب بنحو ' + Math.abs(x.dem) + ' مليون برميل يوميًا');
+    if (x.sent) parts.push((x.sent > 0 ? 'يرفع' : 'يخفض') + ' علاوة المخاطر في السعر'); if (x.hoard) parts.push(x.hoard > 0 ? 'يدفع إلى حبس المزيد من النفط' : 'يدفع إلى طرح النفط المحبوس'); if (x.rel) parts.push('سحب ' + x.rel + ' مليون برميل من الاحتياطي الاستراتيجي');
+    if (x.rc) parts.push(x.rc > 0 ? 'يعطّل جزءًا من طاقة التكرير فيقلّ المعروض من المنتجات' : 'يضيف طاقة تكرير جديدة'); if (x.pd) parts.push('أثره أكبر على ' + Object.keys(x.pd).filter(k => x.pd[k] >= 2).map(k => AR_PROD[k]).join(' و'));
+    if (x.cost) parts.push('يغيّر تكاليف ' + (x.cost.freight ? 'الشحن' : 'الطاقة')); x.desc = (parts.length ? parts.join('، ') : 'تأثيره محدود على السوق') + ' لمدة نحو ' + x.days + ' يومًا.';
+    Object.freeze(x);
+  });
+  return { CATS, EVENTS: Object.freeze(L), COUNT: L.length, AR_PROD };
 });

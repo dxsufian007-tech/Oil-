@@ -254,10 +254,10 @@
   }
   function rMarket() {
     const inv = CO.inventory(), cur = inv.find(v => v.product === mkt) || inv[0], hrs = range, vals = CO.market.series(mkt, hrs, hrs > 200 ? 120 : 0); let h = '';
-    h += '<div class="es-card"><h5>' + cur.label.toUpperCase() + ' · $' + cur.marketPrice.toFixed(2) + ' ' + arrow(cur.trend) + '</h5>' + spark(vals) + '<div class="es-row" style="margin-top:4px">' + [[24, '24h'], [168, '7 Days'], [720, '30 Days']].map(r => '<button data-act="range" data-v="' + r[0] + '" class="' + (range === r[0] ? 'on' : '') + '">' + r[1] + '</button>').join('') + '</div></div>';
-    const BUI = typeof window !== 'undefined' && window.OliBrentUI; if (BUI && mkt === 'CRUDE' && CO.market.historical()) h += BUI.html(CO);
-    const evs = CO.market.world ? null : CO.market.events; if (evs) h += '<div class="es-card"><h5>أحداث السوق</h5>' + (evs.length ? evs.map(e => { const d = EC.MARKET.events.find(x => x.id === e.id); return '<div class="es-sm">' + (d ? d.label : e.id) + ' · متبقٍ ' + Math.ceil(e.left / 24) + ' يوم</div>'; }).join('') : '<div class="es-sm">لا أحداث نشطة الآن.</div>') + '</div>';
-    for (const v of inv) {
+    const BUI = typeof window !== 'undefined' && window.OliMarketUI, eng = !!(BUI && CO.market.engine);
+    if (eng) h = BUI.html(CO); else h += '<div class="es-card"><h5>' + cur.label.toUpperCase() + ' · $' + cur.marketPrice.toFixed(2) + ' ' + arrow(cur.trend) + '</h5>' + spark(vals) + '<div class="es-row" style="margin-top:4px">' + [[24, '24h'], [168, '7 Days'], [720, '30 Days']].map(r => '<button data-act="range" data-v="' + r[0] + '" class="' + (range === r[0] ? 'on' : '') + '">' + r[1] + '</button>').join('') + '</div></div>';
+    const evs = eng ? null : CO.market.events; if (evs) h += '<div class="es-card"><h5>أحداث السوق</h5>' + (evs.length ? evs.map(e => { const d = EC.MARKET.events.find(x => x.id === e.id); return '<div class="es-sm">' + (d ? d.label : e.id) + ' · متبقٍ ' + Math.ceil(e.left / 24) + ' يوم</div>'; }).join('') : '<div class="es-sm">لا أحداث نشطة الآن.</div>') + '</div>';
+    if (!eng || BUI.state.more) for (const v of inv) {
       h += '<div class="es-card" data-act="pick" data-p="' + v.product + '" style="' + (v.product === mkt ? 'border-color:#4f8fc0' : '') + '"><div class="es-prod"><span class="dot" style="background:' + COL[v.product] + '"></span><span class="nm">' + v.label + '</span><b>$' + v.marketPrice.toFixed(2) + '</b></div>'
         + kv('سعر الشراء (مورد أ)', '$' + CO.buyQuote(v.product, 1, 'A').unitPrice.toFixed(2)) + kv('المنافسة', ({ LOW: 'منخفضة', MEDIUM: 'متوسطة', HIGH: 'مرتفعة' })[EC.MARKET.competition[v.product]] || '—')
         + kv('24h change', '<span class="' + cl(v.change24) + '">' + pc(v.change24) + '</span>') + kv('Trend', arrow(v.trend)) + kv('Your inventory', n0(v.volume) + ' ' + v.unit) + kv('Potential revenue', M(v.potential))
@@ -355,7 +355,8 @@
   function close() { $('eco-sheet').classList.remove('open'); }
   function act(e) {
     const el = e.target.closest('[data-act]'); if (!el || el.disabled) return; const a = el.dataset.act, v = el.dataset.v, p = el.dataset.p, id = +el.dataset.id; let msg = null, redo = true;
-    const BUI = typeof window !== 'undefined' && window.OliBrentUI; if (BUI && BUI.ACTS.includes(a)) { e.stopPropagation(); if (BUI.act(a, el, CO)) render(true); return; }      // the Brent candlestick chart
+    const BUI = typeof window !== 'undefined' && window.OliMarketUI; if (BUI && a === 'mkGo') { e.stopPropagation(); const g = el.dataset.v.split(':'); if (g[0] === 'sell') { sellP = g[1]; sellQ = null; tab = 'sell'; } else tab = 'storage'; subScreen = ''; render(true); return; }
+    if (BUI && BUI.ACTS.includes(a)) { e.stopPropagation(); if (BUI.act(a, el, CO)) render(true); return; }      // the oil market screen
     if (a === 'range') range = +v; else if (a === 'pick') { mkt = p; } else if (a === 'mode') { CO.setMode(p, v); msg = EC.LABEL[p] + ': ' + v; e.stopPropagation(); }
     else if (a === 'sellnow') { sellP = p; sellQ = null; tab = 'sell'; } else if (a === 'sellp') { sellP = p; sellQ = null; }
     else if (a === 'sellpct') { sellQ = Math.floor(CO.available(sellP) * +v / 100); }

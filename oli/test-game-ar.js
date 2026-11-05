@@ -83,7 +83,7 @@ const AR = require('./ar.js'), GC = require('./game-config.js'), B = require('./
   ok((await txt('#g-guide')).includes('بِع النفط') , 'the guide: sell the oil');
 
   console.log('STEP 5: SELL, THEN LEVEL 2 UNLOCKS');
-  await tap('#eh-menu'); await tap('#es-tabs [data-tab=market]'); const lt = await latin(); ok(lt.length === 0, 'no English word on the market screen ' + JSON.stringify(lt)); await tap('[data-act=sellnow][data-p=CRUDE]'); await tap('[data-act=sellpct][data-v="50"]'); await shot('g-10-sell'); const cs0 = await co(() => __lab.store.cash); await tap('[data-act=sell]');
+  await tap('#eh-menu'); await tap('#es-tabs [data-tab=market]'); const lt = await latin(); ok(lt.length === 0, 'no English word on the market screen ' + JSON.stringify(lt)); await tap('[data-act=mkGo][data-v="sell:CRUDE"]'); await tap('[data-act=sellpct][data-v="50"]'); await shot('g-10-sell'); const cs0 = await co(() => __lab.store.cash); await tap('[data-act=sell]');
   ok((await co(() => __lab.store.cash)) > cs0, 'selling the crude brings the first revenue'); await co(() => __lab.GU.check()); await p.waitForTimeout(300);
   ok(await co(() => document.getElementById('g-lvl').classList.contains('open')) && (await txt('#g-lvl')).includes('المستوى 2'), 'level 2 «التوسع» is announced: ' + (await txt('#g-lvl')).replace(/\n/g, ' ')); await shot('g-11-level2'); await tap('#g-lvl-ok'); await tap('#es-close');
   await tap('#g-nav [data-cat=oil]'); ok(!(await cards('pump_station_s')).lock && (await cards('pump_station_l')).lock, 'level 2 opens the small pump station; the large one stays locked');

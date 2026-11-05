@@ -1,7 +1,7 @@
 /* Phase 3 tests: economy, market, selling, company finance, inventory, contracts, loans, tax, offline simulation.   node oli/test-economy.js [--fast]  (--fast skips the regression runs of the earlier phases)
  * The numbering follows the 40-item list of the Phase 3 spec.  Items 38 (APK build) and 39 (Android runtime) run in CI / on the emulator (see .github/android/economy-android.js). */
 const { B, I, E, EC, game, put, pipe, chain, nextMonth } = require('./test-economy-helpers.js'), CFG = require('./building-config.js'), cp = require('child_process'), fs = require('fs'), path = require('path');
-EC.BRENT.enabled = false;   // this file tests Phase 3 economy balance (prices around the fixed base) and the synthetic market: it runs on the legacy market (BRENT off). The historical market has its own tests.
+EC.ENGINE.enabled = false;   // this file tests Phase 3 economy balance (prices around the fixed base) and the synthetic market: it runs on the legacy market (BRENT off). The historical market has its own tests.
 const FAST = process.argv.includes('--fast'); let pass = 0, fail = 0;
 const T = (n, c, x) => { if (c) pass++; else { fail++; console.log('FAIL', n, x === undefined ? '' : x); } };
 const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-6 : tol) * Math.max(1, Math.abs(a), Math.abs(b)), days = (g, d) => g.co.advanceHours(24 * d);
