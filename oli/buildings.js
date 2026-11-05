@@ -67,9 +67,13 @@
   define({ id: 'junction', name: 'Junction', category: 'PIPELINE', section: 'PIPELINE', family: 'JUNCTION', type: 'junction', footprint: [1, 1], cost: CFG.JUNCTION.cost, maintenanceCost: CFG.JUNCTION.maint, operatingCost: CFG.JUNCTION.op, buildTime: 8, visual: 'junction',
     allowedTerrain: SOLID.concat(['VALLEY']), maxSlope: 8, capacity: { value: CFG.JUNCTION.maxTotalFlow, unit: 'bbl/day' }, rotatable: false, params: CFG.JUNCTION,
     connections: [0, 1, 2, 3].map(s => pt('PORT_' + SIDE_NAME[s], 'pipe', 'both', [0, 0], s, { group: 'JUNCTION', required: false, product: '*' })) });
-  // tanks (crude + three products + gas): ports INPUT on west / north, OUTPUT on east / south
+  // tanks (crude + three products + gas): every side (north, south, east, west) has an INPUT and an OUTPUT.  The four original ports keep their ids and cells
+  // (INPUT_W, INPUT_N, OUTPUT_E, OUTPUT_S), so every saved pipeline still ends where it did; the four new ones (INPUT_E, INPUT_S, OUTPUT_W, OUTPUT_N) use the other cell of the same side.
+  const other = n => { const m = mid(n); return m > 0 ? m - 1 : Math.min(1, n - 1); };
   const tankPorts = (w, h, prod, gas) => [pt('INPUT_W', 'pipe', 'in', [0, mid(h)], 1, { group: 'INPUT', product: prod }), pt('INPUT_N', 'pipe', 'in', [mid(w), 0], 3, { group: 'INPUT', product: prod }),
-    pt('OUTPUT_E', 'pipe', 'out', [w - 1, mid(h)], 0, { group: 'OUTPUT', required: false, product: prod }), pt('OUTPUT_S', 'pipe', 'out', [mid(w), h - 1], 2, { group: 'OUTPUT', required: false, product: prod })];
+    pt('OUTPUT_E', 'pipe', 'out', [w - 1, mid(h)], 0, { group: 'OUTPUT', required: false, product: prod }), pt('OUTPUT_S', 'pipe', 'out', [mid(w), h - 1], 2, { group: 'OUTPUT', required: false, product: prod }),
+    pt('INPUT_E', 'pipe', 'in', [w - 1, other(h)], 0, { group: 'INPUT', product: prod }), pt('INPUT_S', 'pipe', 'in', [other(w), h - 1], 2, { group: 'INPUT', product: prod }),
+    pt('OUTPUT_W', 'pipe', 'out', [0, other(h)], 1, { group: 'OUTPUT', required: false, product: prod }), pt('OUTPUT_N', 'pipe', 'out', [other(w), 0], 3, { group: 'OUTPUT', required: false, product: prod })];
   const VIS = { CRUDE: 'crude_tank', GASOLINE: 'gasoline_tank', DIESEL: 'diesel_tank', JET_FUEL: 'jet_tank', GAS: 'gas_sphere' };
   for (const fam of Object.keys(CFG.TANK)) { const F = CFG.TANK[fam];
     for (const k of ['S', 'M', 'L']) { const z = F.sizes[k], gas = fam === 'GAS';
