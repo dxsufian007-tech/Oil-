@@ -235,6 +235,7 @@
     }
     demolish(id, confirm) {                                                         // confirm = { building: true, pipes: true } ; a missing flag refuses, nothing changes
       const plan = this.demolishPlan(id, confirm && confirm.pipeSet); if (!plan) return { ok: false, reason: 'nothing' };
+      { const t = this.items.get(id); if (t && t.rs && t.s && t.s.vol > 1) return { ok: false, reason: 'reserveNotEmpty', plan }; }      // a reserve tank holding oil is never demolished (its stock and its book value would vanish)
       if (!confirm || !confirm.building) return { ok: false, reason: 'needsConfirm', plan };
       if (plan.needsPipeConfirm && !confirm.pipes) return { ok: false, reason: 'needsPipeConfirm', plan };
       const b = this.items.get(id); this._index(b, false); this.items.delete(id);

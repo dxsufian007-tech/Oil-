@@ -23,12 +23,12 @@
   /* ------------------------------------------------------------ ledgers: period views of the journal (every field is a projection of journal entries) */
   const { Journal, ACC: ACCOUNTS } = LG;
   const PZERO = () => ({ CRUDE: 0, THRU: 0, GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 }), SZERO = () => ({ CRUDE: 0, GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 });
-  const EXPNAMES = ['operating', 'labor', 'maintenance', 'energy', 'storage', 'insurance', 'admin', 'infra', 'fees', 'penalty', 'interest', 'tax', 'depreciation', 'disposal', 'cogs', 'exploration', 'refFuel', 'refLoss'];
+  const EXPNAMES = ['operating', 'labor', 'maintenance', 'energy', 'storage', 'rstorage', 'rops', 'insurance', 'admin', 'infra', 'fees', 'penalty', 'interest', 'tax', 'depreciation', 'disposal', 'cogs', 'exploration', 'refFuel', 'refLoss'];
   const ledger = cash0 => { const L = { cash0: cash0 || 0, revenue: 0, spot: 0, contract: 0, other: 0, lifting: 0, chem: 0, ops: 0, operating: 0, capex: 0, principal: 0, loansIn: 0, equityIn: 0, assetSales: 0, produced: PZERO(), sold: SZERO(), soldRev: 0, pl: {}, cf: {} };
     for (const k of EXPNAMES) { L[k] = 0; L.pl[k] = 0; }                             // L[k] = expense booked (or the incurred cost of that kind); pl[k] = the same expense in the profit
     for (const f of ['OP', 'INV', 'FIN']) L.cf[f] = { in: 0, out: 0 };
     return L; };
-  const VARK = ['fees', 'cogs'], OPEXK = ['operating', 'labor', 'maintenance', 'energy', 'storage', 'insurance', 'admin', 'infra', 'penalty', 'depreciation', 'disposal', 'exploration', 'refFuel', 'refLoss'];
+  const VARK = ['fees', 'cogs'], OPEXK = ['operating', 'labor', 'maintenance', 'energy', 'storage', 'rstorage', 'rops', 'insurance', 'admin', 'infra', 'penalty', 'depreciation', 'disposal', 'exploration', 'refFuel', 'refLoss'];
   const sumPL = (L, ks) => ks.reduce((a, k) => a + (L.pl[k] || 0), 0);
   function calc(L, cashNow) {                                                       // the formulas of the spec, in one place (profit from the P&L accounts, cash from the cash-flow tags)
     const variable = sumPL(L, VARK), opex = sumPL(L, OPEXK), interest = L.pl.interest, tax = L.pl.tax, gross = L.revenue - variable, net = gross - opex - interest - tax;
@@ -122,7 +122,7 @@
   }
 
   /* ------------------------------------------------------------ the company (every money / stock movement is a journal entry) */
-  const EXPACC = { operating: 'EXP_OPERATING', labor: 'EXP_LABOR', maintenance: 'EXP_MAINT', energy: 'EXP_ENERGY', storage: 'EXP_STORAGE', insurance: 'EXP_INSURANCE', admin: 'EXP_ADMIN', infra: 'EXP_INFRA', fees: 'EXP_FEES', penalty: 'EXP_PENALTY', interest: 'EXP_INTEREST', tax: 'EXP_TAX', depreciation: 'EXP_DEP', disposal: 'EXP_DISPOSAL', cogs: 'COGS', exploration: 'EXP_EXPLORATION', refFuel: 'EXP_FUEL', refLoss: 'EXP_LOSS' };
+  const EXPACC = { operating: 'EXP_OPERATING', labor: 'EXP_LABOR', maintenance: 'EXP_MAINT', energy: 'EXP_ENERGY', storage: 'EXP_STORAGE', rstorage: 'EXP_RSTORAGE', rops: 'EXP_ROPS', insurance: 'EXP_INSURANCE', admin: 'EXP_ADMIN', infra: 'EXP_INFRA', fees: 'EXP_FEES', penalty: 'EXP_PENALTY', interest: 'EXP_INTEREST', tax: 'EXP_TAX', depreciation: 'EXP_DEP', disposal: 'EXP_DISPOSAL', cogs: 'COGS', exploration: 'EXP_EXPLORATION', refFuel: 'EXP_FUEL', refLoss: 'EXP_LOSS' };
   const EXPKEY = {}; for (const k of Object.keys(EXPACC)) EXPKEY[EXPACC[k]] = k;
   const REVKEY = { REV_SPOT: 'spot', REV_CONTRACT: 'contract', REV_OTHER: 'other' };
   const TKA = { RESERVE: 'احتياطي استراتيجي', COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
@@ -194,10 +194,10 @@
     cash() { return this.store.cash; }
     balanceSheet() {
       const bs = this.journal.balanceSheet(), b = this.journal.bal, inv = this.inventoryBook(), fixedNet = b.FIXED + b.ACC_DEP;
-      return { cash: b.CASH, receivables: b.AR, inventory: inv, inventoryByProduct: Object.assign(Object.fromEntries(SELL.map(p => [p, b[INVACC[p]]])), { CRUDE_BOUGHT: b.INV_CRUDE_BUY || 0 }), wip: b.INV_WIP, fixedCost: b.FIXED, accumulatedDepreciation: b.ACC_DEP, fixedNet,
+      return { cash: b.CASH, receivables: b.AR, inventory: inv, inventoryByProduct: Object.assign(Object.fromEntries(SELL.map(p => [p, b[INVACC[p]]])), { CRUDE_BOUGHT: b.INV_CRUDE_BUY || 0, RESERVE: b.INV_RESERVE || 0 }), wip: b.INV_WIP, fixedCost: b.FIXED, accumulatedDepreciation: b.ACC_DEP, fixedNet,
         totalAssets: bs.assets, payroll: -b.PAY_PAYROLL, tax: -b.PAY_TAX, loans: -b.LOANS, totalLiabilities: bs.liabilities, paidIn: bs.paidIn, result: bs.result, totalEquity: bs.equity, gap: bs.gap };
     }
-    inventoryBook() { let v = 0; for (const p of SELL) v += this.journal.bal[INVACC[p]]; return v + (this.journal.bal.INV_CRUDE_BUY || 0); }
+    inventoryBook() { let v = 0; for (const p of SELL) v += this.journal.bal[INVACC[p]]; return v + (this.journal.bal.INV_CRUDE_BUY || 0) + (this.journal.bal.INV_RESERVE || 0); }
     /* lifting cost of a well relative to the old flat cost: its field's cost per barrel (deeper = dearer) and the pressure the field has left; 1 for wells without field data */
     liftFactor(b) { const ts = this.store.ts; return b && b.field && ts && ts.liftFactor ? ts.liftFactor(b.field) : 1; }
     unitCost(p) { const q = this.qty[p]; return q > EPS2 ? Math.max(0, this.journal.bal[INVACC[p]]) / q : 0; }
@@ -258,11 +258,132 @@
       this._post({ type: 'RESERVE_EXPAND', flow: 'INV', desc: 'Strategic Reserve · open area level ' + (this.reserve.lv + 1) }, [['FIXED', cost], ['CASH', -cost]]);      // land / site works: a fixed asset like the buildings, in the same ledger
       this.reserve.lv++; this.reserve.log.push({ t: this.hours, kind: 'EXPAND', lv: this.reserve.lv, cost }); while (this.reserve.log.length > 200) this.reserve.log.shift(); return { ok: true, cost, level: this.reserve.lv, area: this.reserveArea() };
     }
+    /* ================= Strategic Reserve: stock, books, movements =================
+     * Every reserve tank keeps its own small ledger in its state: s.cO = book cost of its produced / own oil, s.cB = book cost of its bought oil, s.q = crude quality.
+     * The journal account INV_RESERVE is always the sum of the tanks (audit() checks it). Oil crosses between the commercial stores and the reserve ONLY through pipes (physical),
+     * and each crossing is booked ONCE as an internal transfer at the average cost: no sale, no purchase, no profit, no loss. Buying into the reserve and selling out of it are the only trades. */
+    _rt(b) { return this.sim.ensure(b); }
+    reserveStock(p, tankId) { let v = 0; for (const b of this.reserveTanksOf(p)) { if (tankId && b.id !== tankId) continue; const s = this._rt(b); v += p === 'CRUDE' ? Math.max(0, s.vol - (s.wat || 0)) : s.vol; } return v; }
+    reserveBook() { let v = 0; for (const b of this.reserveTanks()) { const s = this._rt(b); v += (s.cO || 0) + (s.cB || 0); } return v; }
+    reserveAvgCost(p) { const q = this.reserveStock(p); if (!(q > EPS2)) return 0; let c = 0; for (const b of this.reserveTanksOf(p)) { const s = this._rt(b); c += (s.cO || 0) + (s.cB || 0); } return c / q; }
+    _rlog(kind, o, merge) {
+      const L = this.reserve.log, last = L[L.length - 1];
+      if (merge && last && last.kind === kind && last.tank === o.tank && this.hours - last.t < 24 && last.product === o.product) { last.qty += o.qty || 0; last.value = (last.value || 0) + (o.value || 0); last.t = this.hours; last.unit = last.qty > 0 ? last.value / last.qty : 0; return last; }
+      const r = Object.assign({ id: (this.reserve.nid = (this.reserve.nid || 0) + 1), t: this.hours, kind }, o); L.push(r); while (L.length > 300) L.shift(); return r;
+    }
+    reserveLog(n) { return this.reserve.log.slice(-(n || 40)).reverse(); }
+    /* take books out of the commercial stock at its average cost, without cost-of-goods-sold: a transfer */
+    _bookOut(p, qty, bought) {
+      if (!(qty > 0)) return { cost: 0, use: 0 };
+      if (bought) { const bal = Math.max(0, this.journal.bal.INV_CRUDE_BUY || 0), use = Math.min(qty, this.bq), unit = this.unitCostBuy(); let cost = Math.min(bal, use * unit); this.bq = Math.max(0, this.bq - use); if (this.bq <= EPS2) { this.bq = 0; cost = bal; } return { cost, use }; }
+      const acc = INVACC[p], bal = Math.max(0, this.journal.bal[acc]), use = Math.min(qty, this.qty[p]), unit = this.unitCost(p); let cost = Math.min(bal, use * unit); this.qty[p] = Math.max(0, this.qty[p] - use); if (this.qty[p] <= EPS2) { this.qty[p] = 0; cost = bal; } return { cost, use };
+    }
+    _reserveSettle(phase, crudeOnly) {
+      for (const b of this.reserveTanks()) { const def = DEFS[b.d], s = this._rt(b), crude = def.product === 'CRUDE'; if (phase === 'OUT' && (s.rel || 0) > s.vol) s.rel = s.vol;      // an order never outlives the oil it was for
+        if (phase === 'IN' && crudeOnly !== crude) continue;
+        if (phase === 'OUT') this._reserveOut(b, s, def, crude); else this._reserveIn(b, s, def, crude); }
+      if (phase === 'IN' && crudeOnly) this._reserveReconcile();
+    }
+    _reserveIn(b, s, def, crude) {                       // oil that arrived through a pipe: commercial books -> reserve books (one internal transfer)
+      const p = def.product, arr = s.arr || 0, w = s.arrW || 0, bvIn = s.arrBv || 0; s.arr = 0; s.arrBv = 0; s.arrW = 0; if (arr < 1e-9) return;
+      const net = Math.max(0, arr - w); if (net < 1e-9) return; let bIn, oIn, cO = 0, cB = 0, short = 0;
+      if (crude) { bIn = Math.min(net, bvIn); oIn = net - bIn; const r1 = this._bookOut('CRUDE', oIn, false), r2 = this._bookOut('CRUDE', bIn, true); cO = r1.cost; cB = r2.cost; short = (oIn - r1.use) + (bIn - r2.use); }
+      else { const qb = this.qty[p]; bIn = qb > EPS2 ? Math.min(net, net * Math.min(1, (this.bprod[p] || 0) / qb)) : 0; oIn = net - bIn; const r = this._bookOut(p, net, false); short = net - r.use; cO = net > 0 ? r.cost * oIn / net : 0; cB = r.cost - cO; this.bprod[p] = Math.max(0, (this.bprod[p] || 0) - bIn); s.bv = (s.bv || 0) + bIn; }
+      if (short > 1e-6) this.reserve.short = (this.reserve.short || 0) + short;           // oil that reached the reserve with no book stock behind it (counted, never hidden): it enters at zero cost
+      const tot = cO + cB, lines = [['INV_RESERVE', tot]]; if (crude) { if (cO > 0) lines.push(['INV_CRUDE', -cO]); if (cB > 0) lines.push(['INV_CRUDE_BUY', -cB]); } else if (tot > 0) lines.push([INVACC[p], -tot]);
+      if (tot > 0) this._post({ type: 'RESERVE_IN', desc: 'Strategic Reserve · received by pipe · tank ' + b.id }, lines);
+      if (crude) { const old = Math.max(0, s.vol - (s.wat || 0) - net), q0 = s.q == null ? 1 : s.q; s.q = (q0 * old + this.crudeQ * net) / (old + net); }
+      s.cO = (s.cO || 0) + cO; s.cB = (s.cB || 0) + cB;
+      this._rlog('IN', { tank: b.id, product: p, qty: net, value: tot, unit: net > 0 ? tot / net : 0, note: 'نقل داخلي بالأنابيب إلى الاحتياطي (ليس شراءً)' }, true);
+    }
+    _reserveOut(b, s, def, crude) {                      // oil that left through the pipe the player opened: reserve books -> commercial books (one internal transfer)
+      const p = def.product, dep = s.dep || 0, depW = s.depW || 0, depBv = s.depBv || 0; s.dep = 0; s.depBv = 0; s.depW = 0; if (dep < 1e-9) return;
+      const net = crude ? Math.max(0, dep - depW) : dep; if (net < 1e-9) return; const bOut = Math.min(net, depBv), oOut = net - bOut;
+      const ownAfter = Math.max(0, s.vol - (s.wat || 0) - (s.bv || 0)), bAfter = s.bv || 0;
+      let cO = ownAfter + oOut > 1e-9 ? (s.cO || 0) * oOut / (ownAfter + oOut) : 0, cB = bAfter + bOut > 1e-9 ? (s.cB || 0) * bOut / (bAfter + bOut) : 0; if (ownAfter < 1e-6) cO = s.cO || 0; if (bAfter < 1e-6) cB = s.cB || 0;
+      s.cO = Math.max(0, (s.cO || 0) - cO); s.cB = Math.max(0, (s.cB || 0) - cB); const tot = cO + cB, lines = [['INV_RESERVE', -tot]];
+      if (crude) { if (cO > 0) lines.push(['INV_CRUDE', cO]); if (cB > 0) lines.push(['INV_CRUDE_BUY', cB]); this.qty.CRUDE += oOut; this.bq += bOut; } else { if (tot > 0) lines.push([INVACC[p], tot]); this.qty[p] += net; this.bprod[p] = (this.bprod[p] || 0) + bOut; }
+      if (tot > 0) this._post({ type: 'RESERVE_OUT', desc: 'Strategic Reserve · released by pipe · tank ' + b.id }, lines);
+      this._rlog('OUT', { tank: b.id, product: p, qty: net, value: tot, unit: net > 0 ? tot / net : 0, note: 'سحب بأمرك عبر الأنابيب إلى المخزون التجاري / المصفاة (تحويل داخلي)' }, true);
+    }
+    _reserveReconcile() {                                // the reserve account is exactly the sum of its tanks; anything else is a lost tank (cannot happen: a full tank cannot be demolished)
+      const bal = this.journal.bal.INV_RESERVE || 0, sum = this.reserveBook(), d = bal - sum; if (d > 0.01) this._post({ type: 'RESERVE_LOSS', flow: 'OP', desc: 'Strategic Reserve stock no longer in a tank (written off)' }, [['EXP_LOSS', d], ['INV_RESERVE', -d]]);
+    }
+    reserveBuyQuote(item, qty, supplierId) {
+      const qt = this.buyQuote(item, qty, supplierId); if (!qt.ok) return qt; if (!SELL.includes(item)) return { ok: false, reason: 'item' };
+      const room = this.reserveRoom(item), have = this.reserveStock(item), bookNow = (() => { let c = 0; for (const b of this.reserveTanksOf(item)) { const s = this._rt(b); c += (s.cO || 0) + (s.cB || 0); } return c; })();
+      qt.room = room; qt.avgBefore = have > EPS2 ? bookNow / have : 0; qt.avgAfter = have + qt.qty > EPS2 ? (bookNow + qt.total) / (have + qt.qty) : 0; qt.holding = have; return qt;
+    }
+    reserveRoom(p, tankId) { let v = 0; for (const b of this.reserveTanksOf(p)) { if (b.st !== 'OPERATIONAL' || (tankId && b.id !== tankId)) continue; v += Math.max(0, DEFS[b.d].capacity.value - this._rt(b).vol); } return v; }
+    /* buy oil / products straight into the reserve (supplier price + freight + fee are the cost of the barrels in the reserve) */
+    reserveBuy(item, qty, supplierId, terms, tankId) {
+      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync();
+      const qt = this.reserveBuyQuote(item, qty, supplierId); if (!qt.ok) return qt; if (!(qt.qty > 0)) return { ok: false, reason: 'nothingToBuy', quote: qt };
+      const credit = terms === 'CREDIT'; if (credit && !(qt.creditDays > 0)) return { ok: false, reason: 'noCredit', quote: qt }; if (!credit && this.store.cash < qt.total) return { ok: false, reason: 'cash', quote: qt };
+      const tanks = this.reserveTanksOf(item).filter(b => b.st === 'OPERATIONAL' && (!tankId || b.id === tankId)); if (!tanks.length) return { ok: false, reason: 'noReserveTank', quote: qt };
+      if (qt.qty > qt.room + 1e-6 && !tankId) return { ok: false, reason: 'noRoom', room: qt.room, quote: qt }; if (tankId && qt.qty > this.reserveRoom(item, tankId) + 1e-6) return { ok: false, reason: 'noRoom', room: this.reserveRoom(item, tankId), quote: qt };
+      const name = this.cfg.LABEL[item], pur = { id: this.nextPur++, item, supplier: qt.supplierName, qty: qt.qty, unitPrice: qt.landedUnit, total: qt.total, terms: credit ? 'CREDIT' : 'CASH', receivedAt: this.hours, dueAt: credit ? this.hours + qt.creditDays * 24 : this.hours, paidAt: credit ? null : this.hours, reserve: true };
+      this.purchases.push(pur); if (this.purchases.length > 200) this.purchases.shift();
+      if (credit) { this._post({ type: 'PURCHASE_CREDIT', desc: 'Purchase on credit into the Strategic Reserve · ' + name + ' · ' + qt.supplierName }, [['INV_RESERVE', qt.total], ['PAY_SUPPLIERS', -qt.total]]); this.payables.push({ id: this.nextPay++, amount: qt.total, due: pur.dueAt, item, supplier: qt.supplierName, pid: pur.id }); }
+      else this._post({ type: 'PURCHASE_CASH', flow: 'OP', desc: 'Purchase into the Strategic Reserve · ' + name + ' · ' + qt.supplierName }, [['INV_RESERVE', qt.total], ['CASH', -qt.total]]);
+      let left = qt.qty; const parts = []; for (const b of tanks.sort((x, y) => this._rt(x).vol - this._rt(y).vol)) { if (left <= 1e-9) break; const s = this._rt(b), room = DEFS[b.d].capacity.value - s.vol; if (room <= 0) continue; const put = Math.min(room, left), share = qt.total * put / qt.qty;
+        if (item === 'CRUDE') { const old = Math.max(0, s.vol - (s.wat || 0)), q0 = s.q == null ? 1 : s.q; s.q = (q0 * old + 1 * put) / (old + put); }
+        s.vol += put; s.bv = (s.bv || 0) + put; s.total = (s.total || 0) + put; s.cB = (s.cB || 0) + share; left -= put; parts.push({ tank: b.id, qty: put }); }
+      this.market.engineBuy(item, null, qt.qty);                                       // the oil leaves the market's commercial stock, exactly as for a commercial purchase
+      this._rlog('BUY', { tank: parts.length === 1 ? parts[0].id : 0, tanks: parts, product: item, qty: qt.qty, value: qt.total, unit: qt.landedUnit, supplier: qt.supplierName, terms: credit ? 'CREDIT' : 'CASH', note: 'شراء مباشر إلى الاحتياطي' });
+      this._event('info', 'Reserve purchase: ' + name + ' ' + Math.round(qt.qty).toLocaleString('en-US') + ' · ' + fmtMoney(qt.total));
+      return { ok: true, item, qty: qt.qty, cost: qt.total, unitCost: qt.landedUnit, terms: credit ? 'CREDIT' : 'CASH', supplier: qt.supplierName, tanks: parts, avgCost: this.reserveAvgCost(item) };
+    }
+    /* take `net` barrels out of ONE reserve tank (the mixture leaves in proportion: oil produced, oil bought, water) */
+    _drawReserve(b, net) {
+      const s = this._rt(b), def = DEFS[b.d], crude = def.product === 'CRUDE', wat = crude ? Math.min(s.vol, s.wat || 0) : 0, bv = Math.min(s.vol - wat, s.bv || 0), ownVol = Math.max(0, s.vol - wat - bv), avail = crude ? s.vol - wat : s.vol;
+      const take = Math.min(net, avail); if (!(take > 0) || s.vol <= 0) return { net: 0, own: 0, bought: 0, costO: 0, costB: 0, q: s.q == null ? 1 : s.q };
+      const wf = crude ? wat / s.vol : 0, bf = bv / s.vol, tot = take / (1 - wf), bOut = Math.min(bv, tot * bf), oOut = Math.min(ownVol, take - bOut), q = s.q == null ? 1 : s.q;
+      const afterVol = Math.max(0, s.vol - tot), cO = ownVol > 1e-9 ? (s.cO || 0) * oOut / ownVol : 0, cB = bv > 1e-9 ? (s.cB || 0) * bOut / bv : 0;
+      s.vol = afterVol; s.wat = Math.max(0, (s.wat || 0) - tot * wf); s.bv = Math.max(0, bv - bOut);
+      if (s.vol < 1e-6) { s.vol = 0; s.wat = 0; s.bv = 0; const rest = (s.cO || 0) + (s.cB || 0); const r = { net: take, own: oOut, bought: bOut, costO: (s.cO || 0), costB: (s.cB || 0), q }; s.cO = 0; s.cB = 0; return r; }
+      s.cO = Math.max(0, (s.cO || 0) - cO); s.cB = Math.max(0, (s.cB || 0) - cB); return { net: take, own: oOut, bought: bOut, costO: cO, costB: cB, q };
+    }
+    reserveSellQuote(p, qty, tankId) {
+      if (!SELL.includes(p)) return { ok: false, reason: 'product' }; const avail = this.reserveStock(p, tankId), q = clamp(+qty || 0, 0, avail), mp = this.market.price[p];
+      let qSum = 0, qW = 0; if (p === 'CRUDE') for (const b of this.reserveTanksOf(p)) { if (tankId && b.id !== tankId) continue; const s = this._rt(b), n = Math.max(0, s.vol - (s.wat || 0)); qSum += n; qW += n * (s.q == null ? 1 : s.q); }
+      const qm = p === 'CRUDE' && qSum > 0 ? qW / qSum : 1, unit = mp * qm, gross = q * unit, fee = gross * this.cfg.FEES.spot, avg = this.reserveAvgCost(p);
+      return { ok: true, product: p, available: avail, qty: q, marketPrice: mp, quality: qm, unitPrice: unit, gross, fee, net: gross - fee, avgCost: avg, estCost: q * avg, estProfit: gross - fee - q * avg };
+    }
+    /* sell a quantity YOU decide, by hand, out of the reserve (never automatic). Revenue, fee and cost of goods sold go through the same accounts as any spot sale. */
+    reserveSell(p, qty, tankId) {
+      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; if (!SELL.includes(p)) return { ok: false, reason: 'product' }; this.sync();
+      const qt = this.reserveSellQuote(p, qty, tankId); if (!(qty > 0) || qt.qty <= 1e-6) return { ok: false, reason: 'nothingToSell' }; if (qty > qt.available + 1e-6) return { ok: false, reason: 'notEnough', quote: qt };
+      let left = qt.qty, got = 0, own = 0, bought = 0, cO = 0, cB = 0, qw = 0; const parts = [];
+      for (const b of this.reserveTanksOf(p).filter(x => !tankId || x.id === tankId).sort((x, y) => this._rt(y).vol - this._rt(x).vol)) { if (left <= 1e-9) break; const r = this._drawReserve(b, left); if (r.net <= 0) continue; got += r.net; left -= r.net; own += r.own; bought += r.bought; cO += r.costO; cB += r.costB; qw += r.q * r.net; parts.push({ tank: b.id, qty: r.net }); }
+      const unit = p === 'CRUDE' && got > 0 ? this.market.price[p] * qw / got : this.market.price[p], gross = got * unit, fee = gross * this.cfg.FEES.spot, cost = cO + cB;
+      this._post({ type: 'SALE_SPOT', flow: 'OP', desc: 'Strategic Reserve sale · ' + p, src: 'RESERVE' }, [['CASH', gross], ['REV_SPOT', -gross]]); this._expense('fees', fee, 'Spot sale fee (reserve)');
+      if (cost > 0) this._post({ type: 'COGS', desc: 'Cost of reserve oil sold · ' + p }, [['COGS', cost], ['INV_RESERVE', -cost]]);
+      this.market.sold(p, got); this._L(L => { L.sold[p] += got; L.soldRev += gross; }); this.market.engineSell(p, p === 'CRUDE' ? { own, bought } : null, got);
+      this._rlog('SELL', { tank: parts.length === 1 ? parts[0].tank : 0, tanks: parts, product: p, qty: got, value: gross, revenue: gross, fee, cost, profit: gross - fee - cost, unit, note: 'بيع يدوي من الاحتياطي' });
+      return { ok: true, product: p, qty: got, gross, fee, net: gross - fee, price: unit, cost, profit: gross - fee - cost, own, bought };
+    }
+    /* open the outlet of ONE reserve tank for exactly `qty` barrels: it flows through the pipe that is really connected, no faster than the pipe and the destination allow, then closes again by itself */
+    reserveRelease(tankId, qty) {
+      const b = this.store.get(tankId); if (!b || !b.rs) return { ok: false, reason: 'tank' }; if (b.st !== 'OPERATIONAL') return { ok: false, reason: 'notReady' }; const def = DEFS[b.d], s = this._rt(b);
+      if (!def.connections.some(c => c.role === 'out' && this.sim.edgeOf(b, c.id))) return { ok: false, reason: 'noPipe' };
+      const crude = def.product === 'CRUDE', wat = crude ? Math.min(s.vol, s.wat || 0) : 0, avail = s.vol - wat; if (!(+qty > 0) || avail <= 1e-9) return { ok: false, reason: 'nothingToMove', have: avail };
+      if (+qty > avail + 1e-6) return { ok: false, reason: 'notEnough', have: avail }; const wf = s.vol > 0 ? wat / s.vol : 0, vol = Math.min(s.vol, +qty / (1 - wf));
+      s.rel = Math.min(s.vol, (s.rel || 0) + vol); this._rlog('ORDER', { tank: b.id, product: def.product, qty: +qty, value: 0, note: 'أمر سحب يدوي: فُتح مخرج الخزان لهذه الكمية فقط' }); return { ok: true, qty: +qty, remaining: s.rel };
+    }
+    reserveStop(tankId) { const b = this.store.get(tankId); if (!b || !b.rs) return { ok: false, reason: 'tank' }; const s = this._rt(b), left = s.rel || 0; s.rel = 0; this._rlog('STOP', { tank: b.id, product: DEFS[b.d].product, qty: left, value: 0, note: 'أُغلق مخرج الخزان' }); return { ok: true, closed: left }; }
+    reserveCostDay() {                                    // what the reserve costs per day, on its own lines (never inside the commercial lines)
+      let storage = 0, ops = 0; const C = this.cfg; for (const b of this.reserveTanks()) { const def = DEFS[b.d], s = this._rt(b); storage += s.vol * C.STORAGE_COST[def.product]; if (b.st === 'OPERATIONAL') { const load = this.loadOf(b); ops += this.opDay(b, load) + this.maintDay(b, load) + this.kwOf(b, load) * 24 * C.ENERGY.pricePerKWh; } }
+      return { storage, ops, total: storage + ops };
+    }
     reserveInfo() {
       const z = this.reserveZone(), f = this.fills(), A = this.reserveArea(); if (!z) return { exists: false, fills: f };
-      const tanks = this.reserveTanks().map(b => { const d = DEFS[b.d], s = this.sim.ensure(b); return { id: b.id, name: d.name, product: d.product, capacity: d.capacity.value, volume: s.vol, fill: s.vol / d.capacity.value, status: this.sim.status(b), x: b.x, y: b.y }; });
-      const used = tanks.reduce((n, t) => n + 1, 0), area = A.w * A.h, full = z.levels[z.levels.length - 1];
-      return { exists: true, zone: { id: z.id, name: z.name, x: z.x, y: z.y, w: z.w, h: z.h }, level: this.reserve.lv, maxLevel: z.levels.length - 1, area: A, areaTiles: area, maxAreaTiles: full.w * full.h, expandCost: this.reserveExpandCost(), tanks, fills: f };
+      const tanks = this.reserveTanks().map(b => { const d = DEFS[b.d], s = this._rt(b), crude = d.product === 'CRUDE', wat = crude ? Math.min(s.vol, s.wat || 0) : 0, bought = Math.min(s.vol - wat, s.bv || 0), net = s.vol - wat, cost = (s.cO || 0) + (s.cB || 0);
+        return { id: b.id, name: d.name, product: d.product, capacity: d.capacity.value, volume: s.vol, net, water: wat, bought, own: Math.max(0, net - bought), fill: s.vol / d.capacity.value, status: this.sim.status(b), operational: b.st === 'OPERATIONAL', x: b.x, y: b.y,
+          cost, avgCost: net > EPS2 ? cost / net : 0, quality: s.q == null ? 1 : s.q, release: s.rel || 0, inRate: s._in || 0, outRate: s._out || 0, hasOutlet: d.connections.some(c => c.role === 'out' && this.sim.edgeOf(b, c.id)), room: Math.max(0, d.capacity.value - s.vol) }; });
+      const byProduct = SELL.map(p => ({ product: p, stock: this.reserveStock(p), capacity: this.reserveCapacity(p), avgCost: this.reserveAvgCost(p), tanks: this.reserveTanksOf(p).length })).filter(r => r.tanks > 0);
+      const full = z.levels[z.levels.length - 1];
+      return { exists: true, zone: { id: z.id, name: z.name, x: z.x, y: z.y, w: z.w, h: z.h }, level: this.reserve.lv, maxLevel: z.levels.length - 1, area: A, areaTiles: A.w * A.h, maxAreaTiles: full.w * full.h, expandCost: this.reserveExpandCost(), tanks, byProduct, book: this.reserveBook(), cost: this.reserveCostDay(), short: this.reserve.short || 0, fills: f };
     }
     /* ---- the Strategic Reserve: its own tanks (b.rs = 1, built inside the fixed zone), never counted with the commercial ones.
      * tanksOf() is the COMMERCIAL index only, so selling, auto-selling, buying, capacity and the commercial fill % can never see a reserve tank. */
@@ -593,19 +714,20 @@
       this._gateMaterials(items, dt);
       S.step(dt);
       const prod = PZERO(), refOut = { GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 }, crude = { operating: 0, maintenance: 0, energy: 0, lifting: 0 }, refin = { operating: 0, maintenance: 0, energy: 0, chem: 0, ops: 0 }, rf = { BYPRODUCT: 0, RESIDUE: 0, FUEL: 0, FLARED: 0 };
-      let kw = 0, storageCost = 0, tankOpex = 0, tankMaint = 0, powerCost = 0, sepGas = 0, thruBuy = 0;
+      let kw = 0, storageCost = 0, tankOpex = 0, tankMaint = 0, powerCost = 0, sepGas = 0, thruBuy = 0, rOps = 0, rStor = 0;
       for (const b of items) {
         if (b.st !== 'OPERATIONAL') continue; const def = DEFS[b.d], s = b.s, t = def.type, load = this.loadOf(b); const ar = this.assetRec(b); if (ar.useStart == null) ar.useStart = this.hours;   // the day it goes into service
         const k = this.kwOf(b, load), en = k * h * price, op = this.opDay(b, load) * dt, mt = this.maintDay(b, load) * dt; kw += k;
         if (CHAIN[t]) { crude.operating += op; crude.maintenance += mt; crude.energy += en; }                    // wells, pumps, separators: capitalised into crude
         else if (t === 'refinery') { refin.operating += op; refin.maintenance += mt; refin.energy += en; }        // refinery: capitalised into products
+        else if (b.rs) rOps += op + mt + en;                                                                        // Strategic Reserve tanks: their own operating cost line (never mixed with the commercial stores)
         else { tankOpex += op; tankMaint += mt; powerCost += en; }                                                 // tanks / gas storage: period expenses
         if (t === 'well') { const oil = (s._out || 0) * Math.max(0, 1 - (s._wc || 0) - (s._gas || 0)) * dt; prod.CRUDE += oil; crude.lifting += oil * C.VARIABLE.liftingPerBbl * this.liftFactor(b); }
         else if (t === 'refinery') { const thr = (s._in || 0) * dt, p = s._p || {}; prod.THRU += thr; thruBuy += (s._inBuy || 0) * dt; for (const q of PRODS) { const v = (p[q] || 0) * dt; prod[q] += v; refOut[q] += v; }
           for (const k of REF_OTHER) rf[k] += (p[k] || 0) * dt; const fl = (s.flared || 0) - (s._flSeen || 0); s._flSeen = s.flared || 0; rf.FLARED += Math.max(0, fl); }
         else if (t === 'separator' && S.edgeOf(b, 'GAS_OUT')) { const g = (s._g || 0) * dt; prod.GAS += g; sepGas += g; }
       }
-      for (const b of items) { const def = DEFS[b.d]; if ((def.type === 'tank' || def.type === 'gas') && b.s && b.s.vol > 0) storageCost += b.s.vol * C.STORAGE_COST[def.product] * dt; }
+      for (const b of items) { const def = DEFS[b.d]; if ((def.type === 'tank' || def.type === 'gas') && b.s && b.s.vol > 0) { if (b.rs) rStor += b.s.vol * C.STORAGE_COST[def.product] * dt; else storageCost += b.s.vol * C.STORAGE_COST[def.product] * dt; } }
       // energy balance: available = grid supply + bought power; consumed = demand. Bought power costs kWh x price x premium.
       const tier = C.POWER.tiers[this.tier], gridKW = tier.kw, bought = this.powerBuy && kw > gridKW ? Math.min(C.POWER_BUY.maxKW, kw - gridKW) : 0;
       if (bought > 0) this._expense('energy', bought * h * price * C.POWER_BUY.priceMult, 'Bought power · ' + Math.round(bought) + ' kW');
@@ -630,6 +752,8 @@
       this._clearMat('CHEM'); this._clearMat('OPS');
       this._expense('operating', tankOpex * (this.costCutOn() ? 1 - C.RESCUE.costCutShare : 1), 'Tanks · operation'); this._expense('maintenance', tankMaint, 'Tanks · maintenance'); this._expense('storage', storageCost, 'Oil kept in tanks (per barrel per day)');
       this._expense('energy', powerCost, 'Gas storage · power');
+      this._expense('rops', rOps * (this.costCutOn() ? 1 - C.RESCUE.costCutShare : 1), 'Strategic Reserve · operation and maintenance'); this._expense('rstorage', rStor, 'Strategic Reserve · oil kept (per barrel per day)');      // separate lines: the reserve costs are never charged twice, never inside the commercial lines
+      this._reserveSettle('OUT');                                                       // oil the player released from the reserve through a pipe is back in the commercial books BEFORE the refinery draws its feed
       this.qty.CRUDE += prod.CRUDE;
       // the refinery takes crude out of stock at its average cost
       const consumed = prod.THRU, cBuy = Math.min(thruBuy, consumed, this.bq), cOwn = consumed - cBuy, uc = this.unitCost('CRUDE'), ucB = this.unitCostBuy();
@@ -638,6 +762,7 @@
         const bAmt = Math.min(cBuy * ucB, Math.max(0, this.journal.bal.INV_CRUDE_BUY || 0)); if (cBuy > 0 && bAmt > 0) this._post({ type: 'REFINE_IN_BUY', desc: 'Bought crude to refinery' }, [['INV_WIP', bAmt], ['INV_CRUDE_BUY', -bAmt]]);
         if (cBuy > 0) { this.boughtUsed += cBuy; const last = this.tradeLog[this.tradeLog.length - 1]; if (last && last.kind === 'REFINE' && this.hours - last.t < 24) { last.qty += cBuy; last.cost += bAmt; last.own += cOwn; last.t = this.hours; } else this._trade('REFINE', { qty: cBuy, cost: bAmt, own: cOwn, note: 'نفط مشترى دخل المصفاة' }); } }
       this.qty.CRUDE = Math.max(0, this.qty.CRUDE - cOwn); this._clearPool('CRUDE'); this.bq = Math.max(0, this.bq - cBuy); this._clearBuy();
+      this._reserveSettle('IN', true);                                                  // crude that reached a reserve tank by pipe leaves the commercial books at its average cost (internal transfer), before the lost-oil check
       /* the books never hold crude that is not in a tank: oil that was booked at the wellhead but never reached a tank (separator slop, shrink) is written off at its average cost as a loss */
       { const physB = this.boughtInTanks(), phys = this.crudeOnHand() - physB, ex = this.qty.CRUDE - phys; if (ex > 1e-6) { const u = this.unitCost('CRUDE'), amt = Math.min(ex * u, Math.max(0, this.journal.bal.INV_CRUDE)); if (amt > 0) this._post({ type: 'CRUDE_LOSS', flow: 'OP', desc: 'Crude lost before the refinery (separator slop, tank shrink)' }, [['EXP_LOSS', amt], ['INV_CRUDE', -amt]]); this.qty.CRUDE = phys; this.crudeLoss = (this.crudeLoss || 0) + ex; this._clearPool('CRUDE'); }
         const exB = this.bq - physB; if (exB > 1e-6) { const amt = Math.min(exB * this.unitCostBuy(), Math.max(0, this.journal.bal.INV_CRUDE_BUY || 0)); if (amt > 0) this._post({ type: 'CRUDE_LOSS', flow: 'OP', desc: 'Bought crude lost in storage' }, [['EXP_LOSS', amt], ['INV_CRUDE_BUY', -amt]]); this.bq = physB; this._clearBuy(); } }
@@ -660,6 +785,7 @@
         if (lsCost > 0.005) this._post({ type: 'REFINE_LOSS', desc: 'Refinery losses (recorded)' }, [['EXP_LOSS', lsCost], ['INV_WIP', -lsCost]]);
       }
       if (sepGas > 0) { const amt = Math.min(sepGas * this.unitCost('CRUDE'), Math.max(0, this.journal.bal.INV_CRUDE)); if (amt > 0.005) this._post({ type: 'SEP_GAS', desc: 'Gas from separators' }, [['INV_GAS', amt], ['INV_CRUDE', -amt]]); this.qty.GAS += sepGas * BC.REFINERY.gasBblEqPerUnit; }
+      this._reserveSettle('IN', false);                                                 // products and gas that reached a reserve tank by pipe: same internal transfer
       this._L(L => { for (const k of Object.keys(prod)) L.produced[k] += prod[k]; for (const k of ['BYPRODUCT', 'RESIDUE', 'FUEL', 'FLARED']) L.produced[k] = (L.produced[k] || 0) + rf[k]; });
 
       const qNow = this._qNow(items), onHand = this.crudeOnHand(); if (onHand > 0 && prod.CRUDE > 0) { const sh = Math.min(1, prod.CRUDE / onHand); this.crudeQ = this.crudeQ * (1 - sh) + qNow * sh; } else if (onHand <= 0) this.crudeQ = qNow;
@@ -814,6 +940,8 @@
       for (const p of SELL) { if (this.qty[p] <= EPS2 && this.journal.bal[INVACC[p]] > 0.01) errs.push('stock cost without quantity: ' + p); }
       if (this.bq <= EPS2 && (this.journal.bal.INV_CRUDE_BUY || 0) > 0.01) errs.push('bought crude cost without quantity'); { const pb = this.boughtInTanks(); if (Math.abs(pb - this.bq) > Math.max(1e-3, 1e-9 * Math.abs(this.bq))) errs.push('bought crude: books ' + this.bq + ' differ from the tanks ' + pb); }
       for (const m of this.cfg.MATERIALS) { if ((this.mats[m] || 0) <= EPS2 && this.journal.bal[MATACC[m]] > 0.01) errs.push('material cost without quantity: ' + m); }
+      { const rb = this.journal.bal.INV_RESERVE || 0, rs = this.reserveBook(); if (Math.abs(rb - rs) > Math.max(0.01, 1e-9 * Math.abs(rb))) errs.push('reserve account ' + rb + ' differs from the reserve tanks ' + rs); if (this.reserveVolume() <= EPS2 && rb > 0.01) errs.push('reserve cost without oil');
+        for (const b of this.reserveTanks()) { const s = this._rt(b); if (s.vol < -1e-6 || (s.bv || 0) > s.vol + 1e-6 || (s.cO || 0) < -1e-6 || (s.cB || 0) < -1e-6) errs.push('reserve tank ' + b.id + ' state is invalid'); } }
       return { ok: !errs.length, errors: errs, entries: this.journal.n };
     }
     production(range) {
