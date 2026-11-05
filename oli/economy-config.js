@@ -73,9 +73,9 @@
       shortageFloor: 0.5,                                                                                             // staffing cannot cut output below half
       surplusShare: 0.25, surplusMin: 2,                                                                              // extra hires are capped (a facility has room for a limited crew)
       engineerDecay: 0.5, engineerSurplusCut: 0.3, decayBounds: [0.7, 1.5] },                                        // missing engineers raise the failure rate; extra engineers lower it (bounded)
-    // assets (Phase 14): straight line over the useful life, from the day the building goes into service, down to a residual value (not a fixed floor)
-    ASSET: { conditionWeight: 0.5, residualShare: 0.10,                                // a building keeps 10% of its cost as residual value
-      life: { well: 15, pump: 10, valve: 10, junction: 15, separator: 12, tank: 25, gas: 25, refinery: 20 } },                                            // useful life in years, per category
+    // assets: there is NO useful life and no time-based depreciation - equipment never expires or stops because of its age. It only wears with use (MAINTENANCE.decayPerDay x load),
+    // can break down, and is repaired or replaced by the player.  conditionWeight = how much a worn building's market value falls below its book value.
+    ASSET: { conditionWeight: 0.5 },
     TAX: { rate: 0.2, lossCarryForward: true },                                       // Tax = max(0, Revenue - AllowedExpenses - carried losses) x rate, settled monthly
 
     // ---- finance

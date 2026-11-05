@@ -156,8 +156,8 @@ section('5. time: speeds, pause, days / months / years, salaries, costs, mainten
   T('5d over 400 days (13 months, across the new year) the books closed exactly once on every 1st: no month skipped, none twice', closes.length === 13 && closes.every(t => t.startsWith('01/')) && new Set(closes).size === 13, closes);
   T('5e the date is right after 400 days: 5 February 2027', yc.clock().text === '05/02/2027 00:00' && yc.clock().year === 2027, yc.clock().text);
   const full = lab.slice(1, -1); T('5f the monthly salary expense is the same in every full month (28, 30 and 31 days): salaries are neither doubled nor skipped', full.length >= 10 && full.every(v => near(v, full[0], 1e-3)) && full[0] > 0, full.map(v => Math.round(v)));
-  T('5g wear and maintenance follow the clock: after 400 days the buildings have worn (condition < 1) and repairs / maintenance costs were booked', y.store.list().some(b => b.c < 1) && yc.led.life.pl.maintenance >= 0, y.store.list().map(b => +b.c.toFixed(3)).slice(0, 5));
-  T('5h depreciation was booked monthly (never twice in a month) and the audit passes after more than a year', yc.led.life.pl.depreciation > 0 && yc.audit().ok, yc.audit()); }
+  T('5g (changed: no wear) after 400 days every building is still at full condition and maintenance costs were still booked automatically', y.store.list().every(b => b.c === 1 && b.st !== 'DAMAGED') && yc.led.life.pl.maintenance >= 0, y.store.list().map(b => +b.c.toFixed(3)).slice(0, 5));
+  T('5h no depreciation is booked (no useful life) and the audit passes after more than a year', yc.led.life.pl.depreciation === 0 && yc.audit().ok, yc.audit()); }
 
 /* ============================================================ 6. the economy and the journal ============================================================ */
 section('6. economy and journal: every cost linked to its operation, books = inventory, no double charge, shortage of money and bankruptcy');

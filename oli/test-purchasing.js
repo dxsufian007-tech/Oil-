@@ -56,12 +56,12 @@ const tankGame = (cash, cfg) => { const g = game(cash == null ? 10e6 : cash, cfg
   T('P6b the refinery draws chemicals from stock', co.mats.CHEM < 5000 && co.journal.bal.INV_CHEM < inv1, [co.mats.CHEM, co.journal.bal.INV_CHEM]);
   T('P6c the audit passes with chemicals in use', co.audit().ok, co.audit()); }
 
-/* P7. spare parts used by a repair: the part leaves stock, the repair total is not raised */
-{ const g = game(500e6, quietCfg()), co = g.co; const w = put(g, 'oil_well', 20, 36); co.sync(); const s0 = co.sim.ensure(w);
-  co.buy('PARTS', 3, 'A', 'CASH'); co.buy('OPS', 10, 'A', 'CASH'); w.c = 0.5; const cost = co.repairCost(w), p0 = co.mats.PARTS, inv0 = co.journal.bal.INV_PARTS + co.journal.bal.INV_OPS, c0 = cashOf(g), e0 = co.journal.bal.EXP_MAINT;
-  const r = co.repair(w.id); T('P7 repair done', r.ok, r);
-  T('P7a one spare part leaves stock', co.mats.PARTS === p0 - 1, [co.mats.PARTS, p0]);
-  T('P7b the repair total is the repair cost (part inside it, not added)', near(co.journal.bal.EXP_MAINT - e0, cost, 1e-6) && near(c0 - cashOf(g), cost - (inv0 - (co.journal.bal.INV_PARTS + co.journal.bal.INV_OPS)), 1e-6), [co.journal.bal.EXP_MAINT - e0, cost]);
+/* P7. (changed) no manual repair: the call is free and takes no spare part; maintenance is an automatic cost */
+{ const g = game(500e6, quietCfg()), co = g.co; const w = put(g, 'oil_well', 20, 36); co.sync();
+  co.buy('PARTS', 3, 'A', 'CASH'); co.buy('OPS', 10, 'A', 'CASH'); w.c = 0.5; const p0 = co.mats.PARTS, c0 = cashOf(g), e0 = co.journal.bal.EXP_MAINT;
+  const r = co.repair(w.id); T('P7 repair call is free', r.ok && r.cost === 0, r);
+  T('P7a no spare part leaves stock', co.mats.PARTS === p0, [co.mats.PARTS, p0]);
+  T('P7b no maintenance expense and no cash for it', co.journal.bal.EXP_MAINT === e0 && cashOf(g) === c0);
   T('P7c the audit passes', co.audit().ok, co.audit()); }
 
 /* P8. gross margin = (sales revenue - COGS) / sales revenue x 100; not available without sales */

@@ -1,7 +1,7 @@
 /* Oli - economy.js  (Phase 3: Economy + Market + Selling + Company finance + Inventory + Contracts + Loans + Tax + Offline simulation)
  *
  * A READ-ONLY layer over Phase 2.  It never changes how pipes, pressure or flow behave: it reads the Sim / BuildingStore state, owns the money, and writes only
- * `b.s.ecoEff` (power / condition / crude quality efficiency, default 1 -> identical Phase 2 behaviour) and `b.c` (condition) and `b.st` (DAMAGED when worn out).
+ * `b.s.ecoEff` (power / condition / crude quality efficiency, default 1 -> identical Phase 2 behaviour) and `b.c` (condition, always 1 now: equipment does not wear out or break down; maintenance is an automatic daily cost).
  * Time is Game Time in hours.  One simulation tick = 1 game hour (offline: 3 h) and does not depend on FPS: same inputs -> same results.
  *   Revenue only comes from selling a product (spot sale or contract delivery).  Every expense has a cause (operating, maintenance, energy, storage, labor, insurance, admin, infrastructure, fees, interest, tax).
  * No DOM here (economy-ui.js is the screen).  Everything the player can tune is in economy-config.js.
@@ -203,18 +203,14 @@
 
     /* ---- assets: cost in FIXED, depreciation in ACC_DEP; a building is recorded when bought and removed when demolished ---- */
     assetRec(b) { let a = this.assets.get(b.id); if (!a) { const d = DEFS[b.d]; a = { cost: d.type === 'well' ? I.wellProfile(b.x, b.y).cost : d.cost, t: this.hours, dep: 0, useStart: b.st === 'OPERATIONAL' ? this.hours : null }; this.assets.set(b.id, a); } if (a.dep == null) a.dep = 0; if (a.useStart === undefined) a.useStart = null; return a; }
-    bookValue(b) { const a = this.assetRec(b); return a.cost - a.dep; }                     // cost - accumulated depreciation (never below the residual value, see _depreciate)
+    bookValue(b) { const a = this.assetRec(b); return a.cost - a.dep; }                     // cost - the accumulated depreciation older saves hold (nothing new accrues)
     assetValue(b) { const A = this.cfg.ASSET; return this.bookValue(b) * (1 - A.conditionWeight * (1 - b.c)); }     // market / condition value (the book value is in the balance sheet)
     _dispose(rec, refund) {
       const cost = rec ? rec.cost : 0, dep = rec ? rec.dep || 0 : 0, disp = cost - dep - refund, lines = [['CASH', refund], ['ACC_DEP', dep], ['FIXED', -cost]];
       if (disp > 0) lines.push(['EXP_DISPOSAL', disp]); else if (disp < 0) lines.push(['REV_OTHER', disp]);
       this._post({ type: 'DISPOSAL', flow: 'INV', desc: 'Building demolished', inc: { assetSales: refund } }, lines, { cashApplied: true });   // the store already holds the cash
     }
-    _depreciate() {
-      const A = this.cfg.ASSET; for (const b of this.store.list()) { const a = this.assetRec(b); if (a.useStart == null) continue;   // straight line: (cost - residual) / useful life, from the start of use
-        const base = a.cost * (1 - A.residualShare), life = A.life[DEFS[b.d].type] || 20, room = base - a.dep, d = Math.min(room, base / (life * this.cfg.TIME.monthsPerYear));
-        if (d > 0.005) { a.dep += d; this._post({ type: 'DEPRECIATION', desc: DEFS[b.d].name }, [['EXP_DEP', d], ['ACC_DEP', -d]]); } }
-    }
+    /* (no _depreciate: the useful life was removed - equipment keeps its book value; the accumulated depreciation that older saves already hold stays untouched) */
     pipeValue() { let v = 0; for (const L of this.net.lines.values()) v += L.path.length * (BC.PIPES[L.dia] || BC.PIPES[BC.PIPE_DEFAULT]).cost; return v; }
     assetsTotal() { let v = this.pipeValue(); for (const b of this.store.list()) v += this.assetValue(b); return v; }
     assetList() { return this.store.list().map(b => { const a = this.assetRec(b); return { id: b.id, name: DEFS[b.d].name, purchase: a.cost, value: this.assetValue(b), book: this.bookValue(b), depreciated: a.dep, maintenance: this.maintDay(b, this.loadOf(b)), ageDays: Math.floor((this.hours - a.t) / 24), condition: b.c, label: this.conditionLabel(b.c) }; }); }
@@ -550,13 +546,10 @@
     setHours(role, hours) { const H = this.cfg.HR, x = this.hr[role]; if (!x) return { ok: false, reason: 'role' }; x.hours = clamp(+hours || H.hoursStd, H.hoursMin, H.hoursMax); this.computeStaff(); return { ok: true, hours: x.hours }; }
 
     /* ---- maintenance / repair: a repair is a period expense when it is paid ---- */
-    repairCost(b) { return this.assetRec(b).cost * this.cfg.MAINTENANCE.repairFraction * (1 - b.c); }
-    repair(id) { const b = this.store.get(id); if (!b) return { ok: false, reason: 'nothing' }; if (b.st === 'UNDER_CONSTRUCTION') return { ok: false, reason: 'building' }; const cost = this.repairCost(b); if (cost <= 0) return { ok: true, cost: 0 }; this.sync(); if (this.store.cash < cost) return { ok: false, reason: 'cash', need: cost };
-      const MU = this.cfg.MATERIAL_USE; if ((this.mats.PARTS || 0) + EPS2 < MU.PARTS.qty) return { ok: false, reason: 'noPart' }; if ((this.mats.OPS || 0) + EPS2 < MU.REPAIR_OPS.qty) return { ok: false, reason: 'noOps' };
-      const pd = this._drawMaterial('PARTS', MU.PARTS.qty), od = this._drawMaterial('OPS', MU.REPAIR_OPS.qty), matCost = pd.cost + od.cost, rest = Math.max(0, cost - matCost);     // spare parts and operating materials taken from stock are part of the repair cost
-      if (matCost > 0) this._post({ type: 'REPAIR_PART', desc: 'Repair parts and materials · ' + DEFS[b.d].name }, [['EXP_MAINT', matCost], ['INV_PARTS', -pd.cost], ['INV_OPS', -od.cost]]);
-      this._clearMat('PARTS'); this._clearMat('OPS'); if (rest > 0) this._expense('maintenance', rest, 'Repair · ' + DEFS[b.d].name); b.c = 1; if (b.st === 'DAMAGED') b.st = 'OPERATIONAL'; return { ok: true, cost }; }
-    repairAll(threshold) { let n = 0, tot = 0; for (const b of this.store.list().slice().sort((x, y) => x.c - y.c)) { if (b.st === 'UNDER_CONSTRUCTION' || b.c >= (threshold == null ? 0.999 : threshold)) continue; const cost = this.repairCost(b); if (this.store.cash - cost < 0) break; const r = this.repair(b.id); if (r.ok) { n++; tot += r.cost; } } return { ok: true, n, cost: tot }; }
+    /* maintenance is AUTOMATIC: its cost is charged every day with the running costs (maintDay) and equipment never wears out or breaks down, so there is nothing to repair */
+    repairCost(b) { return 0; }
+    repair(id) { const b = this.store.get(id); if (!b) return { ok: false, reason: 'nothing' }; if (b.st === 'DAMAGED') b.st = 'OPERATIONAL'; if (b.c < 1) b.c = 1; return { ok: true, cost: 0, automatic: true }; }   // maintenance is an automatic cost: nothing to buy or fix; this only clears a leftover state
+    repairAll() { return { ok: true, n: 0, cost: 0 }; }
 
     /* ---- power ---- */
     setPowerBuy(on) { this.powerBuy = !!on; return { ok: true, on: this.powerBuy }; }
@@ -565,6 +558,7 @@
     /* ---- one simulation tick of h game hours ---- */
     _tick(h) {
       const S = this.sim, st = this.store, C = this.cfg, dt = h / 24, price = C.ENERGY.pricePerKWh * this.market.costMult().energy; this.sync(); this._collect(); st.tick(h); const items = st.list();
+      if (this._restoreWear) { this._restoreWear = false; for (const b of items) { if (b.st === 'DAMAGED') b.st = 'OPERATIONAL'; if (b.c < 1) b.c = 1; } }      // no wear and no breakdowns: buildings an older save left worn or damaged are restored once, on the first hour after loading (nothing is deleted)
       for (const b of items) { const s = S.ensure(b); s.ecoEff = this.effOf(b); }
       // refineries may only run on the chemicals and operating materials on hand; the limit is set BEFORE the simulator draws crude, so no crude leaves the tanks without being processed
       this._gateMaterials(items, dt);
@@ -574,7 +568,6 @@
       for (const b of items) {
         if (b.st !== 'OPERATIONAL') continue; const def = DEFS[b.d], s = b.s, t = def.type, load = this.loadOf(b); const ar = this.assetRec(b); if (ar.useStart == null) ar.useStart = this.hours;   // the day it goes into service
         const k = this.kwOf(b, load), en = k * h * price, op = this.opDay(b, load) * dt, mt = this.maintDay(b, load) * dt; kw += k;
-        b.c = clamp(b.c - C.MAINTENANCE.decayPerDay[t] * (C.MAINTENANCE.utilWear + load) * dt * this.engMult, 0, 1); if (b.c <= 0) { b.st = 'DAMAGED'; this._event('crit', def.name + ' #' + b.id + ' broke down'); }
         if (CHAIN[t]) { crude.operating += op; crude.maintenance += mt; crude.energy += en; }                    // wells, pumps, separators: capitalised into crude
         else if (t === 'refinery') { refin.operating += op; refin.maintenance += mt; refin.energy += en; }        // refinery: capitalised into products
         else { tankOpex += op; tankMaint += mt; powerCost += en; }                                                 // tanks / gas storage: period expenses
@@ -679,11 +672,10 @@
       return out;
     }
     _newDay() {
-      // Month-end charges (salaries, running costs, depreciation, loans, tax) belong to the day that ENDS the month: they are booked before that day is closed.
+      // Month-end charges (salaries, running costs, loans, tax) belong to the day that ENDS the month: they are booked before that day is closed.
       if (CAL.isMonthStart(this.dayIdx)) this._monthEnd();                                 // the real calendar decides: the 1st of a month closes the month before it
       const cash = this.store.cash; this.days.push(Object.assign({ d: this.dayIdx - 1 }, (() => { const c = calc(this.led.day, cash); return { revenue: c.revenue, expenses: c.expenses, profit: c.netProfit, cashIn: c.cash.in, cashOut: c.cash.out, storage: this.led.day.storage, opex: c.opex + c.variable }; })()));
       while (this.days.length > 60) this.days.shift(); this._finLog(cash); this.led.day = ledger(cash);
-      if (this.autoRepair) { const M = this.cfg.MAINTENANCE; for (const b of this.store.list()) if (b.st !== 'UNDER_CONSTRUCTION' && b.c < M.autoRepairBelow && this.store.cash - this.repairCost(b) >= M.cashReserve) this.repair(b.id); }
       this._refreshOffers();                                                          // expired offers leave, new ones take their place: there are always 3 to choose from
     }
     _monthEnd() {
@@ -696,8 +688,7 @@
       const cut = this.costCutOn() ? 1 - C.RESCUE.costCutShare : 1; this._expense('admin', (F.adminBase + assets * F.adminPerAsset) * cut, 'Administration' + (cut < 1 ? ' (cost cut)' : ''));
       this._expense('infra', pipes * F.infraPerYear / C.TIME.monthsPerYear, 'Pipeline upkeep');
       this._expense('energy', tier.monthly, 'Power network · ' + tier.name);
-      // 3. depreciation (straight line on cost, not below the floor)
-      this._depreciate();
+      // 3. (no depreciation: equipment has no useful life; it wears only with use and is repaired / replaced by the player)
       // 4. loans: interest is an expense, the principal is not
       for (const l of this.loans.slice()) {
         const intr = l.remaining * l.rate / 12, last = l.paid + 1 >= l.months, prin = last ? l.remaining : Math.min(l.remaining, l.payment - intr);
@@ -769,11 +760,9 @@
       if (this.loans.length && this.nextPaymentInDays() <= A.loanDueDays) add('loandue', 'warn', 'LOAN PAYMENT DUE', Math.ceil(this.nextPaymentInDays()) + ' days · ' + Math.round(this.loans.reduce((a, l) => a + l.payment, 0)));
       for (const c of this.activeContracts()) { const left = (c.deadline - this.hours) / 24; if (left <= A.contractDays) add('contract' + c.id, 'warn', 'CONTRACT DEADLINE', c.product + ' · ' + Math.ceil(left) + ' days · ' + Math.round(c.qty - c.delivered) + ' left'); }
       /* things that silently stop crude from reaching the refinery: a refinery with no chemicals / operating materials, a broken building, repairs that cannot be paid for in spare parts */
-      { const list = this.store.list(), refs = list.filter(b => DEFS[b.d].type === 'refinery' && b.st !== 'UNDER_CONSTRUCTION'), broken = list.filter(b => b.st === 'DAMAGED'), M = this.cfg.MAINTENANCE, MU = this.cfg.MATERIAL_USE;
+      { const list = this.store.list(), refs = list.filter(b => DEFS[b.d].type === 'refinery' && b.st !== 'UNDER_CONSTRUCTION'), MU = this.cfg.MATERIAL_USE;
         if (refs.length && (this.matLimit || 0) <= 0) add('nomat', 'warn', 'REFINERY LACKS MATERIALS', 'buy chemicals and operating materials');
-        if (broken.length) add('broken', 'crit', 'BUILDINGS BROKEN', broken.length + ' · oil flow may be stopped · repair them');
-        const worn = list.some(b => b.st !== 'UNDER_CONSTRUCTION' && b.c < M.autoRepairBelow);
-        if (worn && (this.mats.PARTS || 0) + EPS2 < MU.PARTS.qty) add('noparts', 'warn', 'REPAIRS BLOCKED', 'no spare parts in stock'); else if (worn && (this.mats.OPS || 0) + EPS2 < MU.REPAIR_OPS.qty) add('noparts', 'warn', 'REPAIRS BLOCKED', 'no operating materials in stock'); }
+      }
       for (const v of this.inventory()) {
         if (v.capacity > 0 && v.fill >= A.highInventoryFill) add('hiinv' + v.product, 'warn', 'HIGH INVENTORY', v.label + ' ' + Math.round(v.fill * 100) + '%');
         const needs = this.activeContracts().some(c => c.product === v.product); if (needs && v.fill < A.lowInventoryFill) add('loinv' + v.product, 'info', 'LOW INVENTORY', v.label + ' for a contract');
@@ -872,6 +861,7 @@
         recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
     }
     fromJSON(d) {
+      this._restoreWear = true;
       if (!d || (d.v !== 1 && d.v !== 2)) return false; const c = this.cfg;
       this.hours = d.hours || 0; this.dayIdx = d.dayIdx || 0; this.acc = 0; this.market = new Market(c, d.market); this.assets = new Map((d.assets || []).map(a => [a[0], { cost: a[1], t: a[2], dep: a[3] || 0, useStart: a.length > 4 ? a[4] : a[2] }])); /* saves before Phase 14: in use from the purchase */ this.loans = d.loans || []; this.nextLoan = d.nextLoan || 1; this.closed = d.closed || [];
       this.contracts = d.contracts || []; this.history = d.history || []; this.offers = d.offers || []; this.nextContract = d.nextContract || 1; this.crng = new Rng(d.crng || 1); this.modes = Object.assign(this.modes, d.modes || {}); this.tier = d.tier || 0; this.autoRepair = d.autoRepair !== false;

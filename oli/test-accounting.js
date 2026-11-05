@@ -38,14 +38,14 @@ const cashOf = g => g.store.cash;
   T('M3b debt +500,000', near(co.debt() - d0, 500000, 1e-9));
   T('M3c profit unchanged', near(co.summary().life.netProfit, before, 1e-9)); T('M3d loans are not revenue', co.led.life.revenue === 0); }
 
-/* 4. a machine bought for cash: cash -cost, fixed assets +cost, no operating expense at purchase, depreciation starts later */
+/* 4. a machine bought for cash: cash -cost, fixed assets +cost, no operating expense at purchase, and (no useful life) no depreciation ever */
 { const g = game(500e6, quietCfg()), co = g.co; const c0 = cashOf(g), fx0 = co.journal.bal.FIXED, pl0 = co.summary().life.expenses;
   const b = put(g, 'pump_station_s', 40, 40, 0, true); const cost = co.assets.get(b.id).cost;
   T('M4 cash decreases by the purchase price', near(c0 - cashOf(g), cost, 1e-9), [c0 - cashOf(g), cost]);
   T('M4a fixed assets increase by the purchase price', near(co.journal.bal.FIXED - fx0, cost, 1e-9));
   T('M4b no expense is recorded at purchase', near(co.summary().life.expenses, pl0, 1e-9));
   co.sync(); nextMonth(co);
-  T('M4c depreciation starts with the first month (accumulated depreciation > 0)', co.journal.bal.ACC_DEP < 0 && co.assets.get(b.id).dep > 0, co.assets.get(b.id)); }
+  T('M4c no depreciation starts: the equipment has no useful life (accumulated depreciation stays 0)', co.journal.bal.ACC_DEP === 0 && co.assets.get(b.id).dep === 0, co.assets.get(b.id)); }
 
 /* 5. 10,000 barrels produced and not sold: stock up at cost, no sales revenue, no sales profit */
 { const g = game(500e6, quietCfg()), co = g.co; const c = chain(g, false, false); for (const p of EC.PRODUCTS) co.setMode(p, 'WAIT');

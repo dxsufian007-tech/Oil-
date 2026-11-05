@@ -86,7 +86,7 @@
     h += '<div class="es-grid">'
       + '<div class="es-card"><h5>الرصيد النقدي</h5><div class="es-big ' + (cashCur < 0 ? 'neg' : '') + '">' + M(cashCur) + '</div><div class="es-sm">' + (cashPrev == null ? 'لا توجد مقارنة بعد' : sg(cashCur - cashPrev) + ' عن نهاية الشهر السابق') + '</div></div>'
       + '<div class="es-card"><h5>قيمة الشركة</h5><div class="es-big">' + M(s.value) + '</div><div class="es-sm">أصول بسعر السوق + نقد + مخزون − ديون</div></div>'
-      + '<div class="es-card"><h5>إجمالي الأصول</h5><div class="es-big">' + M(bs.totalAssets) + '</div><div class="es-sm">بالتكلفة ناقص الإهلاك + نقد + مخزون</div></div>'
+      + '<div class="es-card"><h5>إجمالي الأصول</h5><div class="es-big">' + M(bs.totalAssets) + '</div><div class="es-sm">بالتكلفة (لا عمر افتراضي ولا إهلاك جديد) + نقد + مخزون</div></div>'
       + '<div class="es-card"><h5>إجمالي الديون</h5><div class="es-big ' + (s.debt > 0 ? 'warn' : '') + '">' + M(s.debt) + '</div><div class="es-sm">' + CO.loans.length + ' قرض نشط</div></div>'
       + '<div class="es-card"><h5>قيمة المخزون</h5><div class="es-big">' + M(bs.inventory) + '</div><div class="es-sm">بالتكلفة · بسعر السوق ' + M(s.inventoryValue) + '</div></div>'
       + '<div class="es-card"><h5>صافي الربح أو الخسارة (آخر شهر مغلق)</h5><div class="es-big ' + cl(netLast || 0) + '">' + (netLast == null ? '—' : sg(netLast)) + '</div><div class="es-sm">' + (netLast == null ? 'يظهر بعد إغلاق أول شهر' : arrowAr(netLast, netPrev)) + '</div></div>'
@@ -156,8 +156,7 @@
     const st = s.staff; h += card('EMPLOYEES', '<div class="es-big">' + n0(st.total) + '</div><div class="es-sm">Monthly payroll ' + M(st.payroll) + ' (paid every 30 days)</div>' + kv('Operators', n0(st.operators)) + kv('Engineers', n0(st.engineers)) + kv('Maintenance', n0(st.maintenance)) + kv('Managers', n0(st.managers)));
     const p = s.power, nx = EC.POWER.tiers[CO.tier + 1]; h += card('POWER' + (p.limited ? ' · POWER LIMITED' : ''), '<div class="es-sm">' + n0(p.demand) + ' kW of ' + n0(p.cap) + ' kW (' + p.tierName + ')</div><div class="es-bar"><i style="width:' + Math.min(100, p.cap ? p.demand / p.cap * 100 : 0) + '%;background:' + (p.limited ? '#d9453a' : '#4f8fc0') + '"></i></div>' + (p.limited ? '<div class="warn">Efficiency is reduced until you add capacity.</div>' : '')
       + (nx ? '<div class="es-row"><button data-act="grid">Upgrade to ' + nx.name + ' (' + n0(nx.kw) + ' kW) · ' + M(nx.connect) + ' + ' + M(nx.monthly) + '/mo</button></div>' : ''));
-    const worn = CO.store.list().filter(b => b.c < 0.999 && b.st !== 'UNDER_CONSTRUCTION'), cost = worn.reduce((a, b) => a + CO.repairCost(b), 0);
-    h += card('MAINTENANCE', kv('Auto-maintenance', CO.autoRepair ? 'ON (repairs below ' + Math.round(EC.MAINTENANCE.autoRepairBelow * 100) + '%)' : 'OFF') + kv('Worn buildings', worn.length) + '<div class="es-row"><button data-act="auto">' + (CO.autoRepair ? 'Turn auto-maintenance off' : 'Turn auto-maintenance on') + '</button><button data-act="repairall"' + (worn.length ? '' : ' disabled') + '>Repair all · ' + M(cost) + '</button></div>');
+    { const md = CO.store.list().filter(b => b.st !== 'UNDER_CONSTRUCTION').reduce((a, b) => a + CO.maintDay(b, CO.loadOf(b)), 0); h += card('الصيانة', '<div class="es-sm">الصيانة تلقائية بالكامل: تُحسب كلفتها يوميًا ضمن التكاليف، والمعدات لا تتآكل ولا تتلف ولا يلزمك إصلاحها.</div>' + kv('كلفة الصيانة اليومية', '$' + n0(md))); }
     const rm = CO.refiningMargin(); if (rm.refineries) h += card('REFINING MARGIN', '<div class="es-big ' + cl(rm.margin) + '">' + sg(rm.margin) + ' / day</div><div class="es-sm">Product revenue − crude opportunity cost − energy − labor − maintenance − operating</div>');
     h += card('TAX', kv('Tax rate', Math.round(EC.TAX.rate * 100) + '% of taxable profit') + kv('Losses carried forward', M(s.taxCarry)) + kv('Paid this year', M(y.L.pl.tax)));
     return h;
@@ -363,7 +362,7 @@
     else if (a === 'lamt') loanAmt = +v; else if (a === 'lterm') loanTerm = +v; else if (a === 'borrow') { const r = CO.takeLoan(loanAmt, loanTerm, 'Expansion'); msg = r.ok ? 'Loan approved · +' + M(loanAmt) : 'Loan refused'; }
     else if (a === 'repay') { const r = CO.repayLoan(id); msg = r.ok ? 'Loan repaid · −' + M(r.paid) : 'Not enough cash'; }
     else if (a === 'grid') { const r = CO.gridUpgrade(); msg = r.ok ? 'Grid upgraded to ' + r.tier.name : r.reason === 'cash' ? 'Not enough cash' : 'Maximum grid'; }
-    else if (a === 'auto') { CO.autoRepair = !CO.autoRepair; } else if (a === 'repairall') { const r = CO.repairAll(); msg = 'Repaired ' + r.n + ' · −' + M(r.cost); }
+    
     else if (a === 'screen') { subScreen = v || ''; $('es-body').scrollTop = 0; }
     else if (a === 'supp') buySup = v; else if (a === 'terms') buyTerms = v;
     else if (a === 'pbuy') { CO.setPowerBuy(v === '1'); msg = CO.powerBuy ? 'Bought power switched on' : 'Bought power switched off'; }
@@ -408,7 +407,7 @@
   /* ------------------------------------------------------------ building ECONOMICS tab */
   function buildingHtml(id) {
     const o = CO.economics(id); if (!o) return ''; const d = '<span class="es-sm"> /day</span>', rows = [];
-    rows.push(['Condition', Math.round(o.condition * 100) + '% · ' + o.conditionLabel]);
+    rows.push(['الصيانة', 'تلقائية · ضمن التكاليف']);
     if (o.type === 'refinery') rows.push(['By-product made', n0(o.byproductDay) + ' bbl/day'], ['Residue made (not for sale)', n0(o.residueDay) + ' bbl/day'], ['Internal fuel burned', n0(o.fuelDay) + ' bbl/day']);
     if (o.type === 'refinery') { rows.push(['Revenue (products)', M(o.productRevenueDay) + '/day'], ['Crude opportunity cost', '−' + M(o.crudeOpportunityDay) + '/day']); }
     if (o.type === 'well') rows.push(['Crude quality', o.quality], ['Revenue if sold', M(o.revenuePotentialDay) + '/day'], ['Lifting cost', '−' + M(o.liftingDay) + '/day']);
@@ -418,7 +417,7 @@
     if (o.type === 'tank' || o.type === 'gas') rows.push(['<b>Storage cost</b>', '<b>−' + M(o.storageCostDay) + '/day</b>'], ['Stored value', M(o.storedValue)]);
     if (o.type === 'pump') rows.push(['Production impact', o.production]);
     rows.push(['Purchase / value', M(o.purchase) + ' / ' + M(o.value)]);
-    const b = CO.store.get(id), cost = b ? CO.repairCost(b) : 0;
+    const cost = 0;
     return '<table class="kv">' + rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('') + '</table>' + (cost > 1 ? '<div class="row"><button id="bRepair">Repair · ' + M(cost) + '</button></div>' : '');
   }
 

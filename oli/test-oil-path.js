@@ -27,25 +27,25 @@ console.log('2. different field sizes (1 well and 3 wells)');
   T('2a one well feeds the refinery', a.refIn > 0 && a.wells > 0, a);
   T('2b three wells deliver more, in proportion to what the wells produce (the wells differ in output)', b.refIn > 1.5 * a.refIn && near(b.refIn / b.wells, a.refIn / a.wells, 0.05), [a.refIn / a.wells, b.refIn / b.wells, a.refIn, b.refIn]); }
 
-console.log('3. a broken pump stops the oil, and repairing it brings the oil back');
-{ const g = prep(3); g.co.autoRepair = false; run(g, 24); const pump = g.c.pump;
-  pump.c = 0; pump.st = 'DAMAGED'; const t = run(g, 24);
-  T('3a with the pump broken no oil reaches the separator or the refinery', t.sepIn < 1e-6 && (g.c.ref.s._in || 0) < 1e-6 && t.refIn <= t.v0 + 1e-6, t);   /* the tank's own content may still drain: that oil really is there */
-  T('3b the refinery is not running, and the company is warned that a building is broken', g.sim.status(g.c.ref) !== 'RUNNING' && g.sim.status(g.c.pump) === 'DAMAGED' && g.co.alerts().some(a => a.key === 'broken'), [g.sim.status(g.c.ref), g.sim.status(g.c.pump)]);
-  const r = g.co.repair(pump.id); T('3c the pump is repaired (it costs spare parts, operating materials and cash)', r.ok && pump.st !== 'DAMAGED' && pump.c === 1, r);
-  const t2 = run(g, 24); T('3d oil flows to the refinery again', t2.sepIn > 0 && t2.refIn > 0 && g.sim.status(g.c.ref) === 'RUNNING', t2);
-  T('3e the broken warning is gone', !g.co.alerts().some(a => a.key === 'broken')); }
+console.log('3. (changed) no wear and no breakdowns: a pump never stops by itself, a leftover damaged state from an old save is cleared');
+{ const g = prep(3); run(g, 24); const pump = g.c.pump;
+  const t = run(g, 24 * 5);
+  T('3a the pump keeps working: oil reaches the separator and the refinery', t.sepIn > 0 && t.refIn > 0 && pump.c === 1 && pump.st !== 'DAMAGED', t);
+  T('3b the refinery runs and the company has no broken-building alert', g.sim.status(g.c.ref) === 'RUNNING' && g.sim.status(pump) !== 'DAMAGED' && !g.co.alerts().some(a => a.key === 'broken'), [g.sim.status(g.c.ref), g.sim.status(pump)]);
+  const r = g.co.repair(pump.id); T('3c the repair call is free (nothing to repair)', r.ok && r.cost === 0 && pump.c === 1, r);
+  const t2 = run(g, 24); T('3d oil still flows to the refinery', t2.sepIn > 0 && t2.refIn > 0 && g.sim.status(g.c.ref) === 'RUNNING', t2);
+  T('3e no broken warning ever appears', !g.co.alerts().some(a => a.key === 'broken')); }
 
-{ const g = prep(3); run(g, 24); g.c.pump.c = 0; g.c.pump.st = 'DAMAGED'; const t = run(g, 24);
-  T('3f with automatic maintenance on and spare parts in stock, a broken pump is repaired by itself and the oil keeps coming', g.c.pump.st !== 'DAMAGED' && t.refIn > 0, [g.c.pump.st, t]); }
+{ const g = prep(3); run(g, 24); g.c.pump.c = 0; g.c.pump.st = 'DAMAGED'; g.co.fromJSON(JSON.parse(JSON.stringify(g.co.toJSON()))); const t = run(g, 24);
+  T('3f a save with a damaged pump: the state is cleared on load and the oil keeps coming', g.c.pump.st !== 'DAMAGED' && g.c.pump.c === 1 && t.refIn > 0, [g.c.pump.st, t]); }
 
-console.log('4. repairs need spare parts: without them the player is told why');
+console.log('4. (changed) maintenance needs no spare parts from the player: it is an automatic running cost, never blocks work, no alert');
 { const g = prep(3, false); for (const [m, q] of [['CHEM', 20000], ['OPS', 5000]]) g.co.buy(m, q, 'A', 'CASH'); run(g, 24);
-  g.c.pump.c = 0.3; g.co.advanceHours(1);
-  T('4a with no spare parts the repair is refused with the reason noPart', g.co.repair(g.c.pump.id).reason === 'noPart');
-  T('4b the alert says repairs are blocked by missing spare parts', g.co.alerts().some(a => a.key === 'noparts' && /spare parts/.test(a.detail)), g.co.alerts());
-  g.co.buy('PARTS', 200, 'A', 'CASH'); T('4c after buying spare parts the repair works', g.co.repair(g.c.pump.id).ok && g.c.pump.c === 1);
-  T('4d and the alert is gone', !g.co.alerts().some(a => a.key === 'noparts')); }
+  const m0 = g.co.led.life.maintenance; g.co.advanceHours(24 * 3);
+  T('4a with no spare parts in stock the pump keeps working and maintenance is still charged', g.c.pump.c === 1 && g.c.pump.st !== 'DAMAGED' && g.co.led.life.maintenance > m0);
+  T('4b there is no spare-part / repair alert', !g.co.alerts().some(a => a.key === 'noparts' || a.key === 'broken'), g.co.alerts());
+  T('4c the repair call stays harmless', g.co.repair(g.c.pump.id).ok && g.c.pump.c === 1);
+  T('4d and no alert about it', !g.co.alerts().some(a => a.key === 'noparts')); }
 
 console.log('5. a refinery with no chemicals / operating materials refuses crude and says so');
 { const g = prep(3, false), t0 = run(g, 48);
