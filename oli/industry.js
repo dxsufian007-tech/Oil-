@@ -37,15 +37,15 @@
   /* ------------------------------------------------------------ pipelines */
   const pk = (b, port) => b + ':' + port;
   class PipeNet extends Set {                                       // a Set of tile keys (so the Phase 2 link helpers keep working) + the explicit lines
-    constructor(W) { super(); this.W = W; this.lines = new Map(); this.at = new Map(); this.nextId = 1; this.rev = 0; }
+    constructor(W) { super(); this.W = W; this.lines = new Map(); this.at = new Map(); this.nextId = 1; this.nextConn = 1; this.rev = 0; }
     lay(line) { const id = this.nextId++, L = Object.assign({ id, flow: 0 }, line); this.lines.set(id, L); for (const [x, y] of L.path) { const k = key(this.W, x, y); this.add(k); this.at.set(k, id); } this.rev++; return L; }
     remove(id) { const L = this.lines.get(id); if (!L) return false; for (const [x, y] of L.path) { const k = key(this.W, x, y); this.delete(k); this.at.delete(k); } this.lines.delete(id); this.rev++; return true; }
     lineAt(x, y) { const id = this.at.get(key(this.W, x, y)); return id ? this.lines.get(id) : null; }
     productAt(x, y) { const L = this.lineAt(x, y); return L ? L.product : null; }
     /* backward compatible view: Phase C pipes carry no product, so every legacy tile is CRUDE with the default diameter */
     static legacyView(tiles, W) { const n = new PipeNet(W); for (const k of tiles) { n.add(k); } n.legacy = true; n.legacyProduct = P.CRUDE; return n; }
-    toJSON() { return { v: 1, next: this.nextId, lines: [...this.lines.values()].map(L => ({ id: L.id, a: L.a, b: L.b, path: L.path, product: L.product, dia: L.dia })) }; }
-    static fromJSON(W, d) { const n = new PipeNet(W); if (!d || !Array.isArray(d.lines)) return n; for (const L of d.lines) { if (!Array.isArray(L.path) || !L.path.length) continue; n.lay({ a: L.a, b: L.b, path: L.path, product: L.product || ANY, dia: CFG.PIPES[L.dia] ? L.dia : CFG.PIPE_DEFAULT }); } return n; }
+    toJSON() { return { v: 1, next: this.nextId, nc: this.nextConn, lines: [...this.lines.values()].map(L => { const o = { id: L.id, a: L.a, b: L.b, path: L.path, product: L.product, dia: L.dia }; if (L.conn) o.conn = L.conn; if (L.open === false) o.open = false; return o; }) }; }
+    static fromJSON(W, d) { const n = new PipeNet(W); if (!d || !Array.isArray(d.lines)) return n; for (const L of d.lines) { if (!Array.isArray(L.path) || !L.path.length) continue; { const X = { a: L.a, b: L.b, path: L.path, product: L.product || ANY, dia: CFG.PIPES[L.dia] ? L.dia : CFG.PIPE_DEFAULT }; if (L.conn) X.conn = L.conn; if (L.open === false) X.open = false; n.lay(X); } } n.nextConn = Math.max(d.nc | 0, 1, ...[...n.lines.values()].map(L => (L.conn | 0) + 1)); return n; }
   }
   const lineSpec = L => { const s = CFG.PIPES[L.dia] || CFG.PIPES[CFG.PIPE_DEFAULT]; return { length: L.path.length * CFG.TILE_METERS, capacity: s.capacity, maxPressure: s.maxPressure }; };
 
@@ -129,6 +129,50 @@
   function closePipe(store, net, ts, lineId, Bp, opts) {
     const v = planClosePipe(store, net, ts, lineId, Bp, opts); if (!v.ok) return v; const L = net.lines.get(lineId), path = L.path.concat(v.add), a = L.a, dia = L.dia; net.remove(lineId);
     const NL = net.lay({ a, b: v.b, path, product: v.product, dia }); if (store.cash !== Infinity) store.cash -= v.cost; return Object.assign({}, v, { line: NL });
+  }
+
+
+  /* ------------------------------------------------------------ AUTOMATIC CONNECTION (Stage 5): the player picks two buildings; the game does the rest, with the pieces above (route, planPipe, PipeNet).
+   *  A connection is TWO independent lines - A.out -> B.in and B.out -> A.in - each with its own valve, direction and flow (having both does not mean both flow at once).
+   *  planConnect() lays nothing: it picks the ports, routes both lines (the second one around the first), checks products / ports / capacity and prices the whole job.
+   *  An incomplete connection is never adopted silently: a direction that fails is reported with its reason and cost; only the player can choose to build the rest (opts.allowOneWay).
+   *  A direction that no port pair of these two buildings can ever serve (a well receives nothing, a refinery's products cannot enter a crude tank) is a "natural one-way" and is allowed, and said so. */
+  const portsOf = b => B.worldPoints(b).filter(p => p.kind === 'pipe' && !p.reserved);
+  const canSend = p => p.role === 'out' || p.role === 'both', canTake = p => p.role === 'in' || p.role === 'both';
+  function autoDia(def) { const need = def && def.capacity && /day/.test(def.capacity.unit || '') ? def.capacity.value : 0; if (!need) return CFG.PIPE_DEFAULT; const ds = Object.keys(CFG.PIPES).map(Number).sort((a, b) => a - b); return ds.find(d => CFG.PIPES[d].capacity >= need) || ds[ds.length - 1]; }
+  const REASON_RANK = { cash: 5, noRoute: 4, portTaken: 3, invalidProduct: 2, portRoles: 1, noPort: 0 };
+  function planDirection(store, net, ts, src, dst, o) {
+    const pairs = []; for (const pa of portsOf(src)) if (canSend(pa)) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product)) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
+    if (!pairs.length) return { natural: true };
+    pairs.sort((x, y) => x.d - y.d); const dia = o.dia || autoDia(DEFS[src.d]); let best = null, worst = null, tried = 0;
+    for (const q of pairs) { if (tried >= (o.tries || 10)) break; if (portTaken(net, { b: src.id, port: q.pa.id }) || portTaken(net, { b: dst.id, port: q.pb.id })) { worst = worst || { reason: 'portTaken' }; continue; } tried++;
+      const v = planPipe(store, net, ts, { b: src.id, port: q.pa.id }, { b: dst.id, port: q.pb.id }, dia, { ignoreCash: true, margin: o.margin || 22 });
+      if (v.ok) { if (!best || v.path.length < best.path.length) best = v; } else if (!worst || (REASON_RANK[v.reason] || 0) > (REASON_RANK[worst.reason] || 0)) worst = { reason: v.reason, wants: v.wants, has: v.has, products: v.products }; }
+    if (best) { const cap = CFG.PIPES[best.dia].capacity, flow = DEFS[src.d].capacity && /day/.test(DEFS[src.d].capacity.unit || '') ? DEFS[src.d].capacity.value : 0; return { plan: best, warn: flow > cap ? { reason: 'pipeSmall', capacity: cap, flow } : null }; }
+    return { fail: worst || { reason: 'noPort' } };
+  }
+  function planConnect(store, net, ts, idA, idB, o) {
+    o = o || {}; const A = store.get(idA), Bb = store.get(idB), res = { ok: false, state: 'INVALID', lines: [], problems: [], notes: [], cost: 0, length: 0 };
+    if (!A || !Bb) { res.reason = 'noPort'; return res; } if (A.id === Bb.id) { res.reason = 'sameBuilding'; return res; }
+    const saveNext = net.nextId, saveRev = net.rev, laid = [];
+    try {
+      for (const [src, dst, dir] of [[A, Bb, 'ab'], [Bb, A, 'ba']]) {
+        if ([...net.lines.values()].some(L => L.a && L.b && L.a.b === src.id && L.b.b === dst.id)) { res.notes.push({ dir, reason: 'exists', from: src.id, to: dst.id }); continue; }      // never a second line for the same direction
+        const r = planDirection(store, net, ts, src, dst, o);
+        if (r.plan) { const v = r.plan, L = net.lay({ a: v.a, b: v.b, path: v.path, product: v.product, dia: v.dia }); laid.push(L.id); res.lines.push({ dir, from: src.id, to: dst.id, a: v.a, b: v.b, path: v.path, product: v.product, dia: v.dia, cost: v.cost, length: v.length, warn: r.warn }); res.cost += v.cost; res.length += v.length; if (r.warn) res.notes.push(Object.assign({ dir }, r.warn)); }
+        else if (r.natural) res.notes.push({ dir, reason: 'oneWay', from: src.id, to: dst.id }); else res.problems.push(Object.assign({ dir, from: src.id, to: dst.id }, r.fail));
+      }
+    } finally { for (const id of laid) net.remove(id); net.nextId = saveNext; net.rev = saveRev; }
+    if (!res.lines.length) { res.reason = (res.problems[0] && res.problems[0].reason) || (res.notes.some(n => n.reason === 'exists') ? 'alreadyConnected' : 'noPort'); return res; }
+    res.partial = res.problems.length > 0; res.ok = !res.partial; res.state = res.ok ? 'VALID' : 'INCOMPLETE';
+    if (res.ok && store.cash < res.cost && !o.ignoreCash) { res.ok = false; res.state = 'UNAFFORDABLE'; res.reason = 'cash'; }
+    return res;
+  }
+  function layConnect(store, net, ts, idA, idB, o) {
+    o = o || {}; const v = planConnect(store, net, ts, idA, idB, o); if (!v.lines.length) return v; if (!v.ok && !(o.allowOneWay && v.partial)) return v;
+    if (store.cash < v.cost && !o.ignoreCash) return Object.assign({}, v, { ok: false, state: 'UNAFFORDABLE', reason: 'cash' });
+    const conn = net.nextConn++, made = []; for (const l of v.lines) made.push(net.lay({ a: l.a, b: l.b, path: l.path, product: l.product, dia: l.dia, conn, dir: l.dir }));
+    if (store.cash !== Infinity) store.cash -= v.cost; return Object.assign({}, v, { ok: true, state: 'BUILT', conn, made });
   }
 
   /* ------------------------------------------------------------ levels, safety helpers */
@@ -382,5 +426,5 @@
   }
 
   const TANK_KIND_AR = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
-  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
+  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, planConnect, layConnect, autoDia, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });
