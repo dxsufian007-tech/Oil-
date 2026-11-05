@@ -286,7 +286,7 @@
     if (e.kind === 'SALE') return 'يوم ' + t + ' · بيع ' + q + ' (' + (e.source === 'BOUGHT' ? 'مشترى' : e.source === 'OWN' ? 'منتج' : 'خليط') + ') بإيراد ' + M(e.revenue) + ' · ' + (e.profit >= 0 ? 'ربح ' : 'خسارة ') + M(Math.abs(e.profit));
     return 'يوم ' + t + ' · دخل المصفاة ' + q + ' من النفط المشترى بتكلفة ' + M(e.cost); };
   /* two separate gauges, never added together: the commercial stores and the Strategic Reserve */
-  const gaugeCard = (title, g, note) => card(title, '<div class="es-prod"><span class="nm">' + n0(g.volume) + ' من ' + n0(g.capacity) + '</span><b>' + (g.capacity > 0 ? Math.round(g.fill * 100) + '%' : '—') + '</b></div><div class="es-bar"><i style="width:' + Math.min(100, g.fill * 100) + '%;background:' + (g.fill >= .9 ? '#d9453a' : '#8f9aa6') + '"></i></div><div class="es-sm">' + (g.tanks ? g.tanks + ' خزان' : 'لا توجد خزانات بعد') + (note ? ' · ' + note : '') + '</div>');
+  const gaugeCard = (title, g, note) => card(title, '<div class="es-prod"><span class="nm">' + n0(g.volume) + ' من ' + n0(g.capacity) + '</span><b>' + (g.capacity > 0 ? Math.round(g.fill * 100) + '%' : '—') + '</b></div><div class="es-bar"><i style="width:' + Math.min(100, g.fill * 100) + '%;background:' + (g.fill >= .9 ? '#d9453a' : '#8f9aa6') + '"></i></div><div class="es-sm">' + (g.tanks ? g.tanks + ' خزان' : 'لا توجد خزانات بعد') + (g.water > 0.5 ? ' · منها ماء ' + n0(g.water) + ' (لا يُحسب نفطاً)' : '') + (note ? ' · ' + note : '') + '</div>');
   function rReserve() {
     const I = CO.reserveInfo(), f = I.fills; let h = '';
     if (!I.exists) return card('منطقة الاحتياطي الاستراتيجي', '<div class="es-sm">لا توجد منطقة احتياطي في هذا العالم بعد.</div>');
@@ -312,6 +312,11 @@
         + '<button data-act="rvsell"' + (sq.ok && sq.qty > 0 && rvSellQ <= sq.available + 1e-6 ? '' : ' disabled') + '>بِع ' + n0(rvSellQ) + ' ' + EC.LABEL[rvP] + '</button>');
       const cs = I.cost; h += card('تكاليف الاحتياطي اليومية', kv('التخزين', M(cs.storage)) + kv('التشغيل والصيانة والطاقة', M(cs.ops)) + kv('الإجمالي', M(cs.total)) + '<div class="es-sm">تظهر في المصروفات بخطّين مستقلّين عن المخازن التجارية.</div>');
     }
+    { const fp = CO.marketFootprint(30), d = fp && CO.market.footprint(1), pct = v => v.toFixed(v < 0.01 && v > 0 ? 4 : 3) + '%', bb = v => n0(v) + ' برميل/يوم';
+      h += card('أثر الشركة على السوق العالمي', fp ? kv('حصتك من الإنتاج العالمي (آخر يوم)', pct(d.shareProd)) + kv('حصتك من الإنتاج العالمي (متوسط ' + fp.days + ' يوم)', pct(fp.shareProd)) + kv('حصتك من المعروض العالمي (متوسط)', pct(fp.shareSupply))
+        + kv('متوسط ما تطرحه يومياً', bb(fp.offered)) + kv('متوسط ما تطرحه شهرياً', n0(fp.offered * 30) + ' برميل') + kv('نفط محجوب في الاحتياطي عن السوق', n0(fp.kept) + ' برميل') + kv('استجابة المنتجين الآخرين', (fp.response >= 0 ? 'زيادة ' : 'خفض ') + bb(Math.abs(fp.response)))
+        + kv('أثر إضافة مليون برميل على السعر', (fp.sensitivity).toFixed(2) + '% تقريباً') + '<div class="es-sm">القيم من السجل اليومي الفعلي. أثرك على السعر يتناسب مع حجمك الحقيقي، ويتضخم عندما يكون المخزون العالمي منخفضاً والطلب مرتفعاً.</div>' : '<div class="es-sm">لا بيانات سوق بعد.</div>');
+      h += card('قيمة الاحتياطي', kv('التكلفة الدفترية', M(I.book)) + kv('بسعر السوق اليوم', M(I.marketValue)) + kv(I.unrealized >= 0 ? 'ربح غير محقق' : 'خسارة غير محققة', M(Math.abs(I.unrealized)), I.unrealized >= 0 ? 'pos' : 'neg') + '<div class="es-sm">لا يُسجَّل في الدفتر قبل البيع الفعلي.</div>'); }
     const KL = { BUY: 'شراء', IN: 'دخول', OUT: 'خروج', ORDER: 'أمر سحب', STOP: 'إلغاء أمر', SELL: 'بيع', EXPAND: 'توسعة' };
     const lg = CO.reserveLog(25); h += card('سجل عمليات الاحتياطي', lg.length ? lg.map(l => '<div class="es-sm">يوم ' + Math.floor(l.t / 24 + 1) + ' · <b>' + (KL[l.kind] || l.kind) + '</b>' + (l.product ? ' ' + EC.LABEL[l.product] : '') + (l.qty ? ' · ' + n0(l.qty) + ' برميل' : '') + (l.value ? ' · ' + M(l.value) : '') + (l.tank ? ' · خزان #' + l.tank : '') + (l.note ? ' · ' + l.note : '') + '</div>').join('') : '<div class="es-sm">لا عمليات بعد.</div>');
     return h;

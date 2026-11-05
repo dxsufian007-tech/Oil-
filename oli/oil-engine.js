@@ -44,14 +44,19 @@
   };
   const DEF = { PEQ: 72, C0: 2800, H0: 140, R0: 1200, D0: 100, beta: 3.5, kappa: 0.15, mu: 0.25, sigma: 0.006, gapK: 2, epsD: 0.03, hoardK: 0.15, hoardNews: 2, hoardMaxShare: 0.2, hoardRate: 0.08, hoardDayMax: 0.005,
     refillBelow: -0.15, refillPerDay: 0.3, xMax: 0.6, dayMax: 0.09, seasonAmp: 0.7, maxActive: 5, rareGapDays: 2922, minCdDays: 20, catGapDays: 5, newsJump: 0.35, intraSigma: 0.0012, intraRevert: 0.25, intraMax: 0.01, floorC: 100, logMax: 300, avgDays: 365,
-    refCap: 82, prodDays: 18, prodKappa: 0.2, prodSigma: 0.004, prodMax: 0.35, prodElast: 0.15, prodFlex: 0.35, costFloor: 8, quotaDays: 30 };
+    sfsRate: 0.2, respShare: 0.55, respRate: 0.1, respSpare: 0.5, respCut: 0.05, coHist: 400, refCap: 82, prodDays: 18, prodKappa: 0.2, prodSigma: 0.004, prodMax: 0.35, prodElast: 0.15, prodFlex: 0.35, costFloor: 8, quotaDays: 30 };
   class OilEngine {
     constructor(P, rng, st) {
       this.P = Object.assign({}, DEF, P || {}); this.rng = rng; const p = this.P;
       Object.assign(this, { C: p.C0, H: p.H0, R: p.R0, Hage: 0, x: 0, xPrev: 0, dx: 0, intra: 0, xlag: 0, quota: 1, quotaLeft: p.quotaDays, indus: 0, regime: 'STABLE', regLeft: 160, lastDay: -1, avgC: p.C0, active: [], last: {}, catLast: {}, rareLast: -1e9, log: [], held: 0,
         acct: { prod: 0, cons: 0, ownSold: 0, soldBought: 0, bought: 0 }, cum: { hoarded: 0, released: 0 }, drivers: { inv: 0, gap: 0, news: 0, regime: 0, target: 0 }, flow: { P: 100, D: 100, net: 0, hoardFlow: 0 }, newsSum: { sup: 0, dem: 0, sent: 0, hoard: 0, rel: 0 }, cost: { freight: 1, energy: 1 }, rcOut: 0, util: GROUPS.map(g => g.base / (g.base * g.capX)), outage: GROUPS.map(() => 0), out: GROUPS.map(g => g.base) });
       this.prod = {}; for (const k of Object.keys(PRODUCTS)) { const d = PRODUCTS[k]; this.prod[k] = { S: d.dem * p.prodDays, y: 0, yPrev: 0, intra: 0, sup: d.dem, dem: d.dem, acct: { sup: 0, dem: 0, ownSold: 0, bought: 0 } }; }
-      this.h0 = p.H0 / (p.C0 + p.H0); if (st) this.load(st);
+      this.h0 = p.H0 / (p.C0 + p.H0);
+      /* the COMPANY'S footprint on the world market (Phase 3).  Every flow is in mb (= mb/d for one day).  dayFlow = what the company did today.  ownAtProd (new games): the company's own crude is world supply the moment it is produced (it joins the commercial stock C);
+       * oil it moves into its reserve LEAVES C (K = own oil held off the market) and comes back to C when released or sold; own crude refined or lost leaves C.  Older saves keep the old rule (own oil joins C when SOLD).
+       * sfs = the smoothed supply the company withheld (into K + bought - released); resp = how much the other producers added (+) or cut (-) to answer it; coHist = one row per day, for the share and average figures */
+      Object.assign(this, { dayFlow: { prod: 0, off: 0, buy: 0, hold: 0, rel: 0, kin: 0, kout: 0, net: 0 }, sfs: 0, resp: 0, K: 0, ownAtProd: false, coHist: [] }); this.acct.coIn = 0; this.acct.coOut = 0;
+      if (st) this.load(st);
     }
     /* the market states the news can need / be boosted by */
     state() { const cover = this.C / this.P.C0, s = { LOW_STOCK: cover < 0.96, HIGH_STOCK: cover > 1.04, HIGH_PRICE: this.x > 0.1, LOW_PRICE: this.x < -0.1 }; s[this.regime] = true; return s; }
@@ -97,8 +102,14 @@
       // supply: 4 groups; the OPEC+ quota follows the average price, shale answers the lagged price
       this.xlag += 0.05 * (this.x - this.xlag);
       if (--this.quotaLeft <= 0) { this.quotaLeft = p.quotaDays; if (this.xlag > 0.1) this.quota = Math.min(1.12, this.quota + 0.03); else if (this.xlag < -0.1) this.quota = Math.max(0.85, this.quota - 0.04); else this.quota += 0.1 * (1 - this.quota); }
+      // the company's footprint (Phase 3): yesterday's flows -> the withheld supply and the answer of the other producers
+      const F = this.dayFlow; this.dayFlow = { prod: 0, off: 0, buy: 0, hold: 0, rel: 0, kin: 0, kout: 0, net: 0 };
+      const wh = this.ownAtProd ? -F.net : F.kin + F.buy - F.kout;                                          // mb/d the company took OUT of the commercial stock on balance (purchases + own oil kept in the reserve - what it produced and gave back); a surplus is negative
+      this.sfs += p.sfsRate * (wh - this.sfs);
+      let spare = 0, outSum = 0; GROUPS.forEach((g, i) => { spare += Math.max(0, g.base * g.capX - this.out[i]); outSum += this.out[i]; });
+      const rTgt = clamp(p.respShare * this.sfs, -p.respCut * outSum, p.respSpare * spare); this.resp += p.respRate * (rTgt - this.resp); if (Math.abs(this.resp) < 1e-9) this.resp = 0;
       let Ptot = 0; GROUPS.forEach((g, i) => { const u0 = g.base / (g.base * g.capX), cap = g.base * g.capX, tgt = clamp(u0 * (g.id === 'OPEC' ? this.quota : 1) * (1 + g.eps * (g.id === 'AMER' ? this.xlag : this.x)), 0.5, 1);
-        this.util[i] += 0.1 * (tgt - this.util[i]); const gross = cap * this.util[i], cut = Math.max(0, -(n.sup + R.sup)) * g.w, add = Math.max(0, n.sup + R.sup) * g.w; this.outage[i] = gross > 0 ? Math.min(0.9, cut / gross) : 0; this.out[i] = gross - Math.min(cut, gross * 0.9) + add; Ptot += this.out[i]; });
+        this.util[i] += 0.1 * (tgt - this.util[i]); const gross = cap * this.util[i], cut = Math.max(0, -(n.sup + R.sup)) * g.w, add = Math.max(0, n.sup + R.sup) * g.w; this.outage[i] = gross > 0 ? Math.min(0.9, cut / gross) : 0; this.out[i] = gross - Math.min(cut, gross * 0.9) + add + this.resp * g.w; Ptot += this.out[i]; });
       // demand
       this.indus += 0.02 * (R.ind - this.indus); const season = p.seasonAmp * Math.cos(2 * Math.PI * (month - 7) / 12);
       let P = Ptot, D = p.D0 * Math.exp(this.indus) * (1 - p.epsD * this.x) + season + n.dem; let net = P - D; if (this.C + net < p.floorC) { const cut = p.floorC - (this.C + net); D -= cut; net += cut; }
@@ -112,10 +123,11 @@
       const H1 = this.H + flow; this.Hage = flow > 0 && H1 > 0 ? ((this.Hage + 1) * this.H) / H1 : this.Hage + 1; if (H1 <= 1e-9) this.Hage = 0; this.H = H1; this.C -= flow; this.flow.hoardFlow = flow; if (flow > 0) this.cum.hoarded += flow; else this.cum.released -= flow;
       if (this.held > 0) this.heldAge = (this.heldAge || 0) + 1; else this.heldAge = 0;
       // price: target from stock cover + today's gap + news + regime; momentum of the previous change; volatility of the regime; calculated randomness
-      const cover = this.C / p.C0, inv = -p.beta * Math.log(Math.max(0.2, cover)), gap = p.gapK * (P - D) / p.D0, xs = inv + gap + n.sent + R.sent;
+      const cover = this.C / p.C0, inv = -p.beta * Math.log(Math.max(0.2, cover)), gap = p.gapK * (P - D) / p.D0, xs = inv + gap + n.sent + R.sent;          // the company's own flows reach the price through the commercial stock C (the cover term) and through the answer of the other producers (resp, inside P)
       this.drivers = { inv, gap, news: n.sent, regime: R.sent, target: xs };
       let dx = p.kappa * (xs - this.x) + p.mu * this.dx + p.sigma * R.vol * rng.gauss(); dx = clamp(dx, -p.dayMax, p.dayMax);
       const x0 = this.x; this.x = clamp(this.x + dx, -p.xMax, p.xMax); this.dx = this.x - x0 + 0;                              // jump already included in x before the step is the news / regime jump: it is not a momentum
+      this.coHist.push([day, F.prod, F.off, F.buy, F.hold, F.rel, P, D, this.C, this.resp, this.K]); while (this.coHist.length > p.coHist) this.coHist.shift();
       this.avgC += (this.C - this.avgC) / p.avgDays;
       this._products(month, n, R);
     }
@@ -140,12 +152,25 @@
       return out;
     }
     /* the player's trades, in barrels.  Bought oil leaves the market; sold oil comes back; own produced oil is new supply (counted once) */
-    playerBuy(bbl) { const mb = bbl / 1e6; this.C -= mb; this.acct.bought += mb; this.held += mb; }
-    playerSell(ownBbl, boughtBbl) { const a = ownBbl / 1e6, b = boughtBbl / 1e6; this.C += a + b; this.acct.ownSold += a; this.acct.soldBought += b; this.held = Math.max(0, this.held - b); }
+    playerBuy(bbl) { const mb = bbl / 1e6; this.C -= mb; this.acct.bought += mb; this.held += mb; this.dayFlow.buy += mb; if (this.ownAtProd) this.dayFlow.net -= mb; }
+    playerSell(ownBbl, boughtBbl) {
+      const a = ownBbl / 1e6, b = boughtBbl / 1e6; this.acct.soldBought += b; this.held = Math.max(0, this.held - b); this.dayFlow.off += a + b;
+      if (this.ownAtProd) { this.C += b; this.dayFlow.net += b; }                       // own oil joined C when it was produced; only bought oil comes back now
+      else { this.C += a + b; this.acct.ownSold += a; }
+    }
+    /* own crude sold OUT OF THE RESERVE: it was held off the market, so it joins the supply now (bought oil comes back as always) */
+    playerSellReserve(ownBbl, boughtBbl) {
+      const a = ownBbl / 1e6; if (!this.ownAtProd) return this.playerSell(ownBbl, boughtBbl);
+      const t = Math.min(a, this.K); this.K -= t; this.C += t; this.dayFlow.kout += t; this.dayFlow.net += t; this.acct.coKSold = (this.acct.coKSold || 0) + t; this.playerSell(0, boughtBbl); this.dayFlow.off += a; if (a > t) this.C += 0;
+    }
+    coProduce(bbl) { const q = bbl / 1e6; this.dayFlow.prod += q; if (this.ownAtProd) { this.C += q; this.acct.coIn += q; this.dayFlow.net += q; } }
+    coConsume(bbl) { const q = bbl / 1e6; if (!this.ownAtProd || !(q > 0)) return; const t = Math.min(q, Math.max(0, this.C - this.P.floorC)); this.C -= t; this.acct.coOut += t; this.dayFlow.net -= t; }       // own crude refined or lost: it leaves the commercial stock
+    coHold(totalBbl, ownBbl) { const m = totalBbl / 1e6; this.dayFlow.hold += m; if (!this.ownAtProd) return; const t = Math.min((ownBbl || 0) / 1e6, Math.max(0, this.C - this.P.floorC)); this.C -= t; this.K += t; this.dayFlow.kin += t; this.dayFlow.net -= t; }
+    coRelease(totalBbl, ownBbl) { const m = totalBbl / 1e6; this.dayFlow.rel += m; if (!this.ownAtProd) return; const t = Math.min((ownBbl || 0) / 1e6, this.K); this.K -= t; this.C += t; this.dayFlow.kout += t; this.dayFlow.net += t; }
     productBuy(k, bbl) { const s = this.prod[k]; if (!s) return; const mb = bbl / 1e6; s.S = Math.max(0, s.S - mb); s.acct.bought += mb; }
     productSell(k, bbl) { const s = this.prod[k]; if (!s) return; const mb = bbl / 1e6; s.S += mb; s.acct.ownSold += mb; }
     /* conservation of crude: returns the difference (0 when no oil was counted twice or lost) */
-    check() { const p = this.P, a = this.acct, want = p.C0 + p.H0 + p.R0 + a.prod - a.cons + a.ownSold + a.soldBought - a.bought; return (this.C + this.H + this.R) - want; }
+    check() { const p = this.P, a = this.acct, want = p.C0 + p.H0 + p.R0 + a.prod - a.cons + a.ownSold + a.soldBought - a.bought + (a.coIn || 0) - (a.coOut || 0); return (this.C + this.H + this.R + (this.K || 0)) - want; }
     checkProduct(k) { const s = this.prod[k], d = PRODUCTS[k]; return s.S - (d.dem * this.P.prodDays + s.acct.sup - s.acct.dem + s.acct.ownSold - s.acct.bought); }
     level(r) { return r > 1.03 ? 'HIGH' : r < 0.97 ? 'LOW' : 'NORMAL'; }
     view() {
@@ -155,7 +180,15 @@
         levels: { supply: this.level(this.flow.P / p.D0 / (1 + (R.sup * 0))), demand: this.level(this.flow.D / p.D0), stock: this.level(this.C / p.C0) },
         active: this.active.map(a => ({ id: NEWS.EVENTS[a.i].id, text: NEWS.EVENTS[a.i].text, desc: NEWS.EVENTS[a.i].desc, dir: NEWS.EVENTS[a.i].dir, cat: NEWS.EVENTS[a.i].cat, left: Math.max(0, a.days - (this.lastDay - a.start)), days: a.days, f: a.f })) };
     }
-    toJSON() { const o = { v: 2 }; for (const k of ['C', 'H', 'R', 'Hage', 'x', 'xPrev', 'dx', 'intra', 'xlag', 'quota', 'quotaLeft', 'indus', 'regime', 'regLeft', 'lastDay', 'avgC', 'active', 'last', 'catLast', 'rareLast', 'log', 'held', 'heldAge', 'acct', 'cum', 'drivers', 'flow', 'newsSum', 'cost', 'rcOut', 'util', 'outage', 'out', 'prod', 'pNews']) o[k] = this[k]; return o; }
+    /* the company's real footprint, from the daily rows: averages over the last n days (30 = the month), shares of the world, and what it did to the price / to the other producers.  bbl/day */
+    footprint(n) {
+      n = n || 30; const H = this.coHist.filter(r => r[0] >= 0).slice(-n), k = H.length || 1, avg = i => H.reduce((a, r) => a + r[i], 0) / k * 1e6, last = this.coHist[this.coHist.length - 1] || [0, 0, 0, 0, 0, 0, this.flow.P, this.flow.D, this.C, 0, 0];
+      const prod = avg(1), off = avg(2), buy = avg(3), hold = avg(4), rel = avg(5), wP = avg(6), wD = avg(7), wTotP = wP + prod, wSup = wP + off;
+      return { days: H.length, prod, offered: off, bought: buy, held: hold, released: rel, worldProd: wTotP, worldSupply: wSup, worldDemand: wD, shareProd: wTotP > 0 ? prod / wTotP * 100 : 0, shareSupply: wSup > 0 ? off / wSup * 100 : 0,
+        withheld: this.sfs * 1e6, response: this.resp * 1e6, kept: this.K * 1e6, sensitivity: this.P.beta / Math.max(1, this.C) * 100, stockCover: this.C / this.P.C0, demandRatio: this.flow.D / this.P.D0,
+        day: { prod: last[1] * 1e6, offered: last[2] * 1e6, bought: last[3] * 1e6, held: last[4] * 1e6, released: last[5] * 1e6 } };
+    }
+    toJSON() { const o = { v: 2 }; for (const k of ['C', 'H', 'R', 'Hage', 'x', 'xPrev', 'dx', 'intra', 'xlag', 'quota', 'quotaLeft', 'indus', 'regime', 'regLeft', 'lastDay', 'avgC', 'active', 'last', 'catLast', 'rareLast', 'log', 'held', 'heldAge', 'acct', 'cum', 'drivers', 'flow', 'newsSum', 'cost', 'rcOut', 'util', 'outage', 'out', 'prod', 'pNews', 'dayFlow', 'sfs', 'resp', 'K', 'ownAtProd', 'coHist']) o[k] = this[k]; return o; }
     load(st) { for (const k of Object.keys(st)) if (k !== 'v') this[k] = st[k]; }
   }
   /* candles of the game's own daily prices (o h l c per game day, d = ISO date, wd = weekday 0..6) grouped into week / month / year */

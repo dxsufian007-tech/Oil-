@@ -37,6 +37,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   console.log('STAGE 2: BUY, SELL, RELEASE, LOG');
   await co(() => __lab.EU.open('reserve')); await p.waitForTimeout(200); t = await body(); await shot('reserve-stage2');
   ok(/شراء إلى الاحتياطي/.test(t) && /سحب بأمرك/.test(t) && /بيع يدوي من الاحتياطي/.test(t) && /سجل عمليات الاحتياطي/.test(t) && /تكاليف الاحتياطي اليومية/.test(t), 'the screen has the buy, release, manual-sale, costs and log cards');
+  ok(/أثر الشركة على السوق العالمي/.test(t) && /حصتك من الإنتاج العالمي/.test(t) && /قيمة الاحتياطي/.test(t) && /بسعر السوق اليوم/.test(t), 'it also shows the company\'s share of the world market, the average offered, the answer of the other producers and the reserve at market value');
   const rv0 = await co(() => ({ cash: __lab.store.cash, vol: __lab.company.reserveStock('CRUDE'), com: __lab.company.fills().commercial.volume }));
   await tap('[data-act=rvbuy]'); const rv1 = await co(() => ({ cash: __lab.store.cash, vol: __lab.company.reserveStock('CRUDE'), com: __lab.company.fills().commercial.volume, ok: __lab.company.audit().ok }));
   ok(rv1.vol - rv0.vol === 5000 && rv1.cash < rv0.cash && rv1.com === rv0.com && rv1.ok, 'tapping buy adds 5,000 barrels to the reserve only, pays cash, the commercial store is unchanged, books balance');
