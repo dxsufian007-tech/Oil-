@@ -49,7 +49,8 @@ const AR = require('./ar.js'), GC = require('./game-config.js'), B = require('./
   const bad = await co(() => { const g = __lab.state.pending; g.x = 5; g.y = 5; g.verdict = __lab.store.validate('oil_well', 5, 5, 0, {}); return g.verdict.ok; }); await co(() => { __lab.pipeMode(false); const g = __lab.state.pending; document.getElementById('buildbar').style.display = 'block'; }); ok(!bad, 'a spot that is not on an oil field is refused');
   await co(() => __lab.startBuild('oil_well')); const cash0 = await co(() => __lab.store.cash); await tap('#bBuild'); await p.waitForTimeout(300);
   const wid = await co(() => __lab.store.list().find(b => b.d === 'oil_well').id); ok(wid && (await co(() => __lab.store.cash)) < cash0 - 200000, 'tap «بناء»: the well is built and its price leaves the balance (' + Math.round(cash0 - await co(() => __lab.store.cash)).toLocaleString('en-US') + ')');
-  ok((await txt('#g-guide')).includes('جارٍ الحفر'), 'the guide says the well is being drilled'); await shot('g-04-well-building');
+  await p.waitForFunction(() => { const g = document.querySelector('#g-guide'); return g && g.textContent.includes('جارٍ الحفر'); }, null, { timeout: 5000 }).catch(() => {});
+ok((await txt('#g-guide')).includes('جارٍ الحفر'), 'the guide says the well is being drilled'); await shot('g-04-well-building');
   await co(() => { __lab.company.advanceHours(24); __lab.GU.check(); }); await p.waitForTimeout(300);
   ok((await txt('#g-guide')).includes('ابدأ إنتاج النفط'), 'the guide: «ممتاز! الآن ابدأ إنتاج النفط.»');
   console.log('STEP 2: START PRODUCTION'); await co(id => __lab.showBuilding(id), wid); await p.waitForTimeout(200);

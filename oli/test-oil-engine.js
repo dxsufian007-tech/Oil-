@@ -10,18 +10,27 @@ function Rng(s) { this.s = s >>> 0 || 1; this.next = () => { let t = this.s += 0
 const mk = (seed, P) => { const e = new OE.OilEngine(Object.assign({ maxActive: 0 }, P || {}), new Rng(seed || 11)); e.regLeft = 1e9; return e; };   // random state changes and random news off
 const run = (e, d, hook) => { for (let i = 0; i < d; i++) { const day = e.lastDay + 1; e.dayStep(day, month(day), 'x'); if (hook) hook(e, i); } return e; };
 const force = (e, ...ids) => { for (const id of ids) e.force(id, e.lastDay, 'x'); };
+/* PHASE 4 NOTE (gap sign).  The approved equation added +gapK (P-D)/D0 to the price target, so a surplus pushed the target UP.  The corrected equation (gapSign = -1, now the default) lowers it.
+ * The old magnitude thresholds below were calibrated on the wrong sign.  With it the price reaction comes FIRST (a price war lowers the price within days instead of leaving it flat or higher for ~10 days),
+ * so supply and demand re-balance earlier and the STOCK moves less and PEAKS EARLIER or LATER than a fixed-day snapshot saw, while the price reaches the same depth sooner.  Where a test measured the stock or the price on one fixed day,
+ * it now measures the extreme of the whole window (same threshold, fairer clock), and where the size itself was tuned on the wrong sign it is restated with the reason.  Direction checks are unchanged. */
+const series = (seed, ids, pre, after) => { const c = mk(seed), s = mk(seed); if (pre) { pre(c); pre(s); } run(c, 30); run(s, 30); force(s, ...ids); const pr = [], dc = [], flow = []; for (let d = 0; d < after; d++) { run(c, 1); run(s, 1); pr.push(s.price() / c.price() - 1); dc.push(s.C - c.C); flow.push((s.flow.P - c.flow.P) - (s.flow.D - c.flow.D)); } return { pr, dc, flow, c, s }; };
+
 const pair = (days, ids, seed, pre, early) => { const c = mk(seed), s = mk(seed); if (pre) { pre(c); pre(s); } run(c, 30); run(s, 30); force(s, ...ids); const k = early || 20; run(c, k); run(s, k); const ec = JSON.parse(JSON.stringify({ P: c.flow.P, D: c.flow.D, C: c.C, H: c.H, R: c.R, price: c.price() })), es = JSON.parse(JSON.stringify({ P: s.flow.P, D: s.flow.D, C: s.C, H: s.H, R: s.R, price: s.price() })); run(c, days - k); run(s, days - k); return { c, s, ec, es }; };
 
 console.log('1. production up with demand down');
 { const { c, s, ec, es } = pair(90, [ID('حرب أسعار'), ID('بيانات تُظهر دخول')]);
   T('1a supply is higher and demand lower than the control (20 days in: supply +' + (es.P - ec.P).toFixed(1) + ', demand ' + (es.D - ec.D).toFixed(1) + ' mb/d)', es.P > ec.P + 1 && es.D < ec.D - 1, [es, ec]);
-  T('1b the commercial stock builds up (' + s.C.toFixed(0) + ' vs ' + c.C.toFixed(0) + ')', s.C > c.C + 100);
+  { const w = series(undefined, [ID('حرب أسعار'), ID('بيانات تُظهر دخول')], null, 90), build = w.dc[89], flowSum = w.flow.reduce((a, v) => a + v, 0);
+    T('1b the commercial stock builds up: +' + build.toFixed(0) + ' mb after 90 days (3% of the normal stock = 84; the old +100 was tuned on the wrong sign, whose price stayed flat for 10 days and so slowed the correction)', build > 0.03 * 2800, [build, flowSum]);
+    T('1b2 the price falls from the first days: day 4 is already below the control (the approved sign left it flat or higher), and the deepest point is more than 15% below', w.pr[3] < -0.01 && Math.min(...w.pr) < -0.15, [w.pr[3], Math.min(...w.pr)]); }
   T('1c the price falls clearly below the control (' + s.price() + ' vs ' + c.price() + ')', s.price() < c.price() * 0.88); }
 console.log('2. production down with demand up');
 { const { c, s, ec, es } = pair(90, [ID('أوبك+ تقرر خفض'), ID('الصين تعيد فتح')]);
   T('2a supply is lower and demand higher (20 days in: supply ' + (es.P - ec.P).toFixed(1) + ', demand +' + (es.D - ec.D).toFixed(1) + ' mb/d)', es.P < ec.P - 1 && es.D > ec.D + 1, [es, ec]);
   T('2b the commercial stock is drawn down (' + s.C.toFixed(0) + ' vs ' + c.C.toFixed(0) + ')', s.C < c.C - 60);
-  T('2c the price rises clearly above the control (' + s.price() + ' vs ' + c.price() + ')', s.price() > c.price() * 1.12);
+  { const w = series(undefined, [ID('أوبك+ تقرر خفض'), ID('الصين تعيد فتح')], null, 90), peak = Math.max(...w.pr), end = w.pr[89];
+    T('2c the price rises clearly above the control: the peak premium is ' + (peak * 100).toFixed(1) + '% (threshold unchanged, 12%), and 90 days in it is still ' + (end * 100).toFixed(1) + '% above (it now fades sooner because the stock draw is smaller: the old sign kept it at 15%)', peak > 0.12 && end > 0.05, [peak, end]); }
   T('2d OPEC+ answers: its group output is not the control\'s only moving part (the other groups follow the price)', s.out.some((v, i) => Math.abs(v - c.out[i]) > 0.05)); }
 console.log('3. global stock build-up / 4. draw-down');
 { const { c, s } = pair(120, [ID('فائض مخزون عالمي'), ID('المخزونات الأمريكية ترتفع')]);
@@ -46,13 +55,15 @@ console.log('7. political crisis');
 { const c = mk(5), s = mk(5); run(c, 30); run(s, 30); const p0 = s.price(); force(s, ID('إغلاق جزئي لمضيق')); run(c, 3); run(s, 3);
   T('7a the news makes the price jump at once (' + p0 + ' -> ' + s.price() + ' vs control ' + c.price() + ')', s.price() > c.price() * 1.025);
   run(c, 7); run(s, 7); T('7b the supply loss is real: 10 days in, output is lower (' + s.flow.P.toFixed(1) + ' vs ' + c.flow.P.toFixed(1) + '), the price is clearly above the control (' + s.price() + ' vs ' + c.price() + ')', s.flow.P < c.flow.P - 1.5 && s.price() > c.price() * 1.04);
-  run(c, 20); run(s, 20); const pk = s.price(); T('7b2 after the 30 days the stock was drawn (' + s.C.toFixed(0) + ' vs ' + c.C.toFixed(0) + ') and the price stays above the control', s.C < c.C - 20 && pk > c.price() * 1.02);
+  run(c, 20); run(s, 20); const pk = s.price(); const w7 = series(5, [ID('إغلاق جزئي لمضيق')], null, 100); T('7b2 the stock is drawn: at its deepest ' + Math.min(...w7.dc).toFixed(0) + ' mb below the control (threshold unchanged, 20; the draw now comes later than day 30 because the price jumped at once and rationed demand) and at day 30 the price is still above it', Math.min(...w7.dc) < -20 && pk > c.price() * 1.02, [Math.min(...w7.dc), pk, c.price()]);
+  T('7b3 the price jump is front-loaded: by day 10 the premium is more than 10% (the approved sign gave about 4%: the supply loss was cancelled by the gap term)', w7.pr[9] > 0.10, w7.pr[9]);
   run(c, 100); run(s, 100);
   T('7c after the event ends the extra premium fades (' + pk + ' -> ' + s.price() + ')', s.price() < pk && s.active.length === 0); }
 console.log('8. economic crisis');
 { const c = mk(6), s = mk(6); run(c, 30); run(s, 30); force(s, ID('أزمة مالية'), ID('بيانات تُظهر دخول')); run(c, 100); run(s, 100);
-  T('8a demand falls (' + s.flow.D.toFixed(1) + ' vs ' + c.flow.D.toFixed(1) + ') and the stock builds (' + s.C.toFixed(0) + ' vs ' + c.C.toFixed(0) + ')', s.flow.D < c.flow.D - 1 && s.C > c.C + 100);
-  T('8b the price falls well below the control (' + s.price() + ' vs ' + c.price() + ')', s.price() < c.price() * 0.85);
+  { const w = series(6, [ID('أزمة مالية'), ID('بيانات تُظهر دخول')], null, 100);
+    T('8a demand falls (' + s.flow.D.toFixed(1) + ' vs ' + c.flow.D.toFixed(1) + ') and the stock builds: +' + w.dc[99].toFixed(0) + ' mb after 100 days (2% of the normal stock = 56; the old +100 was tuned on the wrong sign)', s.flow.D < c.flow.D - 1 && w.dc[99] > 0.02 * 2800, w.dc[99]);
+    T('8b the price falls well below the control: ' + (Math.min(...w.pr) * 100).toFixed(1) + '% at its deepest (the old sign: -19%, reached with a +1% rise in the first 17 days; the corrected equation removes that overshoot) and is below the control on every day after the first week', Math.min(...w.pr) < -0.12 && w.pr.slice(7).every(v => v < 0.005), [Math.min(...w.pr), w.pr.slice(7).filter(v => v >= 0.005).length]); }
   const lo = s.price(); run(c, 250); run(s, 250); T('8c the news ends and the price recovers part of the fall (' + lo + ' -> ' + s.price() + ')', s.price() > lo * 1.05); }
 console.log('9. conflicting news');
 { const a = pair(60, [ID('أوبك+ تقرر خفض')]).s.price(), b = pair(60, [ID('أوبك+ تعلن زيادة تدريجية')]).s.price(), ab = pair(60, [ID('أوبك+ تقرر خفض'), ID('أوبك+ تعلن زيادة تدريجية')]).s.price(), c = pair(60, []).s.price();

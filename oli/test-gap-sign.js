@@ -11,7 +11,7 @@ const R = {}; for (const k in CASES) { R[k] = {}; for (const s of [1, -1]) R[k][
 const at = (k, s, d) => Math.exp(avg(R[k][s].map(r => r.x[d - 1]))) * PEQ, vol = (k, s) => avg(R[k][s].map(r => sd(r.x))), dev = (k, s, d) => avg(R[k][s].map(r => Math.abs(r.cover[d - 1] - 1)));
 console.log('1. the five states: price at day 30 / 90 / 240 (12 seeds), approved sign vs corrected sign');
 for (const k in CASES) console.log('   ' + k.padEnd(10) + ' approved ' + [30, 90, 240].map(d => at(k, 1, d).toFixed(1)).join(' / ') + '   corrected ' + [30, 90, 240].map(d => at(k, -1, d).toFixed(1)).join(' / ') + '   | price volatility ' + vol(k, 1).toFixed(3) + ' -> ' + vol(k, -1).toFixed(3) + ' | stock distance from normal at d240 ' + dev(k, 1, 240).toFixed(3) + ' -> ' + dev(k, -1, 240).toFixed(3));
-T('1a the approved sign stays the default (nothing changed until approval)', new E.Market(EC, null, 1).engine.P.gapSign === 1);
+T('1a the corrected sign is now the default (gapSign = -1, approved by the owner after this comparison); the old one stays selectable (gapSign = +1) so this comparison can always be re-run', new E.Market(EC, null, 1).engine.P.gapSign === -1 && new OE.OilEngine({ gapSign: 1 }, new (function (s) { this.s = s; this.next = () => 0.5; this.gauss = () => 0; })(1)).P.gapSign === 1);
 T('1b oil conserves in every state with either sign', Object.keys(CASES).every(k => [1, -1].every(s => R[k][s].every(r => r.chk < 1e-6))));
 T('1c [surplus] the corrected sign makes the price LOWER at day 30 (' + at('surplus', -1, 30).toFixed(1) + ' vs ' + at('surplus', 1, 30).toFixed(1) + ')', at('surplus', -1, 30) < at('surplus', 1, 30) - 1);
 T('1d [shortage] the corrected sign makes the price HIGHER at day 30 (' + at('shortage', -1, 30).toFixed(1) + ' vs ' + at('shortage', 1, 30).toFixed(1) + ')', at('shortage', -1, 30) > at('shortage', 1, 30));
@@ -26,5 +26,9 @@ const month = d => Math.floor(((d % 365) + 365) % 365 / 30.42) + 1, mk = sign =>
 const ID = t => NEWS.EVENTS.find(e => e.text.includes(t)).id;
 for (const sign of [1, -1]) { const c = mk(sign), s = mk(sign); step(c, 30); step(s, 30); s.force(ID('أزمة مالية'), s.lastDay, 'x'); step(c, 100); step(s, 100);
   console.log('   crisis, sign ' + sign + ': price ' + s.price() + ' vs control ' + c.price() + ' (' + ((s.price() / c.price() - 1) * 100).toFixed(1) + '%), stock ' + s.C.toFixed(0) + ' vs ' + c.C.toFixed(0)); if (sign === -1) { T('2a [corrected] a crisis still cuts demand, builds stock and lowers the price clearly (more than 5% below the control)', s.flow.D < c.flow.D - 1 && s.C > c.C + 40 && s.price() < c.price() * 0.95); } }
-console.log('   (the engine test file keeps its approved-sign thresholds; five of its magnitude thresholds were tuned for the approved sign and are 10-30% smaller with the corrected one: this is the size of the change)');
+{ const ser = sign => { const c = mk(sign), x = mk(sign); step(c, 30); step(x, 30); x.force(ID('حرب أسعار'), x.lastDay, 'x'); x.force(ID('بيانات تُظهر دخول'), x.lastDay, 'x'); const o = []; for (let d = 0; d < 20; d++) { step(c, 1); step(x, 1); o.push(x.price() / c.price() - 1); } return o; };
+  const a = ser(1), b = ser(-1);
+  T('2b [the anomaly, documented] with the approved sign a price war plus a demand collapse leaves the price flat or HIGHER for the first 10 days (' + (a[9] * 100).toFixed(1) + '% at day 10): an oversupply that raises the price', a[9] > -0.01);
+  T('2c with the corrected sign the same shock lowers the price at once (' + (b[3] * 100).toFixed(1) + '% at day 4, ' + (b[9] * 100).toFixed(1) + '% at day 10)', b[3] < -0.01 && b[9] < -0.03); }
+console.log('   (the engine test file was updated for the corrected default: see the PHASE 4 NOTE in test-oil-engine.js)');
 console.log('\nGAP SIGN TESTS: ' + pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);
