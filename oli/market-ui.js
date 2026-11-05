@@ -59,8 +59,21 @@
   }
   /* does a news item act on this product more than on the rest of the market? */
   function affects(n, p) { const e = NEWS.EVENTS.find(x => x.id === n.id); return !!e && ((e.pd && e.pd[p] >= 2) || (e.ps && e.ps[p]) || (e.rc && p !== 'BYPRODUCT')); }
+  /* the four world figures of the crude market, straight from the engine: production, demand, commercial stock on offer, total world stock (mb = million barrels) */
+  function crudeIndicators(co) {
+    const e = co.market.engine, v = e.view(), L = v.levels, tot = v.C + v.H + v.R, mb = x => (+x).toLocaleString('en-US', { maximumFractionDigits: 1 });
+    const cell = (k, num, unit, lv, sub) => '<div style="padding:8px 6px;border-radius:10px;background:#1b2530;text-align:center;min-width:0"><div class="es-sm">' + k + '</div><b dir="ltr" style="font-size:16px;color:#e8eef4">' + num + '</b> <span class="es-sm">' + unit + '</span><div style="color:' + (lv === 'NORMAL' ? '#cfd8e0' : lv === 'HIGH' ? GOLD : '#5aa9e6') + ';font-size:12px">' + LV[lv] + '</div>' + (sub ? '<div class="es-sm">' + sub + '</div>' : '') + '</div>';
+    return '<div class="es-card" data-mk="ind"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' + cell('الإنتاج العالمي', mb(v.flow.P), 'مليون برميل/يوم', L.supply) + cell('الطلب العالمي', mb(v.flow.D), 'مليون برميل/يوم', L.demand)
+      + cell('المعروض التجاري', mb(v.C), 'مليون برميل', L.stock, 'يغطي ' + v.coverDays.toFixed(0) + ' يوماً من الاستهلاك') + cell('المخزون العالمي الكلي', mb(tot), 'مليون برميل', L.stock, 'تجاري + محتجز + استراتيجي') + '</div></div>';
+  }
+  /* the company on the world market: shares of production and supply and what it offers, from the real daily rows */
+  function companyCard(co) {
+    const fp = co.marketFootprint ? co.marketFootprint(30) : null; if (!fp) return ''; const d = co.market.footprint(1), pct = x => x.toFixed(x > 0 && x < 0.01 ? 4 : 3) + '%', row = (k, val) => '<div class="es-kv"><span>' + k + '</span><span dir="ltr">' + val + '</span></div>';
+    return '<div class="es-card" data-mk="company"><h5>حصة شركتك من السوق</h5>' + row('من الإنتاج العالمي · اليوم', pct(d.shareProd)) + row('من الإنتاج العالمي · متوسط ' + fp.days + ' يوم', pct(fp.shareProd)) + row('من المعروض العالمي · متوسط ' + fp.days + ' يوم', pct(fp.shareSupply))
+      + row('ما تطرحه يومياً · متوسط', fm(fp.offered) + ' برميل') + row('ما تطرحه شهرياً · متوسط', fm(fp.offered * 30) + ' برميل') + '<div class="es-sm">من السجل اليومي الفعلي للشركة والسوق، لا من تقدير.</div></div>';
+  }
   function indicators(co, p) {
-    const e = co.market.engine; if (!e) return ''; let sup, dem, stk;
+    const e = co.market.engine; if (!e) return ''; if (p === 'CRUDE') return crudeIndicators(co); let sup, dem, stk;
     if (p === 'CRUDE') { const v = e.view().levels; sup = v.supply; dem = v.demand; stk = v.stock; } else { const s = e.prod[p], d = OE.PRODUCTS[p]; sup = e.level(s.sup / (d.dem * (1 - e.rcOut * 0 + 0))); dem = e.level(s.dem / d.dem); stk = e.level(s.S / (d.dem * e.P.prodDays)); }
     const chip = (k, lv) => '<div style="flex:1;text-align:center;padding:8px 4px;border-radius:10px;background:#1b2530"><div class="es-sm">' + k + '</div><b style="color:' + (lv === 'NORMAL' ? '#cfd8e0' : lv === 'HIGH' ? GOLD : '#5aa9e6') + '">' + LV[lv] + '</b></div>';
     return '<div class="es-card" data-mk="ind"><div style="display:flex;gap:6px">' + chip('العرض', sup) + chip('الطلب', dem) + chip('المخزون العالمي', stk) + '</div></div>';
@@ -95,7 +108,7 @@
     if (!co || !co.market.engine) return ''; const p = sym();
     let h = '<div class="es-card" data-mk="sec"><div class="es-row" style="margin:0">' + btn('mkSec', 'brent', 'سوق خام برنت', st.sec === 'brent', ' style="flex:1"') + btn('mkSec', 'products', 'سوق المنتجات النفطية', st.sec === 'products', ' style="flex:1"') + '</div></div>';
     if (st.sec === 'products') h += productsList(co);
-    h += priceCard(co, p) + chartCard(co, p) + newsCard(co, p) + indicators(co, p) + (st.sec === 'products' ? prodCosts(co, p) : '') + tradeCard(p);
+    h += priceCard(co, p) + chartCard(co, p) + newsCard(co, p) + indicators(co, p) + (p === 'CRUDE' ? companyCard(co) : '') + (st.sec === 'products' ? prodCosts(co, p) : '') + tradeCard(p);
     return h + moreCard(co);
   }
   /* actions: returns true when the view must be redrawn; 'mkGo' is routed by economy-ui (it owns the tabs) */

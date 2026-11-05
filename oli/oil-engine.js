@@ -8,7 +8,7 @@
  *
  *  CRUDE PRICE  (equilibrium level PEQ, no year, no history):   price = PEQ * exp(x)
  *    target   x* = -beta ln(C / Cnormal)            stock cover  (low stock = dear)
- *                + gapK (P - D) / D0                 today's supply-demand gap
+ *                + gapSign gapK (P - D) / D0         today's supply-demand gap.  gapSign = +1 is the approved equation (a surplus raises the target); gapSign = -1 is the economically correct sign (a surplus lowers it), kept OFF until approved
  *                + sentiment(live news) + sentiment(regime)
  *    x <- x + kappa (x* - x) + mu dx_prev + sigma * volatility(regime) * e + jump      (momentum = previous change, e from the market's own seeded stream)
  *    jumps: a sharp news item or the start of a crisis / recession moves x at once.
@@ -42,7 +42,7 @@
     GAS: { ar: 'الغاز المسال', base: 48, dem: 5, theta: 0.6, season: 1.5, peak: 1, beta: 1.5, floor: 0 },
     BYPRODUCT: { ar: 'المنتجات الثانوية', base: 57.6, dem: 8, theta: 1, season: 0.1, peak: 7, beta: 1.4, floor: 0 }
   };
-  const DEF = { PEQ: 72, C0: 2800, H0: 140, R0: 1200, D0: 100, beta: 3.5, kappa: 0.15, mu: 0.25, sigma: 0.006, gapK: 2, epsD: 0.03, hoardK: 0.15, hoardNews: 2, hoardMaxShare: 0.2, hoardRate: 0.08, hoardDayMax: 0.005,
+  const DEF = { PEQ: 72, C0: 2800, H0: 140, R0: 1200, D0: 100, beta: 3.5, kappa: 0.15, mu: 0.25, sigma: 0.006, gapK: 2, gapSign: 1, epsD: 0.03, hoardK: 0.15, hoardNews: 2, hoardMaxShare: 0.2, hoardRate: 0.08, hoardDayMax: 0.005,
     refillBelow: -0.15, refillPerDay: 0.3, xMax: 0.6, dayMax: 0.09, seasonAmp: 0.7, maxActive: 5, rareGapDays: 2922, minCdDays: 20, catGapDays: 5, newsJump: 0.35, intraSigma: 0.0012, intraRevert: 0.25, intraMax: 0.01, floorC: 100, logMax: 300, avgDays: 365,
     sfsRate: 0.2, respShare: 0.55, respRate: 0.1, respSpare: 0.5, respCut: 0.05, coHist: 400, refCap: 82, prodDays: 18, prodKappa: 0.2, prodSigma: 0.004, prodMax: 0.35, prodElast: 0.15, prodFlex: 0.35, costFloor: 8, quotaDays: 30 };
   class OilEngine {
@@ -123,7 +123,7 @@
       const H1 = this.H + flow; this.Hage = flow > 0 && H1 > 0 ? ((this.Hage + 1) * this.H) / H1 : this.Hage + 1; if (H1 <= 1e-9) this.Hage = 0; this.H = H1; this.C -= flow; this.flow.hoardFlow = flow; if (flow > 0) this.cum.hoarded += flow; else this.cum.released -= flow;
       if (this.held > 0) this.heldAge = (this.heldAge || 0) + 1; else this.heldAge = 0;
       // price: target from stock cover + today's gap + news + regime; momentum of the previous change; volatility of the regime; calculated randomness
-      const cover = this.C / p.C0, inv = -p.beta * Math.log(Math.max(0.2, cover)), gap = p.gapK * (P - D) / p.D0, xs = inv + gap + n.sent + R.sent;          // the company's own flows reach the price through the commercial stock C (the cover term) and through the answer of the other producers (resp, inside P)
+      const cover = this.C / p.C0, inv = -p.beta * Math.log(Math.max(0.2, cover)), gap = p.gapSign * p.gapK * (P - D) / p.D0, xs = inv + gap + n.sent + R.sent;          // the company's own flows reach the price through the commercial stock C (the cover term) and through the answer of the other producers (resp, inside P)
       this.drivers = { inv, gap, news: n.sent, regime: R.sent, target: xs };
       let dx = p.kappa * (xs - this.x) + p.mu * this.dx + p.sigma * R.vol * rng.gauss(); dx = clamp(dx, -p.dayMax, p.dayMax);
       const x0 = this.x; this.x = clamp(this.x + dx, -p.xMax, p.xMax); this.dx = this.x - x0 + 0;                              // jump already included in x before the step is the news / regime jump: it is not a momentum
