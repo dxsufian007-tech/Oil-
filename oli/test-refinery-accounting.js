@@ -23,7 +23,7 @@ function runHours(x, hours, keepStock) {
 console.log('REFINERY ACCOUNTING TESTS');
 // 1. the 30,000 bbl/day run: crude leaves the tanks exactly as it is booked, and every barrel is explained
 { const x = build(); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); for (const p of ['CRUDE', 'GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS']) x.co.setMode(p, 'WAIT'); x.co.sync(); restock(x.co);
-  x.co.advanceHours(1); const warm = x.co.refLast; T('1 the refinery takes 30,000 bbl/day from three pumps', warm && near(warm.feed * 24, 30000, 1e-3), warm && warm.feed * 24);
+  x.co.advanceHours(1); const warm = x.co.refLast; T('1 the refinery takes the full rating of three pumps (3 x 20,000 = 60,000 bbl/day since Stage 5; was 3 x 10,000)', warm && near(warm.feed * 24, 3 * require('./building-config.js').PUMP.L.maxFlow, 1e-3), warm && warm.feed * 24);
   const tank0 = tankSum(x.cts), qty0 = (x.co.qty.CRUDE + x.co.bq), a = runHours(x, 24 * 3, true), tankDrop = tank0 - tankSum(x.cts), qtyDrop = qty0 - (x.co.qty.CRUDE + x.co.bq);
   T('2 crude leaves the tanks exactly as much as the refinery books (tank drop = crude counter drop = feed)', near(tankDrop, a.feed, 1e-6) && near(qtyDrop, a.feed, 1e-6), { tankDrop, qtyDrop, feed: a.feed });
   const outs = a.GASOLINE + a.DIESEL + a.JET_FUEL + a.GAS + a.byproduct + a.residue + a.fuel + a.flared + a.loss;
