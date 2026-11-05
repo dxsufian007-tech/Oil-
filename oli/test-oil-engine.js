@@ -148,4 +148,16 @@ console.log('18. news records');
   T('18a each news item has a name, an Arabic description, a type, a direction, a strength, a duration, a date and a status', L.length > 10 && L.every(n => n.text && /[؀-ۿ]/.test(n.desc) && n.cat && ['UP', 'DOWN', 'NEUTRAL'].includes(n.dir) && ['STRONG', 'MEDIUM', 'WEAK'].includes(n.power) && n.days > 0 && n.date && ['active', 'ended'].includes(n.status)));
   T('18b finished items are marked ended, running ones active', L.filter(n => n.status === 'ended').length > 0 && L.every(n => (n.end <= e.lastDay) === (n.status === 'ended') || n.status === 'ended'));
   T('18c the news mix has positive, negative and neutral items', ['UP', 'DOWN', 'NEUTRAL'].every(k => NEWS.EVENTS.some(x => x.dir === k)) && NEWS.EVENTS.length === 100); }
+console.log('19. one daily market: week / month / year are views of the daily candles');
+{ const mkt = new E.Market(EC, null, 77); for (let h = 0; h < 24 * 800; h++) mkt.tick(h); const snap = JSON.stringify(mkt.gc.CRUDE);
+  for (const p of ['CRUDE', 'GASOLINE', 'BYPRODUCT']) { const D = mkt.gc[p], Dg = OE.groupOHLC(D, 'D'); let ok = true, why = '';
+    for (const fr of ['W', 'M', 'Y']) { const G = OE.groupOHLC(D, fr); const days = G.reduce((a, g) => a + g.n, 0), vol = G.reduce((a, g) => a + g.v, 0), vD = D.reduce((a, d) => a + d.v, 0);
+      if (days !== D.length || Math.abs(vol - vD) > 1e-6 * vD) { ok = false; why = fr + ' count/volume'; }
+      for (const g of G) { const rows = D.filter(d => d.d >= g.start && d.d <= g.end); if (rows.length !== g.n || g.o !== rows[0].o || g.c !== rows[rows.length - 1].c || g.h !== Math.max(...rows.map(r => r.h)) || g.l !== Math.min(...rows.map(r => r.l)) || Math.abs(g.v - rows.reduce((a, r) => a + r.v, 0)) > 1e-6 * Math.max(1, g.v)) { ok = false; why = fr + ' ' + g.key; break; } }
+      for (let i = 1; i < G.length; i++) if (G[i].start <= G[i - 1].end) { ok = false; why = fr + ' overlap'; } }
+    T('19a ' + p + ': weekly, monthly and yearly candles are exact sums / extremes of the daily candles (open, high, low, close, volume), no day lost or counted twice', ok && Dg.length === D.length, why); }
+  const W = OE.groupOHLC(mkt.gc.CRUDE, 'W'); T('19b weeks start on Monday (calendar weekday)', W.slice(1, -1).every(g => new Date(g.start + 'T00:00:00Z').getUTCDay() === 1 && g.n === 7));
+  T('19c a candle chain is continuous: every daily candle opens near the previous close (same price record) and has a volume', mkt.gc.CRUDE.every((c, i) => i === 0 || Math.abs(c.o / mkt.gc.CRUDE[i - 1].c - 1) < 0.02) && mkt.gc.CRUDE.every(c => c.v > 50));
+  T('19d reading other frames generates nothing: the daily record is unchanged', JSON.stringify(mkt.gc.CRUDE) === snap);
+  const rt = new E.Market(EC, JSON.parse(JSON.stringify(mkt.toJSON()))); T('19e save and load keep the daily candles with their volume', JSON.stringify(rt.gc.CRUDE.slice(-5)) === JSON.stringify(mkt.gc.CRUDE.slice(-5)) && rt.gc.CRUDE.length === mkt.gc.CRUDE.length); }
 console.log('\nOIL ENGINE TESTS: ' + pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);

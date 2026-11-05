@@ -91,14 +91,8 @@
       + '<div class="es-card"><h5>قيمة المخزون</h5><div class="es-big">' + M(bs.inventory) + '</div><div class="es-sm">بالتكلفة · بسعر السوق ' + M(s.inventoryValue) + '</div></div>'
       + '<div class="es-card"><h5>صافي الربح أو الخسارة (آخر شهر مغلق)</h5><div class="es-big ' + cl(netLast || 0) + '">' + (netLast == null ? '—' : sg(netLast)) + '</div><div class="es-sm">' + (netLast == null ? 'يظهر بعد إغلاق أول شهر' : arrowAr(netLast, netPrev)) + '</div></div>'
       + '</div>';
-    // performance chart with daily / monthly / yearly
-    const cd = chartData(); h += card('الأداء المالي', '<div class="es-row" style="margin:0 0 6px">' + [['day', 'يومي'], ['month', 'شهري'], ['year', 'سنوي']].map(r => '<button data-act="crange" data-v="' + r[0] + '" class="' + (chartRange === r[0] ? 'on' : '') + '">' + r[1] + '</button>').join('') + '</div>'
-      + (cd.labels.length ? lineChart([{ name: 'الإيرادات', color: '#8dffb0', values: cd.rev }, { name: 'المصروفات', color: '#5aa7ff', values: cd.exp }, { name: 'صافي الربح', color: '#ff9a8a', values: cd.pro }], cd.labels) : '<div class="es-sm">لا توجد أشهر مغلقة بعد — تظهر البيانات بعد نهاية أول شهر.</div>')
-      + '<div class="es-kv"><span>الإيرادات</span><span class="pos">' + M(sumArr(cd.rev, v => v)) + '</span></div><div class="es-kv"><span>المصروفات</span><span>' + M(sumArr(cd.exp, v => v)) + '</span></div><div class="es-kv"><span>صافي الربح</span><span class="' + cl(sumArr(cd.pro, v => v)) + '">' + sg(sumArr(cd.pro, v => v)) + '</span></div>');
-    // cash flow: this month, in three sections
-    const mc = s.month.cash, F = mc.flows;
-    h += card('التدفق النقدي · هذا الشهر', kv('الرصيد الافتتاحي', M(mc.start)) + kv('الأموال الداخلة', '+' + M(mc.in), 'pos') + kv('الأموال الخارجة', '−' + M(mc.out), 'neg') + kv('الرصيد النهائي', M(mc.actualEnd))
-      + '<div class="es-sm" style="margin-top:6px">تشغيلي ' + sg(F.OP.net) + ' · استثماري ' + sg(F.INV.net) + ' · تمويلي ' + sg(F.FIN.net) + '</div>');
+    // the two financial screens (performance chart, cash flow)
+    h += '<div class="es-grid"><button data-act="screen" data-v="perf" style="min-height:64px;font-size:15px">📈 الأداء المالي<div class="es-sm">الإيرادات · المصروفات · الربح</div></button><button data-act="screen" data-v="cash" style="min-height:64px;font-size:15px">💵 التدفق النقدي<div class="es-sm">الداخل · الخارج · الرصيد</div></button></div>';
     // cost breakdown
     const src = lm ? lm.L : s.month.L, sh = costShares(src);
     h += card('تكاليف التشغيل · ' + (lm ? 'آخر شهر مغلق' : 'الشهر الحالي'), sh.rows.length ? sh.rows.map(r => kv(r[0], M(r[1]) + ' · ' + Math.round(r[1] / sh.tot * 100) + '%')).join('') : '<div class="es-sm">لا توجد تكاليف مسجلة بعد.</div>');
@@ -247,6 +241,7 @@
     if (subScreen === 'rescue') return rRescue();
     if (subScreen === 'staff') return rStaff();
     if (subScreen === 'buy') return rBuy();
+    const FUI = typeof window !== 'undefined' && window.OliFinanceUI; if (FUI && (subScreen === 'perf' || subScreen === 'cash')) return '<button data-act="screen" data-v="">← العودة للوحة الشركة</button><h5 style="margin:8px 0">' + (subScreen === 'perf' ? 'الأداء المالي' : 'التدفق النقدي') + '</h5>' + (subScreen === 'perf' ? FUI.perf(CO) : FUI.cash(CO));
     if (subScreen === 'budget') return rBudget();
     if (subScreen === 'log') return rJournal();
     if (subScreen === 'report') return rFinReport();
@@ -356,6 +351,7 @@
   function act(e) {
     const el = e.target.closest('[data-act]'); if (!el || el.disabled) return; const a = el.dataset.act, v = el.dataset.v, p = el.dataset.p, id = +el.dataset.id; let msg = null, redo = true;
     const BUI = typeof window !== 'undefined' && window.OliMarketUI; if (BUI && a === 'mkGo') { e.stopPropagation(); const g = el.dataset.v.split(':'); if (g[0] === 'sell') { sellP = g[1]; sellQ = null; tab = 'sell'; } else tab = 'storage'; subScreen = ''; render(true); return; }
+    const FUI = typeof window !== 'undefined' && window.OliFinanceUI; if (FUI && FUI.ACTS.includes(a)) { e.stopPropagation(); if (FUI.act(a, el, CO)) render(true); return; }
     if (BUI && BUI.ACTS.includes(a)) { e.stopPropagation(); if (BUI.act(a, el, CO)) render(true); return; }      // the oil market screen
     if (a === 'range') range = +v; else if (a === 'pick') { mkt = p; } else if (a === 'mode') { CO.setMode(p, v); msg = EC.LABEL[p] + ': ' + v; e.stopPropagation(); }
     else if (a === 'sellnow') { sellP = p; sellQ = null; tab = 'sell'; } else if (a === 'sellp') { sellP = p; sellQ = null; }

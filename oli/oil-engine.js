@@ -161,8 +161,8 @@
   /* candles of the game's own daily prices (o h l c per game day, d = ISO date, wd = weekday 0..6) grouped into week / month / year */
   function keyOf(c, frame) { if (frame === 'D') return c.d; if (frame === 'M') return c.d.slice(0, 7); if (frame === 'Y') return c.d.slice(0, 4); return 'W' + (c.day - ((c.wd + 6) % 7)); }
   function groupOHLC(rows, frame) {
-    if (frame === 'D') return rows.map(r => ({ key: r.d, start: r.d, end: r.d, o: r.o, h: r.h, l: r.l, c: r.c, n: 1 }));
-    const out = []; let cur = null; for (const r of rows) { const k = keyOf(r, frame); if (!cur || cur.key !== k) { cur = { key: k, start: r.d, end: r.d, o: r.o, h: r.h, l: r.l, c: r.c, n: 0 }; out.push(cur); } cur.end = r.d; cur.n++; cur.c = r.c; if (r.h > cur.h) cur.h = r.h; if (r.l < cur.l) cur.l = r.l; }
+    if (frame === 'D') return rows.map(r => ({ key: r.d, start: r.d, end: r.d, o: r.o, h: r.h, l: r.l, c: r.c, v: r.v || 0, n: 1 }));
+    const out = []; let cur = null; for (const r of rows) { const k = keyOf(r, frame); if (!cur || cur.key !== k) { cur = { key: k, start: r.d, end: r.d, o: r.o, h: r.h, l: r.l, c: r.c, v: 0, n: 0 }; out.push(cur); } cur.end = r.d; cur.n++; cur.v += r.v || 0; cur.c = r.c; if (r.h > cur.h) cur.h = r.h; if (r.l < cur.l) cur.l = r.l; }
     return out;
   }
   return { OilEngine, REGIMES, GROUPS, PRODUCTS, DEF, groupOHLC, keyOf };

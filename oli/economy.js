@@ -87,14 +87,14 @@
       const E = this.engine, M = this.cfg.MARKET, day = Math.floor(gh / 24), hod = gh - day * 24;
       while (E.lastDay < day) { const d = E.lastDay + 1, c = this.cal(d); E.dayStep(d, c.month, c.d); }
       const o = E.hour(hod), c = this.cal(day);
-      for (const p of SELL.concat(['BYPRODUCT'])) { const pr = o[p === 'CRUDE' ? 'CRUDE' : p]; this.price[p] = pr; const h = this.hist[p]; h.push(pr); if (h.length > M.historyHours) h.shift(); this._candle(p, day, c, pr); }
+      for (const p of SELL.concat(['BYPRODUCT'])) { const pr = o[p === 'CRUDE' ? 'CRUDE' : p]; this.price[p] = pr; const h = this.hist[p]; h.push(pr); if (h.length > M.historyHours) h.shift(); this._candle(p, day, c, pr, p === 'CRUDE' ? E.flow.D : E.prod[p].dem); }
       this.hour = gh + 1;
     }
     /* the game's own candle per product (Open / High / Low / Close of the price the player trades at), one per game day, from the hourly prices */
-    _candle(p, day, c, pr) { const g = this.gc[p] || (this.gc[p] = []), a = g[g.length - 1]; if (!a || a.day !== day) { g.push({ day, d: c.d, wd: c.wd, o: pr, h: pr, l: pr, c: pr }); if (g.length > (this.cfg.ENGINE.candleDays || 1500)) g.shift(); } else { if (pr > a.h) a.h = pr; if (pr < a.l) a.l = pr; a.c = pr; } }
+    _candle(p, day, c, pr, vol) { vol = Math.round(vol * 100) / 100; const g = this.gc[p] || (this.gc[p] = []), a = g[g.length - 1]; if (!a || a.day !== day) { g.push({ day, d: c.d, wd: c.wd, o: pr, h: pr, l: pr, c: pr, v: vol }); if (g.length > (this.cfg.ENGINE.candleDays || 1500)) g.shift(); } else { if (pr > a.h) a.h = pr; if (pr < a.l) a.l = pr; a.c = pr; a.v = vol; } }
     /* candles are saved compactly as [day, o, h, l, c] and get their date back from the calendar */
-    gcPack() { const o = {}; for (const p in this.gc) o[p] = this.gc[p].map(c => [c.day, c.o, c.h, c.l, c.c]); return o; }
-    gcUnpack(g) { const o = {}; if (!g || Array.isArray(g)) return o; for (const p in g) o[p] = g[p].map(c => { if (!Array.isArray(c)) return c; const k = this.cal(c[0]); return { day: c[0], d: k.d, wd: k.wd, o: c[1], h: c[2], l: c[3], c: c[4] }; }); return o; }
+    gcPack() { const o = {}; for (const p in this.gc) o[p] = this.gc[p].map(c => [c.day, c.o, c.h, c.l, c.c, Math.round((c.v || 0) * 100) / 100]); return o; }
+    gcUnpack(g) { const o = {}; if (!g || Array.isArray(g)) return o; for (const p in g) o[p] = g[p].map(c => { if (!Array.isArray(c)) return c; const k = this.cal(c[0]); return { day: c[0], d: k.d, wd: k.wd, o: c[1], h: c[2], l: c[3], c: c[4], v: c[5] || 0 }; }); return o; }
     /* the player's trades reach the market once: crude through the engine's commercial stock (buy removes, sell adds), products through each product's own stock */
     engineBuy(p, qty, got) { if (!this.engine) return; if (p === 'CRUDE') this.engine.playerBuy(got); else this.engine.productBuy(p, got); }
     engineSell(p, take, qty) { if (!this.engine) return; if (p === 'CRUDE') this.engine.playerSell(take ? take.own : qty, take ? take.bought : 0); else this.engine.productSell(p, qty); }
@@ -140,7 +140,7 @@
       this.recv = []; this.nextRecv = 1; this.months = []; this.bsStart = null; this.qty = PZERO(); this.qty2 = { BYPRODUCT: 0, RESIDUE: 0 }; this.crudeShort = 0; this.crudeLoss = 0; this.bq = 0; this.explLog = []; this.bprod = {}; this.tradeLog = []; this.nextTrade = 1; this.boughtUsed = 0; this.refLast = null; this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.purchases = []; this.nextPur = 1; this.matLimit = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1; this.cutUntil = -1; this.powerBuy = false; this.pwStop = null; this.bsStart = null;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
       this.crng = new Rng(c.MARKET.seed ^ 0x5bd1e995); this.modes = {}; for (const p of SELL) this.modes[p] = c.AUTOSELL && c.AUTOSELL.defaultMode || 'SPOT'; this.tier = c.POWER.startTier; this.autoRepair = c.MAINTENANCE.autoRepair;
       const cash = isFinite(this.store.cash) ? this.store.cash : 0;
-      this.journal = new Journal(); this.led = { day: ledger(cash), month: ledger(cash), year: ledger(cash), life: ledger(cash) }; this.lastMonth = null; this.days = []; this.prodHist = []; this.crudeQ = 1;
+      this.journal = new Journal(); this.led = { day: ledger(cash), month: ledger(cash), year: ledger(cash), life: ledger(cash) }; this.lastMonth = null; this.days = []; this.dlog = []; this.prodHist = []; this.crudeQ = 1;
       this.fin = { state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }; this.taxCarry = 0; this.bankrupt = false; this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.staff = { operators: 0, engineers: 0, maintenance: 0, managers: 0, total: 0, payroll: 0 };
       this.speed = 1; this.lastSpeed = 1; this.mirror = this.store.cash; this.lastSim = null; this.away = null; this.events = []; this.seen = new Set(); this.badClock = false;
       this._post({ type: 'OPENING', flow: 'NONE', desc: 'Opening balance', noProj: true }, [['CASH', cash], ['EQUITY', -cash]], { cashApplied: true });
@@ -664,11 +664,25 @@
         else if (m === 'CONTRACT') for (const c of this.activeContracts().filter(x => x.product === p).sort((a, b) => a.deadline - b.deadline)) this.deliver(c.id);
       }
     }
+    /* the permanent daily financial record (from the real ledger of the day that just closed): [day, revenue, expenses, net, cash in, cash out, opening cash, closing cash, assets, debt].
+       Weeks / months / years are only sums of these rows (finSeries) - they are never kept or computed separately. */
+    _finLog(cash) {
+      const c = calc(this.led.day, cash), r = v => Math.round(v * 100) / 100; this.dlog.push([this.dayIdx - 1, r(c.revenue), r(c.expenses), r(c.netProfit), r(c.cash.in), r(c.cash.out), r(c.cash.start), r(cash), r(this.assetsTotal()), r(this.debt())]);
+      while (this.dlog.length > 3650) this.dlog.shift();
+    }
+    /* the financial history as a list of periods ('D' day, 'M' month, 'Y' year) built from the daily rows of the central calendar */
+    finSeries(frame) {
+      const out = []; let cur = null;
+      for (const r of this.dlog) { const dt = CAL.dateOfDay(r[0]), key = frame === 'D' ? r[0] : frame === 'M' ? dt.year * 100 + dt.month : dt.year;
+        if (!cur || cur.key !== key) { cur = { key, year: dt.year, month: dt.month, day: dt.day, from: r[0], to: r[0], rev: 0, exp: 0, pro: 0, cin: 0, cout: 0, cstart: r[6], cend: r[7], assets: r[8], debt: r[9], n: 0 }; out.push(cur); }
+        cur.to = r[0]; cur.n++; cur.rev += r[1]; cur.exp += r[2]; cur.pro += r[3]; cur.cin += r[4]; cur.cout += r[5]; cur.cend = r[7]; cur.assets = r[8]; cur.debt = r[9]; }
+      return out;
+    }
     _newDay() {
       // Month-end charges (salaries, running costs, depreciation, loans, tax) belong to the day that ENDS the month: they are booked before that day is closed.
       if (CAL.isMonthStart(this.dayIdx)) this._monthEnd();                                 // the real calendar decides: the 1st of a month closes the month before it
       const cash = this.store.cash; this.days.push(Object.assign({ d: this.dayIdx - 1 }, (() => { const c = calc(this.led.day, cash); return { revenue: c.revenue, expenses: c.expenses, profit: c.netProfit, cashIn: c.cash.in, cashOut: c.cash.out, storage: this.led.day.storage, opex: c.opex + c.variable }; })()));
-      while (this.days.length > 60) this.days.shift(); this.led.day = ledger(cash);
+      while (this.days.length > 60) this.days.shift(); this._finLog(cash); this.led.day = ledger(cash);
       if (this.autoRepair) { const M = this.cfg.MAINTENANCE; for (const b of this.store.list()) if (b.st !== 'UNDER_CONSTRUCTION' && b.c < M.autoRepairBelow && this.store.cash - this.repairCost(b) >= M.cashReserve) this.repair(b.id); }
       this._refreshOffers();                                                          // expired offers leave, new ones take their place: there are always 3 to choose from
     }
@@ -855,14 +869,14 @@
     /* ---- save / load (the store and the pipes are saved by the lab as before; this is the company) ---- */
     toJSON() {
       return { v: 2, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0, a.useStart == null ? null : a.useStart]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
-        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
+        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
     }
     fromJSON(d) {
       if (!d || (d.v !== 1 && d.v !== 2)) return false; const c = this.cfg;
       this.hours = d.hours || 0; this.dayIdx = d.dayIdx || 0; this.acc = 0; this.market = new Market(c, d.market); this.assets = new Map((d.assets || []).map(a => [a[0], { cost: a[1], t: a[2], dep: a[3] || 0, useStart: a.length > 4 ? a[4] : a[2] }])); /* saves before Phase 14: in use from the purchase */ this.loans = d.loans || []; this.nextLoan = d.nextLoan || 1; this.closed = d.closed || [];
       this.contracts = d.contracts || []; this.history = d.history || []; this.offers = d.offers || []; this.nextContract = d.nextContract || 1; this.crng = new Rng(d.crng || 1); this.modes = Object.assign(this.modes, d.modes || {}); this.tier = d.tier || 0; this.autoRepair = d.autoRepair !== false;
       this.led = d.led || this.led; for (const k of ['day', 'month', 'year', 'life']) { const L = Object.assign(ledger(0), this.led[k]); L.produced = Object.assign(PZERO(), L.produced); L.sold = Object.assign(SZERO(), L.sold); L.pl = Object.assign(ledger(0).pl, L.pl || {}); L.cf = Object.assign(ledger(0).cf, L.cf || {}); this.led[k] = L; }
-      this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSpeed = d.lastSpeed > 0 ? d.lastSpeed : (this.speed > 0 ? this.speed : 1); this.lastSim = d.savedAt == null ? null : d.savedAt;
+      this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.dlog = d.dlog || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSpeed = d.lastSpeed > 0 ? d.lastSpeed : (this.speed > 0 ? this.speed : 1); this.lastSim = d.savedAt == null ? null : d.savedAt;
       this.recv = (d.recv || []).map(r => Object.assign({ late: false, payOn: r.due }, r)); this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.purchases = d.purchases || []; this.nextPur = d.nextPur || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy; this.bsStart = d.bsStart || null;
       if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); this.qty2 = Object.assign({ BYPRODUCT: 0, RESIDUE: 0 }, d.qty2 || {}); }
       this.bq = d.bq || 0; this.explLog = d.explLog || []; this.bprod = d.bprod || {}; this.tradeLog = d.tradeLog || []; this.nextTrade = d.nextTrade || 1; this.boughtUsed = d.boughtUsed || 0;

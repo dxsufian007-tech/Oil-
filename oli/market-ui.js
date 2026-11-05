@@ -47,7 +47,7 @@
     const v = view(co, p), list = v.list, c = list.find(x => x.key === st.sel) || list[list.length - 1];
     let h = '<div class="es-card" data-mk="chart"><div class="es-row" style="margin:0 0 6px">' + ['D', 'W', 'M', 'Y'].map(k => btn('mkFrame', k, FR[k], st.frame === k)).join('') + '<span style="flex:1"></span>' + btn('mkNav', 'old', '◀') + btn('mkNav', 'new', '▶') + btn('mkZoom', 'in', '＋') + btn('mkZoom', 'out', '－') + '</div>';
     h += chart(list, co.market.price[p]);
-    if (c) { const ch = c.c / c.o - 1; h += '<div class="es-sm" dir="ltr" style="text-align:center;margin-top:4px">' + c.start + (c.end !== c.start ? ' → ' + c.end : '') + ' · فتح ' + f2(c.o) + ' · أعلى ' + f2(c.h) + ' · أدنى ' + f2(c.l) + ' · إغلاق ' + f2(c.c) + ' <b style="color:' + col(ch) + '">' + pc(ch) + '</b></div>'; }
+    if (c) { const ch = c.c / c.o - 1; h += '<div class="es-sm" dir="ltr" style="text-align:center;margin-top:4px">' + c.start + (c.end !== c.start ? ' → ' + c.end : '') + ' · فتح ' + f2(c.o) + ' · أعلى ' + f2(c.h) + ' · أدنى ' + f2(c.l) + ' · إغلاق ' + f2(c.c) + ' <b style="color:' + col(ch) + '">' + pc(ch) + '</b></div><div class="es-sm" style="text-align:center">حجم التداول: ' + fm(c.v) + ' مليون برميل (مجموع أيام الشمعة)</div>'; }
     return h + '<div class="es-sm">' + FR[st.frame] + ' · ' + list.length + ' شمعة · <span style="color:' + UP + '">■</span> صاعدة <span style="color:' + DN + '">■</span> هابطة · الخط الذهبي = السعر الحالي</div></div>';
   }
   /* the last 3 news: short title, short description, effect and arrow; the whole log on demand */

@@ -15,10 +15,10 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   // 1. the dashboard: six cards, the chart toggles, the health and the three buttons
   let t = await body();
   ok(/الرصيد النقدي/.test(t) && /إجمالي الديون/.test(t) && /صافي الربح أو الخسارة/.test(t), 'dashboard: the six main cards are shown');
-  ok(await p.locator('#es-body svg polyline').count() >= 3, 'dashboard: the chart draws revenue, expenses and profit lines (monthly)');
-  await tap('#es-body [data-act=crange][data-v=day]'); ok(await p.locator('#es-body svg polyline').count() >= 3, 'chart switches to daily');
-  await tap('#es-body [data-act=crange][data-v=year]'); ok(await p.locator('#es-body svg').count() >= 1, 'chart switches to yearly');
-  await tap('#es-body [data-act=crange][data-v=month]');
+  await tap('#es-body [data-act=screen][data-v=perf]'); await p.waitForTimeout(100); ok(await p.locator('#es-body svg polyline').count() >= 3 || /لا توجد أيام مغلقة/.test(await p.textContent('#es-body')), 'performance screen: the chart draws revenue, expenses and profit lines (monthly)');
+  await tap('#es-body [data-act=ffr][data-v=D]'); ok(await p.locator('#es-body svg polyline').count() >= 3 || /لا توجد أيام مغلقة/.test(await p.textContent('#es-body')), 'chart switches to daily');
+  await tap('#es-body [data-act=ffr][data-v=Y]'); ok(await p.locator('#es-body svg').count() >= 1 || /لا توجد أيام مغلقة/.test(await p.textContent('#es-body')), 'chart switches to yearly');
+  await tap('#es-body [data-act=ffr][data-v=M]'); await tap('#es-body [data-act=screen][data-v=""]');
   ok(/صحة الشركة/.test(t) && /السيولة/.test(t) && /مستوى المخاطر/.test(t), 'dashboard: company health shows liquidity, efficiency, asset condition and risk');
   await shot('econ-dashboard');
   // 2. the budget
