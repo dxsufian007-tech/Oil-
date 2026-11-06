@@ -4,6 +4,11 @@ name: Demo APK (everything unlocked, $100M)
 # Manual only. A SEPARATE app (Oli Demo, id com.oli.oildemo): $100M, every building unlocked, every region open, every oil field drillable. Result: branch demo-apk-build (OliDemo.apk).
 on:
   workflow_dispatch:
+    inputs:
+      perf:
+        description: 'Performance-test build (separate app Oli Perf + hidden measurement panel)'
+        type: boolean
+        default: false
   push:
     branches: [feature/building-system]
     paths: ['.github/workflows/demo-apk.yml']
@@ -28,12 +33,14 @@ jobs:
         run: npm ci
       - name: Package the preview page and make it a separate Android app
         working-directory: oli
+        env:
+          PERF: ${{ inputs.perf }}
         run: |
-          OLI_DEMO=1 node build-www-map.js
-          sed -i 's/"appId": "com.oli.oilgame"/"appId": "com.oli.oildemo"/; s/"appName": "Oli"/"appName": "Oli Demo"/' capacitor.config.json
+          if [ "$PERF" = "true" ]; then ID=com.oli.oilperf; NAME="Oli Perf"; OLI_DEMO=1 OLI_PERF=1 OLI_PERF_BUILD=${GITHUB_SHA::7} node build-www-map.js; npm install --no-save @capacitor/filesystem@^8 @capacitor/share@^8; else ID=com.oli.oildemo; NAME="Oli Demo"; OLI_DEMO=1 node build-www-map.js; fi
+          sed -i "s/\"appId\": \"com.oli.oilgame\"/\"appId\": \"$ID\"/; s/\"appName\": \"Oli\"/\"appName\": \"$NAME\"/" capacitor.config.json
           npx cap sync android
-          sed -i 's/applicationId "com.oli.oilgame"/applicationId "com.oli.oildemo"/' android/app/build.gradle
-          sed -i 's|<string name="app_name">Oli</string>|<string name="app_name">Oli Demo</string>|' android/app/src/main/res/values/strings.xml
+          sed -i "s/applicationId \"com.oli.oilgame\"/applicationId \"$ID\"/" android/app/build.gradle
+          sed -i "s|<string name=\"app_name\">Oli</string>|<string name=\"app_name\">$NAME</string>|" android/app/src/main/res/values/strings.xml
           grep -n "applicationId" android/app/build.gradle
       - name: Same signing key as the game
         run: |
@@ -50,14 +57,17 @@ jobs:
         with:
           name: OliDemo-apk
           path: OliDemo.apk
-      - name: Publish the APK on the branch demo-apk-build
+      - name: Publish the APK on the branch demo-apk-build (perf build goes to perf-apk-build)
+        env:
+          PERF: ${{ inputs.perf }}
         run: |
-          mkdir -p /tmp/out && cp OliDemo.apk /tmp/out/
+          BR=demo-apk-build; F=OliDemo.apk; if [ "$PERF" = "true" ]; then BR=perf-apk-build; F=OliPerf.apk; cp OliDemo.apk OliPerf.apk; fi
+          mkdir -p /tmp/out && cp $F /tmp/out/
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git checkout --orphan demo-apk-build
+          git checkout --orphan $BR
           git rm -rf --quiet .
-          cp /tmp/out/OliDemo.apk .
-          git add OliDemo.apk
+          cp /tmp/out/$F .
+          git add $F
           git commit -q -m "Oli Demo APK"
-          git push -f origin demo-apk-build
+          git push -f origin $BR
