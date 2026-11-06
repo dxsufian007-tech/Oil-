@@ -326,35 +326,50 @@
   function tankFill(b) { const d = B.DEFS[b.d]; return b.s && b.s.vol != null ? b.s.vol / d.capacity.value : 0; }
   // Stage 5 perf: a building that does not move is painted ONCE into a small offscreen sprite and then just copied (panning no longer re-runs ~100 canvas operations per building per frame).
   // Not used while the zoom is changing, and never for the refinery (flare / fans animate).  Sprites are keyed by visual, rotation, size, zoom, resolution, fill (1/32) and state.
-  const SPRITES = !/nosprite/.test(location.search), sprites = new Map(); let lastZ = cam.z, zStable = false, spriteDpr = 0, spriteBudget = 3;
-  window.__perfSpr = () => sprites.size;                                   /* test build only reads this (memory report) */
+  const SPRITES = !/nosprite/.test(location.search), sprites = new Map(), latest = new Map(); let scaledUsed = false, zTimer = 0, lastZ = cam.z, zStable = false, spriteDpr = 0, spriteBudget = 3;
+  window.__perfSpr = () => sprites.size; window.__perfSprPx = () => spritePx;                                   /* test build only reads this (memory report) */
+  let spritePx = 0;
+  function makeSprite(d, o, fill, z) {                                       // one picture of a building at zoom z (the whole procedural drawing, done once)
+    const dpr = WP.dpr(), [W, H] = o.r & 1 ? [o.h, o.w] : [o.w, o.h], pad = 12, up = 5 * A.HU * z, offX = H * 32 * z + pad, offY = up + pad, cw = Math.ceil((W + H) * 32 * z + 2 * pad), ch = Math.ceil(up + (W + H) * 16 * z + 2 * pad);
+    if (cw * ch * dpr * dpr > 6e6) return null; const c = document.createElement('canvas'); c.width = Math.ceil(cw * dpr); c.height = Math.ceil(ch * dpr); const g = c.getContext('2d'); g.scale(dpr, dpr);
+    A.draw(g, d.visual, Object.assign({}, o, { z, ox: offX, oy: offY, fill: fill / 32 })); spritePx += c.width * c.height; return { c, offX, offY, cw, ch, z, px: c.width * c.height };
+  }
+  function keepSprite(key, sp) {                                             // bounded cache: at most 240 pictures and ~12M pixels (about 48 MB), oldest dropped first
+    sprites.set(key, sp); while ((sprites.size > 240 || spritePx > 12e6) && sprites.size > 1) { const k = sprites.keys().next().value, q = sprites.get(k); spritePx -= q.px; sprites.delete(k); }
+  }
   function drawSprite(d, o, b) {
-    if (d.visual === 'refinery') return false; const dpr = WP.dpr(); if (dpr !== spriteDpr) { sprites.clear(); spriteDpr = dpr; }
-    const fill = Math.round(Math.max(0, Math.min(1, o.fill || 0)) * 32), key = d.visual + '|' + o.r + '|' + o.w + 'x' + o.h + '|' + o.z.toFixed(3) + '|' + dpr + '|' + fill + '|' + o.state; let sp = sprites.get(key);
+    if (d.visual === 'refinery') return false; const dpr = WP.dpr(); if (dpr !== spriteDpr) { sprites.clear(); latest.clear(); spritePx = 0; spriteDpr = dpr; }
+    const fill = Math.round(Math.max(0, Math.min(1, o.fill || 0)) * 32), base = d.visual + '|' + o.r + '|' + o.w + 'x' + o.h + '|' + dpr + '|' + fill + '|' + o.state;
     const steady = b._fb === fill; b._fb = fill;
+    if (!zStable) {                                                           // the zoom is changing: a picture made at the nearest zoom step (about 9% apart) is drawn slightly scaled - no full procedural redraw of every building per frame; a crisp frame follows when the zoom stops
+      const zq = Math.pow(2, Math.round(Math.log2(o.z) * 8) / 8), qk = base + '|q' + zq.toFixed(4); let q = sprites.get(qk);
+      if (!q) { if (!steady || spriteBudget <= 0) return false; spriteBudget--; q = makeSprite(d, o, fill, zq); if (!q) return false; keepSprite(qk, q); }
+      const k = o.z / zq; ctx.drawImage(q.c, o.ox - q.offX * k, o.oy - q.offY * k, q.cw * k, q.ch * k); scaledUsed = true; return true;
+    }
+    const key = base + '|' + o.z.toFixed(3); let sp = sprites.get(key);
     if (!sp) {
-      if (!steady || spriteBudget <= 0) return false;                  // a tank whose level is changing right now is drawn directly (no point caching a picture that is stale next frame)
- spriteBudget--;                  // at most 3 new sprites per frame - the rest are drawn directly, so a burst of new sprites (e.g. tanks filling at x5) never causes a long frame
-      const [W, H] = o.r & 1 ? [o.h, o.w] : [o.w, o.h], z = o.z, pad = 12, up = 5 * A.HU * z, offX = H * 32 * z + pad, offY = up + pad, cw = Math.ceil((W + H) * 32 * z + 2 * pad), ch = Math.ceil(up + (W + H) * 16 * z + 2 * pad);
-      if (cw * ch * dpr * dpr > 6e6) return false; const c = document.createElement('canvas'); c.width = Math.ceil(cw * dpr); c.height = Math.ceil(ch * dpr); const g = c.getContext('2d'); g.scale(dpr, dpr);
-      A.draw(g, d.visual, Object.assign({}, o, { ox: offX, oy: offY, fill: fill / 32 })); sp = { c, offX, offY, cw, ch }; sprites.set(key, sp); if (sprites.size > 120) sprites.delete(sprites.keys().next().value);
+      if (!steady || spriteBudget <= 0) return false;                         // a tank whose level is changing right now is drawn directly (no point caching a picture that is stale next frame)
+      spriteBudget--;                                                         // at most 3 new pictures per frame - the rest are drawn directly, so a burst (e.g. tanks filling at x5) never causes a long frame
+      sp = makeSprite(d, o, fill, o.z); if (!sp) return false; keepSprite(key, sp);
     }
     ctx.drawImage(sp.c, Math.round((o.ox - sp.offX) * dpr) / dpr, Math.round((o.oy - sp.offY) * dpr) / dpr, sp.cw, sp.ch); return true;
   }
   function drawBuildings(lv, vb) {
-    zStable = Math.abs(cam.z - lastZ) < 1e-6; lastZ = cam.z; spriteBudget = 3;
+    zStable = Math.abs(cam.z - lastZ) < 1e-6; lastZ = cam.z; spriteBudget = 3; scaledUsed = false;
     animNeed = false; const now = performance.now() / 1000, list = STORE.query(Math.floor(vb.x0) - 2, Math.floor(vb.y0) - 2, Math.ceil(vb.x1) + 2, Math.ceil(vb.y1) + 2); let anim = false;
-    list.sort((p, q) => { const a = B.dimsOf(B.DEFS[p.d], p.r), c = B.dimsOf(B.DEFS[q.d], q.r); return (p.x + a[0] + p.y + a[1]) - (q.x + c[0] + q.y + c[1]); });
+    const sk = p => { if (p._skr !== p.r || p._skx !== p.x || p._sky !== p.y) { const a = B.dimsOf(B.DEFS[p.d], p.r); p._sk = p.x + a[0] + p.y + a[1]; p._skr = p.r; p._skx = p.x; p._sky = p.y; } return p._sk; };      // draw order key cached on the building (it only changes if the building does)
+    list.sort((p, q) => sk(p) - sk(q));
     // pipes first (they lie on the ground)
     if (pipes.size && lv !== 'FAR') { const tp = performance.now(); drawPipes(vb); WP.stats.t.pipes += performance.now() - tp; }
     for (const b of list) {
       const d = B.DEFS[b.d], [w, h] = B.dimsOf(d, b.r);
       if (lv === 'FAR' || cam.z < .12) { diamondPath(b.x, b.y, w, h); ctx.fillStyle = CAT[d.category]; ctx.fill(); ctx.strokeStyle = 'rgba(20,16,10,.7)'; ctx.lineWidth = 1; ctx.stroke(); continue; }
       const o = { ox: sx(b.x, b.y), oy: sy(b.x, b.y), z: cam.z, r: b.r, w: d.footprint[0], h: d.footprint[1], t: now, fill: tankFill(b), state: b.st };
-      if (!(zStable && SPRITES && drawSprite(d, o, b))) A.draw(ctx, d.visual, o);
+      if (!(SPRITES && drawSprite(d, o, b))) { A.draw(ctx, d.visual, o); WP.stats.sprMiss = (WP.stats.sprMiss | 0) + 1; } else WP.stats.sprHit = (WP.stats.sprHit | 0) + 1;
       if (d.type === 'refinery' && b.s && b.s._in > 0) animNeed = true;
       if (b.id === state.sel) { diamondPath(b.x, b.y, w, h); ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2.2; ctx.setLineDash([7, 4]); ctx.stroke(); ctx.setLineDash([]); drawPorts(b, true); }
     }
+    if (scaledUsed) { clearTimeout(zTimer); zTimer = setTimeout(() => WP.markDirty(), 140); }
     animOn = animNeed && cam.z >= .3 && COMPANY.speed > 0;      // moving parts (flowing pipes, a running refinery) are refreshed by the 480 ms tick below - at most 2 frames/s, none at all while paused / idle
   }
   function drawPipes(vb) {                                                                  // Stage 5 perf: the visible lines are collected first and stroked in a few batches (one path per style) instead of 3-4 canvas strokes per line

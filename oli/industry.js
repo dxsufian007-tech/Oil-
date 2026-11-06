@@ -267,6 +267,7 @@
     }
     /* ---- the graph: pipeline edges + directly docked ports ---- */
     build() {
+      this._kindCache = null;                                                   // tank kinds depend only on the pipe graph: they are recomputed once per rebuilt graph, not on every call
       const store = this.store, net = this.net, E = new Map(); this.edges = E; const edge = (ka, kb, L) => { const sp = L ? lineSpec(L) : { length: 0, capacity: 1e12, maxPressure: 1e9 }; const ia = ka.indexOf(':'), ib = kb.indexOf(':'), e = { a: ka, b: kb, ab: +ka.slice(0, ia), ap: ka.slice(ia + 1), bb: +kb.slice(0, ib), bp: kb.slice(ib + 1), line: L || null, tiles: L ? L.path.length : 0, cap: sp.capacity, maxP: sp.maxPressure, flow: 0, over: false, lowP: false }; E.set(ka, e); E.set(kb, e); };
       for (const L of net.lines.values()) { if (!L.a || !L.b || L.open === false) continue; if (!store.get(L.a.b) || !store.get(L.b.b)) continue; edge(pk(L.a.b, L.a.port), pk(L.b.b, L.b.port), L); }
       const pts = new Map(); for (const b of store.items.values()) for (const p of B.worldPoints(b)) if (p.kind === 'pipe' && !p.reserved) pts.set(b.id + ':' + p.id, p);
@@ -436,9 +437,10 @@
      * Product tanks and gas storage have no kind (null). */
     tankKind(b) {
       const def = DEFS[b.d]; if (!def || def.type !== 'tank' || def.product !== P.CRUDE) return null; if (b.rs) return 'RESERVE'; if (this.dirty()) this.build();
+      const kc0 = this._kindCache; if (kc0) { const k0 = kc0.get(b.id); if (k0 !== undefined) return k0; }
       let any = false, hasIn = false; for (const c of def.connections) if (this.edgeOf(b, c.id)) { any = true; if (c.role !== 'out') hasIn = true; }
-      if (!any) return 'COMMERCIAL'; if (!hasIn) return 'TRADE';
-      return this._wellUpstream(b, null, new Set([b.id])) ? 'PRODUCTION' : 'TRADE';
+      const kc = this._kindCache || (this._kindCache = new Map()); const k = !any ? 'COMMERCIAL' : !hasIn ? 'TRADE' : this._wellUpstream(b, null, new Set([b.id])) ? 'PRODUCTION' : 'TRADE'; kc.set(b.id, k);
+      return k;
     }
     _wellUpstream(b, cameBy, seen) {
       const def = DEFS[b.d]; for (const c of def.connections) { if (c.id === cameBy || c.role === 'out') continue; const e = this.edgeOf(b, c.id); if (!e) continue; const far = this.other(e, b, c.id), fb = far.b; if (!fb || seen.has(fb.id)) continue; seen.add(fb.id);

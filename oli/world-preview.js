@@ -60,6 +60,7 @@
     for (const rid of [SR.id - 6, SR.id - 1, SR.id + 1, SR.id + 6]) world.regionSites(rid).filter(s => s.kind === 'FIELD').slice(0, 2).forEach(s => world.discover(s.id));
     stats.demoMs = Math.round(performance.now());
   }
+  let progShown = null;
   function schedule() {                                    // one job at a time per engine, nearest to the screen centre first; the main thread only posts messages
     if (ready.img && !busy.img) {
       if (ovQueue.length) { busy.img = true; imgEng.post({ t: 'overview', step: ovQueue.shift() }); }
@@ -67,7 +68,7 @@
     }
     if (ready.reg && !busy.reg && regNeed.size) { let best = null, bd = 1e12; for (const r of regNeed) { const R = world.regions[r], d = Math.hypot(R.x0 + R.w / 2 - cam.x, R.y0 + R.h / 2 - cam.y) - (DEMO_REGIONS.includes(r) && !demoDone ? 1e6 : 0); if (d < bd) { bd = d; best = r; } } if (best != null) { busy.reg = true; regEng.post({ t: 'region', rid: best }); } }
     if (!stats.genDoneMs && !ovQueue.length && !busy.img && demoDone) stats.genDoneMs = Math.round(performance.now());
-    const p = document.getElementById('prog'); p.style.display = (ovStep === 99) ? '' : 'none'; p.textContent = 'جارٍ تجهيز العالم…';
+    const shown = ovStep === 99; if (shown !== progShown) { progShown = shown; const p = document.getElementById('prog'); p.style.display = shown ? '' : 'none'; p.textContent = 'جارٍ تجهيز العالم…'; }      // written only when it changes (it used to be rewritten 60 times a second)
     requestAnimationFrame(schedule);
   }
   const wantImg = (cx, cy, k) => { const key = cy * CX + cx; if (!imgOf(k).has(key)) { need.set(k + ':' + key, { cx, cy, k }); return false; } return true; };
@@ -244,7 +245,15 @@
   cv.addEventListener('contextlost', () => { stats.ctxLost = (stats.ctxLost || 0) + 1; }); cv.addEventListener('contextrestored', () => { dirty = true; });
   // adaptive resolution: if real frames (not draw calls) are slow, the canvas resolution drops step by step (never below 0.75) so panning stays smooth on weak GPUs; it never goes up again within a session
   const ft = []; let lastT = 0; stats.dprChanges = 0;
-  function adapt(now) { if (lastT && dirty) { ft.push(now - lastT); if (ft.length >= 12) { const m = ft.slice().sort((a, b) => a - b)[6]; ft.length = 0; if (m > 34 && DPR > 0.76 && !qs.get('fixdpr')) { DPR = Math.max(0.75, DPR * 0.72); stats.dprChanges++; resize(); } } } lastT = dirty ? now : 0; }
+  /* Adaptive resolution.  Slow frames (median > 38 ms over 24 drawn frames) lower the canvas resolution step by step (never below 0.75) so panning stays smooth on a weak GPU.
+     It is NOT judged while the world is still being generated / loaded (those hitches are not drawing cost - they used to leave the map permanently blurry), and the resolution comes back to full as soon as the map rests for 2.5 s. */
+  const DPR0 = DPR; let idleSince = 0;
+  function adapt(now) {
+    const loading = !demoDone || pendingJobs() > 0 || now < 10000;
+    if (lastT && dirty && !loading) { ft.push(now - lastT); if (ft.length >= 24) { const m = ft.slice().sort((a, b) => a - b)[12]; ft.length = 0; if (m > 38 && DPR > 0.76 && !qs.get('fixdpr')) { DPR = Math.max(0.75, DPR * 0.72); stats.dprChanges++; resize(); } } } else if (loading) ft.length = 0;
+    if (!dirty && !loading) { if (!idleSince) idleSince = now; else if (now - idleSince > 2500 && DPR < DPR0 - 0.01) { DPR = Math.min(DPR0, DPR * 1.3); stats.dprChanges++; resize(); idleSince = now; } } else idleSince = 0;
+    lastT = dirty ? now : 0;
+  }
   function loop(now) { adapt(now); if (dirty) { const t = performance.now(); draw(); stats.lastDraw = performance.now() - t; stats.draws = (stats.draws | 0) + 1; stats.drawMs = (stats.drawMs || 0) + stats.lastDraw; } requestAnimationFrame(loop); }
   window.__wp = { hooks, ctx, bounds, markDirty: () => { dirty = true; }, VW: () => VW, VH: () => VH, dpr: () => DPR, setDpr(v) { DPR = v; resize(); }, world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.imgs, genLeft: () => (demoDone && !ovQueue.length ? 0 : 1) + (busy.img || busy.reg ? 1 : 0), idle: () => pendingJobs() === 0 && demoDone, pending: pendingJobs, draw, toTile, sx, sy, hiLeft: () => missingHi };
   const sp = qs.get('x'); if (sp) { cam.x = +qs.get('x'); cam.y = +qs.get('y'); cam.z = clampZ(+qs.get('z') || .9); }
