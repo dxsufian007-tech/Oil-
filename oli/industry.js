@@ -494,6 +494,34 @@
     setValve(b, mode, opening) { const s = this.ensure(b); if (!['OPEN', 'CLOSED', 'PARTIAL', 'FAULT'].includes(mode)) return false; s.mode = mode; if (opening != null) s.opening = clamp(opening, 0, 1); return true; }
   }
 
+
+  /* ------------------------------------------------------------ AUTO-LINK of adjacent storage tanks.
+   *  Two tanks whose facing sides are at most ADJ_GAP tiles apart (and overlap along the other axis) are "adjacent". When a tank is built, every adjacent tank gets the SAME connection the player would
+   *  get from planConnect / commitPlan (two independent lines, ports chosen by the same rules, routed around each other, priced by length) - no new pipe system. Adjacency only CREATES the connection:
+   *  both valves start CLOSED, so nothing flows until the player opens a line (flow then follows the valves, capacities and pressure of the normal simulation).
+   *  Never twice (a direct line between the pair, in either direction, means "exists"), never across the Strategic Reserve / commercial boundary, never between products that cannot meet.
+   *  Every neighbour that is not linked is reported with its reason. */
+  const ADJ_GAP = 2, isStorage = b => { const d = DEFS[b.d]; return !!d && (d.type === 'tank' || d.type === 'gas'); };
+  function autoLinkTank(store, net, ts, id, o) {
+    o = o || {}; const gap = o.gap == null ? ADJ_GAP : o.gap, b = store.get(id), out = { linked: [], skipped: [], cost: 0 }; if (!b || !isStorage(b)) return out;
+    const [bw, bh] = B.dimsOf(DEFS[b.d], b.r), cand = [];
+    for (const n of store.list()) { if (n.id === b.id || !isStorage(n)) continue; const [nw, nh] = B.dimsOf(DEFS[n.d], n.r);
+      const dx = Math.max(n.x - (b.x + bw), b.x - (n.x + nw)), dy = Math.max(n.y - (b.y + bh), b.y - (n.y + nh)), ox = Math.min(b.x + bw, n.x + nw) - Math.max(b.x, n.x), oy = Math.min(b.y + bh, n.y + nh) - Math.max(b.y, n.y);
+      if ((dx >= 0 && dx <= gap && oy > 0) || (dy >= 0 && dy <= gap && ox > 0)) cand.push({ n, d: Math.max(dx, dy) }); }
+    cand.sort((p, q) => p.d - q.d || p.n.id - q.n.id);
+    const direct = (x, y) => { for (const L of net.lines.values()) if (L.a && L.b && ((L.a.b === x && L.b.b === y) || (L.a.b === y && L.b.b === x))) return true; return false; };
+    for (const { n } of cand) {
+      if (direct(b.id, n.id)) { out.skipped.push({ id: n.id, reason: 'exists' }); continue; }
+      if (!!b.rs !== !!n.rs) { out.skipped.push({ id: n.id, reason: 'zoneSeparation' }); continue; }
+      const v = planConnect(store, net, ts, b.id, n.id, { ignoreCash: o.ignoreCash });
+      if (!v.ok) { const bothWays = (v.notes || []).filter(x => x.reason === 'oneWay').length >= 2; out.skipped.push({ id: n.id, reason: v.reason === 'alreadyConnected' ? 'exists' : ((v.problems && v.problems[0] && v.problems[0].reason) || (bothWays ? 'invalidProduct' : v.reason) || 'noPort') }); continue; }
+      const r = commitPlan(store, net, v, { ignoreCash: o.ignoreCash }); if (!r.ok) { out.skipped.push({ id: n.id, reason: r.reason || 'noPort' }); continue; }
+      for (const L of r.made) L.open = false; net.rev++;
+      out.linked.push({ id: n.id, conn: r.conn, lines: r.made.map(l => l.id), cost: v.cost }); out.cost += v.cost;
+    }
+    return out;
+  }
+
   const TANK_KIND_AR = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
-  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, planConnect, layConnect, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
+  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, planConnect, layConnect, autoLinkTank, ADJ_GAP, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });
