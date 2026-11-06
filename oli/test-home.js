@@ -24,7 +24,7 @@ srv.listen(0, async () => {
   const n = await p.evaluate(() => { const st = __lab.store; let k = 0; for (let i = 0; i < 400 && k < 2; i++) { const x = __f[0] - 40 + (i % 20) * 4, y = __f[1] - 30 + Math.floor(i / 20) * 5; if (st.validate('crude_tank_s', x, y, 0, { ignoreCash: true }).ok && st.place('crude_tank_s', x, y, 0, { instant: true, ignoreCash: true }).ok) k++; } __lab.save(); return k; }); t('built 2 buildings', n === 2);
   await p.click('#h-cont'); await p.waitForTimeout(600); t('continue closes the menu', await p.evaluate(() => !OliHome.isOpen())); const g0 = await p.evaluate(() => __lab.company.hours); await p.waitForTimeout(2500); t('game runs after continue', await p.evaluate(() => __lab.company.hours) > g0);
   // a way back to the menu from the game
-  t('menu button inside the game', await p.evaluate(() => !!document.getElementById('es-home'))); await p.evaluate(() => document.getElementById('es-home').click()); t('menu reopens, game paused again', await p.evaluate(() => OliHome.isOpen()));
+  t('menu button inside the game; the old «لعبة جديدة» button is gone', await p.evaluate(() => !!document.getElementById('es-home') && !document.getElementById('es-new'))); await p.evaluate(() => document.getElementById('es-home').click()); t('menu reopens, game paused again', await p.evaluate(() => OliHome.isOpen()));
   // reset asks first
   await p.click('#h-reset'); t('reset asks for confirmation', await p.evaluate(() => document.getElementById('h-modal').classList.contains('on'))); await p.click('#r-no'); t('cancel keeps everything', await p.evaluate(() => __lab.store.list().length >= 2 && !document.getElementById('h-modal').classList.contains('on')));
   // reopen the app: the same game comes back
