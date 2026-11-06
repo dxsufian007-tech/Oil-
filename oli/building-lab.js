@@ -425,7 +425,7 @@
     box.style.display = 'flex'; const bar = document.getElementById('cu-bar'), pct = document.getElementById('cu-pct');
     const slice = () => { let p = 1; try { p = COMPANY.catchUpStep(12); } catch (e) { window.__loadError = String(e && e.message || e); p = 1; } bar.style.width = Math.round(p * 100) + '%'; pct.textContent = Math.round(p * 100) + '%';
       if (p < 1) { setTimeout(slice, 0); return; }
-      let a = null; try { a = COMPANY.catchUpFinish(); } catch (e) { window.__loadError = String(e && e.message || e); } catching = false; box.style.display = 'none'; lastT = performance.now(); done(a); };
+      let a = null; try { a = COMPANY.catchUpFinish(); } catch (e) { window.__loadError = String(e && e.message || e); } catching = false; box.style.display = 'none'; simLast = performance.now(); done(a); };
     setTimeout(slice, 0);
   }
   function swapNet(n2) { pipes.clear(); pipes.lines = n2.lines; pipes.at = n2.at; pipes.nextId = n2.nextId; for (const k of n2) pipes.add(k); pipes.rev++; }
@@ -487,15 +487,17 @@
 
   /* simulation clock: Game Time.  1x = one game day per dayRealSeconds; the company advances in whole game hours (no dependence on FPS); nothing is simulated while paused or while a report is open */
   let lastT = performance.now(), lastDraw = 0, lastSig = '';
-  function visSig() { let h = (STORE.rev | 0) + '/' + pipes.rev + '/' + (state.sel || 0) + '/' + COMPANY.reserve.lv + '/'; let k = 0; for (const b of STORE.items.values()) { const d = B.DEFS[b.d]; k = (k * 31 + b.st.length + (d.type === 'tank' || d.type === 'gas' ? Math.round(tankFill(b) * 100) : 0) + (b.s && b.s._in > 0 ? 7 : 0)) | 0; } let f = 0; for (const L of pipes.lines.values()) f = (f * 3 + ((L.flow || 0) > 1 ? 1 : 0) + (L.over || L.hiP ? 2 : 0)) | 0; return h + k + '/' + f; }
+  function visSig() { let h = (STORE.rev | 0) + '/' + pipes.rev + '/' + (state.sel || 0) + '/' + COMPANY.reserve.lv + '/'; let k = 0; for (const b of STORE.items.values()) { const d = B.DEFS[b.d]; k = (k * 31 + b.st.length + (d.type === 'tank' || d.type === 'gas' ? Math.round(tankFill(b) * 32) : 0) + (b.s && b.s._in > 0 ? 7 : 0)) | 0; } let f = 0; for (const L of pipes.lines.values()) f = (f * 3 + ((L.flow || 0) > 1 ? 1 : 0) + (L.over || L.hiP ? 2 : 0)) | 0; return h + k + '/' + f; }
+  /* The company is advanced in SMALL slices (about 16 times a second) instead of one burst every 250 ms: exactly the same whole game hours in the same order (run() keeps the remainder), but no single frame has to carry a whole burst - this is what keeps x5 / x10 smooth on a phone */
+  let simLast = performance.now();
+  const simPump = setInterval(() => { const now = performance.now(), dtS = Math.min(2, (now - simLast) / 1000); simLast = now; if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) COMPANY.run(dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0)); }, 62);
   const tick = setInterval(() => {
-    const PT = window.__perfT, tk0 = PT ? performance.now() : 0, now = performance.now(), dtS = Math.min(2, (now - lastT) / 1000); lastT = now; const hrs = dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0);
-    if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) COMPANY.run(hrs);
-    if (WP.ui.reserveLv !== COMPANY.reserve.lv) { WP.ui.reserveLv = COMPANY.reserve.lv; WP.markDirty(); } if (now - lastDraw > 480) { lastDraw = now; const tu0 = PT ? performance.now() : 0; const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag) showBuilding(sel.id); const sg = visSig(); if (sg !== lastSig || animOn) { lastSig = sg; WP.markDirty(); } if (PT) { PT.ui += performance.now() - tu0; PT.uiN++; } }      // Stage 5 perf: the map is redrawn only when something it shows has changed (animation has its own timer)
+    const PT = window.__perfT, tk0 = PT ? performance.now() : 0, now = performance.now();
+    if (WP.ui.reserveLv !== COMPANY.reserve.lv) { WP.ui.reserveLv = COMPANY.reserve.lv; WP.markDirty(); } if (now - lastDraw > (COMPANY.speed >= 5 ? 960 : 480)) { lastDraw = now; const tu0 = PT ? performance.now() : 0; const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag) showBuilding(sel.id); const sg = visSig(); if (sg !== lastSig || animOn) { lastSig = sg; WP.markDirty(); } if (PT) { PT.ui += performance.now() - tu0; PT.uiN++; } }      // Stage 5 perf: the map is redrawn only when something it shows has changed (animation has its own timer)
   if (PT) { PT.tick += performance.now() - tk0; PT.tickN++; }
   }, EC.TIME.tickMs);
   setInterval(() => { if (STORE.items.size || COMPANY.hours > 0) save(); }, 6000);                          // autosave: the company stamp is what the offline report measures from
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); } else { lastT = performance.now(); const j = COMPANY.catchUpStart(Date.now()); if (j && j.job) runCatchUp(j, a => { if (a && a.ok) EU.showAway(a); save(); }); else if (j && j.ok) { EU.showAway(j); save(); } } });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); } else { simLast = performance.now(); const j = COMPANY.catchUpStart(Date.now()); if (j && j.job) runCatchUp(j, a => { if (a && a.ok) EU.showAway(a); save(); }); else if (j && j.ok) { EU.showAway(j); save(); } } });
   window.addEventListener('pagehide', () => save());
   EU.mount({ company: COMPANY, toast, onChange: () => save(), restart: () => newGame(), showZone: () => { const z = world.reserveZoneOfWorld(); if (z) { WP.goto(z.x + z.w / 2, z.y + z.h / 2, .5); toast('منطقة الاحتياطي الاستراتيجي (باللون الأصفر)'); } } });
   /* a new game: everything is cleared (buildings, pipes, money, the lesson) and the camera returns to the first oil field */

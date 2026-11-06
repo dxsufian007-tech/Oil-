@@ -273,10 +273,11 @@
       const pts = new Map(); for (const b of store.items.values()) for (const p of B.worldPoints(b)) if (p.kind === 'pipe' && !p.reserved) pts.set(b.id + ':' + p.id, p);
       for (const [k, p] of pts) { if (E.has(k)) continue; const o = store.at(p.ax, p.ay); if (!o || o.id === p.buildingId) continue; for (const q of B.worldPoints(o)) if (q.x === p.ax && q.y === p.ay && q.ax === p.x && q.ay === p.y && B.compatible(p, q) && !E.has(pk(o.id, q.id))) { edge(k, pk(o.id, q.id), null); break; } }
       this._el = [...new Set(E.values())];                                          // each edge once, for the per-step loops
+      const eb = new Map(); for (const e of new Set(E.values())) { for (const [id, port] of [[e.ab, e.ap], [e.bb, e.bp]]) { let m = eb.get(id); if (!m) eb.set(id, m = Object.create(null)); m[port] = e; } } this._eb = eb;      // edge lookup by (building, port) without building a string key on every call
       this.builtRev = (store.rev | 0) * 100000 + net.rev; this._rev = this.builtRev;
     }
     dirty() { return this.builtRev !== (this.store.rev | 0) * 100000 + this.net.rev; }
-    edgeOf(b, port) { return this.edges.get(pk(b.id, port)) || null; }
+    edgeOf(b, port) { const m = this._eb && this._eb.get(b.id); return m ? (m[port] || null) : null; }
     other(e, b, port) { return e.a === pk(b.id, port) ? { b: this.store.get(e.bb), port: e.bp } : { b: this.store.get(e.ab), port: e.ap }; }
 
     /* offer a flow into the pipeline attached to (b, port); returns the accepted rate. Pressure falls along the line, capacity limits the rate. */
