@@ -93,6 +93,18 @@
       for (const [a, b] of [[.08, .5], [.92, .5], [.5, .08], [.5, .92]]) p.dot(a, b, .24, 5.4, C.yellow);
       p.cyl(.5, .5, .2, .14, .4, C.steel); p.cyl(.5, .5, .06, .4, .66, '#2f3942'); p.line(.34, .5, .68, .66, .5, .68, C.red, 3.4); p.line(.5, .34, .68, .5, .66, .68, C.red, 3.4);
     },
+    main_manifold(p, o) {                                                         // 3x9: concrete pad, a fat blue header pipe along the long side, NINE small inlet stubs (west, one per tile, yellow flanges + red wheels), THREE big outlet branches (east) each with a gate valve + wheel, control cabin and a gauge
+      const W = o.w, H = o.h; p.flat(.03, .03, W - .03, H - .03, 0, C.pad); p.flat(.2, .12, 1.7, H - .12, .02, '#8c8272');
+      for (let i = 0; i < H; i++) p.line(0, i + .5, .28, 1.05, i + .5, .28, C.pipe, 3.6);                                  // nine inlet stubs from the west edge to the header
+      for (let i = 0; i < H; i++) { p.dot(.04, i + .5, .28, 3.2, C.yellow); p.box(.36, i + .36, .56, i + .64, .1, .3, C.steel); p.cyl(.46, i + .5, .1, .3, .38, C.red); }
+      p.hcyl(1.12, .22, H - .44, 'v', .27, .5, '#5f86a8'); for (let v = 1; v < H; v += 2) p.box(1.0, v - .05, 1.24, v + .05, .2, .5, C.dark); p.dot(1.12, .22, .56, 2.6, '#a9c2d6'); p.dot(1.12, H - .22, .56, 2.6, '#a9c2d6');
+      for (const v of [1.5, 4.5, 7.5]) {                                                                                   // three outlet branches with a gate valve each
+        p.line(1.12, v, .4, W, v, .4, C.pipe, 6.4); p.box(1.8, v - .24, 2.2, v + .24, .12, .5, C.steel, { top: '#a9b4bf' }); p.box(1.9, v - .15, 2.1, v + .15, .5, .74, C.dark);
+        p.line(2.0, v, .74, 2.0, v, 1.02, '#2f3942', 2); p.cyl(2.0, v, .24, 1.0, 1.06, C.red); p.dot(W - .04, v, .4, 3.8, C.yellow); p.dot(2.5, v - .34, .4, 2.2, o.state === 'UNDER_CONSTRUCTION' ? C.yellow : C.green);
+      }
+      p.box(1.85, 2.6, 2.85, 3.4, 0, .78, C.cream, { top: C.roof }); p.box(1.95, 3.38, 2.15, 3.42, .22, .6, C.dark);                       // control cabin between outlets 1 and 2
+      p.box(1.85, 5.6, 2.85, 6.4, 0, .5, C.steel, { top: '#a9b4bf' }); p.cyl(2.35, 6.0, .14, .5, .95, '#2f3942'); p.dot(2.35, 6.0, 1.0, 4, '#f2f0e6');       // pressure gauge on a skid
+    },
     valve_station(p, o) {                                                         // 1x1: pipe run, big gate valve body, stem, red hand wheel, status lamp
       p.flat(.08, .2, .92, .8, 0, '#8c8272'); p.line(0, .5, .26, 1, .5, .26, C.pipe, 5.4);
       p.box(.32, .34, .68, .66, .06, .46, C.steel, { top: '#a9b4bf' }); p.box(.42, .42, .58, .58, .46, .72, C.dark);

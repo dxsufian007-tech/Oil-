@@ -14,7 +14,7 @@
     wellHasJack: 'هذا البئر فيه مضخة بالفعل', connectionBlocked: 'نقطة اتصال محجوبة', notLoaded: 'جارٍ تحميل هذا الجزء من الخريطة…', cash: 'الرصيد لا يكفي', unknownBuilding: 'مبنى غير معروف', nothing: 'لا يوجد شيء هنا' };
   const STAR = { RUNNING: 'يعمل', READY: 'جاهز', OFFLINE: 'متوقف', UNDER_CONSTRUCTION: 'قيد البناء', DEPLETED: 'نضب الحقل', BLOCKED: 'مسدود', NO_INPUT: 'لا يصله نفط', NO_MATERIALS: 'ينقصها كيماويات/مواد تشغيل', NO_OUTPUT: 'غير متصل', LOW_PRESSURE: 'ضغط منخفض', HIGH_PRESSURE: 'ضغط مرتفع', OVER_CAPACITY: 'فوق السعة', DAMAGED: 'تالف', MAINTENANCE: 'قيد الصيانة', FULL: 'ممتلئ', NEAR_FULL: 'شبه ممتلئ', EMERGENCY: 'طوارئ' };
   const state = { drag: null, pending: null, sel: null, pipeTool: false, pipeDrag: null, demo: null, toast: '', toastAt: 0, rot: {}, lastTile: null };
-  let animUntil = 0;
+  let animUntil = 0, animNeed = false, animOn = false;      // animNeed: this frame shows something that moves (flowing pipes, a running refinery) -> ONE timer schedules the next frame
 
   /* ------------------------------------------------------------ palette */
   const pal = $('pal'), tabs = $('tabs'); let section = SECTIONS[0];
@@ -128,7 +128,7 @@
     if (d.type === 'well' && st !== 'UNDER_CONSTRUCTION') h += (b.s && b.s.started === false ? '<div class="row"><button id="bStartWell" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800;min-height:48px;flex:1">▶ ابدأ الإنتاج</button></div>' : '<div class="row"><button id="bStopWell">⏸ أوقف الإنتاج</button></div>');
     if (showEcon) h += '<div class="k" style="margin-top:6px;letter-spacing:.06em">الاقتصاد</div>' + EU.buildingHtml(id);
     h += '<div class="row">' + '<button id="bEcon"' + (showEcon ? ' class="on"' : '') + '>الاقتصاد</button>' + (ind.list.length > ind.top ? '<button id="bMore">' + (showAll ? 'أقل' : 'تفاصيل') + '</button>' : '') + (d.type !== 'well' || false ? '<button id="bConnectAuto" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800">🔗 توصيل</button>' : '<button id="bConnectAuto" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800">🔗 توصيل</button>') + (d.type === 'valve' ? '<button id="bValve">الصمام: ' + ({ OPEN: 'مفتوح', PARTIAL: 'جزئي', CLOSED: 'مغلق', FAULT: 'عطل' }[b.s.mode] || b.s.mode) + '</button>' : '') + (d.type === 'refinery' ? '<button id="bLimit">حد التشغيل ' + Math.round(b.s.opLimit * 100) + '%</button>' : '') + '<button id="bDemo">هدم…</button></div>';
-    $('info').innerHTML = h; WP.markDirty();
+    { const el = $('info'); if (!(el._h === h && el._hDom === el.innerHTML)) { el.innerHTML = h; el._h = h; el._hDom = el.innerHTML; WP.markDirty(); } }      // unchanged card: no DOM rewrite and no redraw
   }
   /* what the player sees and can do on a connected line: its direction, flow, valve; its partner line; the whole connection */
   const bname = id => { const x = STORE.get(id); return x ? '<bdi>' + nameOf(x.d) + ' ' + x.id + '</bdi>' : '—'; };
@@ -324,29 +324,48 @@
   const sx = WP.sx, sy = WP.sy;
   function diamondPath(x, y, w, h) { ctx.beginPath(); ctx.moveTo(sx(x, y), sy(x, y)); ctx.lineTo(sx(x + w, y), sy(x + w, y)); ctx.lineTo(sx(x + w, y + h), sy(x + w, y + h)); ctx.lineTo(sx(x, y + h), sy(x, y + h)); ctx.closePath(); }
   function tankFill(b) { const d = B.DEFS[b.d]; return b.s && b.s.vol != null ? b.s.vol / d.capacity.value : 0; }
+  // Stage 5 perf: a building that does not move is painted ONCE into a small offscreen sprite and then just copied (panning no longer re-runs ~100 canvas operations per building per frame).
+  // Not used while the zoom is changing, and never for the refinery (flare / fans animate).  Sprites are keyed by visual, rotation, size, zoom, resolution, fill (1/32) and state.
+  const SPRITES = !/nosprite/.test(location.search), sprites = new Map(); let lastZ = cam.z, zStable = false, spriteDpr = 0, spriteBudget = 3;
+  function drawSprite(d, o, b) {
+    if (d.visual === 'refinery') return false; const dpr = WP.dpr(); if (dpr !== spriteDpr) { sprites.clear(); spriteDpr = dpr; }
+    const fill = Math.round(Math.max(0, Math.min(1, o.fill || 0)) * 32), key = d.visual + '|' + o.r + '|' + o.w + 'x' + o.h + '|' + o.z.toFixed(3) + '|' + dpr + '|' + fill + '|' + o.state; let sp = sprites.get(key);
+    const steady = b._fb === fill; b._fb = fill;
+    if (!sp) {
+      if (!steady || spriteBudget <= 0) return false;                  // a tank whose level is changing right now is drawn directly (no point caching a picture that is stale next frame)
+ spriteBudget--;                  // at most 3 new sprites per frame - the rest are drawn directly, so a burst of new sprites (e.g. tanks filling at x5) never causes a long frame
+      const [W, H] = o.r & 1 ? [o.h, o.w] : [o.w, o.h], z = o.z, pad = 12, up = 5 * A.HU * z, offX = H * 32 * z + pad, offY = up + pad, cw = Math.ceil((W + H) * 32 * z + 2 * pad), ch = Math.ceil(up + (W + H) * 16 * z + 2 * pad);
+      if (cw * ch * dpr * dpr > 6e6) return false; const c = document.createElement('canvas'); c.width = Math.ceil(cw * dpr); c.height = Math.ceil(ch * dpr); const g = c.getContext('2d'); g.scale(dpr, dpr);
+      A.draw(g, d.visual, Object.assign({}, o, { ox: offX, oy: offY, fill: fill / 32 })); sp = { c, offX, offY, cw, ch }; sprites.set(key, sp); if (sprites.size > 120) sprites.delete(sprites.keys().next().value);
+    }
+    ctx.drawImage(sp.c, Math.round((o.ox - sp.offX) * dpr) / dpr, Math.round((o.oy - sp.offY) * dpr) / dpr, sp.cw, sp.ch); return true;
+  }
   function drawBuildings(lv, vb) {
-    const now = performance.now() / 1000, list = STORE.query(Math.floor(vb.x0) - 2, Math.floor(vb.y0) - 2, Math.ceil(vb.x1) + 2, Math.ceil(vb.y1) + 2); let anim = false;
+    zStable = Math.abs(cam.z - lastZ) < 1e-6; lastZ = cam.z; spriteBudget = 3;
+    animNeed = false; const now = performance.now() / 1000, list = STORE.query(Math.floor(vb.x0) - 2, Math.floor(vb.y0) - 2, Math.ceil(vb.x1) + 2, Math.ceil(vb.y1) + 2); let anim = false;
     list.sort((p, q) => { const a = B.dimsOf(B.DEFS[p.d], p.r), c = B.dimsOf(B.DEFS[q.d], q.r); return (p.x + a[0] + p.y + a[1]) - (q.x + c[0] + q.y + c[1]); });
     // pipes first (they lie on the ground)
     if (pipes.size && lv !== 'FAR') drawPipes(vb);
     for (const b of list) {
       const d = B.DEFS[b.d], [w, h] = B.dimsOf(d, b.r);
       if (lv === 'FAR' || cam.z < .12) { diamondPath(b.x, b.y, w, h); ctx.fillStyle = CAT[d.category]; ctx.fill(); ctx.strokeStyle = 'rgba(20,16,10,.7)'; ctx.lineWidth = 1; ctx.stroke(); continue; }
-      A.draw(ctx, d.visual, { ox: sx(b.x, b.y), oy: sy(b.x, b.y), z: cam.z, r: b.r, w: d.footprint[0], h: d.footprint[1], t: now, fill: tankFill(b), state: b.st });
-      if (d.type === 'refinery' && b.s && b.s._in > 0) anim = true;
+      const o = { ox: sx(b.x, b.y), oy: sy(b.x, b.y), z: cam.z, r: b.r, w: d.footprint[0], h: d.footprint[1], t: now, fill: tankFill(b), state: b.st };
+      if (!(zStable && SPRITES && drawSprite(d, o, b))) A.draw(ctx, d.visual, o);
+      if (d.type === 'refinery' && b.s && b.s._in > 0) animNeed = true;
       if (b.id === state.sel) { diamondPath(b.x, b.y, w, h); ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2.2; ctx.setLineDash([7, 4]); ctx.stroke(); ctx.setLineDash([]); drawPorts(b, true); }
     }
-    if (anim && cam.z >= .3) { animUntil = performance.now() + 140; setTimeout(() => WP.markDirty(), 120); }
+    animOn = animNeed && cam.z >= .3 && COMPANY.speed > 0;      // moving parts (flowing pipes, a running refinery) are refreshed by the 480 ms tick below - at most 2 frames/s, none at all while paused / idle
   }
-  function drawPipes(vb) {
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; const view = [vb.x0 - 3, vb.y0 - 3, vb.x1 + 3, vb.y1 + 3];
-    for (const L of pipes.lines.values()) {
-      const P = L.path; if (!P.length) continue; let vis = false; for (const q of P) if (q[0] >= view[0] && q[0] <= view[2] && q[1] >= view[1] && q[1] <= view[3]) { vis = true; break; } if (!vis) continue;
-      const wd = Math.max(2, (4 + L.dia / 5) * cam.z), col = L.product === '*' ? '#7f8a96' : BC.PRODUCT_COLOR[L.product], path = () => { ctx.beginPath(); P.forEach((q, i) => i ? ctx.lineTo(sx(q[0] + .5, q[1] + .5), sy(q[0] + .5, q[1] + .5)) : ctx.moveTo(sx(q[0] + .5, q[1] + .5), sy(q[0] + .5, q[1] + .5))); ctx.stroke(); };
-      ctx.strokeStyle = 'rgba(30,26,20,.6)'; ctx.lineWidth = wd + 3 * cam.z; path(); ctx.strokeStyle = L.product === 'CRUDE' ? '#4a3a2c' : col; ctx.lineWidth = wd; path();
-      if ((L.flow || 0) > 1) { ctx.setLineDash([5 * cam.z + 2, 9 * cam.z + 4]); ctx.lineDashOffset = -(performance.now() / 60 % 100); ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = Math.max(1, wd * .35); path(); ctx.setLineDash([]); animUntil = performance.now() + 200; }
-      if (L.over || L.hiP) { ctx.strokeStyle = 'rgba(255,110,60,.9)'; ctx.lineWidth = Math.max(1.2, wd * .3); path(); }
-    }
+  function drawPipes(vb) {                                                                  // Stage 5 perf: the visible lines are collected first and stroked in a few batches (one path per style) instead of 3-4 canvas strokes per line
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; const view = [vb.x0 - 3, vb.y0 - 3, vb.x1 + 3, vb.y1 + 3], vis = [];
+    for (const L of pipes.lines.values()) { const P = L.path; if (!P.length) continue; for (const q of P) if (q[0] >= view[0] && q[0] <= view[2] && q[1] >= view[1] && q[1] <= view[3]) { vis.push(L); break; } }
+    if (!vis.length) return; const add = L => { L.path.forEach((q, i) => i ? ctx.lineTo(sx(q[0] + .5, q[1] + .5), sy(q[0] + .5, q[1] + .5)) : ctx.moveTo(sx(q[0] + .5, q[1] + .5), sy(q[0] + .5, q[1] + .5))); };
+    const batch = (ls, style, w, dash) => { if (!ls.length) return; ctx.beginPath(); for (const L of ls) add(L); ctx.strokeStyle = style; ctx.lineWidth = w; if (dash) { ctx.setLineDash(dash[0]); ctx.lineDashOffset = dash[1]; } ctx.stroke(); if (dash) ctx.setLineDash([]); };
+    const wdOf = L => Math.max(2, (4 + L.dia / 5) * cam.z), byW = new Map(); for (const L of vis) { const k = wdOf(L).toFixed(2); (byW.get(k) || byW.set(k, []).get(k)).push(L); }
+    for (const [k, ls] of byW) { const wd = +k; batch(ls, 'rgba(30,26,20,.6)', wd + 3 * cam.z);
+      const byC = new Map(); for (const L of ls) { const c = L.product === 'CRUDE' ? '#4a3a2c' : L.product === '*' ? '#7f8a96' : BC.PRODUCT_COLOR[L.product]; (byC.get(c) || byC.set(c, []).get(c)).push(L); } for (const [c, cl] of byC) batch(cl, c, wd);
+      const fl = ls.filter(L => (L.flow || 0) > 1); if (fl.length) { batch(fl, 'rgba(255,255,255,.6)', Math.max(1, wd * .35), [[5 * cam.z + 2, 9 * cam.z + 4], -(performance.now() / 60 % 100)]); animNeed = true; }
+      batch(ls.filter(L => L.over || L.hiP), 'rgba(255,110,60,.9)', Math.max(1.2, wd * .3)); }
   }
   function drawPorts(b, selected) {                                                // little arrows on the access tile: blue = in, orange = out, white = both
     for (const p of B.worldPoints(b)) { if (p.kind !== 'pipe' && !selected) continue; const x = sx(p.ax + .5, p.ay + .5), y = sy(p.ax + .5, p.ay + .5), r = Math.max(3, 6 * cam.z); ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = p.reserved ? 'rgba(200,200,200,.5)' : p.role === 'in' ? '#4aa3ff' : p.role === 'out' ? '#ff9a3a' : '#f1f1f1'; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1; ctx.stroke(); }
@@ -439,11 +458,12 @@
   $('tDemo').onclick = async () => { toast('Building the full oil chain…'); const r = await buildDemo(); toast(r.ok ? 'Oil chain built: ' + r.total + ' buildings · ' + r.pipelines + ' pipelines' : 'Demo incomplete: ' + (r.failed || [r.reason]).join(', ')); };
 
   /* simulation clock: Game Time.  1x = one game day per dayRealSeconds; the company advances in whole game hours (no dependence on FPS); nothing is simulated while paused or while a report is open */
-  let lastT = performance.now(), lastDraw = 0;
+  let lastT = performance.now(), lastDraw = 0, lastSig = '';
+  function visSig() { let h = (STORE.rev | 0) + '/' + pipes.rev + '/' + (state.sel || 0) + '/' + COMPANY.reserve.lv + '/'; let k = 0; for (const b of STORE.items.values()) { const d = B.DEFS[b.d]; k = (k * 31 + b.st.length + (d.type === 'tank' || d.type === 'gas' ? Math.round(tankFill(b) * 100) : 0) + (b.s && b.s._in > 0 ? 7 : 0)) | 0; } let f = 0; for (const L of pipes.lines.values()) f = (f * 3 + ((L.flow || 0) > 1 ? 1 : 0) + (L.over || L.hiP ? 2 : 0)) | 0; return h + k + '/' + f; }
   const tick = setInterval(() => {
     const now = performance.now(), dtS = Math.min(2, (now - lastT) / 1000); lastT = now; const hrs = dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0);
     if (COMPANY.speed > 0 && !COMPANY.bankrupt) COMPANY.run(hrs);
-    if (WP.ui.reserveLv !== COMPANY.reserve.lv) { WP.ui.reserveLv = COMPANY.reserve.lv; WP.markDirty(); } const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag && now - lastDraw > 480) { showBuilding(sel.id); } if (STORE.items.size && now - lastDraw > 480) { lastDraw = now; WP.markDirty(); }
+    if (WP.ui.reserveLv !== COMPANY.reserve.lv) { WP.ui.reserveLv = COMPANY.reserve.lv; WP.markDirty(); } if (now - lastDraw > 480) { lastDraw = now; const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag) showBuilding(sel.id); const sg = visSig(); if (sg !== lastSig || animOn) { lastSig = sg; WP.markDirty(); } }      // Stage 5 perf: the map is redrawn only when something it shows has changed (animation has its own timer)
   }, EC.TIME.tickMs);
   setInterval(() => { if (STORE.items.size || COMPANY.hours > 0) save(); }, 6000);                          // autosave: the company stamp is what the offline report measures from
   document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); } else { lastT = performance.now(); const a = COMPANY.catchUp(Date.now()); if (a && a.ok) { EU.showAway(a); save(); } } });
