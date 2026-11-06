@@ -32,7 +32,7 @@ jobs:
         working-directory: oli
         run: |
           node build-www-map.js
-          sed -i 's/"appId": "com.oli.oilgame"/"appId": "com.oli.mappreview"/; s/"appName": "Oli"/"appName": "Oli Map"/' capacitor.config.json
+          sed -i 's/"appId": "com.oli.oilgame"/"appId": "com.oli.mappreview"/; s/"appName": "OLI EMPIRE"/"appName": "OLI EMPIRE Map"/' capacitor.config.json
           npx cap sync android
           sed -i 's/applicationId "com.oli.oilgame"/applicationId "com.oli.mappreview"/' android/app/build.gradle
           sed -i 's|<string name="app_name">Oli</string>|<string name="app_name">Oli Map</string>|' android/app/src/main/res/values/strings.xml
