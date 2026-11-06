@@ -51,7 +51,7 @@
 #oli-home .pill:active,#oli-home .hb:active{transform:scale(.97)}
 #oli-home .hbrand{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;max-width:100%}
 #oli-home .hmenu{flex:0 0 auto;width:100%;max-width:520px;display:flex;flex-direction:column}
-#oli-home .logo{flex:0 0 auto;width:min(88vw,34vh*1.5,420px);height:auto;margin-top:0;filter:drop-shadow(0 6px 10px rgba(0,0,0,.55))}
+#oli-home .logo{flex:0 0 auto;width:min(77vw,29.5vh*1.5,366px);height:auto;margin-top:clamp(-22px,-2.4vh,-8px);filter:drop-shadow(0 6px 10px rgba(0,0,0,.55))}
 #oli-home .spacer{flex:1 1 20px;min-height:12px}
 #oli-home .list{width:100%;max-width:520px;display:flex;flex-direction:column;gap:clamp(8px,1.6vh,16px);padding-bottom:clamp(0px,calc(6vh - 14px),64px)}
 #oli-home .hb{position:relative;display:flex;align-items:center;gap:12px;width:100%;min-height:clamp(54px,8.6vh,82px);padding:0 clamp(18px,5vw,30px);border:0;border-radius:999px;background:url(home-assets/btn-navy.webp) 50% 50%/100% 100% no-repeat;color:#fff;font-family:inherit;filter:drop-shadow(0 6px 8px rgba(0,0,0,.55));text-align:center}
