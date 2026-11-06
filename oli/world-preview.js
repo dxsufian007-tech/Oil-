@@ -169,7 +169,7 @@
 
   let missingHi = 0;
   function draw() {
-    dirty = false; const lv = level(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.lineJoin = 'round'; ctx.fillStyle = '#0c1015'; ctx.fillRect(0, 0, VW, VH);
+    dirty = false; const T = stats.t || (stats.t = { terrain: 0, decorate: 0, overlays: 0, afterOv: 0, top: 0, pipes: 0, buildings: 0 }), pn = performance.now.bind(performance); let t0 = pn(); const lv = level(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.lineJoin = 'round'; ctx.fillStyle = '#0c1015'; ctx.fillRect(0, 0, VW, VH);
     const b = bounds(), c0 = Math.max(0, Math.floor(b.x0 / C)), c1 = Math.min(CX - 1, Math.floor(b.x1 / C)), r0 = Math.max(0, Math.floor(b.y0 / C)), r1 = Math.min(CY - 1, Math.floor(b.y1 / C));
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low'; missingHi = 0;
     if (!stats.firstDrawMs && ovStep < 99) stats.firstDrawMs = Math.round(performance.now());
@@ -186,12 +186,16 @@
         if (ui.heat) { const hb = heat.get(cy * CX + cx); if (hb) ctx.drawImage(hb, 0, 0, 32, 32, 0, 0, C, C); else need.set('h:' + (cy * CX + cx), { t: 'heat', cx, cy }); } ctx.restore();
       }
     }
+    let t1 = pn(); T.terrain += t1 - t0;
     if (lv === 'CLOSE') decorate(b);
+    let t2 = pn(); T.decorate += t2 - t1;
     overlays(lv, b);
+    let t3 = pn(); T.overlays += t3 - t2;
     if (hooks.afterOverlays) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); hooks.afterOverlays(lv, b); }
+    T.afterOv += pn() - t3;
     if (ui.scale) drawScaleChart();
     if (ui.probe && lv !== 'FAR') { const p = ui.probe, f = CFG.FACILITIES[ui.facility]; diamond(p.x, p.y, f.fp[0], f.fp[1], p.res.ok ? 'rgba(80,220,120,.45)' : 'rgba(240,70,60,.45)', p.res.ok ? '#6dff9a' : '#ff6b60', 2); if (!p.res.ok) { const cx = sx(p.x + f.fp[0] / 2, p.y + f.fp[1] / 2), cy = sy(p.x + f.fp[0] / 2, p.y + f.fp[1] / 2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(cx - 7, cy - 7); ctx.lineTo(cx + 7, cy + 7); ctx.moveTo(cx + 7, cy - 7); ctx.lineTo(cx - 7, cy + 7); ctx.stroke(); } }
-    if (hooks.top) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); hooks.top(lv, b); }
+    { const t4 = pn(); if (hooks.top) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); hooks.top(lv, b); } T.top += pn() - t4; }
     hud.textContent = lv + '  zoom ' + cam.z.toFixed(3) + '  view ' + Math.round(b.x1 - b.x0) + ' tiles  images ' + stats.imgs + ' · jobs ' + pendingJobs() + '  world ' + world.W + '×' + world.H + ' tiles = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' km (' + world.scale().toFixed(1) + '× the current map)';
     document.querySelectorAll('[data-z]').forEach(e => e.classList.toggle('on', e.dataset.z === lv));
     if (missingHi) { dirty = true; }

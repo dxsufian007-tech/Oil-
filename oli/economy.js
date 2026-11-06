@@ -1014,7 +1014,9 @@
 
     /* ---- offline simulation ---- */
     stamp(ms) { this.lastSim = ms == null ? this.now() : ms; }
-    catchUp(nowMs) {
+    /* The offline catch-up can be run in ONE go (catchUp - used by tests and tools) or in short slices between frames (catchUpStart / catchUpStep / catchUpFinish - used by the game so that opening it after a long absence never freezes the screen).
+       Both run exactly the same ticks in the same order, so the results are identical. */
+    catchUpStart(nowMs) {
       const O = this.cfg.OFFLINE; nowMs = nowMs == null ? this.now() : nowMs; this.badClock = false;
       if (this.lastSim == null || !isFinite(this.lastSim)) { this.lastSim = nowMs; return null; }
       const elapsedS = (nowMs - this.lastSim) / 1000;
@@ -1022,13 +1024,23 @@
       if (this.speed === 0) { this.lastSim = nowMs; return null; }                                            // paused when the game was closed: no time passes while it is closed
       if (elapsedS < O.minSeconds) { return null; }
       const realH = Math.min(elapsedS / 3600, O.capHours), capped = elapsedS / 3600 > O.capHours, gameH = Math.floor(realH * O.gameDaysPerRealHour * 24 / O.stepHours) * O.stepHours;
-      const before = clone(this.led.life), cash0 = this.store.cash, day0 = this.dayIdx, alerts0 = new Set(this.alerts().map(a => a.key)); this.advanceHours(gameH, O.stepHours); this.lastSim = nowMs;
+      this._cu = { O, nowMs, realH, capped, gameH, left: gameH, before: clone(this.led.life), cash0: this.store.cash, day0: this.dayIdx, alerts0: new Set(this.alerts().map(a => a.key)) };
+      return { job: true, total: gameH };
+    }
+    catchUpStep(budgetMs) {                                                                                 // runs ticks until the time budget is spent; returns the progress 0..1
+      const c = this._cu; if (!c) return 1; const t0 = (typeof performance !== 'undefined' ? performance : Date).now(), step = c.O.stepHours;
+      while (c.left > 1e-9 && !this.bankrupt) { const h = Math.min(step, c.left); this._tick(h); c.left -= h; if ((typeof performance !== 'undefined' ? performance : Date).now() - t0 >= budgetMs) break; }
+      return this.bankrupt || c.left <= 1e-9 ? 1 : 1 - c.left / c.gameH;
+    }
+    catchUpFinish() {
+      const c = this._cu; if (!c) return null; this._cu = null; const { nowMs, realH, capped, gameH, before, cash0, day0 } = c; this.lastSim = nowMs;
       const L = this.led.life, d = (k) => L[k] - before[k], prodD = {}; for (const k of Object.keys(L.produced)) prodD[k] = L.produced[k] - before.produced[k]; const soldD = {}; let soldQ = 0; for (const k of Object.keys(L.sold)) { soldD[k] = L.sold[k] - before.sold[k]; soldQ += soldD[k]; }
       const cost = calc(L, 0).expenses - calc(before, 0).expenses, invs = this.inventory(), cap = invs.reduce((a, v) => a + v.capacity, 0), vol = invs.reduce((a, v) => a + v.volume + (v.water || 0), 0);
       const warn = new Set(this.alerts().filter(a => a.level !== 'info').map(a => a.key)); const profit = calc(L, 0).netProfit - calc(before, 0).netProfit;
       this.away = { ok: true, realHours: realH, capped, gameHours: gameH, gameDays: gameH / 24, produced: prodD, producedCrude: prodD.CRUDE, producedProducts: prodD.GASOLINE + prodD.DIESEL + prodD.JET_FUEL + prodD.GAS, throughput: prodD.THRU, sold: soldQ, soldBy: soldD, soldRevenue: d('revenue'), operatingCost: cost, profit, cashBefore: cash0, cashAfter: this.store.cash, storagePct: cap ? vol / cap * 100 : 0, warnings: warn.size, newDays: this.dayIdx - day0, bankrupt: this.bankrupt };
       return this.away;
     }
+    catchUp(nowMs) { const j = this.catchUpStart(nowMs); if (!j) return null; if (!j.job) return j; this.catchUpStep(Infinity); return this.catchUpFinish(); }
     clearAway() { this.away = null; }
 
     /* ---- save / load (the store and the pipes are saved by the lab as before; this is the company) ---- */

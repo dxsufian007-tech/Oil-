@@ -345,7 +345,7 @@
     animNeed = false; const now = performance.now() / 1000, list = STORE.query(Math.floor(vb.x0) - 2, Math.floor(vb.y0) - 2, Math.ceil(vb.x1) + 2, Math.ceil(vb.y1) + 2); let anim = false;
     list.sort((p, q) => { const a = B.dimsOf(B.DEFS[p.d], p.r), c = B.dimsOf(B.DEFS[q.d], q.r); return (p.x + a[0] + p.y + a[1]) - (q.x + c[0] + q.y + c[1]); });
     // pipes first (they lie on the ground)
-    if (pipes.size && lv !== 'FAR') drawPipes(vb);
+    if (pipes.size && lv !== 'FAR') { const tp = performance.now(); drawPipes(vb); WP.stats.t.pipes += performance.now() - tp; }
     for (const b of list) {
       const d = B.DEFS[b.d], [w, h] = B.dimsOf(d, b.r);
       if (lv === 'FAR' || cam.z < .12) { diamondPath(b.x, b.y, w, h); ctx.fillStyle = CAT[d.category]; ctx.fill(); ctx.strokeStyle = 'rgba(20,16,10,.7)'; ctx.lineWidth = 1; ctx.stroke(); continue; }
@@ -396,10 +396,20 @@
 
   /* ------------------------------------------------------------ cash, save / load, keys, test handle */
   function updateCash() { $('cash').textContent = fmt$(STORE.cash); EU.hud(); }
-  function save() { if (window.__noSave || !window.__lab || !window.__lab.restored) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); const out = JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } });
+  function save() { if (window.__noSave || !window.__lab || !window.__lab.restored || catching) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); const out = JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } });
       try { const prev = localStorage.getItem(SAVE_KEY), now = Date.now(); if (prev && prev.length > 200 && now - bakAt > 60000) { localStorage.setItem(SAVE_KEY + '-bak', prev); bakAt = now; } } catch (_) { }   /* a rolling copy of the previous good save (at most once a minute) */
       localStorage.setItem(SAVE_KEY, out); window.__saveError = null; saveFailShown = false; } catch (e) { window.__saveError = String(e && e.message || e); if (!saveFailShown) { saveFailShown = true; try { toast('⚠ تعذّر حفظ اللعبة: ' + window.__saveError); } catch (_) { } } } }
-  let bakAt = 0, saveFailShown = false;
+  let bakAt = 0, saveFailShown = false, catching = false;
+  /* Offline catch-up in short slices (never one long freeze): a progress bar is shown, the same ticks run in the same order, nothing is saved until it ends */
+  function runCatchUp(job, done) {
+    catching = true; let box = document.getElementById('cu-box');
+    if (!box) { box = document.createElement('div'); box.id = 'cu-box'; box.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(8,14,22,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#fff;font:700 18px sans-serif;direction:rtl'; box.innerHTML = '<div>⏳ جارٍ احتساب إنتاج شركتك أثناء غيابك…</div><div style="width:70%;max-width:340px;height:12px;background:#2a3846;border-radius:6px;overflow:hidden"><div id="cu-bar" style="height:100%;width:0;background:#4fb36a"></div></div><div id="cu-pct" style="font-size:14px;opacity:.8">0%</div>'; document.body.appendChild(box); }
+    box.style.display = 'flex'; const bar = document.getElementById('cu-bar'), pct = document.getElementById('cu-pct');
+    const slice = () => { let p = 1; try { p = COMPANY.catchUpStep(12); } catch (e) { window.__loadError = String(e && e.message || e); p = 1; } bar.style.width = Math.round(p * 100) + '%'; pct.textContent = Math.round(p * 100) + '%';
+      if (p < 1) { setTimeout(slice, 0); return; }
+      let a = null; try { a = COMPANY.catchUpFinish(); } catch (e) { window.__loadError = String(e && e.message || e); } catching = false; box.style.display = 'none'; lastT = performance.now(); done(a); };
+    setTimeout(slice, 0);
+  }
   function swapNet(n2) { pipes.clear(); pipes.lines = n2.lines; pipes.at = n2.at; pipes.nextId = n2.nextId; for (const k of n2) pipes.add(k); pipes.rev++; }
   function load(o) {
     o = o || {}; const keys = [SAVE_KEY, SAVE_KEY + '-bak']; let last = { loaded: 0, from: 'none' }, soft = null;
@@ -420,8 +430,8 @@
     if (d.wd) { try { world.restoreProgress(d.wd.p); world.restoreReserve(d.wd.r); world.restoreZones(d.wd.z); } catch (_) { } }      /* the fields' discovery state, what is left in each field, the wells drilled and the evaluated zones */
     const r = B.BuildingStore.fromJSON(ts, d.store); STORE.items = r.store.items; STORE.occ = r.store.occ; STORE.bucket = r.store.bucket; STORE.nextId = r.store.nextId; STORE.time = r.store.time; STORE.rev = (STORE.rev | 0) + 1; STORE.cash = d.cash == null ? STORE.cash : d.cash;
     swapNet(I.PipeNet.fromJSON(WW, d.net)); if (d.eco && COMPANY.fromJSON(d.eco)) { /* company restored */ } else COMPANY.reset(); GU.fromJSON(d.guide);
-    let away = null; if (o.catchUp !== false) away = COMPANY.catchUp(Date.now()); else COMPANY.stamp(Date.now());                                 // the app was closed: the company kept working (capped, validated)
-    updateCash(); WP.markDirty(); return { loaded: r.report.loaded, dropped: r.report.dropped, from: 'save', lines: pipes.lines.size, away };
+    let away = null, job = null; if (o.catchUp === false) COMPANY.stamp(Date.now()); else if (o.sliced) { job = COMPANY.catchUpStart(Date.now()); if (job && !job.job) { away = job; job = null; } } else away = COMPANY.catchUp(Date.now());                                 // the app was closed: the company kept working (capped, validated)
+    updateCash(); WP.markDirty(); return { loaded: r.report.loaded, dropped: r.report.dropped, from: 'save', lines: pipes.lines.size, away, job };
   }
   function reset() { STORE.items.clear(); STORE.occ.clear(); STORE.bucket.clear(); STORE.nextId = 1; STORE.rev = (STORE.rev | 0) + 1; STORE.cash = START_CASH; swapNet(new I.PipeNet(WW)); COMPANY.reset(); GU.reset(); state.sel = null; state.pending = null; state.pipeMode = null; hideBar(); save(); updateCash(); WP.markDirty(); }
   $('tSave').onclick = () => { save(); toast('Saved · ' + STORE.items.size + ' buildings · ' + pipes.lines.size + ' pipelines'); };
@@ -462,11 +472,11 @@
   function visSig() { let h = (STORE.rev | 0) + '/' + pipes.rev + '/' + (state.sel || 0) + '/' + COMPANY.reserve.lv + '/'; let k = 0; for (const b of STORE.items.values()) { const d = B.DEFS[b.d]; k = (k * 31 + b.st.length + (d.type === 'tank' || d.type === 'gas' ? Math.round(tankFill(b) * 100) : 0) + (b.s && b.s._in > 0 ? 7 : 0)) | 0; } let f = 0; for (const L of pipes.lines.values()) f = (f * 3 + ((L.flow || 0) > 1 ? 1 : 0) + (L.over || L.hiP ? 2 : 0)) | 0; return h + k + '/' + f; }
   const tick = setInterval(() => {
     const now = performance.now(), dtS = Math.min(2, (now - lastT) / 1000); lastT = now; const hrs = dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0);
-    if (COMPANY.speed > 0 && !COMPANY.bankrupt) COMPANY.run(hrs);
+    if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) COMPANY.run(hrs);
     if (WP.ui.reserveLv !== COMPANY.reserve.lv) { WP.ui.reserveLv = COMPANY.reserve.lv; WP.markDirty(); } if (now - lastDraw > 480) { lastDraw = now; const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag) showBuilding(sel.id); const sg = visSig(); if (sg !== lastSig || animOn) { lastSig = sg; WP.markDirty(); } }      // Stage 5 perf: the map is redrawn only when something it shows has changed (animation has its own timer)
   }, EC.TIME.tickMs);
   setInterval(() => { if (STORE.items.size || COMPANY.hours > 0) save(); }, 6000);                          // autosave: the company stamp is what the offline report measures from
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); } else { lastT = performance.now(); const a = COMPANY.catchUp(Date.now()); if (a && a.ok) { EU.showAway(a); save(); } } });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); } else { lastT = performance.now(); const j = COMPANY.catchUpStart(Date.now()); if (j && j.job) runCatchUp(j, a => { if (a && a.ok) EU.showAway(a); save(); }); else if (j && j.ok) { EU.showAway(j); save(); } } });
   window.addEventListener('pagehide', () => save());
   EU.mount({ company: COMPANY, toast, onChange: () => save(), restart: () => newGame(), showZone: () => { const z = world.reserveZoneOfWorld(); if (z) { WP.goto(z.x + z.w / 2, z.y + z.h / 2, .5); toast('منطقة الاحتياطي الاستراتيجي (باللون الأصفر)'); } } });
   /* a new game: everything is cleared (buildings, pipes, money, the lesson) and the camera returns to the first oil field */
@@ -474,5 +484,5 @@
   if (!GU.dev) { const top = document.querySelector('#eco-sheet .top'); if (top) { const nb = document.createElement('button'); nb.id = 'es-new'; nb.textContent = '🔄 لعبة جديدة'; nb.style.cssText = 'min-height:40px;margin-inline-start:8px;background:#7a2a2a;border:1px solid #a33;color:#fff;border-radius:8px;padding:0 12px;font-weight:700'; let armed = 0; nb.onclick = () => { if (!armed) { armed = 1; nb.textContent = '⚠️ اضغط للتأكيد: سيُمسح كل شيء'; setTimeout(() => { armed = 0; nb.textContent = '🔄 لعبة جديدة'; }, 4000); return; } armed = 0; nb.textContent = '🔄 لعبة جديدة'; newGame(); }; top.insertBefore(nb, top.querySelector('#es-close')); } }
   window.__lab = { ts, newGame, startBuild, pipeMode, pipeTap, commitPlan, spotsFor, nameOf, showField, fieldNear, fieldSites, GU, REASON, company: COMPANY, EU, buildDemo, store: STORE, pipes, sim: SIM, I, BC, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, showPipe, anchorFor, commitPipe, planFor, portNear, connect, updateCash, showSection, setDia: d => { dia = d; }, ready: () => true };
   updateCash(); window.__lab.GU.mount(); if (AR) AR.install();
-  const wait = setInterval(() => { if (WP.idle && WP.idle()) { clearInterval(wait); const r = load(); window.__lab.restored = r; if (r.from !== 'save' && !GU.dev) { const f = fieldSites()[0]; if (f) WP.goto(f.x, f.y, .55); } if (r.loaded) toast('Restored ' + r.loaded + ' buildings'); if (r.away && r.away.ok) EU.showAway(r.away); WP.markDirty(); } }, 200);
+  const wait = setInterval(() => { if (WP.idle && WP.idle()) { clearInterval(wait); const r = load({ sliced: true }); window.__lab.restored = r; if (r.from !== 'save' && !GU.dev) { const f = fieldSites()[0]; if (f) WP.goto(f.x, f.y, .55); } if (r.loaded) toast('Restored ' + r.loaded + ' buildings'); if (r.away && r.away.ok) EU.showAway(r.away); if (r.job) runCatchUp(r.job, a => { r.away = a; r.job = null; if (a && a.ok) EU.showAway(a); WP.markDirty(); save(); }); WP.markDirty(); } }, 200);
 })();
