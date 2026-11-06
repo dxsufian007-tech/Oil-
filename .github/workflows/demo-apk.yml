@@ -36,7 +36,7 @@ jobs:
         env:
           PERF: ${{ inputs.perf }}
         run: |
-          if [ "$PERF" = "true" ]; then ID=com.oli.oilperf; NAME="Oli Perf"; OLI_DEMO=1 OLI_PERF=1 OLI_PERF_BUILD=${GITHUB_SHA::7} node build-www-map.js; npm install @capacitor/filesystem@^8 @capacitor/share@^8; else ID=com.oli.oildemo; NAME="Oli Demo"; OLI_DEMO=1 node build-www-map.js; fi
+          if [ "$PERF" = "true" ]; then ID=com.oli.oilperf; NAME="Oli Perf"; OLI_DEMO=1 OLI_PERF=1 OLI_PERF_BUILD=${GITHUB_SHA::7} node build-www-map.js; npm install @capacitor/filesystem@^8 @capacitor/share@^8; else ID=com.oli.oildemo; NAME="Oli Demo"; OLI_DEMO=1 OLI_BUILD=${GITHUB_SHA::7} node build-www-map.js; fi
           sed -i "s/\"appId\": \"com.oli.oilgame\"/\"appId\": \"$ID\"/; s/\"appName\": \"Oli\"/\"appName\": \"$NAME\"/" capacitor.config.json
           npx cap sync android
           sed -i "s/applicationId \"com.oli.oilgame\"/applicationId \"$ID\"/" android/app/build.gradle

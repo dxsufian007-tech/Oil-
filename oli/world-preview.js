@@ -260,7 +260,7 @@
   /* Motion resolution: while the camera is moving (drag / pinch / auto-pan) a dense screen is drawn at 75% of its resolution - far fewer pixels per frame - and the sharp picture returns 0.2 s after the movement stops */
   let mvX = cam.x, mvY = cam.y, mvZ = cam.z, mvLast = 0, restDpr = 0;
   function motion(now) {
-    const moved = cam.x !== mvX || cam.y !== mvY || cam.z !== mvZ; mvX = cam.x; mvY = cam.y; mvZ = cam.z; if (qs.get('nomotion')) return;
+    const moved = cam.x !== mvX || cam.y !== mvY || cam.z !== mvZ; mvX = cam.x; mvY = cam.y; mvZ = cam.z; if (qs.get('nomotion') || window.OLI_NOMOTION) return;
     if (moved) { mvLast = now; if (!restDpr && DPR >= 1.75) { restDpr = DPR; DPR = restDpr * 0.75; resize(); } }
     else if (restDpr && now - mvLast > 200) { if (DPR < restDpr) { DPR = restDpr; resize(); } restDpr = 0; }
   }
