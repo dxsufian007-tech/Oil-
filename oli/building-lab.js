@@ -338,7 +338,7 @@
     sprites.set(key, sp); while ((sprites.size > 240 || spritePx > 12e6) && sprites.size > 1) { const k = sprites.keys().next().value, q = sprites.get(k); spritePx -= q.px; sprites.delete(k); }
   }
   function drawSprite(d, o, b) {
-    if (d.visual === 'refinery') return false; const dpr = WP.dpr(); if (dpr !== spriteDpr) { sprites.clear(); latest.clear(); spritePx = 0; spriteDpr = dpr; }
+    if (d.visual === 'refinery') return false; const dpr = WP.dpr(); spriteDpr = dpr;           // pictures are keyed by resolution: a change of resolution (moving the map) keeps the others, the size limit drops the oldest
     const fill = Math.round(Math.max(0, Math.min(1, o.fill || 0)) * 32), base = d.visual + '|' + o.r + '|' + o.w + 'x' + o.h + '|' + dpr + '|' + fill + '|' + o.state;
     const steady = b._fb === fill; b._fb = fill;
     if (!zStable) {                                                           // the zoom is changing: a picture made at the nearest zoom step (about 9% apart) is drawn slightly scaled - no full procedural redraw of every building per frame; a crisp frame follows when the zoom stops

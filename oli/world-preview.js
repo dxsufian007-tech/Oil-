@@ -257,7 +257,14 @@
     lastT = dirty ? now : 0;
   }
   let prevRaf = 0, lastDrawAt = 0;
-  function loop(now) { adapt(now); const fi = now - prevRaf; prevRaf = now; if (dirty && fi < 10 && now - lastDrawAt < 15) { requestAnimationFrame(loop); return; }      /* a 120 Hz screen: the map is drawn at most ~60 times a second (half the work and heat, same look) */
+  /* Motion resolution: while the camera is moving (drag / pinch / auto-pan) a dense screen is drawn at 75% of its resolution - far fewer pixels per frame - and the sharp picture returns 0.2 s after the movement stops */
+  let mvX = cam.x, mvY = cam.y, mvZ = cam.z, mvLast = 0, restDpr = 0;
+  function motion(now) {
+    const moved = cam.x !== mvX || cam.y !== mvY || cam.z !== mvZ; mvX = cam.x; mvY = cam.y; mvZ = cam.z; if (qs.get('nomotion')) return;
+    if (moved) { mvLast = now; if (!restDpr && DPR >= 1.75) { restDpr = DPR; DPR = restDpr * 0.75; resize(); } }
+    else if (restDpr && now - mvLast > 200) { if (DPR < restDpr) { DPR = restDpr; resize(); } restDpr = 0; }
+  }
+  function loop(now) { adapt(now); motion(now); const fi = now - prevRaf; prevRaf = now; if (dirty && fi < 10 && now - lastDrawAt < 15) { requestAnimationFrame(loop); return; }      /* a 120 Hz screen: the map is drawn at most ~60 times a second (half the work and heat, same look) */
     if (dirty) { lastDrawAt = now; const t = performance.now(); draw(); stats.lastDraw = performance.now() - t; stats.draws = (stats.draws | 0) + 1; stats.drawMs = (stats.drawMs || 0) + stats.lastDraw; } requestAnimationFrame(loop); }
   window.__wp = { hooks, ctx, bounds, markDirty: () => { dirty = true; }, VW: () => VW, VH: () => VH, dpr: () => DPR, setDpr(v) { DPR = v; resize(); }, world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.imgs, genLeft: () => (demoDone && !ovQueue.length ? 0 : 1) + (busy.img || busy.reg ? 1 : 0), idle: () => pendingJobs() === 0 && demoDone, pending: pendingJobs, draw, toTile, sx, sy, hiLeft: () => missingHi };
   const sp = qs.get('x'); if (sp) { cam.x = +qs.get('x'); cam.y = +qs.get('y'); cam.z = clampZ(+qs.get('z') || .9); }
