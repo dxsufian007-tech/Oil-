@@ -327,6 +327,7 @@
   // Stage 5 perf: a building that does not move is painted ONCE into a small offscreen sprite and then just copied (panning no longer re-runs ~100 canvas operations per building per frame).
   // Not used while the zoom is changing, and never for the refinery (flare / fans animate).  Sprites are keyed by visual, rotation, size, zoom, resolution, fill (1/32) and state.
   const SPRITES = !/nosprite/.test(location.search), sprites = new Map(); let lastZ = cam.z, zStable = false, spriteDpr = 0, spriteBudget = 3;
+  window.__perfSpr = () => sprites.size;                                   /* test build only reads this (memory report) */
   function drawSprite(d, o, b) {
     if (d.visual === 'refinery') return false; const dpr = WP.dpr(); if (dpr !== spriteDpr) { sprites.clear(); spriteDpr = dpr; }
     const fill = Math.round(Math.max(0, Math.min(1, o.fill || 0)) * 32), key = d.visual + '|' + o.r + '|' + o.w + 'x' + o.h + '|' + o.z.toFixed(3) + '|' + dpr + '|' + fill + '|' + o.state; let sp = sprites.get(key);
@@ -396,7 +397,9 @@
 
   /* ------------------------------------------------------------ cash, save / load, keys, test handle */
   function updateCash() { $('cash').textContent = fmt$(STORE.cash); EU.hud(); }
-  function save() { if (window.__noSave || !window.__lab || !window.__lab.restored || catching) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); const out = JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } });
+  /* test-only timing hook (window.__perfT exists only in the performance-test build): measures, never changes behaviour */
+  function save() { const P = window.__perfT; if (!P) return save_(); const t = performance.now(); try { return save_(); } finally { P.save += performance.now() - t; P.saveN++; } }
+  function save_() { if (window.__noSave || !window.__lab || !window.__lab.restored || catching) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); const out = JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } });
       try { const prev = localStorage.getItem(SAVE_KEY), now = Date.now(); if (prev && prev.length > 200 && now - bakAt > 60000) { localStorage.setItem(SAVE_KEY + '-bak', prev); bakAt = now; } } catch (_) { }   /* a rolling copy of the previous good save (at most once a minute) */
       localStorage.setItem(SAVE_KEY, out); window.__saveError = null; saveFailShown = false; } catch (e) { window.__saveError = String(e && e.message || e); if (!saveFailShown) { saveFailShown = true; try { toast('⚠ تعذّر حفظ اللعبة: ' + window.__saveError); } catch (_) { } } } }
   let bakAt = 0, saveFailShown = false, catching = false;
@@ -471,9 +474,10 @@
   let lastT = performance.now(), lastDraw = 0, lastSig = '';
   function visSig() { let h = (STORE.rev | 0) + '/' + pipes.rev + '/' + (state.sel || 0) + '/' + COMPANY.reserve.lv + '/'; let k = 0; for (const b of STORE.items.values()) { const d = B.DEFS[b.d]; k = (k * 31 + b.st.length + (d.type === 'tank' || d.type === 'gas' ? Math.round(tankFill(b) * 100) : 0) + (b.s && b.s._in > 0 ? 7 : 0)) | 0; } let f = 0; for (const L of pipes.lines.values()) f = (f * 3 + ((L.flow || 0) > 1 ? 1 : 0) + (L.over || L.hiP ? 2 : 0)) | 0; return h + k + '/' + f; }
   const tick = setInterval(() => {
-    const now = performance.now(), dtS = Math.min(2, (now - lastT) / 1000); lastT = now; const hrs = dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0);
+    const PT = window.__perfT, tk0 = PT ? performance.now() : 0, now = performance.now(), dtS = Math.min(2, (now - lastT) / 1000); lastT = now; const hrs = dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0);
     if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) COMPANY.run(hrs);
-    if (WP.ui.reserveLv !== COMPANY.reserve.lv) { WP.ui.reserveLv = COMPANY.reserve.lv; WP.markDirty(); } if (now - lastDraw > 480) { lastDraw = now; const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag) showBuilding(sel.id); const sg = visSig(); if (sg !== lastSig || animOn) { lastSig = sg; WP.markDirty(); } }      // Stage 5 perf: the map is redrawn only when something it shows has changed (animation has its own timer)
+    if (WP.ui.reserveLv !== COMPANY.reserve.lv) { WP.ui.reserveLv = COMPANY.reserve.lv; WP.markDirty(); } if (now - lastDraw > 480) { lastDraw = now; const tu0 = PT ? performance.now() : 0; const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag) showBuilding(sel.id); const sg = visSig(); if (sg !== lastSig || animOn) { lastSig = sg; WP.markDirty(); } if (PT) { PT.ui += performance.now() - tu0; PT.uiN++; } }      // Stage 5 perf: the map is redrawn only when something it shows has changed (animation has its own timer)
+  if (PT) { PT.tick += performance.now() - tk0; PT.tickN++; }
   }, EC.TIME.tickMs);
   setInterval(() => { if (STORE.items.size || COMPANY.hours > 0) save(); }, 6000);                          // autosave: the company stamp is what the offline report measures from
   document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); } else { lastT = performance.now(); const j = COMPANY.catchUpStart(Date.now()); if (j && j.job) runCatchUp(j, a => { if (a && a.ok) EU.showAway(a); save(); }); else if (j && j.ok) { EU.showAway(j); save(); } } });
