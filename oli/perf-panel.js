@@ -75,7 +75,8 @@
   /* ---------------------------------------------------------------- the test scene (in memory only) */
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const SC = { chains: [], central: null, tanks: [], wells: 0, built: false };
-  async function buildScene(log) {
+  async function buildScene(log, opts) {
+    opts = opts || {}; const PAIRS = opts.pairs || 70, CHAINS = opts.chains || 4;
     const lab = L(), wp = WP(); window.__noSave = true;                                  // nothing of this test is ever written to the save
     lab.reset(); lab.company.setSpeed(0); lab.store.cash = 1e14; lab.updateCash && lab.updateCash();
     const f = lab.fieldSites()[0]; wp.goto(f.x, f.y, .6); log('جارٍ تجهيز الخريطة…');
@@ -83,7 +84,7 @@
     const st = lab.store, I = lab.I, cx = Math.round(f.x), cy = Math.round(f.y);
     const ok = (d, x, y) => st.validate(d, x, y, 0, { ignoreCash: true }).ok, put = (d, x, y) => { if (!ok(d, x, y)) return null; const q = st.place(d, x, y, 0, { instant: true, ignoreCash: true }); return q.ok ? q.building : null; };
     // scan a square spiral of origins around the field; a "pattern" is a list of [def, dx, dy] that must all be valid together
-    const origins = []; for (let r = 0; r <= 120; r += 2) for (let a = 0; a < Math.max(1, r * 2); a++) { const an = a / Math.max(1, r * 2) * Math.PI * 2; origins.push([cx + Math.round(Math.cos(an) * r), cy + Math.round(Math.sin(an) * r * .7)]); }
+    const origins = []; for (let r = 0; r <= (opts.radius || 120); r += 2) for (let a = 0; a < Math.max(1, r * 2); a++) { const an = a / Math.max(1, r * 2) * Math.PI * 2; origins.push([cx + Math.round(Math.cos(an) * r), cy + Math.round(Math.sin(an) * r * .7)]); }
     const placePattern = (pat) => { for (const [ox, oy] of origins) { if (pat.every(([d, dx, dy]) => ok(d, ox + dx, oy + dy))) { const out = []; for (const [d, dx, dy] of pat) { const b = put(d, ox + dx, oy + dy); if (!b) { out.forEach(q => st.remove && st.remove(q.id)); return null; } out.push(b); } return out; } } return null; };
     // 1) wells (best effort, around the field), each with a small collecting tank
     let wells = 0; for (let k = 0; k < 60 && wells < 20; k++) { const w = put('oil_well', Math.round(f.x + (k % 8) - 4), Math.round(f.y + Math.floor(k / 8) - 3)); if (w) { wells++; const tk = placePattern([['crude_tank_s', 0, 0]]); } } SC.wells = wells; log('آبار: ' + wells);
@@ -91,9 +92,9 @@
     const cp = placePattern([['crude_tank_c', 0, 0], ['pump_station_c', 12, 2], ['crude_tank_l', 22, -6], ['crude_tank_l', 22, 0], ['crude_tank_l', 22, 6]]);
     if (cp) { I.layConnect(st, lab.pipes, lab.ts, cp[0].id, cp[1].id, {}); for (const d of cp.slice(2)) I.layConnect(st, lab.pipes, lab.ts, cp[1].id, d.id, {}); SC.central = { src: cp[0], pump: cp[1], dst: cp.slice(2) }; }
     // 2) many small tanks in connected pairs (the big passive network)
-    let pairs = 0, lines = 0; for (let k = 0; k < 70; k++) { const pr = placePattern([['crude_tank_s', 0, 0], ['crude_tank_s', 4, 0]]); if (!pr) break; const r = I.layConnect(st, lab.pipes, lab.ts, pr[0].id, pr[1].id, {}); if (r.ok) lines += r.lines.length; SC.tanks.push(pr[0], pr[1]); pairs++; if (k % 10 === 9) await sleep(0); } log('أزواج خزانات: ' + pairs);
+    let pairs = 0, lines = 0; for (let k = 0; k < PAIRS; k++) { const pr = placePattern([['crude_tank_s', 0, 0], ['crude_tank_s', 4, 0]]); if (!pr) break; const r = I.layConnect(st, lab.pipes, lab.ts, pr[0].id, pr[1].id, {}); if (r.ok) lines += r.lines.length; SC.tanks.push(pr[0], pr[1]); pairs++; if (k % 10 === 9) await sleep(0); } log('أزواج خزانات: ' + pairs);
     // 3) regular pump chains: big tank -> pump -> big tank
-    for (let k = 0; k < 4; k++) { const pr = placePattern([['crude_tank_l', 0, 0], ['pump_station_l', 14, 2], ['crude_tank_l', 28, 0]]); if (!pr) break; I.layConnect(st, lab.pipes, lab.ts, pr[0].id, pr[1].id, {}); I.layConnect(st, lab.pipes, lab.ts, pr[1].id, pr[2].id, {}); SC.chains.push({ src: pr[0], pump: pr[1], dst: pr[2] }); }
+    for (let k = 0; k < CHAINS; k++) { const pr = placePattern([['crude_tank_l', 0, 0], ['pump_station_l', 14, 2], ['crude_tank_l', 28, 0]]); if (!pr) break; I.layConnect(st, lab.pipes, lab.ts, pr[0].id, pr[1].id, {}); I.layConnect(st, lab.pipes, lab.ts, pr[1].id, pr[2].id, {}); SC.chains.push({ src: pr[0], pump: pr[1], dst: pr[2] }); }
     for (const b of st.list()) { const s = lab.sim.ensure(b); if (/tank/.test(b.d)) s.prod = 'CRUDE'; }
     { const ps = SC.chains.map(c => c.pump).concat(SC.central ? [SC.central.pump] : []); SC.cam = ps.length ? { x: avg(ps.map(b => b.x)), y: avg(ps.map(b => b.y)) } : { x: cx, y: cy }; }
     SC.built = true; SC.info = { buildings: st.list().length, lines: lab.pipes.lines.size, tanks: st.list().filter(b => /tank/.test(b.d)).length, pumps: SC.chains.length + (SC.central ? 1 : 0), centralPump: !!SC.central, wells };

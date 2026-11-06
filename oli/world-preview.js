@@ -8,7 +8,7 @@
   const OW = window.OliWorld, CFG = OW.CONFIG, qs = new URLSearchParams(location.search);
   const seed = qs.get('seed') ? +qs.get('seed') : 20260101;
   const world = OW.createWorld({ seed, external: true }), C = CFG.CHUNK, CX = CFG.CHUNKS_X, CY = CFG.CHUNKS_Y;
-  const cv = document.getElementById('c'), ctx = cv.getContext('2d'), info = document.getElementById('info'), hud = document.getElementById('hud');
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d', { alpha: false }), info = document.getElementById('info'), hud = document.getElementById('hud');
   const SR = world.regions.find(r => r.starter), cam = { x: SR.x0 + 160, y: SR.y0 + 160, z: 0.9 };
   const DEVUI = /[?&]lab=1/.test(location.search) || (function () { try { return localStorage.getItem('oli-labui') === '1'; } catch (_) { return false; } })(), ST_AR = { DRILLABLE: 'جاهز للحفر', PRODUCING: 'ينتج', DISCOVERED: 'مكتشف', SURVEYED: 'تم مسحه', UNDISCOVERED: '' };
   const ui = { reg: DEVUI, zone: true, dev: false, heat: false, sel: null, facility: 'well', probe: null, scale: false };

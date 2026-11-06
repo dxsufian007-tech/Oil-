@@ -374,7 +374,9 @@
   }
   function drawPipes(vb) {                                                                  // Stage 5 perf: the visible lines are collected first and stroked in a few batches (one path per style) instead of 3-4 canvas strokes per line
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; const view = [vb.x0 - 3, vb.y0 - 3, vb.x1 + 3, vb.y1 + 3], vis = [];
-    for (const L of pipes.lines.values()) { const P = L.path; if (!P.length) continue; for (const q of P) if (q[0] >= view[0] && q[0] <= view[2] && q[1] >= view[1] && q[1] <= view[3]) { vis.push(L); break; } }
+    for (const L of pipes.lines.values()) { const P = L.path; if (!P.length) continue; let bb = L._bb; if (!bb || L._bbp !== P || L._bbn !== P.length) { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of P) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; } bb = L._bb = [x0, y0, x1, y1]; L._bbp = P; L._bbn = P.length; }
+      if (bb[2] < view[0] || bb[0] > view[2] || bb[3] < view[1] || bb[1] > view[3]) continue;      /* the line's box is off screen: its points are not even looked at */
+      for (const q of P) if (q[0] >= view[0] && q[0] <= view[2] && q[1] >= view[1] && q[1] <= view[3]) { vis.push(L); break; } }
     if (!vis.length) return; const add = L => { L.path.forEach((q, i) => i ? ctx.lineTo(sx(q[0] + .5, q[1] + .5), sy(q[0] + .5, q[1] + .5)) : ctx.moveTo(sx(q[0] + .5, q[1] + .5), sy(q[0] + .5, q[1] + .5))); };
     const batch = (ls, style, w, dash) => { if (!ls.length) return; ctx.beginPath(); for (const L of ls) add(L); ctx.strokeStyle = style; ctx.lineWidth = w; if (dash) { ctx.setLineDash(dash[0]); ctx.lineDashOffset = dash[1]; } ctx.stroke(); if (dash) ctx.setLineDash([]); };
     const wdOf = L => Math.max(2, (4 + L.dia / 5) * cam.z), byW = new Map(); for (const L of vis) { const k = wdOf(L).toFixed(2); (byW.get(k) || byW.set(k, []).get(k)).push(L); }
