@@ -272,11 +272,41 @@
       for (const L of net.lines.values()) { if (!L.a || !L.b || L.open === false) continue; if (!store.get(L.a.b) || !store.get(L.b.b)) continue; edge(pk(L.a.b, L.a.port), pk(L.b.b, L.b.port), L); }
       const pts = new Map(); for (const b of store.items.values()) for (const p of B.worldPoints(b)) if (p.kind === 'pipe' && !p.reserved) pts.set(b.id + ':' + p.id, p);
       for (const [k, p] of pts) { if (E.has(k)) continue; const o = store.at(p.ax, p.ay); if (!o || o.id === p.buildingId) continue; for (const q of B.worldPoints(o)) if (q.x === p.ax && q.y === p.ay && q.ax === p.x && q.ay === p.y && B.compatible(p, q) && !E.has(pk(o.id, q.id))) { edge(k, pk(o.id, q.id), null); break; } }
+      this._gof = new Map(); this._groups = [];
       { const byConn = new Map(); for (const L of net.lines.values()) if (L.conn && L.a && L.b && L.open !== false) { const a = byConn.get(L.conn) || []; a.push(L); byConn.set(L.conn, a); }
-        for (const ls of byConn.values()) if (ls.length === 2 && ls[0].a.b === ls[1].b.b && ls[0].b.b === ls[1].a.b) for (const L of ls) { const e = E.get(pk(L.a.b, L.a.port)); if (e) e.lvl = true; } }      // a pair of opposite open lines between two tanks (auto-link): the two tanks LEVEL OUT instead of passing the same oil back and forth
+        const par = new Map(), find = x => { let r = x; while (par.get(r) !== r) r = par.get(r); while (par.get(x) !== r) { const n = par.get(x); par.set(x, r); x = n; } return r; };
+        for (const ls of byConn.values()) if (ls.length === 2 && ls[0].a.b === ls[1].b.b && ls[0].b.b === ls[1].a.b) {
+          const ba = store.get(ls[0].a.b), bb = store.get(ls[0].b.b), da = ba && DEFS[ba.d], db = bb && DEFS[bb.d], es = ls.map(L => E.get(pk(L.a.b, L.a.port)));
+          if (da && db && da.type === 'tank' && db.type === 'tank' && da.product === db.product && !ba.rs && !bb.rs) {      // TANK GROUP: two tanks of the same product (outside the Strategic Reserve) joined by a pair of opposite open lines: one storage unit, each tank keeps its own stock
+            for (const e of es) if (e) e.int = true;
+            for (const id of [ba.id, bb.id]) if (!par.has(id)) par.set(id, id); const ra = find(ba.id), rb = find(bb.id); if (ra !== rb) par.set(rb, ra); }
+          else for (const e of es) if (e) e.lvl = true;                                                       // gas / other pairs: the two sides level out (they would only pass the same oil back and forth)
+        }
+        const by = new Map(); for (const id of par.keys()) { const r = find(id); let a = by.get(r); if (!a) by.set(r, a = []); a.push(id); }
+        for (const ids of by.values()) { ids.sort((x, y) => x - y); const g = { id: ids[0], members: ids }; this._groups.push(g); for (const id of ids) this._gof.set(id, g); } }
       this._el = [...new Set(E.values())];                                          // each edge once, for the per-step loops
       const eb = new Map(); for (const e of new Set(E.values())) { for (const [id, port] of [[e.ab, e.ap], [e.bb, e.bp]]) { let m = eb.get(id); if (!m) eb.set(id, m = Object.create(null)); m[port] = e; } } this._eb = eb;      // edge lookup by (building, port) without building a string key on every call
       this.builtRev = (store.rev | 0) * 100000 + net.rev; this._rev = this.builtRev;
+    }
+    /* The DRAW of a tank group. Every outlet of every member (pump, pipe...) is served from the pooled stock, one after the other within the step, so two pumps share the same oil and nothing is drawn twice.
+       The rate is whatever the outlet's own pipe / pump takes (a tank's outlet limit stays that tank's own); the oil taken is removed from the members IN PROPORTION to their stock, each tank losing its own share of water and bought oil. */
+    stepGroup(g, dt) {
+      const ms = g.members.map(id => this.store.get(id)).filter(m => m && this.ok(m)); if (!ms.length) return;
+      for (const b of ms) {
+        const def = DEFS[b.d], ports = def.connections.filter(c => c.role === 'out' && this.edgeOf(b, c.id) && !this.edgeOf(b, c.id).int).map(c => c.id); if (!ports.length) continue;
+        let pool = 0, wat = 0, bv = 0; for (const m of ms) { const st = m.s; pool += st.vol; wat += st.wat || 0; bv += st.bv || 0; } if (pool <= 1e-6) break;
+        const cap = def.capacity.value * levelOf(b).capacityMultiplier, wf = def.product === P.CRUDE ? Math.min(1, wat / pool) : 0, bf = def.product === P.CRUDE ? clamp(bv / pool, 0, 1) : 0, r = Math.min(pool / dt, cap * .5);
+        const acc = this.split(b, ports, { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, p: SIM.tankHeadPsi }, true, new Set([b.id])); b.s._out = (b.s._out || 0) + acc; if (acc <= 1e-12) continue;
+        const removed = Math.min(pool, acc * dt);
+        for (const m of ms) { const st = m.s; if (st.vol <= 0) continue; const q = Math.min(st.vol, removed * st.vol / pool), w = st.vol > 0 ? (st.wat || 0) / st.vol : 0, k = st.vol > 0 ? (st.bv || 0) / st.vol : 0; st.wat = Math.max(0, (st.wat || 0) - q * w); if (st.bv) st.bv = Math.max(0, st.bv - q * k); st.vol = Math.max(0, st.vol - q); }
+      }
+    }
+    /* ---- Tank Groups (derived from the pipe graph, never stored: every tank keeps its own stock in b.s) ---- */
+    groupOf(b) { if (this.dirty()) this.build(); return (this._gof && this._gof.get(b.id)) || null; }
+    groupInfo(b) {
+      const g = this.groupOf(b); if (!g) return null; let capacity = 0, volume = 0, water = 0, n = 0; const members = [];
+      for (const id of g.members) { const m = this.store.get(id); if (!m || !this.ok(m)) continue; const d = DEFS[m.d], st = this.ensure(m); capacity += d.capacity.value * levelOf(m).capacityMultiplier; volume += st.vol; water += st.wat || 0; n++; members.push(id); }
+      return { id: g.id, n, members, capacity, volume, water, free: Math.max(0, capacity - volume) };
     }
     dirty() { return this.builtRev !== (this.store.rev | 0) * 100000 + this.net.rev; }
     edgeOf(b, port) { const m = this._eb && this._eb.get(b.id); return m ? (m[port] || null) : null; }
@@ -285,6 +315,7 @@
     /* offer a flow into the pipeline attached to (b, port); returns the accepted rate. Pressure falls along the line, capacity limits the rate. */
     offer(b, port, f, commit, vis) {
       if (f.r <= 1e-9) return 0; const e = this.edgeOf(b, port); if (!e) return 0; const far = this.other(e, b, port); if (!far.b) return 0;
+      if (e.int) return 0;                                                  // a link INSIDE a tank group: no oil is pushed through it (the group draws and fills as one unit)
       const room = e.cap - e.flow; let r = Math.min(f.r, room);
       if (e.lvl && f.sv != null) { const fs = this.ensure(far.b), fd = DEFS[far.b.d], fc = fd.capacity.value * levelOf(far.b).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
       const ratio = r / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * (e.line && e.line.dia ? 16 / e.line.dia : 1); let p = f.p - loss;
@@ -408,7 +439,9 @@
           else { s.reserve = Math.max(0, s.reserve - oil); if (s.reserve < 0.5) s.reserve = 0; }
         }
       }
+      const gdone = new Set();
       for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
+        if (def.type === 'tank' && this._gof.has(b.id)) { const g = this._gof.get(b.id); if (!gdone.has(g)) { gdone.add(g); this.stepGroup(g, dt); } continue; }
         if (def.type === 'tank' || def.type === 'gas') {
           const hasOut = def.connections.some(c => c.role === 'out' && this.edgeOf(b, c.id)); if (!hasOut || s.vol <= 1e-6) continue;
           if (b.rs && !(s.rel > 0)) continue;                                  // a reserve tank never lets oil out by itself: only a release the player ordered (s.rel, stage 2) opens its outlet

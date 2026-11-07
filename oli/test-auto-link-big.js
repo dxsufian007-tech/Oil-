@@ -9,10 +9,10 @@ const portUse = g => { const m = new Map(); let clash = 0; for (const L of lines
     const g = game(), a = put(g, 'crude_tank_c', 40, 40), b = put(g, 'crude_tank_c', 40 + 8 + gap, 40), r = link(g, b);
     ok(r.linked.length === 1 && lines(g).length === 2 && lines(g).every(L => L.open !== false), 'central tanks 8x8, gap ' + gap + ': linked, two lines, both open', r.skipped);
     g.sim.build(); const x = g.sim.ensure(a), y = g.sim.ensure(b); x.prod = y.prod = 'CRUDE'; x.vol = CAP * .9; y.vol = 0; const tot = x.vol; g.sim.run(5);
-    ok(y.vol > 0 && Math.abs(x.vol + y.vol - tot) < 1e-6 * tot && y.vol <= CAP + 1e-6 && x.vol >= 0, '  open lines: oil moves A->B (' + Math.round(y.vol) + ' bbl), total constant, within the 4M capacity');
+    ok(y.vol === 0 && Math.abs(x.vol + y.vol - tot) < 1e-6 * tot && y.vol <= CAP + 1e-6 && x.vol >= 0, '  open lines: the pair is a tank group: oil does NOT shuffle between its tanks (' + Math.round(y.vol) + ' bbl), total constant, within the 4M capacity');
   }
   { const g2 = game(1e12), a2 = put(g2, 'crude_tank_c', 40, 40), b2 = put(g2, 'crude_tank_c', 50, 40); link(g2, b2); g2.sim.build(); const x = g2.sim.ensure(a2), y = g2.sim.ensure(b2); x.vol = 1e6; g2.sim.run(40);   // regression: a fresh empty tank (no product yet) used to send back what it got
-    ok(Math.abs(x.vol - y.vol) < 1e3 && Math.abs(x.vol + y.vol - 1e6) < 1, 'full tank fills the empty neighbour and they LEVEL OUT (' + Math.round(x.vol) + ' / ' + Math.round(y.vol) + ')'); }
+    ok(x.vol === 1e6 && y.vol === 0, 'linked tanks are a GROUP: no automatic levelling, each keeps its own stock (' + x.vol + ' / ' + y.vol + ')'); }
   const g = game(), a = put(g, 'crude_tank_c', 40, 40), c = put(g, 'crude_tank_c', 40, 50), d = put(g, 'gasoline_tank_l', 50, 40); link(g, c); const r = link(g, d);
   ok(r.skipped.some(s => s.reason === 'invalidProduct') && lines(g).length === 2, 'a central gasoline tank beside a crude one is refused (invalidProduct)');
 }
@@ -32,7 +32,7 @@ const portUse = g => { const m = new Map(); let clash = 0; for (const L of lines
   const total = () => T.reduce((q, t) => q + g.sim.ensure(t).vol, 0), tot0 = total(), t1 = process.hrtime.bigint(); g.sim.run(10); const stepMs = Number(process.hrtime.bigint() - t1) / 1e6;
   ok(Math.abs(total() - tot0) < 1e-6 * tot0, 'after 10 days with every line open the total oil is unchanged (' + Math.round(tot0) + ' bbl)');
   ok(T.every(t => g.sim.ensure(t).vol >= -1e-9 && g.sim.ensure(t).vol <= CAP + 1e-6), 'every tank stays between 0 and its 4M capacity');
-  ok(g.sim.ensure(T[99]).vol > 0 && g.sim.ensure(T[1]).vol > 0, 'oil spread through the open network (far corner: ' + Math.round(g.sim.ensure(T[99]).vol) + ' bbl)');
+  { const gi = g.sim.groupInfo(T[99]); ok(gi && gi.n === 100 && gi.capacity === 100 * CAP && Math.abs(gi.volume - tot0) < 1e-6 * tot0, 'the 100 tanks are ONE group: capacity ' + gi.capacity + ', stock ' + Math.round(gi.volume) + ' bbl'); ok(g.sim.ensure(T[99]).vol === 0 && Math.abs(g.sim.ensure(T[0]).vol - CAP * .95) < 1e-6 * CAP, 'each tank keeps its own level (no levelling): far corner ' + Math.round(g.sim.ensure(T[99]).vol) + ' bbl'); }
   const per = (() => { g.sim.build(); const q = process.hrtime.bigint(); for (let i = 0; i < 200; i++) g.sim.step(1 / 24); return Number(process.hrtime.bigint() - q) / 1e6 / 200; })();
   ok(per < 5, 'one simulator step on the 100-tank network costs ' + per.toFixed(2) + ' ms (limit 5 ms); build of the network ' + ms + ' ms; 10 days ' + Math.round(stepMs) + ' ms');
   const sv = JSON.stringify(g.net.toJSON()), n2 = I.PipeNet.fromJSON(g.ts.W, JSON.parse(sv)); ok(n2.lines.size === 362 + 0 || n2.lines.size === lines(g).length, 'the network saves and loads whole (' + n2.lines.size + ' lines, ' + Math.round(sv.length / 1024) + ' KB)');

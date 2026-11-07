@@ -15,7 +15,7 @@ const link = (g, t, o) => I.autoLinkTank(g.store, g.net, g.ts, t.id, o);
   ok(r2.linked.length === 0 && lines(g).length === n0 && g.net.nextId === id0 && g.store.cash === cash1, 'linking again adds nothing (no duplicate line, no charge)');
   // flow: lines open -> oil levels out between the two tanks, total constant, capacity respected
   g.sim.build(); const sa = g.sim.ensure(a), sb = g.sim.ensure(b); sa.prod = sb.prod = 'CRUDE'; const cap = B.DEFS[a.d].capacity.value; sa.vol = cap * .8; sb.vol = 0; const tot = sa.vol; g.sim.run(3);
-  ok(sb.vol > 0 && Math.abs(sa.vol + sb.vol - tot) < 1e-3 * tot && sb.vol <= cap + 1e-6, 'open lines: oil flows A->B, the total never changes (' + Math.round(sb.vol) + ' bbl), B stays within its capacity');
+  ok(sb.vol === 0 && Math.abs(sa.vol + sb.vol - tot) < 1e-3 * tot && sb.vol <= cap + 1e-6, 'open lines: the pair is a tank group, nothing shuffles between its tanks, the total never changes (' + Math.round(sb.vol) + ' bbl), B stays within its capacity');
   ok(g.sim.ensure(b).vol >= 0 && g.sim.ensure(a).vol >= 0, 'no negative stock anywhere');
 }
 { // 2. third and fourth tank join; old lines untouched; no loops duplicated
