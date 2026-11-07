@@ -5,7 +5,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
 (async () => {
   const b = await chromium.launch(), ctx = await b.newContext({ viewport: { width: 412, height: 866 }, hasTouch: true, isMobile: true }), p = await ctx.newPage(), errs = [];
   p.on('pageerror', e => errs.push(e.message)); const url = 'http://localhost:' + srv.address().port + '/', boot = async () => { await p.goto(url); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 }); };
-  await boot(); await p.evaluate(() => { localStorage.clear(); __lab.reset(); __lab.company.injectEquity(5e7, 't'); const z = __wp.world.reserveZoneOfWorld(); __wp.goto(z.x + 18, z.y + 13, .6); });
+  await boot(); await p.evaluate(() => { localStorage.clear(); __lab.reset(); __lab.company.injectEquity(5e7, 't'); const z = __wp.world.reserveZoneOfWorld(); const l0 = z.levels[0]; __wp.goto(l0.x + 10, l0.y + 7, .6); });
   await p.waitForTimeout(1200);
   for (let i = 0; i < 2; i++) { await p.evaluate(() => __lab.startBuild('crude_tank_s')); await p.waitForTimeout(250); await p.locator('#bBuild').tap(); await p.waitForTimeout(400); }
   const n1 = await p.evaluate(() => __lab.store.list().filter(x => x.rs).length); ok(n1 === 2, 'two reserve tanks built through the real build button');

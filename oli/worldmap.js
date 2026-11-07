@@ -66,7 +66,7 @@
     DRY_RATIO: 0.6,                                                             // dry "promising" zones per real field
     MIN_GAP: 3,                                                                 // tiles between two oil sites
     DRILL: { baseCostPer100m: 1500, preview: true },                            // estimated cost = depth/100 x base x terrain cost; PREVIEW ONLY, never charged
-    ZONES: { REFINERY: { w: 28, h: 18, maxSlope: 3, margin: 8 }, TANK_FARM: { w: 18, h: 12, maxSlope: 3, margin: 5 }, RESERVE: { base: [20, 14], step: [4, 3], levels: 4, ext: [[48, 32], [58, 38], [68, 44], [80, 50]], maxSlope: 3, margin: 2 } },
+    ZONES: { REFINERY: { w: 28, h: 18, maxSlope: 3, margin: 8 }, TANK_FARM: { w: 18, h: 12, maxSlope: 3, margin: 5 }, RESERVE: { base: [20, 14], step: [4, 3], levels: 4, ext: [[72, 32], [100, 34], [140, 38], [180, 40]], maxSlope: 3, margin: 2 } },
     SCALE: { TILE_M: 12, PIPE_TILE: 0.18, ICON_MIN_PX: 10, ICON_MAX_PX: 22 },     // ONE world scale: 1 tile = 12 m. Footprints are in tiles and are the SAME numbers the game uses (well 1x1, tank 2x2, pump 1x1, see core.js FOOTPRINT).
     FACILITIES: {                                                               // fp [w,h] tiles, look = shape + height in tiles (for the scale chart), maxSlope, terrains, ports (data for the later systems), cat = building category
       well:            { cat: 'EXTRACTION',  fp: [1, 1], look: ['derrick', 2.2], maxSlope: 8, ports: { all: 'out' } },
@@ -410,7 +410,7 @@
          * the first ring that is not stops the growth (so the zone never covers a field, a refinery zone, a track, water or a steep slope). */
         const ax = c.x, ay = c.y, free = (x, y, w, h) => {
           if (x < reg.x0 + 4 || y < reg.y0 + 4 || x + w > reg.x0 + reg.w - 4 || y + h > reg.y0 + reg.h - 4) return false;
-          for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { if (x + i >= ax && x + i < ax + MW && y + j >= ay && y + j < ay + MH) continue; const t = tile(x + i, y + j); if (!t || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU' || t.terrain === 'VALLEY' || t.slope > 6 * CONFIG.SLOPE_K) return false; }   // every tile of the new ground (the first five levels were checked by the search)
+          for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { if (x + i >= ax && x + i < ax + MW && y + j >= ay && y + j < ay + MH) continue; const t = tile(x + i, y + j); if (!t || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU') return false; }   // valleys and slopes are fine here: the ring is GRADED flat for building (buildings.js fromWorld) - water and plateau are not. Every tile of the new ground (the first five levels were checked by the search)
           if (fs.some(q => q.x > x - 6 && q.x < x + w + 6 && q.y > y - 6 && q.y < y + h + 6)) return false;
           if (rz.some(r => x < r.x + r.w + 2 && x + w > r.x - 2 && y < r.y + r.h + 2 && y + h > r.y - 2)) return false; return !nearTrack(x, y, x + w, y + h);
         };

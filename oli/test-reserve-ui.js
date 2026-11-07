@@ -20,7 +20,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   const tabs = await co(() => [...document.querySelectorAll('#es-tabs button')].map(x => x.textContent)); ok(tabs.includes('الاحتياطي'), 'the tab list has an Arabic "الاحتياطي" tab');
   console.log('TWO SEPARATE GAUGES');
   const ids = await co(([zx, zy]) => { const S = __lab.store, CO = __lab.company, lv = CO.reserve.lv; const z = __wp.world.reserveZoneOfWorld(), A = z.levels[lv];
-    const rt = S.place('crude_tank_s', A.x + 2, A.y + 2, 0, { instant: true }), ct = S.place('crude_tank_s', z.x - 8, z.y + 4, 0, { instant: true }); return { rt: rt.ok && rt.building.id, ct: ct.ok && ct.building.id, why: [rt.reason, ct.reason] }; }, [zn.x, zn.y]);
+    const rt = S.place('crude_tank_s', A.x + 2, A.y + 2, 0, { instant: true }), ct = (() => { for (let r = 3; r < 60; r += 3) for (const [dx, dy] of [[-r, 0], [r, 0], [0, -r], [0, r], [-r, r], [r, r]]) { const cx = z.x + (z.w >> 1) + dx + (dx < 0 ? -z.w / 2 : dx > 0 ? z.w / 2 : 0), cy = z.y + (z.h >> 1) + dy + (dy < 0 ? -z.h / 2 : dy > 0 ? z.h / 2 : 0); if (S.validate('crude_tank_s', cx, cy, 0).ok) return S.place('crude_tank_s', cx, cy, 0, { instant: true }); } return { ok: false, reason: 'noSpot' }; })(); return { rt: rt.ok && rt.building.id, ct: ct.ok && ct.building.id, why: [rt.reason, ct.reason] }; }, [zn.x, zn.y]);
   ok(ids.rt && ids.ct, 'a reserve tank (inside the zone) and a commercial tank (outside) were built: ' + JSON.stringify(ids));
   await co(({ rt, ct }) => { __lab.company.sync(); __lab.sim.ensure(__lab.store.get(rt)).vol = 3000; __lab.sim.ensure(__lab.store.get(ct)).vol = 7500; }, ids);
   await co(() => __lab.EU.render()); t = await body();
@@ -40,13 +40,15 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   t = await body(); ok(/تكاليف الاحتياطي اليومية/.test(t) && /توسعة المنطقة/.test(t), 'overview: costs and expansion');
   t = await sec('tr'); ok(/شراء إلى الاحتياطي/.test(t) && /بيع يدوي من الاحتياطي/.test(t), 'buy and sell section: purchase form and manual sale');
   const rv0 = await co(() => ({ cash: __lab.store.cash, vol: __lab.company.reserveStock('CRUDE'), com: __lab.company.fills().commercial.volume }));
-  await tap('[data-act=rvbuy]'); const rv1 = await co(() => ({ cash: __lab.store.cash, vol: __lab.company.reserveStock('CRUDE'), com: __lab.company.fills().commercial.volume, ok: __lab.company.audit().ok }));
-  ok(rv1.vol - rv0.vol === 5000 && rv1.cash < rv0.cash && rv1.com === rv0.com && rv1.ok, 'tapping buy adds 5,000 barrels to the reserve only, pays cash, the commercial store is unchanged, books balance');
+  await co(() => { const z = __wp.world.reserveZoneOfWorld(), A = z.levels[__lab.company.reserve.lv]; __wp.goto(A.x + A.w / 2, A.y + A.h / 2, .6); }); await p.waitForTimeout(2500);
+  await co(() => { const S = __lab.store, z = __wp.world.reserveZoneOfWorld(), A = z.levels[__lab.company.reserve.lv]; __lab.company.injectEquity(5e7, 't'); let done = false; for (let y = A.y; y < A.y + A.h && !done; y += 2) for (let x = A.x; x < A.x + A.w && !done; x += 2) if (S.validate('crude_tank_l', x, y, 0).ok) { const r = S.place('crude_tank_l', x, y, 0, { instant: true }); done = r.ok; } });   // the buy list now starts at 100,000 bbl: it needs room
+  await p.waitForTimeout(200); const rvPre = await co(() => __lab.store.cash); await tap('[data-act=rvbuy]'); const rv1 = await co(() => ({ cash: __lab.store.cash, vol: __lab.company.reserveStock('CRUDE'), com: __lab.company.fills().commercial.volume, ok: __lab.company.audit().ok }));
+  ok(rv1.vol - rv0.vol === 100000 && rv1.cash < rvPre && rv1.com === rv0.com && rv1.ok, 'tapping buy adds 100,000 barrels to the reserve only, pays cash, the commercial store is unchanged, books balance');
   await tap('[data-act=rvsell]'); const rv2 = await co(() => ({ cash: __lab.store.cash, vol: __lab.company.reserveStock('CRUDE'), ok: __lab.company.audit().ok }));
-  ok(rv0.vol + 5000 - rv2.vol === 5000 && rv2.cash > rv1.cash && rv2.ok, 'tapping manual sale sells 5,000 barrels from the reserve for cash');
+  ok(rv1.vol - rv2.vol === 100000 && rv2.cash > rv1.cash && rv2.ok, 'tapping manual sale sells 100,000 barrels from the reserve for cash');
   t = await sec('rl'); ok(/سحب بأمرك/.test(t) && await p.locator('[data-act=rvrel]').first().isDisabled(), 'release section: the release button is disabled while no pipe is connected to the outlet');
   t = await sec('mk'); ok(/أثر الشركة على السوق العالمي/.test(t) && /حصتك من الإنتاج العالمي/.test(t) && /قيمة الاحتياطي/.test(t) && /بسعر السوق اليوم/.test(t), 'market section: share of world production and supply, other producers\' answer, reserve at market value');
-  t = await sec('lg'); ok(/سجل عمليات الاحتياطي/.test(t) && /شراء/.test(t) && /بيع/.test(t) && /5,000/.test(t), 'log section: the purchase and the sale are listed');
+  t = await sec('lg'); ok(/سجل عمليات الاحتياطي/.test(t) && /شراء/.test(t) && /بيع/.test(t) && /100,000/.test(t), 'log section: the purchase and the sale are listed');
   for (const k of ['ov', 'tr', 'rl', 'mk', 'lg']) { await sec(k); t = await co(() => { const c = document.getElementById('es-body').cloneNode(true); c.querySelectorAll('.nm').forEach(x => x.remove()); return c.innerText; }); const latin = (t.match(/[A-Za-z]{2,}/g) || []).filter(w => !/^(bbl|USD)$/i.test(w)); ok(latin.length === 0, 'no Latin words in section ' + k + ' (building names aside): ' + latin.slice(0, 5).join(',')); }
   ok(errs.length === 0, 'no page errors: ' + errs.slice(0, 3).join(' | '));
   await b.close(); srv.close(); console.log('\nRESERVE UI TESTS: ' + n + ' passed');

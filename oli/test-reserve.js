@@ -12,8 +12,8 @@ console.log('A. the zone in the real world');
   { const Bq = require('./buildings.js'), ts2 = Bq.fromWorld(w); ts2.reserveLevel = () => z.levels.length - 1; const s2 = new Bq.BuildingStore(ts2, { cash: 1e12 }), L = z.levels[z.levels.length - 1]; let cnt = 0;
     for (let y = L.y; y + 2 <= L.y + L.h; y += 3) for (let x = L.x; x + 2 <= L.x + L.w; x += 3) if (s2.place('crude_tank_s', x, y, 0, { instant: true }).ok) cnt++;
     T('A3b the zone is large: 9 levels, and the last one really takes 150+ small tanks (2x2 with a one-tile lane between them)', z.levels.length === 9 && cnt >= 150, [z.levels.length, cnt]); }
-  let bad = 0, steep = 0; for (let j = 0; j < z.h; j++) for (let i = 0; i < z.w; i++) { const t = w.tile(z.x + i, z.y + j); if (!t || t.terrain === 'WATER_WADI') bad++; else if (t.slope > 6 * W.CONFIG.SLOPE_K) steep++; }
-  T('A4 the whole ground is dry and buildable', bad === 0 && steep === 0, [bad, steep]);
+  let bad = 0, steep = 0; for (let j = 0; j < z.h; j++) for (let i = 0; i < z.w; i++) { const t = require('./buildings.js').fromWorld(w).tile(z.x + i, z.y + j); if (!t || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU') bad++; else if (t.slope > 6 * W.CONFIG.SLOPE_K) steep++; }   // the ground is graded level for building
+  T('A4 the whole ground is dry and buildable (graded)', bad === 0 && steep === 0, [bad, steep]);
   const rz = w.refineryZones(sr.id), hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   T('A5 it does not overlap a refinery zone, an oil field or a track', rz.every(r => !hit(z, r)) && w.regionSites(sr.id).every(q => !(q.x >= z.x && q.x <= z.x + z.w && q.y >= z.y && q.y <= z.y + z.h)) && w.tracks(sr.id).every(t => t.pts.every(([px, py]) => !(px > z.x && px < z.x + z.w && py > z.y && py < z.y + z.h))));
   const d = Math.min(...rz.map(r => Math.hypot(r.x + r.w / 2 - z.x - z.w / 2, r.y + r.h / 2 - z.y - z.h / 2)));

@@ -123,7 +123,9 @@
   //                   oilFieldAt(x,y) -> site | null, stateOf(siteId), zoneAt(kind,x,y,w,h) -> zone | null }
   function fromWorld(world, CFG) {
     CFG = CFG || (typeof OliWorld !== 'undefined' ? OliWorld.CONFIG : require('./worldmap.js').CONFIG);
-    return { W: world.W, H: world.H, tile: (x, y) => world.tile(x, y), terrain: CFG.TERRAIN, slopeK: CFG.SLOPE_K, oilFieldAt: (x, y) => world.oilFieldAt(x, y), stateOf: id => world.stateOf(id),
+    return { W: world.W, H: world.H, tile: (x, y) => { const t = world.tile(x, y); if (!t || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU' || !world.reserveZoneOfWorld) return t; const z = world.reserveZoneOfWorld();
+        return z && x >= z.x && y >= z.y && x < z.x + z.w && y < z.y + z.h && (t.slope > 0 || t.terrain === 'VALLEY' || t.terrain === 'SAND_DUNES') ? Object.assign({}, t, { terrain: 'FLAT_DESERT', slope: 0 }) : t; },   // the reserve land is graded level: slopes, valley floor and dunes inside it count as flat desert for building
+      terrain: CFG.TERRAIN, slopeK: CFG.SLOPE_K, oilFieldAt: (x, y) => world.oilFieldAt(x, y), stateOf: id => world.stateOf(id),
       /* the Strategic Reserve zone: a storage-only place. Tanks fully inside the AREA OPEN SO FAR become reserve tanks (b.rs = 1); other plant is refused inside it; ground outside it is untouched */
       reserve: () => (world.reserveZoneOfWorld ? world.reserveZoneOfWorld() : null), reserveLevel: () => 0,
       reserveRule: function (def, x, y, w, h) { const z = this.reserve(); if (!z || !(x < z.x + z.w && x + w > z.x && y < z.y + z.h && y + h > z.y)) return null;
