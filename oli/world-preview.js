@@ -23,7 +23,7 @@
     const full = OW.createWorld({ seed }); let inited = true;
     return { post: m => setTimeout(() => {
       if (m.t === 'init') return onReply({ t: 'ready' });
-      if (m.t === 'overview') { const o = full.renderOverview(m.step); onReply({ t: 'overview', w: o.w, h: o.h, step: o.step, rgba: o.rgba }); }
+      if (m.t === 'overview') { const o = full.renderOverview(m.step); onReply({ t: 'overview', w: o.w, h: o.h, step: o.step, ids: o.ids, rgba: o.rgba }); }
       else if (m.t === 'img') { const rgba = full.renderChunkRGBA(m.cx, m.cy, m.k), ch = full.exportChunk(m.cx, m.cy); onReply({ t: 'img', cx: m.cx, cy: m.cy, k: m.k, rgba, chunk: ch }); }
       else if (m.t === 'region') onReply({ t: 'region', d: full.regionData(m.rid) });
       else if (m.t === 'heat') { const n = 32, a = new Uint8ClampedArray(n * n * 4); for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const p = full.oilProbability(m.cx * 64 + i * 2, m.cy * 64 + j * 2), q = (j * n + i) * 4; a[q] = 255; a[q + 1] = 80 + 80 * (1 - p); a[q + 2] = 20; a[q + 3] = Math.min(210, p * 330); } onReply({ t: 'heat', cx: m.cx, cy: m.cy, rgba: a }); }
@@ -39,7 +39,7 @@
   function onImg(m) {
     if (m.t === 'ready') { ready.img = true; return; }
     busy.img = false; dirty = true;
-    if (m.t === 'overview') { ovStep = m.step; const c = toCanvas(m.rgba, m.w, m.h); ovg.save(); ovg.setTransform(1, 0, 0, 1, 0, 0); ovg.clearRect(0, 0, OV_W, OV_H); ovg.setTransform(m.step * 32 * OV_Z, m.step * 16 * OV_Z, -m.step * 32 * OV_Z, m.step * 16 * OV_Z, OV_EX, 0); ovg.imageSmoothingEnabled = true; ovg.drawImage(c, 0, 0, m.w, m.h, 0, 0, m.w + .7, m.h + .7); ovg.restore(); stats.overviewMs = Math.round(performance.now()); }
+    if (m.t === 'overview') { if (skin.onOverview) skin.onOverview(m); ovStep = m.step; const c = toCanvas(m.rgba, m.w, m.h); ovg.save(); ovg.setTransform(1, 0, 0, 1, 0, 0); ovg.clearRect(0, 0, OV_W, OV_H); ovg.setTransform(m.step * 32 * OV_Z, m.step * 16 * OV_Z, -m.step * 32 * OV_Z, m.step * 16 * OV_Z, OV_EX, 0); ovg.imageSmoothingEnabled = true; ovg.drawImage(c, 0, 0, m.w, m.h, 0, 0, m.w + .7, m.h + .7); ovg.restore(); stats.overviewMs = Math.round(performance.now()); }
     else if (m.t === 'img') { const key = m.cy * CX + m.cx, mp = imgOf(m.k); mp.set(key, toCanvas(m.rgba, C * m.k, C * m.k)); while (mp.size > MAXC[m.k]) mp.delete(mp.keys().next().value); world.injectChunk(m.chunk); need.delete(m.k + ':' + key); stats.imgs++; stats.lastImgAt = performance.now(); }
     else if (m.t === 'heat') { heat.set(m.cy * CX + m.cx, toCanvas(m.rgba, 32, 32)); need.delete('h:' + (m.cy * CX + m.cx)); }
   }
@@ -148,10 +148,10 @@
       for (const z of world.tankZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(70,150,200,.15)', '#6ab6e6', 1.3, [5, 4]); ctx.fillStyle = '#cfeaff'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); if (lv === 'MEDIUM' || cam.z < 1.3) { ctx.strokeText('TANK FARM', X, Y); ctx.fillText(DEVUI ? 'TANK FARM' : 'منطقة الخزانات', X, Y); } }
       for (const p of world.strategicPoints(r.id)) { const X = sx(p.x, p.y), Y = sy(p.x, p.y); ctx.fillStyle = p.kind === 'EXPORT_COAST' ? '#ffd166' : '#ffffff'; ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X, Y - 9); ctx.lineTo(X + 7, Y); ctx.lineTo(X, Y + 9); ctx.lineTo(X - 7, Y); ctx.closePath(); ctx.fill(); ctx.stroke(); if (lv !== 'FAR' && cam.z < 1.3) { ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3; const t = DEVUI ? (p.kind === 'EXPORT_COAST' ? 'EXPORT SITE' : 'HUB') : (p.kind === 'EXPORT_COAST' ? 'موقع تصدير' : 'نقطة تجميع'); ctx.strokeText(t, X, Y - 13); ctx.fillText(t, X, Y - 13); } } }
     { const rz = world.reserveZoneOfWorld && world.reserveZoneOfWorld();                              // the Strategic Reserve: ONE fixed zone, always drawn (amber): the open area filled, the rest outlined as ground that can still be opened
-      if (rz && lv === 'FAR') { const X = sx(rz.x + rz.w / 2, rz.y + rz.h / 2), Y = sy(rz.x + rz.w / 2, rz.y + rz.h / 2); ctx.fillStyle = '#f0b429'; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X, Y - 11); ctx.lineTo(X + 11, Y); ctx.lineTo(X, Y + 11); ctx.lineTo(X - 11, Y); ctx.closePath(); ctx.stroke(); ctx.fill(); ctx.font = '800 15px system-ui'; ctx.textAlign = 'center'; ctx.strokeText('الاحتياطي الاستراتيجي', X, Y - 17); ctx.fillStyle = '#ffe3a0'; ctx.fillText('الاحتياطي الاستراتيجي', X, Y - 17); }       // far out: one amber marker with the name, so the zone can always be found
+      if (rz && lv === 'FAR' && !(skin.reserveFar && skin.reserveFar(rz))) { const X = sx(rz.x + rz.w / 2, rz.y + rz.h / 2), Y = sy(rz.x + rz.w / 2, rz.y + rz.h / 2); ctx.fillStyle = '#f0b429'; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X, Y - 11); ctx.lineTo(X + 11, Y); ctx.lineTo(X, Y + 11); ctx.lineTo(X - 11, Y); ctx.closePath(); ctx.stroke(); ctx.fill(); ctx.font = '800 15px system-ui'; ctx.textAlign = 'center'; ctx.strokeText('الاحتياطي الاستراتيجي', X, Y - 17); ctx.fillStyle = '#ffe3a0'; ctx.fillText('الاحتياطي الاستراتيجي', X, Y - 17); }       // far out: one amber marker with the name, so the zone can always be found
       if (rz && lv !== 'FAR' && !(rz.x > b.x1 + 30 || rz.y > b.y1 + 30 || rz.x + rz.w < b.x0 - 30 || rz.y + rz.h < b.y0 - 30)) { const A = rz.levels[Math.max(0, Math.min(rz.levels.length - 1, ui.reserveLv | 0))];
         diamond(rz.x, rz.y, rz.w, rz.h, 'rgba(240,180,41,.07)', 'rgba(240,180,41,.55)', 1.2, [3, 4]); diamond(A.x, A.y, A.w, A.h, 'rgba(240,180,41,.20)', '#f0b429', 2, [8, 4]);
-        ctx.fillStyle = '#ffe3a0'; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 3; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; const X = sx(rz.x + rz.w / 2, rz.y + rz.h / 2), Y = sy(rz.x + rz.w / 2, rz.y + rz.h / 2); ctx.strokeText('منطقة الاحتياطي الاستراتيجي', X, Y - 6); ctx.fillText('منطقة الاحتياطي الاستراتيجي', X, Y - 6); } }
+        ctx.fillStyle = '#ffe3a0'; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 3; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; const X = sx(rz.x + rz.w / 2, rz.y + rz.h / 2), Y = sy(rz.x + rz.w / 2, rz.y + rz.h / 2); ctx.strokeText('منطقة الاحتياطي الاستراتيجي', X, Y - 6); ctx.fillText('منطقة الاحتياطي الاستراتيجي', X, Y - 6); if (skin.reserveEmblem) skin.reserveEmblem(rz, lv); } }
     for (const r of world.regions) {
       if (!near(r)) continue;
       for (const s of world.regionSites(r.id)) {
@@ -162,7 +162,7 @@
         const col = s.kind === 'DRY' ? '#777' : SCOL[st];
         ellipseIso(s.x, s.y, s.radius, s.kind === 'DRY' ? 'rgba(90,90,90,.07)' : st === 'DEPLETED' ? 'rgba(60,60,60,.14)' : st === 'PRODUCING' ? 'rgba(255,170,60,.12)' : 'rgba(30,20,10,.10)', col, sel ? 3 : 1.6, st === 'SURVEYED' ? [6, 3] : st === 'DRILLABLE' || st === 'PRODUCING' ? null : [2, 3]);
         const sz = Math.max(CFG.SCALE.ICON_MIN_PX, Math.min(CFG.SCALE.ICON_MAX_PX, cam.z * 26)) * (lv === 'FAR' ? .75 : 1), px = sx(s.x, s.y), py = sy(s.x, s.y);
-        if (s.kind === 'FIELD') { derrick(px, py, sz, col); if (lv !== 'FAR') { ctx.fillStyle = '#fff'; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; const t = DEVUI ? s.type[0] + s.type.slice(1).toLowerCase() + ' · ' + st.toLowerCase() : '⛰️ حقل نفط' + (ST_AR[st] ? ' · ' + ST_AR[st] : ''); ctx.strokeText(t, px, py - sz - 4); ctx.fillText(t, px, py - sz - 4); } }
+        if (s.kind === 'FIELD') { const ph = skin.pin ? skin.pin(px, py, sz, st, sel, lv) : 0; if (!ph) derrick(px, py, sz, col); if (lv !== 'FAR') { ctx.fillStyle = '#fff'; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; const t = DEVUI ? s.type[0] + s.type.slice(1).toLowerCase() + ' · ' + st.toLowerCase() : '⛰️ حقل نفط' + (ST_AR[st] ? ' · ' + ST_AR[st] : ''); ctx.strokeText(t, px, py - (ph || sz) - 4); ctx.fillText(t, px, py - (ph || sz) - 4); } }
         else { ctx.strokeStyle = '#999'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px - 6, py - 6); ctx.lineTo(px + 6, py + 6); ctx.moveTo(px + 6, py - 6); ctx.lineTo(px - 6, py + 6); ctx.stroke(); if (lv !== 'FAR') { ctx.fillStyle = '#ccc'; ctx.font = '11px system-ui'; ctx.textAlign = 'center'; ctx.fillText('dry hole', px, py - 12); } }
       }
     }
@@ -171,7 +171,7 @@
   let missingHi = 0;
   let hudText = '', hudLv = '';
   function draw() {
-    dirty = false; const T = stats.t || (stats.t = { terrain: 0, decorate: 0, overlays: 0, afterOv: 0, top: 0, pipes: 0, buildings: 0 }), pn = performance.now.bind(performance); let t0 = pn(); const lv = level(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.lineJoin = 'round'; ctx.fillStyle = '#0c1015'; ctx.fillRect(0, 0, VW, VH);
+    dirty = false; const T = stats.t || (stats.t = { terrain: 0, decorate: 0, overlays: 0, afterOv: 0, top: 0, pipes: 0, buildings: 0 }), pn = performance.now.bind(performance); let t0 = pn(); const lv = level(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.lineJoin = 'round'; if (skin.bg && skin.bg(ctx, VW, VH)) { } else { ctx.fillStyle = '#0c1015'; ctx.fillRect(0, 0, VW, VH); }
     const b = bounds(), c0 = Math.max(0, Math.floor(b.x0 / C)), c1 = Math.min(CX - 1, Math.floor(b.x1 / C)), r0 = Math.max(0, Math.floor(b.y0 / C)), r1 = Math.min(CY - 1, Math.floor(b.y1 / C));
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low'; missingHi = 0;
     if (!stats.firstDrawMs && ovStep < 99) stats.firstDrawMs = Math.round(performance.now());
@@ -189,9 +189,11 @@
       }
     }
     let t1 = pn(); T.terrain += t1 - t0;
+    if (skin.ground) skin.ground(lv, b);
     if (lv === 'CLOSE') decorate(b);
     let t2 = pn(); T.decorate += t2 - t1;
     overlays(lv, b);
+    if (skin.sectors) skin.sectors(lv, b);
     let t3 = pn(); T.overlays += t3 - t2;
     if (hooks.afterOverlays) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); hooks.afterOverlays(lv, b); }
     T.afterOv += pn() - t3;
@@ -216,6 +218,7 @@
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); pinch = null; });
   cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, cam.z * Math.exp(-e.deltaY * .0015)); }, { passive: false });
 
+  const skin = {};                                            // presentation hooks (map-skin.js): background, mountains, sector plates, well pins, reserve emblem; empty = the plain map
   const hooks = {};                                           // Phase 2 hooks (building lab): afterOverlays(lv,b) draws buildings, top(lv,b) draws the ghost, tap(px,py) returns true when it used the tap
   function tap(px, py) {
     if (hooks.tap && hooks.tap(px, py)) return;
@@ -266,7 +269,7 @@
   }
   function loop(now) { adapt(now); motion(now); const fi = now - prevRaf; prevRaf = now; if (dirty && fi < 10 && now - lastDrawAt < 15) { requestAnimationFrame(loop); return; }      /* a 120 Hz screen: the map is drawn at most ~60 times a second (half the work and heat, same look) */
     if (dirty) { lastDrawAt = now; const t = performance.now(); draw(); stats.lastDraw = performance.now() - t; stats.draws = (stats.draws | 0) + 1; stats.drawMs = (stats.drawMs || 0) + stats.lastDraw; } requestAnimationFrame(loop); }
-  window.__wp = { hooks, ctx, bounds, markDirty: () => { dirty = true; }, VW: () => VW, VH: () => VH, dpr: () => DPR, setDpr(v) { DPR = v; resize(); }, world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.imgs, genLeft: () => (demoDone && !ovQueue.length ? 0 : 1) + (busy.img || busy.reg ? 1 : 0), idle: () => pendingJobs() === 0 && demoDone, pending: pendingJobs, draw, toTile, sx, sy, hiLeft: () => missingHi };
+  window.__wp = { skin, hooks, ctx, bounds, markDirty: () => { dirty = true; }, VW: () => VW, VH: () => VH, dpr: () => DPR, setDpr(v) { DPR = v; resize(); }, world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.imgs, genLeft: () => (demoDone && !ovQueue.length ? 0 : 1) + (busy.img || busy.reg ? 1 : 0), idle: () => pendingJobs() === 0 && demoDone, pending: pendingJobs, draw, toTile, sx, sy, hiLeft: () => missingHi };
   const sp = qs.get('x'); if (sp) { cam.x = +qs.get('x'); cam.y = +qs.get('y'); cam.z = clampZ(+qs.get('z') || .9); }
   if (qs.get('dev')) { ui.dev = true; document.getElementById('tDev').classList.add('on'); }
   if (qs.get('scale')) { ui.scale = true; document.getElementById('tScale').classList.add('on'); }

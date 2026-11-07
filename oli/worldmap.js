@@ -447,7 +447,7 @@
         const f = id[k] === 5 ? 1 : .80 + e * .42 + ((ee(i - 1, j) - ee(i + 1, j)) + (ee(i, j - 1) - ee(i, j + 1))) * 1.6 + (hash(seed, i, j) - .5) * .05;
         out[k * 4] = col[0] * f; out[k * 4 + 1] = col[1] * f; out[k * 4 + 2] = col[2] * f; out[k * 4 + 3] = 255;
       }
-      return { w: ow, h: oh, step, rgba: out };
+      return { w: ow, h: oh, step, rgba: out, ids: id };
     }
 
     // ---- zoom level + the iso transform (the SAME formulas as Oli's tc() / toTile(), so the world can sit under the existing camera)
