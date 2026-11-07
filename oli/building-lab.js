@@ -378,8 +378,21 @@
       if (d.type === 'refinery' && b.s && b.s._in > 0) animNeed = true;
       if (b.id === state.sel) { diamondPath(b.x, b.y, w, h); ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2.2; ctx.setLineDash([7, 4]); ctx.stroke(); ctx.setLineDash([]); drawPorts(b, true); }
     }
+    if (lv !== 'FAR' && state.sel != null) { const sb = STORE.get(state.sel); const gi = sb && B.DEFS[sb.d].type === 'tank' ? SIM.groupInfo(sb) : null; if (gi && gi.n > 1) drawGroupFrame(gi, sb); else lastGroupFrame = null; } else lastGroupFrame = null;
     if (scaledUsed) { clearTimeout(zTimer); zTimer = setTimeout(() => WP.markDirty(), 140); }
     animOn = animNeed && cam.z >= .3 && COMPANY.speed > 0;      // moving parts (flowing pipes, a running refinery) are refreshed by the 480 ms tick below - at most 2 frames/s, none at all while paused / idle
+  }
+  let lastGroupFrame = null;
+  /* a light frame around the tank group of the selected tank: each member outlined, one outer frame, and a label with the number of tanks, the group capacity and the total stock */
+  function drawGroupFrame(gi, sb) {
+    const ms = gi.members.map(id => STORE.get(id)).filter(Boolean); if (!ms.length) return; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    ctx.save(); ctx.lineJoin = 'round'; ctx.setLineDash([3, 3]); ctx.lineWidth = Math.max(1, 1.6 * Math.min(1.4, cam.z + .4)); ctx.strokeStyle = 'rgba(125,205,255,.85)'; ctx.fillStyle = 'rgba(110,190,255,.07)';
+    for (const m of ms) { const [w, h] = B.dimsOf(B.DEFS[m.d], m.r); diamondPath(m.x, m.y, w, h); ctx.fill(); if (m.id !== sb.id) ctx.stroke(); x0 = Math.min(x0, m.x); y0 = Math.min(y0, m.y); x1 = Math.max(x1, m.x + w); y1 = Math.max(y1, m.y + h); }
+    ctx.setLineDash([9, 5]); ctx.lineWidth = Math.max(1.4, 2.2 * Math.min(1.4, cam.z + .4)); ctx.strokeStyle = 'rgba(150,220,255,.95)'; diamondPath(x0 - .8, y0 - .8, x1 - x0 + 1.6, y1 - y0 + 1.6); ctx.stroke(); ctx.setLineDash([]);
+    const f = v => v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'k' : String(Math.round(v)), txt = 'مجموعة تخزين · ' + gi.n + ' خزان · السعة ' + f(gi.capacity) + ' · المخزون ' + f(gi.volume), ax = sx(x0 - .8, y0 - .8), ay = sy(x0 - .8, y0 - .8) - 16;
+    ctx.font = '700 12px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; const tw = ctx.measureText(txt).width + 18, bx = Math.max(6 + tw / 2, Math.min(cv.clientWidth - 6 - tw / 2, cv.clientWidth / 2)), by = Math.max(150, Math.min(cv.clientHeight - 230, ay));
+    ctx.fillStyle = 'rgba(10,22,44,.92)'; ctx.strokeStyle = 'rgba(150,220,255,.9)'; ctx.lineWidth = 1.2; ctx.beginPath(); (ctx.roundRect ? ctx.roundRect(bx - tw / 2, by - 11, tw, 22, 8) : ctx.rect(bx - tw / 2, by - 11, tw, 22)); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#e8f6ff'; ctx.fillText(txt, bx, by + 1);
+    ctx.restore(); lastGroupFrame = { n: gi.n, capacity: gi.capacity, volume: gi.volume, label: txt, members: ms.length };
   }
   function drawPipes(vb) {                                                                  // Stage 5 perf: the visible lines are collected first and stroked in a few batches (one path per style) instead of 3-4 canvas strokes per line
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; const view = [vb.x0 - 3, vb.y0 - 3, vb.x1 + 3, vb.y1 + 3], vis = [];
@@ -516,7 +529,7 @@
   function newGame() { reset(); try { localStorage.removeItem('oli-lab-v2'); } catch (_) { } const f = fieldSites()[0]; if (f && !GU.dev) WP.goto(f.x, f.y, .55); if (GU.closeSheet) GU.closeSheet(); const es = document.getElementById('eco-sheet'); if (es) es.classList.remove('open'); toast('🔄 بدأت لعبة جديدة · $10M'); save(); WP.markDirty(); }
   if (!GU.dev && !window.OLI_HOME) {   // in the app the reset lives in the main menu (with its own confirmation)
     const top = document.querySelector('#eco-sheet .top'); if (top) { const nb = document.createElement('button'); nb.id = 'es-new'; nb.textContent = '🔄 لعبة جديدة'; nb.style.cssText = 'min-height:40px;margin-inline-start:8px;background:#7a2a2a;border:1px solid #a33;color:#fff;border-radius:8px;padding:0 12px;font-weight:700'; let armed = 0; nb.onclick = () => { if (!armed) { armed = 1; nb.textContent = '⚠️ اضغط للتأكيد: سيُمسح كل شيء'; setTimeout(() => { armed = 0; nb.textContent = '🔄 لعبة جديدة'; }, 4000); return; } armed = 0; nb.textContent = '🔄 لعبة جديدة'; newGame(); }; top.insertBefore(nb, top.querySelector('#es-close')); } }
-  window.__lab = { autoLinkNote, ts, newGame, startBuild, pipeMode, pipeTap, commitPlan, spotsFor, nameOf, showField, fieldNear, fieldSites, GU, REASON, company: COMPANY, EU, buildDemo, store: STORE, pipes, sim: SIM, I, BC, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, showPipe, anchorFor, commitPipe, planFor, portNear, connect, updateCash, showSection, setDia: d => { dia = d; }, ready: () => true };
+  window.__lab = { groupFrame: () => lastGroupFrame, autoLinkNote, ts, newGame, startBuild, pipeMode, pipeTap, commitPlan, spotsFor, nameOf, showField, fieldNear, fieldSites, GU, REASON, company: COMPANY, EU, buildDemo, store: STORE, pipes, sim: SIM, I, BC, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, showPipe, anchorFor, commitPipe, planFor, portNear, connect, updateCash, showSection, setDia: d => { dia = d; }, ready: () => true };
   updateCash(); window.__lab.GU.mount(); if (AR) AR.install();
   const wait = setInterval(() => { if (WP.idle && WP.idle()) { clearInterval(wait); const r = load({ sliced: true }); window.__lab.restored = r; if (r.from !== 'save' && !GU.dev) { const f = fieldSites()[0]; if (f) WP.goto(f.x, f.y, .55); } if (r.loaded) toast('Restored ' + r.loaded + ' buildings'); if (r.away && r.away.ok) EU.showAway(r.away); if (r.job) runCatchUp(r.job, a => { r.away = a; r.job = null; if (a && a.ok) EU.showAway(a); WP.markDirty(); save(); }); WP.markDirty(); } }, 200);
 })();
