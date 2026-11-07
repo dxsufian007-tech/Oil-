@@ -64,7 +64,7 @@ body:not(.dev) #toast{top:calc(170*var(--u))!important}`;
     fab.textContent = strip(fab.textContent);
     const tr = document.createElement('div'); tr.id = 'hs-trans'; for (const id of ['tm-slow', 'eh-pause', 'tm-fast', 'eh-speed']) { const e = $(id); if (e) tr.appendChild(e); } tm.insertBefore(tr, tm.firstChild);
     for (const ev of ['pointerdown', 'touchstart']) tr.addEventListener(ev, e => e.stopPropagation(), { passive: true });
-    for (const b of nav.children) { const m = NAV[b.dataset.cat]; const i = b.querySelector('b'); if (m && i) i.innerHTML = '<img alt="" src="' + A + 'i-' + m + '.webp">'; }
+    for (const b of nav.children) { const m = NAV[b.dataset.cat]; const i = b.querySelector('b'); if (b.dataset.cat === 'pumps' && i) i.innerHTML = '<svg viewBox="0 0 40 40" style="height:100%;width:auto"><path d="M20 4C14 14 8 20 8 26a12 12 0 0 0 24 0c0-6-6-12-12-22z" fill="#4aa9d6" stroke="#fff1cf" stroke-width="2"/><path d="M14 27a6 6 0 0 0 6 6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>'; else if (m && i) i.innerHTML = '<img alt="" src="' + A + 'i-' + m + '.webp">'; }
     const tl = document.createElement('div'); tl.id = 'hs-tools'; tl.innerHTML = ['locate:تحديد الموقع', 'select:وضع التحديد', 'in:تكبير', 'out:تصغير', 'reset:إعادة ضبط العرض'].map(s => { const [k, t] = s.split(':'); return '<button data-t="' + k + '" title="' + t + '" aria-label="' + t + '"></button>'; }).join('');
     document.body.appendChild(tl); for (const ev of ['pointerdown', 'touchstart']) tl.addEventListener(ev, e => e.stopPropagation(), { passive: true });
     const zoom = f => { wp.goto(wp.cam.x, wp.cam.y, wp.cam.z * f); };

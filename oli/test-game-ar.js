@@ -24,8 +24,8 @@ const AR = require('./ar.js'), GC = require('./game-config.js'), B = require('./
   ok(await co(() => ['bar', 'pal', 'tabs'].every(i => getComputedStyle(document.getElementById(i)).display === 'none')), 'the developer toolbar and the 30-building palette are hidden');
   ok((await txt('#eh-cash')).includes('$10M') && (await txt('#eh-cash')).includes('الرصيد'), 'the company starts with $10M: ' + (await txt('#eh-cash')).replace(/\n/g, ' '));
   const hud = await txt('#eco-hud'); ok(['الرصيد', 'إنتاج', 'التخزين', 'أرباح'].every(w => hud.includes(w)), 'the top bar: balance, production, storage, profit');
-  ok((await co(() => [...document.querySelectorAll('#g-nav button')].map(x => x.innerText.trim()))).join('|').replace(/[^؀-ۿ|]/g, '') === 'النفط|الأنابيب|التخزين|المعالجة', 'the bottom bar has four big icons: النفط | الأنابيب | التخزين | المعالجة');
-  const nav = await co(() => [...document.querySelectorAll('#g-nav button')].map(x => { const r = x.getBoundingClientRect(); return [r.width, r.height, r.right]; })); ok(nav.every(r => r[0] > 80 && r[1] >= 48 && r[2] <= 412), 'the four buttons are big touch targets inside the phone width');
+  ok((await co(() => [...document.querySelectorAll('#g-nav button')].map(x => x.innerText.trim()))).join('|').replace(/[^؀-ۿ|]/g, '') === 'النفط|المضخات|الأنابيب|التخزين|المعالجة', 'the bottom bar has five big icons: النفط | المضخات | الأنابيب | التخزين | المعالجة');
+  const nav = await co(() => [...document.querySelectorAll('#g-nav button')].map(x => { const r = x.getBoundingClientRect(); return [r.width, r.height, r.right]; })); ok(nav.every(r => r[0] > 70 && r[1] >= 48 && r[2] <= 412), 'the five buttons are big touch targets inside the phone width');
   ok((await txt('#g-guide')).includes('لديك حقل نفط. ابدأ بحفر أول بئر.'), 'the guide starts: «لديك حقل نفط. ابدأ بحفر أول بئر.»'); await shot('g-01-start');
   ok((await latin()).length === 0, 'no English word is visible on the first screen');
 

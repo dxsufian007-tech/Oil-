@@ -606,7 +606,7 @@
       return { ok: true, product: p, qty: got, gross, fee, net: gross - fee, price: qt.unitPrice, kind: kind || 'SPOT', cost, profit: gross - fee - cost, own: take ? take.own : got, bought: take ? take.bought : 0 };
     }
     /* ---- WATER: separated water is moved, stored in water tanks and sold. It is never oil: no inventory account, no cost, no revenue until a sale. Revenue = REV_WATER at the moment of the sale only. ---- */
-    waterPrice() { return BC.WATER.price; }
+    waterPrice() { const m = this.market && this.market.price && this.market.price.WATER; return m > 0 ? m : BC.WATER.price; }         // one place: the market price when the market ever lists WATER (market.price.WATER), else the configured default (BC.WATER.price)
     waterTanks() { return this.tanksOf('WATER').filter(b => b.st !== 'UNDER_CONSTRUCTION'); }
     waterStock() { let v = 0; for (const b of this.waterTanks()) v += this.sim.ensure(b).vol; return v; }
     waterCapacity() { let v = 0; for (const b of this.waterTanks()) v += DEFS[b.d].capacity.value; return v; }
