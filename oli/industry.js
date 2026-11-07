@@ -516,7 +516,7 @@
       const v = planConnect(store, net, ts, b.id, n.id, { ignoreCash: o.ignoreCash });
       if (!v.ok) { const bothWays = (v.notes || []).filter(x => x.reason === 'oneWay').length >= 2; out.skipped.push({ id: n.id, reason: v.reason === 'alreadyConnected' ? 'exists' : ((v.problems && v.problems[0] && v.problems[0].reason) || (bothWays ? 'invalidProduct' : v.reason) || 'noPort') }); continue; }
       const r = commitPlan(store, net, v, { ignoreCash: o.ignoreCash }); if (!r.ok) { out.skipped.push({ id: n.id, reason: r.reason || 'noPort' }); continue; }
-      for (const L of r.made) L.open = false; net.rev++;
+      for (const L of r.made) delete L.open; net.rev++;   // lines stay OPEN (player request): neighbouring tanks are connected and level out
       out.linked.push({ id: n.id, conn: r.conn, lines: r.made.map(l => l.id), cost: v.cost }); out.cost += v.cost;
     }
     return out;

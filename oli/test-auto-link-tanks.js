@@ -8,16 +8,14 @@ const link = (g, t, o) => I.autoLinkTank(g.store, g.net, g.ts, t.id, o);
   const g = game(), a = put(g, 'crude_tank_m', 50, 50); ok(link(g, a).linked.length === 0 && lines(g).length === 0, 'a lone tank: nothing to link');
   const b = put(g, 'crude_tank_m', 55, 50), cash0 = g.store.cash, r = link(g, b), ls = between(g, a, b);   // gap 2
   ok(r.linked.length === 1 && ls.length === 2, 'two adjacent tanks (gap 2): ONE connection of TWO independent lines', { linked: r.linked.length, lines: ls.length });
-  ok(ls.every(L => L.open === false), 'both valves start CLOSED: adjacency creates the connection, not a transfer');
+  ok(ls.every(L => L.open !== false), 'both lines start OPEN (player request)');
   ok(ls[0].conn === ls[1].conn && (ls[0].a.b === a.id) !== (ls[1].a.b === a.id), 'one line each way (A->B and B->A), sharing one connection id');
   ok(Math.abs((cash0 - g.store.cash) - r.cost) < 1e-6 && r.cost > 0, 'the pipes are paid for once, by length: ' + r.cost);
   const n0 = lines(g).length, id0 = g.net.nextId, cash1 = g.store.cash, r2 = link(g, b);
   ok(r2.linked.length === 0 && lines(g).length === n0 && g.net.nextId === id0 && g.store.cash === cash1, 'linking again adds nothing (no duplicate line, no charge)');
-  // flow: closed -> nothing moves; open one line -> oil moves, total constant, capacity respected
-  g.sim.build(); const sa = g.sim.ensure(a), sb = g.sim.ensure(b); sa.prod = sb.prod = 'CRUDE'; const cap = B.DEFS[a.d].capacity.value; sa.vol = cap * .8; sb.vol = 0; g.sim.run(3);
-  ok(sa.vol === cap * .8 && sb.vol === 0, 'valves closed: after 3 days not one barrel moved');
-  const fwd = ls.find(L => L.a.b === a.id); I.setLineOpen(g.net, fwd.id, true); g.sim.build(); const sa2 = g.sim.ensure(a), sb2 = g.sim.ensure(b); sa2.prod = sb2.prod = 'CRUDE'; sa2.vol = cap * .8; sb2.vol = 0; const tot = sa2.vol + sb2.vol; g.sim.run(3);
-  ok(sb2.vol > 0 && Math.abs(sa2.vol + sb2.vol - tot) < 1e-3 * tot && sb2.vol <= cap + 1e-6, 'one valve opened by the player: oil flows A->B, the total never changes (' + Math.round(sb2.vol) + ' bbl), B stays within its capacity');
+  // flow: lines open -> oil levels out between the two tanks, total constant, capacity respected
+  g.sim.build(); const sa = g.sim.ensure(a), sb = g.sim.ensure(b); sa.prod = sb.prod = 'CRUDE'; const cap = B.DEFS[a.d].capacity.value; sa.vol = cap * .8; sb.vol = 0; const tot = sa.vol; g.sim.run(3);
+  ok(sb.vol > 0 && Math.abs(sa.vol + sb.vol - tot) < 1e-3 * tot && sb.vol <= cap + 1e-6, 'open lines: oil flows A->B, the total never changes (' + Math.round(sb.vol) + ' bbl), B stays within its capacity');
   ok(g.sim.ensure(b).vol >= 0 && g.sim.ensure(a).vol >= 0, 'no negative stock anywhere');
 }
 { // 2. third and fourth tank join; old lines untouched; no loops duplicated
@@ -46,7 +44,7 @@ const link = (g, t, o) => I.autoLinkTank(g.store, g.net, g.ts, t.id, o);
 }
 { // 5. save / load keeps the links (they are ordinary PipeNet lines); a pump / junction is not a tank
   const g = game(), a = put(g, 'crude_tank_m', 50, 50), b = put(g, 'crude_tank_m', 55, 50); link(g, b); const n2 = I.PipeNet.fromJSON(g.ts.W, JSON.parse(JSON.stringify(g.net.toJSON()))), L2 = [...n2.lines.values()];
-  ok(L2.length === 2 && L2.every(L => L.open === false), 'after save / load: same two lines, valves still closed');
+  ok(L2.length === 2 && L2.every(L => L.open !== false), 'after save / load: same two lines, still open');
   const pj = put(g, 'junction', 70, 70); ok(I.autoLinkTank(g.store, g.net, g.ts, pj.id).linked.length === 0, 'a non-storage building is ignored');
 }
 console.log('AUTO-LINK TANKS TESTS PASSED (' + n + ' checks)');
