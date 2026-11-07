@@ -11,6 +11,8 @@ const portUse = g => { const m = new Map(); let clash = 0; for (const L of lines
     g.sim.build(); const x = g.sim.ensure(a), y = g.sim.ensure(b); x.prod = y.prod = 'CRUDE'; x.vol = CAP * .9; y.vol = 0; const tot = x.vol; g.sim.run(5);
     ok(y.vol > 0 && Math.abs(x.vol + y.vol - tot) < 1e-6 * tot && y.vol <= CAP + 1e-6 && x.vol >= 0, '  open lines: oil moves A->B (' + Math.round(y.vol) + ' bbl), total constant, within the 4M capacity');
   }
+  { const g2 = game(1e12), a2 = put(g2, 'crude_tank_c', 40, 40), b2 = put(g2, 'crude_tank_c', 50, 40); link(g2, b2); g2.sim.build(); const x = g2.sim.ensure(a2), y = g2.sim.ensure(b2); x.vol = 1e6; g2.sim.run(40);   // regression: a fresh empty tank (no product yet) used to send back what it got
+    ok(Math.abs(x.vol - y.vol) < 1e3 && Math.abs(x.vol + y.vol - 1e6) < 1, 'full tank fills the empty neighbour and they LEVEL OUT (' + Math.round(x.vol) + ' / ' + Math.round(y.vol) + ')'); }
   const g = game(), a = put(g, 'crude_tank_c', 40, 40), c = put(g, 'crude_tank_c', 40, 50), d = put(g, 'gasoline_tank_l', 50, 40); link(g, c); const r = link(g, d);
   ok(r.skipped.some(s => s.reason === 'invalidProduct') && lines(g).length === 2, 'a central gasoline tank beside a crude one is refused (invalidProduct)');
 }

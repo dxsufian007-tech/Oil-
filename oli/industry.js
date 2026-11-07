@@ -272,6 +272,8 @@
       for (const L of net.lines.values()) { if (!L.a || !L.b || L.open === false) continue; if (!store.get(L.a.b) || !store.get(L.b.b)) continue; edge(pk(L.a.b, L.a.port), pk(L.b.b, L.b.port), L); }
       const pts = new Map(); for (const b of store.items.values()) for (const p of B.worldPoints(b)) if (p.kind === 'pipe' && !p.reserved) pts.set(b.id + ':' + p.id, p);
       for (const [k, p] of pts) { if (E.has(k)) continue; const o = store.at(p.ax, p.ay); if (!o || o.id === p.buildingId) continue; for (const q of B.worldPoints(o)) if (q.x === p.ax && q.y === p.ay && q.ax === p.x && q.ay === p.y && B.compatible(p, q) && !E.has(pk(o.id, q.id))) { edge(k, pk(o.id, q.id), null); break; } }
+      { const byConn = new Map(); for (const L of net.lines.values()) if (L.conn && L.a && L.b && L.open !== false) { const a = byConn.get(L.conn) || []; a.push(L); byConn.set(L.conn, a); }
+        for (const ls of byConn.values()) if (ls.length === 2 && ls[0].a.b === ls[1].b.b && ls[0].b.b === ls[1].a.b) for (const L of ls) { const e = E.get(pk(L.a.b, L.a.port)); if (e) e.lvl = true; } }      // a pair of opposite open lines between two tanks (auto-link): the two tanks LEVEL OUT instead of passing the same oil back and forth
       this._el = [...new Set(E.values())];                                          // each edge once, for the per-step loops
       const eb = new Map(); for (const e of new Set(E.values())) { for (const [id, port] of [[e.ab, e.ap], [e.bb, e.bp]]) { let m = eb.get(id); if (!m) eb.set(id, m = Object.create(null)); m[port] = e; } } this._eb = eb;      // edge lookup by (building, port) without building a string key on every call
       this.builtRev = (store.rev | 0) * 100000 + net.rev; this._rev = this.builtRev;
@@ -283,7 +285,8 @@
     /* offer a flow into the pipeline attached to (b, port); returns the accepted rate. Pressure falls along the line, capacity limits the rate. */
     offer(b, port, f, commit, vis) {
       if (f.r <= 1e-9) return 0; const e = this.edgeOf(b, port); if (!e) return 0; const far = this.other(e, b, port); if (!far.b) return 0;
-      const room = e.cap - e.flow; let r = Math.min(f.r, room); if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;
+      const room = e.cap - e.flow; let r = Math.min(f.r, room);
+      if (e.lvl && f.sv != null) { const fs = this.ensure(far.b), fd = DEFS[far.b.d], fc = fd.capacity.value * levelOf(far.b).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
       const ratio = r / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * (e.line && e.line.dia ? 16 / e.line.dia : 1); let p = f.p - loss;
       if (p < 0) { r *= Math.max(0, f.p / (loss || 1)); p = 0; if (commit) e.lowP = true; }
       if (r <= 1e-9) return 0; const acc = this.accept(far.b, far.port, Object.assign({}, f, { r, p }), commit, vis);
@@ -412,7 +415,7 @@
           const gasT = def.type === 'gas', cap = def.capacity.value * levelOf(b).capacityMultiplier;
           const maxOut = cap * .5, r = Math.min(s.vol / dt, maxOut, b.rs ? s.rel / dt : Infinity), fill = s.vol / cap, wf = def.product === P.CRUDE && s.vol > 0 ? s.wat / s.vol : 0, press = gasT ? this.gasPressure(def, fill, b) : SIM.tankHeadPsi;
           const bf = (def.product === P.CRUDE || b.rs) && s.vol > 0 ? clamp((s.bv || 0) / s.vol, 0, 1) : 0;                      // the share of the tank's oil that was bought (not produced)
-          const acc = this.split(b, def.connections.filter(c => c.role === 'out').map(c => c.id), { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, p: Math.max(press, SIM.tankHeadPsi) }, true, new Set([b.id])); s._out = acc;
+          const acc = this.split(b, def.connections.filter(c => c.role === 'out').map(c => c.id), { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, sv: s.vol, sc: cap, p: Math.max(press, SIM.tankHeadPsi) }, true, new Set([b.id])); s._out = acc;
           const removed = acc * dt; s.wat = Math.max(0, s.wat - removed * wf); s.vol = Math.max(0, s.vol - removed); if (s.bv) s.bv = Math.max(0, s.bv - removed * bf);
           if (b.rs) { s.rel = Math.max(0, s.rel - removed); if (s.rel < 1e-6) s.rel = 0; s.dep = (s.dep || 0) + removed; s.depBv = (s.depBv || 0) + removed * bf; s.depW = (s.depW || 0) + removed * wf; }       // what really left a reserve tank is recorded for the books (settled once per hour by the company)
         }
