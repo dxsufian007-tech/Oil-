@@ -29,4 +29,24 @@ const chain = (n, pumps) => { const g = game(1e12), t = []; for (let i = 0; i < 
 { const { g, t, sink, S } = chain(2, 1); S(t[0]).vol = 400000; S(t[0]).wat = 40000; S(t[0]).bv = 100000; S(t[1]).vol = 400000; S(t[1]).wat = 0; S(t[1]).bv = 0; g.sim.run(5);
   const w0 = S(t[0]).wat / S(t[0]).vol, w1 = S(t[1]).wat; ok(near(w0, 0.1, 1e-6) && w1 === 0, 'each tank keeps ITS OWN water share (10% / 0%), nothing is mixed between tanks'); ok(near(S(t[0]).bv / S(t[0]).vol, 0.25, 1e-6) && S(t[1]).bv === 0, 'each tank keeps its own bought-oil share');
   const inSink = S(sink); ok(near(inSink.wat + S(t[0]).wat + S(t[1]).wat, 40000, 1e-6), 'water is conserved across the draw'); }
+
+// ---- the FILL: when the receiving tank is full the rest goes to the other tanks of the group ----
+{ const g = game(1e12), cap = B.DEFS.crude_tank_c.capacity.value, A = put(g, 'crude_tank_c', 40, 40), Bt = put(g, 'crude_tank_c', 50, 40), C = put(g, 'crude_tank_c', 60, 40); I.autoLinkTank(g.store, g.net, g.ts, Bt.id); I.autoLinkTank(g.store, g.net, g.ts, C.id);
+  const src = put(g, 'crude_tank_c', 40, 120), pu = put(g, 'pump_station_l', 20, 80); if (!I.layConnect(g.store, g.net, g.ts, src.id, pu.id, {}).ok || !I.layConnect(g.store, g.net, g.ts, pu.id, A.id, {}).ok) throw new Error('connect'); g.sim.build(); const S = x => g.sim.ensure(x);
+  S(src).vol = 3e6; S(A).vol = cap - 5000; S(Bt).vol = 100; S(C).vol = 0; const water0 = 0, tot0 = S(src).vol + S(A).vol + S(Bt).vol + S(C).vol; g.sim.run(3);
+  ok(S(A).vol <= cap + 1e-6 && S(A).vol > cap - 5000, 'the receiving tank fills up to its capacity and not beyond (' + Math.round(S(A).vol) + ' / ' + cap + ')');
+  ok(S(Bt).vol > 100 || S(C).vol > 0, 'the surplus goes to the other tanks of the group (' + Math.round(S(Bt).vol) + ' / ' + Math.round(S(C).vol) + ')');
+  ok(near(S(src).vol + S(A).vol + S(Bt).vol + S(C).vol, tot0, 1e-9), 'conservation: nothing lost or created by the overflow');
+  g.sim.run(30); ok([A, Bt, C].every(t => S(t).vol <= cap + 1e-6 && S(t).vol >= 0), 'every tank stays within 0..capacity'); const gi = g.sim.groupInfo(A); ok(near(gi.volume + S(src).vol, tot0, 1e-9) && gi.volume <= gi.capacity + 1e-6, 'group stock never exceeds the group capacity (' + Math.round(gi.volume) + ' / ' + gi.capacity + ')');
+  // once the whole group is full the pump is blocked (no oil is created to make room)
+  S(A).vol = cap; S(Bt).vol = cap; S(C).vol = cap; const before = S(src).vol; g.sim.run(2); ok(near(S(src).vol, before, 1e-9) && S(A).vol <= cap + 1e-6, 'a full group takes nothing more'); }
+// ---- joining / leaving ----
+{ const g = game(1e12), A = put(g, 'crude_tank_c', 40, 40), Bt = put(g, 'crude_tank_c', 50, 40); I.autoLinkTank(g.store, g.net, g.ts, Bt.id); const S = x => g.sim.ensure(x); S(A).vol = 700; S(Bt).vol = 200; S(Bt).wat = 20; S(Bt).bv = 50;
+  const C = put(g, 'crude_tank_c', 60, 40); S(C).vol = 90; const r = I.autoLinkTank(g.store, g.net, g.ts, C.id); g.sim.build(); const gi = g.sim.groupInfo(A);
+  ok(r.linked.length >= 1 && gi.n === 3 && gi.volume === 990 && S(A).vol === 700 && S(Bt).vol === 200 && S(C).vol === 90, 'a new tank that is linked joins the group: 3 tanks, stock 990, nothing moved');
+  for (const L of [...g.net.lines.values()]) if ((L.a.b === C.id) || (L.b.b === C.id)) I.removeConnection(g.store, g.net, L.id, true); g.sim.build();
+  ok(!g.sim.groupOf(C) && S(C).vol === 90 && g.sim.groupInfo(A).n === 2 && g.sim.groupInfo(A).volume === 900 && S(Bt).wat === 20 && S(Bt).bv === 50, 'a tank that is unlinked leaves the group with its own stock (90), the others keep theirs');
+  // save / load: the stocks come back tank by tank, the group is derived again
+  const n2 = I.PipeNet.fromJSON(g.ts.W, JSON.parse(JSON.stringify(g.net.toJSON()))); g.sim.net = n2; g.sim.builtRev = -1; const gi2 = g.sim.groupInfo(A);
+  ok(gi2 && gi2.n === 2 && gi2.volume === 900 && S(A).vol === 700 && S(Bt).vol === 200, 'after save + load of the pipes the group is derived again, stocks untouched'); }
 process.exit(f ? 1 : 0);

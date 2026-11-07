@@ -343,8 +343,13 @@
         switch (def.type) {
           case 'tank': case 'gas': {
             const cap = def.capacity.value * levelOf(b).capacityMultiplier, keep = def.type === 'tank' && f.prod === P.CRUDE ? 1 - (f.gas || 0) : 1, avail = Math.max(0, cap - s.vol - (s._pend || 0)) / dt;
-            s._off = Math.max(s._off || 0, f.r); acc = Math.min(f.r, avail / keep); if (acc <= 0) { if (commit) s._blockedIn = true; break; }
-            if (commit) { const add = acc * keep * dt; s._pend = (s._pend || 0) + add; s._pbv = (s._pbv || 0) + add * (f.bf || 0); s._pw = (s._pw || 0) + add * (f.wat || 0) / Math.max(1e-9, 1 - (f.gas || 0)); s._in = (s._in || 0) + acc; s._vent = (s._vent || 0) + acc * (1 - keep); }
+            s._off = Math.max(s._off || 0, f.r);
+            const gm = def.type === 'tank' && this._gof.has(b.id) ? this._gof.get(b.id).members.map(id => this.store.get(id)).filter(m => m && m !== b && this.ok(m)).map(m => { const ms = this.ensure(m), mc = DEFS[m.d].capacity.value * levelOf(m).capacityMultiplier; return { m, ms, room: Math.max(0, mc - ms.vol - (ms._pend || 0)) / dt }; }).filter(o => o.room > 0) : [];   // a tank group: what the receiving tank cannot hold goes to the other tanks of the group that have room
+            const sib = gm.reduce((q, o) => q + o.room, 0); acc = Math.min(f.r, (avail + sib) / keep); if (acc <= 0) { if (commit) s._blockedIn = true; break; }
+            if (commit) {
+              const add = acc * keep * dt, own = Math.min(add, avail * dt), rest = add - own, put = (st, a) => { if (a <= 0) return; st._pend = (st._pend || 0) + a; st._pbv = (st._pbv || 0) + a * (f.bf || 0); st._pw = (st._pw || 0) + a * (f.wat || 0) / Math.max(1e-9, 1 - (f.gas || 0)); };
+              put(s, own); if (rest > 1e-12 && sib > 0) for (const o of gm) put(o.ms, rest * o.room / sib);
+              s._in = (s._in || 0) + acc; s._vent = (s._vent || 0) + acc * (1 - keep); }
             break;
           }
           case 'pump': {
