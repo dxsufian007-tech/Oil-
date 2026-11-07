@@ -316,11 +316,11 @@
     if (pm.kind === 'auto' || pm.kind === 'branch') {
       r = pm.kind === 'auto' ? I.layConnect(STORE, pipes, ts, pm.a.id, pm.tgt, { allowOneWay: pm.oneWay }) : I.branchTo(STORE, pipes, ts, pm.a.id, { line: pm.tgt, idx: pm.idx }, { allowOneWay: pm.oneWay });
       if (!r.ok) { toast(r.state === 'UNAFFORDABLE' ? 'الرصيد لا يكفي' : REASON[r.reason] || r.reason || 'تعذّر التوصيل'); autoBar(pm, r, pm.kind); WP.markDirty(); return; }
-      toast('✅ تم التوصيل · ' + r.made.length + (r.made.length === 2 ? ' خطان' : ' خط') + ' · −' + fmt$(r.cost)); save(); updateCash(); pipeMode(true); WP.markDirty(); return;
+      toast('✅ تم التوصيل · ' + r.made.length + (r.made.length === 2 ? ' خطان' : ' خط') + ' · −' + fmt$(r.cost)); save(); updateCash(); pipeMode(false); WP.markDirty(); return;
     }
     if (pm.kind === 'pipe') r = I.layPipe(STORE, pipes, ts, pl.a, pl.b, dia, {}); else if (pm.kind === 'open') r = I.layOpenPipe(STORE, pipes, ts, pl.a, pm.end, dia, {}); else r = I.closePipe(STORE, pipes, ts, pl.id, { b: pl.bid, port: pl.port }, {});
     if (!r.ok) { toast(r.state === 'UNAFFORDABLE' ? 'الرصيد لا يكفي للأنبوب' : REASON[r.reason] || r.reason); return; }
-    toast(pm.kind === 'open' ? '🟠 تم مد الأنبوب ولم يتصل بعد' : '✅ تم الربط · الحالة: متصل · −' + fmt$(r.cost)); save(); updateCash(); pipeMode(true); WP.markDirty();
+    toast(pm.kind === 'open' ? '🟠 تم مد الأنبوب ولم يتصل بعد' : '✅ تم الربط · الحالة: متصل · −' + fmt$(r.cost)); save(); updateCash(); pipeMode(false); WP.markDirty();
   }
   /* the oil field card: the player taps a field and is offered "dig a well" */
   function fieldNear(t) { let best = null, bd = 4.5; for (const f of fieldSites()) { const d = Math.hypot(f.x - t.x, f.y - t.y); if (d < bd) { bd = d; best = f; } } return best; }
