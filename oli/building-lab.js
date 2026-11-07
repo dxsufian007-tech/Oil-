@@ -271,6 +271,7 @@
   }
   function pipeBar(msg, cls, ok, extra) { bar.innerHTML = '<div class="msg ' + (cls || '') + '">' + msg + '</div><div class="btns">' + (ok ? '<button id="bPipeOk">✓ بناء</button>' : '') + (extra || '') + '<button id="bPipeEnd">✕ إنهاء</button></div>'; bar.style.display = 'block'; }
   function pipeMode(on) {
+    try { document.body.classList.toggle('pipemode', !!on); } catch (e) { }                    // while a pipe is being drawn / connected the info card steps aside (it would cover the buildings to tap)
     if (!on) { state.pipeMode = null; state.pipeDrag = null; hideBar(); WP.markDirty(); return; } cancelAll(true); state.pipeMode = { step: 1, a: null, plan: null }; state.pipeDrag = null;
     pipeBar('🔧 اضغط على المبنى الذي يبدأ منه الأنبوب (مثلًا البئر)'); WP.markDirty();
   }
