@@ -46,7 +46,7 @@
 
     // ---- costs
     TRADE: { TRANSFER_COST: 0.6, LOG_MAX: 300 },                                   // $ per bbl for moving bought oil between tanks (capitalised into its cost); how many trade operations are kept
-    STORAGE_COST: { CRUDE: 0.015, GASOLINE: 0.025, DIESEL: 0.025, JET_FUEL: 0.03, GAS: 0.06 },   // $ per stored bbl per day
+    STORAGE_COST: { CRUDE: 0.015, GASOLINE: 0.025, DIESEL: 0.025, JET_FUEL: 0.03, GAS: 0.06, WATER: 0 },   // $ per stored bbl per day (water: only the tank's own operating cost)
     ENERGY: { pricePerKWh: 0.08 },
     POWER: { tiers: [{ name: 'شبكة 1', kw: 8000, monthly: 25000, connect: 0 }, { name: 'شبكة 2', kw: 25000, monthly: 90000, connect: 400000 }, { name: 'شبكة 3', kw: 80000, monthly: 260000, connect: 1500000 }, { name: 'شبكة 4', kw: 250000, monthly: 700000, connect: 5000000 }], startTier: 0, efficiencyFloor: 0.3 },
     // power (Phase 12): supply = grid capacity + bought power (if switched on); shortage stops the least important facilities first

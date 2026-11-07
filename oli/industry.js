@@ -87,7 +87,7 @@
     if (ba.st === 'UNDER_CONSTRUCTION' && !opts.allowConstruction) { /* pipes may be laid to buildings under construction: allowed */ }
     if (!(pa.role === 'out' && pb.role === 'in') && !(pa.role === 'in' && pb.role === 'out') && !(pa.role === 'both' || pb.role === 'both')) return fail('portRoles');
     if (pa.role === pb.role && pa.role !== 'both') return fail('portRoles');
-    if (!B.productOk(pa.product, pb.product)) return Object.assign(fail('invalidProduct', 'PRODUCT'), { wants: pa.product, has: pb.product });
+    if (!B.productOk(pa.product, pb.product) || B.refuses(pa, pb) || B.refuses(pb, pa)) return Object.assign(fail('invalidProduct', 'PRODUCT'), { wants: pa.product, has: pb.product });
     for (const p of [pa, pb]) if (net.lineAtPort && net.lineAtPort(p)) return fail('portTaken');
     for (const L of net.lines.values()) for (const e of [L.a, L.b]) if (e && ((e.b === A.b && e.port === A.port) || (e.b === Bp.b && e.port === Bp.port))) return fail('portTaken');
     const prods = networkProducts(store, net, [pk(A.b, A.port), pk(Bp.b, Bp.port)], [pk(A.b, A.port), pk(Bp.b, Bp.port)]);
@@ -142,7 +142,7 @@
   function autoDia(def) { const need = def && def.capacity && /day/.test(def.capacity.unit || '') ? def.capacity.value : 0; if (!need) return CFG.PIPE_DEFAULT; const ds = Object.keys(CFG.PIPES).map(Number).sort((a, b) => a - b); return ds.find(d => CFG.PIPES[d].capacity >= need) || ds[ds.length - 1]; }
   const REASON_RANK = { cash: 5, noRoute: 4, portTaken: 3, invalidProduct: 2, portRoles: 1, noPort: 0 };
   function planDirection(store, net, ts, src, dst, o) {
-    const pairs = []; for (const pa of portsOf(src)) if (canSend(pa)) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product)) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
+    const pairs = []; for (const pa of portsOf(src)) if (canSend(pa)) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product) && !B.refuses(pa, pb) && !B.refuses(pb, pa) && !((pa.product === 'WATER') !== (pb.product === 'WATER') && (pa.product === '*' || pb.product === '*'))) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
     if (!pairs.length) return { natural: true };
     const sp = (b, free) => q => { if (portTaken(net, { b: b.id, port: q.id })) return 0; const nb = portsOf(b).filter(z => z.id !== q.id && z.side === q.side && z.role === q.role && z.group === q.group && Math.abs(z.ax - q.ax) + Math.abs(z.ay - q.ay) === 1 && !portTaken(net, { b: b.id, port: z.id })); return nb.length >= 2 ? 1 : 0; };    // a port in the MIDDLE of a run of free ports would wall the others in: take the ends of the run first
     const spS = sp(src), spD = sp(dst); for (const q of pairs) q.k = q.d + 1000 * (spS(q.pa) + spD(q.pb)); pairs.sort((x, y) => x.k - y.k); const dia = o.dia || Math.max(autoDia(DEFS[src.d]), autoDia(DEFS[dst.d])); let best = null, worst = null, tried = 0;
@@ -288,12 +288,20 @@
       const eb = new Map(); for (const e of new Set(E.values())) { for (const [id, port] of [[e.ab, e.ap], [e.bb, e.bp]]) { let m = eb.get(id); if (!m) eb.set(id, m = Object.create(null)); m[port] = e; } } this._eb = eb;      // edge lookup by (building, port) without building a string key on every call
       this.builtRev = (store.rev | 0) * 100000 + net.rev; this._rev = this.builtRev;
     }
+    /* The BOTTOM OUTLET of an oil tank: only the water that settled in the tank (s.wat) can leave through it, never oil. For a tank group the water of ALL the tanks is one pool: a water pump on any member takes it from every
+       member in proportion to the water each one holds; each tank loses exactly that much water (and the same volume of its total), nothing is moved between tanks. The rate is the pump's / pipe's own. */
+    drawBottomWater(b, pool) {
+      const e = this.edgeOf(b, 'WATER_OUT'); if (!e || e.int) return; const dt = this.dt; let tot = 0; for (const m of pool) tot += Math.max(0, Math.min(m.s.vol, m.s.wat || 0)); if (tot <= 1e-6) return;
+      const acc = this.offer(b, 'WATER_OUT', { prod: P.WATER, r: tot / dt, oil: 0, gas: 0, wat: 0, p: SIM.tankHeadPsi }, true, new Set([b.id])); b.s._wout = (b.s._wout || 0) + acc; if (acc <= 1e-12) return;
+      const removed = Math.min(tot, acc * dt); for (const m of pool) { const st = m.s, w = Math.max(0, Math.min(st.vol, st.wat || 0)); if (w <= 0) continue; const q = removed * w / tot; st.wat = Math.max(0, (st.wat || 0) - q); st.vol = Math.max(0, st.vol - q); }
+    }
     /* The DRAW of a tank group. Every outlet of every member (pump, pipe...) is served from the pooled stock, one after the other within the step, so two pumps share the same oil and nothing is drawn twice.
        The rate is whatever the outlet's own pipe / pump takes (a tank's outlet limit stays that tank's own); the oil taken is removed from the members IN PROPORTION to their stock, each tank losing its own share of water and bought oil. */
     stepGroup(g, dt) {
       const ms = g.members.map(id => this.store.get(id)).filter(m => m && this.ok(m)); if (!ms.length) return;
+      if (DEFS[ms[0].d].product === P.CRUDE) for (const b of ms) this.drawBottomWater(b, ms);
       for (const b of ms) {
-        const def = DEFS[b.d], ports = def.connections.filter(c => c.role === 'out' && this.edgeOf(b, c.id) && !this.edgeOf(b, c.id).int).map(c => c.id); if (!ports.length) continue;
+        const def = DEFS[b.d], ports = def.connections.filter(c => c.role === 'out' && c.id !== 'WATER_OUT' && this.edgeOf(b, c.id) && !this.edgeOf(b, c.id).int).map(c => c.id); if (!ports.length) continue;
         let pool = 0, wat = 0, bv = 0; for (const m of ms) { const st = m.s; pool += st.vol; wat += st.wat || 0; bv += st.bv || 0; } if (pool <= 1e-6) break;
         const cap = def.capacity.value * levelOf(b).capacityMultiplier, wf = def.product === P.CRUDE ? Math.min(1, wat / pool) : 0, bf = def.product === P.CRUDE ? clamp(bv / pool, 0, 1) : 0, r = Math.min(pool / dt, cap * .5);
         const acc = this.split(b, ports, { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, p: SIM.tankHeadPsi }, true, new Set([b.id])); b.s._out = (b.s._out || 0) + acc; if (acc <= 1e-12) continue;
@@ -448,12 +456,13 @@
       for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
         if (def.type === 'tank' && this._gof.has(b.id)) { const g = this._gof.get(b.id); if (!gdone.has(g)) { gdone.add(g); this.stepGroup(g, dt); } continue; }
         if (def.type === 'tank' || def.type === 'gas') {
-          const hasOut = def.connections.some(c => c.role === 'out' && this.edgeOf(b, c.id)); if (!hasOut || s.vol <= 1e-6) continue;
+          if (def.product === P.CRUDE && !b.rs) this.drawBottomWater(b, [b]);
+          const hasOut = def.connections.some(c => c.role === 'out' && c.id !== 'WATER_OUT' && this.edgeOf(b, c.id)); if (!hasOut || s.vol <= 1e-6) continue;
           if (b.rs && !(s.rel > 0)) continue;                                  // a reserve tank never lets oil out by itself: only a release the player ordered (s.rel, stage 2) opens its outlet
           const gasT = def.type === 'gas', cap = def.capacity.value * levelOf(b).capacityMultiplier;
           const maxOut = cap * .5, r = Math.min(s.vol / dt, maxOut, b.rs ? s.rel / dt : Infinity), fill = s.vol / cap, wf = def.product === P.CRUDE && s.vol > 0 ? s.wat / s.vol : 0, press = gasT ? this.gasPressure(def, fill, b) : SIM.tankHeadPsi;
           const bf = (def.product === P.CRUDE || b.rs) && s.vol > 0 ? clamp((s.bv || 0) / s.vol, 0, 1) : 0;                      // the share of the tank's oil that was bought (not produced)
-          const acc = this.split(b, def.connections.filter(c => c.role === 'out').map(c => c.id), { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, sv: s.vol, sc: cap, p: Math.max(press, SIM.tankHeadPsi) }, true, new Set([b.id])); s._out = acc;
+          const acc = this.split(b, def.connections.filter(c => c.role === 'out' && c.id !== 'WATER_OUT').map(c => c.id), { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, sv: s.vol, sc: cap, p: Math.max(press, SIM.tankHeadPsi) }, true, new Set([b.id])); s._out = acc;
           const removed = acc * dt; s.wat = Math.max(0, s.wat - removed * wf); s.vol = Math.max(0, s.vol - removed); if (s.bv) s.bv = Math.max(0, s.bv - removed * bf);
           if (b.rs) { s.rel = Math.max(0, s.rel - removed); if (s.rel < 1e-6) s.rel = 0; s.dep = (s.dep || 0) + removed; s.depBv = (s.depBv || 0) + removed * bf; s.depW = (s.depW || 0) + removed * wf; }       // what really left a reserve tank is recorded for the books (settled once per hour by the company)
         }
@@ -480,7 +489,7 @@
     tankKind(b) {
       const def = DEFS[b.d]; if (!def || def.type !== 'tank' || def.product !== P.CRUDE) return null; if (b.rs) return 'RESERVE'; if (this.dirty()) this.build();
       const kc0 = this._kindCache; if (kc0) { const k0 = kc0.get(b.id); if (k0 !== undefined) return k0; }
-      let any = false, hasIn = false; for (const c of def.connections) if (this.edgeOf(b, c.id)) { any = true; if (c.role !== 'out') hasIn = true; }
+      let any = false, hasIn = false; for (const c of def.connections) if (c.id !== 'WATER_OUT' && this.edgeOf(b, c.id)) { any = true; if (c.role !== 'out') hasIn = true; }
       const kc = this._kindCache || (this._kindCache = new Map()); const k = !any ? 'COMMERCIAL' : !hasIn ? 'TRADE' : this._wellUpstream(b, null, new Set([b.id])) ? 'PRODUCTION' : 'TRADE'; kc.set(b.id, k);
       return k;
     }
@@ -491,10 +500,10 @@
     }
     status(b) {
       if (b.st === 'UNDER_CONSTRUCTION') return 'UNDER_CONSTRUCTION'; if (b.st === 'MAINTENANCE' || b.st === 'DAMAGED') return b.st; const def = DEFS[b.d], s = this.ensure(b), t = def.type; if (this.dirty()) this.build();
-      const has = id => !!this.edgeOf(b, id), ins = def.connections.filter(c => c.role !== 'out' && !c.reserved).map(c => c.id), outs = def.connections.filter(c => c.role !== 'in' && !c.reserved).map(c => c.id);
+      const has = id => !!this.edgeOf(b, id), ins = def.connections.filter(c => c.role !== 'out' && !c.reserved).map(c => c.id), outs = def.connections.filter(c => c.role !== 'in' && !c.reserved && !(t === 'tank' && c.id === 'WATER_OUT')).map(c => c.id);
       const hasIn = ins.some(has), hasOut = outs.some(has), cap = def.capacity.value;
       if (t === 'well') { if (s.reserve <= 0) return 'DEPLETED'; if (!hasOut) return 'NO_OUTPUT'; if (s._out > 0) return s._out < s._target * .98 ? 'BLOCKED' : 'RUNNING'; return 'BLOCKED'; }
-      if (t === 'pump') { if (!hasIn) return 'NO_INPUT'; if (!hasOut) return 'NO_OUTPUT'; if (s._lowIn) return 'LOW_PRESSURE'; if ((s._in || 0) > 0 && s.pOut > 3000) return 'HIGH_PRESSURE'; if (s._sat) return 'OVER_CAPACITY'; return (s._in || 0) > 0 ? 'RUNNING' : 'READY'; }
+      if (t === 'pump') { if (!hasIn) return 'NO_INPUT'; if (!hasOut) return def.family === 'WATER_PUMP' ? 'READY' : 'NO_OUTPUT';   /* a water pump with no outlet is a LOADING pump (it loads water for sale) */ if (s._lowIn) return 'LOW_PRESSURE'; if ((s._in || 0) > 0 && s.pOut > 3000) return 'HIGH_PRESSURE'; if (s._sat) return 'OVER_CAPACITY'; return (s._in || 0) > 0 ? 'RUNNING' : 'READY'; }
       if (t === 'valve') { if (s.mode === 'FAULT') return 'DAMAGED'; if (s.mode === 'CLOSED') return 'OFFLINE'; return (s._in || 0) > 0 ? 'RUNNING' : 'READY'; }
       if (t === 'junction') { if (s._sat) return 'OVER_CAPACITY'; if (s._hiP) return 'HIGH_PRESSURE'; return (s._in || 0) > 0 ? 'RUNNING' : 'READY'; }
       if (t === 'tank' || t === 'gas') { if (s._badProduct) return 'BLOCKED'; return ((s._in || 0) > 0 || (s._out || 0) > 0) ? 'RUNNING' : 'READY'; }

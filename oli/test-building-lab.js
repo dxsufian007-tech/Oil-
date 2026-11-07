@@ -30,8 +30,8 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   const tab = async sec => { await p.click('#tabs button[data-sec="' + sec + '"]'); await p.waitForTimeout(80); };
   const SEC = { oil_well: 'EXTRACTION', pump_station_s: 'EXTRACTION', pump_station_l: 'EXTRACTION', pump_station_c: 'EXTRACTION', valve: 'PIPELINE', junction: 'PIPELINE', main_manifold: 'PIPELINE', crude_tank_s: 'CRUDE STORAGE', crude_tank_m: 'CRUDE STORAGE', crude_tank_l: 'CRUDE STORAGE', crude_tank_c: 'CRUDE STORAGE', separator: 'PROCESSING', refinery_s: 'PROCESSING', refinery_m: 'PROCESSING', refinery_l: 'PROCESSING', refinery_x: 'PROCESSING',
     gasoline_tank_s: 'PRODUCT STORAGE', gasoline_tank_m: 'PRODUCT STORAGE', gasoline_tank_l: 'PRODUCT STORAGE', diesel_tank_s: 'PRODUCT STORAGE', diesel_tank_m: 'PRODUCT STORAGE', diesel_tank_l: 'PRODUCT STORAGE', jet_tank_s: 'PRODUCT STORAGE', jet_tank_m: 'PRODUCT STORAGE', jet_tank_l: 'PRODUCT STORAGE', gas_sphere_s: 'PRODUCT STORAGE', gas_sphere_m: 'PRODUCT STORAGE', gas_sphere_l: 'PRODUCT STORAGE' };
-  console.log('BUILD MENU (5 sections)');
-  ok((await p.$$eval('#tabs button', bs => bs.map(x => x.textContent))).join('|') === 'EXTRACTION|PIPELINE|CRUDE STORAGE|PROCESSING|PRODUCT STORAGE', 'the menu has the 5 sections: EXTRACTION / PIPELINE / CRUDE STORAGE / PROCESSING / PRODUCT STORAGE');
+  console.log('BUILD MENU (6 sections)');
+  ok((await p.$$eval('#tabs button', bs => bs.map(x => x.textContent))).join('|') === 'EXTRACTION|PIPELINE|CRUDE STORAGE|PROCESSING|PRODUCT STORAGE|WATER', 'the menu has the 6 sections (+ WATER): EXTRACTION / PIPELINE / CRUDE STORAGE / PROCESSING / PRODUCT STORAGE');
   for (const [sec, n2] of [['EXTRACTION', 4], ['PIPELINE', 3], ['CRUDE STORAGE', 4], ['PROCESSING', 5], ['PRODUCT STORAGE', 12]]) { await tab(sec); ok((await p.$$('#pal .chip')).length === n2, sec + ' lists ' + n2 + ' buildings'); }
   { await tab('EXTRACTION'); const bb = await (await p.$('#pal .chip')).boundingBox(); ok(bb.height >= 60 && bb.width >= 70, 'palette chips are big enough for a finger (' + Math.round(bb.width) + 'x' + Math.round(bb.height) + ' px)'); }
 

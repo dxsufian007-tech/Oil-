@@ -347,8 +347,22 @@
     const SEC = [['tanks', 'الخزانات'], ['trade', 'شراء ونقل وبيع'], ['log', 'السجل']];
     return '<div class="es-row" style="margin:0 0 8px;flex-wrap:nowrap">' + SEC.map(x => '<button style="min-width:0;padding:4px 4px;font-size:12px" data-act="stsec" data-v="' + x[0] + '" class="' + (x[0] === stSec ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>' + (S[stSec] || S.tanks);
   }
+  /* WATER (stage 2): separated water is stored in water tanks and sold through a loading pump. Its own card: stock, what can be sold, the price, the total, the log. Never counted as oil. */
+  let wQ = 1000; const WQ = [1000, 5000, 10000, 50000, 'all'], WREASON = { noLoader: 'لا توجد مضخة تحميل: ابنِ مضخة مياه موصولة بخزان مياه ولا مخرج لها', notEnough: 'الكمية أكبر من المياه المتاحة', loadLimit: 'تجاوزت قدرة التحميل اليومية لمضخات التحميل', nothingToSell: 'لا توجد مياه للبيع', qty: 'اختر كمية صحيحة', bankrupt: 'الشركة مفلسة' };
+  function rWater() {
+    const w = CO.waterInfo(), q = wQ === 'all' ? Math.floor(w.sellable) : Math.min(wQ, Math.max(0, Math.floor(w.sellable))), quote = q > 0 ? CO.waterQuote(q) : { ok: false }, log = CO.waterLog(5);
+    const has = w.tanks > 0, warn = !has ? '<div class="es-sm">لا توجد خزانات مياه بعد: ابنِ خزان مياه من قائمة التخزين.</div>' : w.full ? '<div class="es-sm neg">⚠️ خزانات المياه ممتلئة: توقّف استقبال المياه. بِع المياه أو ابنِ خزاناً إضافياً.</div>' : !w.loaders ? '<div class="es-sm">لا توجد مضخة تحميل: ابنِ مضخة مياه موصولة بخزان مياه وبدون أنبوب خروج لتتمكن من البيع.</div>' : '';
+    return '<div class="es-card"><div class="es-prod"><span class="dot" style="background:#5fb8d9"></span><span class="nm">المياه</span><b>' + n0(w.stock) + ' برميل</b></div>' + (has ? '<div class="es-bar"><i style="width:' + Math.min(100, Math.round(w.fill * 100)) + '%;background:#5fb8d9"></i></div>' : '') + warn
+      + kv('السعة الكلية', n0(w.capacity) + ' برميل') + kv('كمية المياه المخزنة', n0(w.stock) + ' برميل') + kv('المساحة المتاحة', n0(w.free) + ' برميل') + kv('نسبة الامتلاء', Math.round(w.fill * 100) + '%')
+      + kv('المتاح للبيع الآن', n0(w.sellable) + ' برميل') + kv('قدرة التحميل اليومية', n0(w.loadCap) + ' برميل/يوم · المتبقي اليوم ' + n0(w.dayLeft)) + kv('سعر البيع', '$' + w.price.toFixed(2) + ' / برميل')
+      + '<div class="es-row" style="flex-wrap:wrap">' + WQ.map(x => '<button data-act="wq" data-v="' + x + '" class="' + (x === wQ ? 'on' : '') + '">' + (x === 'all' ? 'الكل' : n0(x)) + '</button>').join('') + '</div>'
+      + kv('الكمية المراد بيعها', n0(q) + ' برميل') + kv('<b>إجمالي الصفقة</b>', '<b class="pos">' + M(q * w.price) + '</b>')
+      + '<div class="es-row"><button data-act="wsell"' + (quote.ok ? '' : ' disabled') + ' style="' + (quote.ok ? 'background:#2f9e5a;border-color:#2f9e5a;color:#fff' : '') + '">بيع ' + n0(q) + ' برميل ماء</button></div>'
+      + kv('إنتاج المياه (كمية فقط)', n0(w.produced) + ' برميل') + kv('إجمالي المباع', n0(w.sold) + ' برميل') + kv('إيرادات المياه', M(w.revenue))
+      + (log.length ? '<div class="es-sm" style="margin-top:6px"><b>سجل البيع</b></div>' + log.map(e => '<div class="es-sm" style="border-bottom:1px solid #0002;padding:2px 0">' + n0(e.qty) + ' برميل × $' + e.price.toFixed(2) + ' = ' + M(e.total) + '</div>').join('') : '') + '</div>';
+  }
   function rInventory() {
-    return rByproducts() + CO.inventory().map(v => '<div class="es-card"><div class="es-prod"><span class="dot" style="background:' + COL[v.product] + '"></span><span class="nm">' + v.label + '</span><b>' + Math.round(v.fill * 100) + '%</b></div><div class="es-bar"><i style="width:' + Math.min(100, v.fill * 100) + '%;background:' + (v.fill >= 0.9 ? '#d9453a' : COL[v.product]) + '"></i></div>'
+    return rWater() + rByproducts() + CO.inventory().map(v => '<div class="es-card"><div class="es-prod"><span class="dot" style="background:' + COL[v.product] + '"></span><span class="nm">' + v.label + '</span><b>' + Math.round(v.fill * 100) + '%</b></div><div class="es-bar"><i style="width:' + Math.min(100, v.fill * 100) + '%;background:' + (v.fill >= 0.9 ? '#d9453a' : COL[v.product]) + '"></i></div>'
       + kv('Current volume', n0(v.volume + (v.water || 0)) + ' ' + v.unit) + (v.water > 0 ? kv('of which water', n0(v.water) + ' ' + v.unit) : '') + kv('Capacity', n0(v.capacity) + ' ' + v.unit) + kv('Market value', M(v.value)) + kv('Storage cost', M(v.storageCostDay) + ' / day') + '</div>').join('');
   }
   function rProduction() {
@@ -396,6 +410,8 @@
     else if (a === 'sellnow') { sellP = p; sellQ = null; tab = 'sell'; } else if (a === 'sellp') { sellP = p; sellQ = null; }
     else if (a === 'sellpct') { sellQ = Math.floor(CO.available(sellP) * +v / 100); }
     else if (a === 'sell') { const inp = $('sq-in'), q = inp ? +inp.value : sellQ, r = CO.sell(sellP, q); msg = r.ok ? 'Sold ' + n0(r.qty) + ' ' + EC.LABEL[sellP] + ' · +' + M(r.net) : 'Cannot sell: ' + r.reason; if (r.ok) sellQ = Math.floor(CO.available(sellP)); }
+    else if (a === 'wq') wQ = v === 'all' ? 'all' : +v;
+    else if (a === 'wsell') { const w = CO.waterInfo(), q = wQ === 'all' ? Math.floor(w.sellable) : Math.min(wQ, Math.floor(w.sellable)), r = CO.sellWater(q); msg = r.ok ? 'بيع ' + n0(r.qty) + ' برميل ماء · +' + M(r.gross) : 'تعذّر البيع: ' + (WREASON[r.reason] || r.reason); }
     else if (a === 'sellbp') { const r = CO.sellByproduct(CO.qty2.BYPRODUCT); msg = r.ok ? 'Sold ' + n0(r.qty) + ' By-products · +' + M(r.net) : 'Cannot sell: ' + r.reason; }
     else if (a === 'prodr') prodRange = v; else if (a === 'accept') { const r = CO.acceptContract(id); msg = r.ok ? 'Contract accepted' : r.reason === 'tooMany' ? 'Too many active contracts' : 'Offer gone'; }
     else if (a === 'deliver') { const r = CO.deliver(id); msg = r.ok ? 'Delivered ' + n0(r.qty) + ' · +' + M(r.revenue + r.reward) : 'Nothing to deliver'; }

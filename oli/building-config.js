@@ -23,6 +23,7 @@
     GASOLINE: { prefix: 'gasoline_tank', name: 'Gasoline Tank', perBbl: 120, sizes: { S: { w: 2, h: 2, cap: 10000, base: 500000, op: 360, maint: 180 }, M: { w: 3, h: 3, cap: 50000, base: 1800000, op: 1100, maint: 540 }, L: { w: 4, h: 4, cap: 250000, base: 4800000, op: 3000, maint: 1450 } } },
     DIESEL: { prefix: 'diesel_tank', name: 'Diesel Tank', perBbl: 120, sizes: { S: { w: 2, h: 2, cap: 10000, base: 500000, op: 360, maint: 180 }, M: { w: 3, h: 3, cap: 50000, base: 1800000, op: 1100, maint: 540 }, L: { w: 4, h: 4, cap: 250000, base: 4800000, op: 3000, maint: 1450 } } },
     JET_FUEL: { prefix: 'jet_tank', name: 'Jet Fuel Tank', perBbl: 130, sizes: { S: { w: 2, h: 2, cap: 10000, base: 600000, op: 400, maint: 200 }, M: { w: 3, h: 3, cap: 50000, base: 2000000, op: 1200, maint: 600 }, L: { w: 4, h: 4, cap: 250000, base: 5200000, op: 3300, maint: 1600 } } },
+    WATER: { prefix: 'water_tank', name: 'Water Tank', perBbl: 25, sizes: { S: { w: 2, h: 2, cap: 10000, base: 250000, op: 150, maint: 80 }, M: { w: 3, h: 3, cap: 50000, base: 900000, op: 450, maint: 220 }, L: { w: 4, h: 4, cap: 250000, base: 2400000, op: 1000, maint: 500 } } },   // water storage: separated water only, never counted as oil
     GAS: { prefix: 'gas_sphere', name: 'Gas / LPG Sphere', perBbl: 120, maxPressure: { S: 250, M: 250, L: 250 }, sizes: { S: { w: 2, h: 2, cap: 10000, base: 800000, op: 500, maint: 300 }, M: { w: 3, h: 3, cap: 50000, base: 3000000, op: 1500, maint: 900 }, L: { w: 4, h: 4, cap: 250000, base: 8000000, op: 4200, maint: 2400 } } }
   };
 
@@ -49,6 +50,11 @@
     L: { id: 'pump_station_l', name: 'Pump Station (large)', w: 3, h: 2, cost: 3500000, op: 3000, maint: 1500, maxFlow: 20000, boost: [300, 500], eff: [0.85, 0.92], minInletPsi: 15 },      // Stage 5: the regular pump is upgraded from 10,000 to 20,000 bbl/day
     C: { id: 'pump_station_c', name: 'Central Pump Station', w: 4, h: 5, cost: 45000000, op: 9000, maint: 4500, maxFlow: 200000, boost: [300, 600], eff: [0.88, 0.94], minInletPsi: 15, inputs: 5, outputs: 5 }      // Stage 5: central pump, five inputs and five outputs, 200,000 bbl/day
   };
+  const WATER_PUMP = {   // dedicated water pumps: the same machine as the oil pump, but its ports take WATER only (it can never touch oil)
+    S: { id: 'water_pump_s', name: 'Water Pump (small)', w: 2, h: 2, cost: 700000, op: 700, maint: 350, maxFlow: 5000, boost: [80, 200], eff: [0.75, 0.85], minInletPsi: 10 },
+    L: { id: 'water_pump_l', name: 'Water Pump (large)', w: 3, h: 2, cost: 2200000, op: 1800, maint: 900, maxFlow: 20000, boost: [250, 400], eff: [0.85, 0.92], minInletPsi: 10 }
+  };
+  const WATER = { price: 1.5, bottomOutShare: 1 };   // $ per barrel of water sold (PLACEHOLDER: awaiting the owner's price); the bottom outlet of an oil tank can take all the water that settled
   const VALVE = { cost: 60000, op: 50, maint: 150, maxFlow: 40000, pressureRating: 3000, w: 1, h: 1 };
   const JUNCTION = { cost: 120000, op: 0, maint: 100, maxTotalFlow: 60000, pressureLimit: 3000, w: 1, h: 1 };
   const MANIFOLD = { id: 'main_manifold', name: 'Main Manifold', w: 3, h: 9, cost: 8000000, op: 1500, maint: 800, maxTotalFlow: 300000, pressureLimit: 3000, inputs: 9, outputs: 3 };   // Stage 5: PRICE PENDING the owner's approval (a placeholder, easy to change here)
@@ -57,5 +63,5 @@
   const LEVELS = { 1: { capacityMultiplier: 1, efficiencyMultiplier: 1, pressureMultiplier: 1, maintenanceMultiplier: 1 } };   // architecture only: Level 1 exists, no upgrade system yet
   const SIM = { dayRealSeconds: 12, tankHeadPsi: 60, frictionPsiPerTile: 0.5, frictionExp: 1.8 };
 
-  return { PRODUCTS, PRODUCT_LABEL, PRODUCT_COLOR, PIPES, PIPE_DEFAULT, TILE_METERS, TANK, REFINERY, WELL, PUMP, VALVE, JUNCTION, MANIFOLD, SEPARATOR, SAFETY, LEVELS, SIM };
+  return { PRODUCTS, PRODUCT_LABEL, PRODUCT_COLOR, PIPES, PIPE_DEFAULT, TILE_METERS, TANK, REFINERY, WELL, PUMP, WATER_PUMP, WATER, VALVE, JUNCTION, MANIFOLD, SEPARATOR, SAFETY, LEVELS, SIM };
 });

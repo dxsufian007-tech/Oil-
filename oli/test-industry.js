@@ -12,7 +12,7 @@ const out = r => r;
 { const g = game(); let x = 10; const want = { oil_well: [250000, 1500000], pump_station_s: [500000, 1500000], pump_station_l: [2000000, 5000000], valve: [20000, 150000], junction: [50000, 250000], crude_tank_s: [500000, 2000000], crude_tank_m: [2000000, 8000000], crude_tank_l: [10000000, 40000000],
     separator: [1000000, 5000000], refinery_s: [25e6, 25e6], refinery_m: [100e6, 100e6], refinery_l: [400e6, 400e6], refinery_x: [1e9, 1e9], gasoline_tank_s: [1, 1e9], diesel_tank_m: [1, 1e9], jet_tank_l: [1, 1e9], gas_sphere_s: [1e6, 3e6], gas_sphere_m: [5e6, 15e6], gas_sphere_l: [2e7, 1e9] };
   for (const id of Object.keys(want)) { const def = B.DEFS[id], v = g.store.validate(id, x, 20, 0, {}); T('build ' + id, v.ok, v.reason); T('cost range ' + id + ' ' + v.cost, v.cost >= want[id][0] && v.cost <= want[id][1] * 1.05, v.cost); x += 14; }
-  T('28 definitions (25 + the Stage 5 central pump, central store and Main Manifold)', B.ORDER.length === 28); }
+  T('33 definitions (25 + 3 water tanks + 2 water pumps + the Stage 5 central pump, central store and Main Manifold)', B.ORDER.length === 33); }
 
 /* ---- tank cost formula + capacity + footprint */
 for (const [id, cap, w] of [['crude_tank_s', 10000, 2], ['crude_tank_m', 50000, 3], ['crude_tank_l', 250000, 4]]) { const d = B.DEFS[id]; T('tank cap ' + id, d.capacity.value === cap && d.footprint[0] === w); T('tank cost formula ' + id, d.cost === d.baseCost + cap * d.costPerBarrel); }

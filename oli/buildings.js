@@ -59,8 +59,11 @@
   for (const k of ['S', 'L', 'C']) {
     const c = CFG.PUMP[k]; define({ id: c.id, name: c.name, category: 'EXTRACTION', section: 'EXTRACTION', family: 'PUMP', type: 'pump', size: k, footprint: [c.w, c.h], cost: c.cost, maintenanceCost: c.maint, operatingCost: c.op, buildTime: k === 'S' ? 30 : 60, visual: 'pump_station',
       allowedTerrain: SOLID, maxSlope: 5, capacity: { value: c.maxFlow, unit: 'bbl/day' }, params: c,
-      connections: c.inputs ? [].concat(Array.from({ length: c.inputs }, (_, i) => pt('INPUT_' + (i + 1), 'pipe', 'in', [0, i], 1, { group: 'INPUT', product: '*' })), Array.from({ length: c.outputs }, (_, i) => pt('OUTPUT_' + (i + 1), 'pipe', 'out', [c.w - 1, i], 0, { group: 'OUTPUT', required: false, product: '*' }))) : [pt('INPUT', 'pipe', 'in', [0, 0], 1, { product: '*' }), pt('OUTPUT', 'pipe', 'out', [c.w - 1, 0], 0, { product: '*' })] });
+      connections: c.inputs ? [].concat(Array.from({ length: c.inputs }, (_, i) => pt('INPUT_' + (i + 1), 'pipe', 'in', [0, i], 1, { group: 'INPUT', product: '*', excl: [P.WATER] })), Array.from({ length: c.outputs }, (_, i) => pt('OUTPUT_' + (i + 1), 'pipe', 'out', [c.w - 1, i], 0, { group: 'OUTPUT', required: false, product: '*', excl: [P.WATER] }))) : [pt('INPUT', 'pipe', 'in', [0, 0], 1, { product: '*', excl: [P.WATER] }), pt('OUTPUT', 'pipe', 'out', [c.w - 1, 0], 0, { product: '*', excl: [P.WATER] })] });
   }
+  for (const k of ['S', 'L']) {                                       // water pumps: one in, one out, WATER only (product-specific ports keep water and oil networks apart)
+    const c = CFG.WATER_PUMP[k]; define({ id: c.id, name: c.name, category: 'WATER', section: 'WATER', family: 'WATER_PUMP', type: 'pump', size: k, footprint: [c.w, c.h], cost: c.cost, maintenanceCost: c.maint, operatingCost: c.op, buildTime: k === 'S' ? 25 : 50, visual: 'water_pump', product: P.WATER,
+      allowedTerrain: SOLID, maxSlope: 5, capacity: { value: c.maxFlow, unit: 'bbl/day' }, params: c, connections: [pt('INPUT', 'pipe', 'in', [0, 0], 1, { product: P.WATER }), pt('OUTPUT', 'pipe', 'out', [c.w - 1, 0], 0, { required: false, product: P.WATER })] }); }
   define({ id: 'valve', name: 'Valve', category: 'PIPELINE', section: 'PIPELINE', family: 'VALVE', type: 'valve', footprint: [1, 1], cost: CFG.VALVE.cost, maintenanceCost: CFG.VALVE.maint, operatingCost: CFG.VALVE.op, buildTime: 10, visual: 'valve_station',
     allowedTerrain: SOLID.concat(['VALLEY']), maxSlope: 6, capacity: { value: CFG.VALVE.maxFlow, unit: 'bbl/day' }, params: CFG.VALVE,
     connections: [pt('IN', 'pipe', 'in', [0, 0], 1, { product: '*' }), pt('OUT', 'pipe', 'out', [0, 0], 0, { product: '*' })] });
@@ -77,12 +80,12 @@
     pt('OUTPUT_E', 'pipe', 'out', [w - 1, mid(h)], 0, { group: 'OUTPUT', required: false, product: prod }), pt('OUTPUT_S', 'pipe', 'out', [mid(w), h - 1], 2, { group: 'OUTPUT', required: false, product: prod }),
     pt('INPUT_E', 'pipe', 'in', [w - 1, other(h)], 0, { group: 'INPUT', product: prod }), pt('INPUT_S', 'pipe', 'in', [other(w), h - 1], 2, { group: 'INPUT', product: prod }),
     pt('OUTPUT_W', 'pipe', 'out', [0, other(h)], 1, { group: 'OUTPUT', required: false, product: prod }), pt('OUTPUT_N', 'pipe', 'out', [other(w), 0], 3, { group: 'OUTPUT', required: false, product: prod })];
-  const VIS = { CRUDE: 'crude_tank', GASOLINE: 'gasoline_tank', DIESEL: 'diesel_tank', JET_FUEL: 'jet_tank', GAS: 'gas_sphere' };
+  const VIS = { WATER: 'water_tank', CRUDE: 'crude_tank', GASOLINE: 'gasoline_tank', DIESEL: 'diesel_tank', JET_FUEL: 'jet_tank', GAS: 'gas_sphere' };
   for (const fam of Object.keys(CFG.TANK)) { const F = CFG.TANK[fam];
     for (const k of ['S', 'M', 'L', 'C']) { const z = F.sizes[k], gas = fam === 'GAS'; if (!z) continue;
-      define({ id: F.prefix + '_' + k.toLowerCase(), name: F.name + ' (' + { S: 'small', M: 'medium', L: 'large', C: 'central' }[k] + ')', category: gas ? 'PRODUCT_STORAGE' : fam === 'CRUDE' ? 'CRUDE_STORAGE' : 'PRODUCT_STORAGE', section: fam === 'CRUDE' ? 'CRUDE STORAGE' : 'PRODUCT STORAGE', family: gas ? 'GAS_STORAGE' : 'TANK', type: gas ? 'gas' : 'tank', product: P[fam], size: k,
+      define({ id: F.prefix + '_' + k.toLowerCase(), name: F.name + ' (' + { S: 'small', M: 'medium', L: 'large', C: 'central' }[k] + ')', category: gas ? 'PRODUCT_STORAGE' : fam === 'CRUDE' ? 'CRUDE_STORAGE' : fam === 'WATER' ? 'WATER' : 'PRODUCT_STORAGE', section: fam === 'CRUDE' ? 'CRUDE STORAGE' : fam === 'WATER' ? 'WATER' : 'PRODUCT STORAGE', family: gas ? 'GAS_STORAGE' : 'TANK', type: gas ? 'gas' : 'tank', product: P[fam], size: k,
         footprint: [z.w, z.h], cost: z.base + z.cap * (z.perBbl || F.perBbl), baseCost: z.base, costPerBarrel: z.perBbl || F.perBbl, maintenanceCost: z.maint, operatingCost: z.op, buildTime: 25 + z.w * 8, visual: VIS[fam], clearance: gas || k === 'L' || k === 'C' ? 1 : 0,
-        allowedTerrain: STABLE, maxSlope: gas ? 3 : 4, capacity: { value: z.cap, unit: gas ? 'boe' : 'bbl' }, params: Object.assign({ maxPressure: gas ? F.maxPressure[k] : 0 }, z), connections: tankPorts(z.w, z.h, P[fam]) }); } }
+        allowedTerrain: STABLE, maxSlope: gas ? 3 : 4, capacity: { value: z.cap, unit: gas ? 'boe' : 'bbl' }, params: Object.assign({ maxPressure: gas ? F.maxPressure[k] : 0 }, z), connections: tankPorts(z.w, z.h, P[fam]).concat(fam === 'CRUDE' && k !== 'S' ? [pt('WATER_OUT', 'pipe', 'out', [z.w - 1, z.h - 1], 0, { group: 'WATER', required: false, product: P.WATER })] : []) }); } }   // the bottom outlet of an oil tank (M / L / C): only the water that settled at the bottom can leave through it
   define({ id: 'separator', name: 'Separator', category: 'PROCESSING', section: 'PROCESSING', family: 'SEPARATOR', type: 'separator', footprint: [CFG.SEPARATOR.w, CFG.SEPARATOR.h], cost: CFG.SEPARATOR.cost, maintenanceCost: CFG.SEPARATOR.maint, operatingCost: CFG.SEPARATOR.op, buildTime: 60, visual: 'separator',
     allowedTerrain: SOLID, maxSlope: 3, capacity: { value: CFG.SEPARATOR.cap, unit: 'bbl/day' }, params: CFG.SEPARATOR,
     connections: [pt('MIXTURE_IN', 'pipe', 'in', [0, 1], 1, { product: P.CRUDE }), pt('OIL_OUT', 'pipe', 'out', [CFG.SEPARATOR.w - 1, 1], 0, { product: P.CRUDE }), pt('GAS_OUT', 'pipe', 'out', [2, 0], 3, { required: false, product: P.GAS }), pt('WATER_OUT', 'pipe', 'out', [2, CFG.SEPARATOR.h - 1], 2, { required: false, product: P.WATER })] });
@@ -112,11 +115,12 @@
   function cellsOf(def, x, y, r) { const [w, h] = dimsOf(def, r), o = []; for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) o.push([x + i, y + j]); return o; }
   // world coordinates of the connection points of an instance (the point = the footprint cell + side; access = the tile outside)
   function worldPoints(b) {
-    const def = DEFS[b.d]; return connectionsOf(def, b.r).map(c => ({ buildingId: b.id, def: b.d, id: c.id, kind: c.kind, role: c.role, side: c.side, group: c.group || null, required: c.required, reserved: !!c.reserved, product: c.product || null,
+    const def = DEFS[b.d]; return connectionsOf(def, b.r).map(c => ({ buildingId: b.id, def: b.d, id: c.id, kind: c.kind, role: c.role, side: c.side, group: c.group || null, required: c.required, reserved: !!c.reserved, product: c.product || null, excl: c.excl || null,
       x: b.x + c.cell[0], y: b.y + c.cell[1], ax: b.x + c.ax, ay: b.y + c.ay }));
   }
   const productOk = (a, b) => !a || !b || a === '*' || b === '*' || a === b;
-  const compatible = (a, b) => a.kind === b.kind && (a.role === 'both' || b.role === 'both' || a.role !== b.role) && productOk(a.product, b.product);
+  const refuses = (x, y) => !!(x.excl && y.product && x.excl.indexOf(y.product) >= 0);        // a port can refuse a product outright (oil pumps refuse WATER: water never enters an oil pump)
+  const compatible = (a, b) => a.kind === b.kind && (a.role === 'both' || b.role === 'both' || a.role !== b.role) && productOk(a.product, b.product) && !refuses(a, b) && !refuses(b, a);
 
   /* ---------------------------------------------------------------- terrain source (the interface to Phase 1) */
   // TerrainSource = { W, H, tile(x,y) -> {terrain, slope} | null (not loaded), terrain: { NAME: { buildable, buildCost, maxSlope } }, slopeK,
@@ -309,5 +313,5 @@
     }
   }
 
-  return { DEFS, ORDER, productOk, CFG, STATUS, SIDES, OPPOSITE, SIDE_NAME, define, dimsOf, rotCell, connectionsOf, cellsOf, worldPoints, compatible, fromWorld, BuildingStore, key };
+  return { DEFS, ORDER, productOk, CFG, STATUS, SIDES, OPPOSITE, SIDE_NAME, define, dimsOf, rotCell, connectionsOf, cellsOf, worldPoints, compatible, refuses, fromWorld, BuildingStore, key };
 });

@@ -120,6 +120,7 @@
       p.box(.4, 1.45, 3.3, 1.65, 1.0, 1.04, '#c4c9ce'); for (const u of [.5, 1.5, 2.5, 3.2]) p.line(u, 1.45, 1.0, u, 1.45, 1.35, C.yellow, 1.2);
       p.dot(.5, .5, .5, 2.5, C.green);
     },
+    water_pump(p, o) { this.pump_station(p, o); const W = o.w, H = o.h; p.box(W * .1, H * .1, W * .34, H * .34, .02, .22, '#3f8fb8', { top: '#7fcdee' }); },      // the oil pump with a blue water cap
     pump_station(p, o) {                                                          // 2x2 / 3x2: pad, pump house, one motor+pump set per footprint column, suction/discharge stubs on the W and E ports
       const W = o.w, H = o.h, big = W > 2; p.flat(.03, .03, W - .03, H - .03, 0, C.pad); p.box(.45, .08, W - .45, .7, 0, .62, C.cream, { top: C.roof });
       for (let i = 0; i < W - 1; i++) { const u = .75 + i * (W - 1.5) / Math.max(1, W - 2) * (W > 2 ? 1 : 0) + (W > 2 ? 0 : .25); p.box(u - .3, H - .75, u + .3, H - .2, 0, .34, C.dark); p.hcyl(u - .45, H - .48, .9, 'u', .14, .12, i % 2 ? C.steel : C.blue); p.dot(u, H - .48, .5, 2.2, C.green); }
@@ -134,6 +135,14 @@
       p.cyl(cx, cy, R, .14, hh, '#6f7a84', { top: '#4a545d', band: '#262b31', bandAt: .72 }); p.cyl(cx, cy, R * .95, hh - .04 - (1 - f) * .22, hh - .0, '#555f69'); p.cyl(cx, cy, R * 1.03, hh * .62, hh * .66, '#4a545d');
       const n = 8 + W * 3; for (let k = 0; k < n; k++) { const a0 = k / n * 5.2 - 1.2, a1 = (k + 1) / n * 5.2 - 1.2; p.line(cx + Math.cos(a0) * R * 1.02, cy + Math.sin(a0) * R * 1.02, .14 + k / n * (hh - .14), cx + Math.cos(a1) * R * 1.02, cy + Math.sin(a1) * R * 1.02, .14 + (k + 1) / n * (hh - .14), '#37424d', 1.1); }
       p.line(.35, H - .2, .1, .35, H - .2, hh, 'rgba(25,30,35,.65)', 4); p.line(.35, H - .2, .1, .35, H - .2, .1 + (hh - .1) * f, '#d8962a', 4, { bias: .3 });
+      p.line(W - .05, cy, .24, W + 0, cy, .24, C.pipe, 4.4); p.line(cx, H - .05, .24, cx, H, .24, C.pipe, 4.4); p.dot(cx, cy, hh + .02, 2.4, C.yellow);
+    },
+    water_tank(p, o) {                                                            // NxN: BLUE water tank (steel, light-blue band and water gauge), wind girder, spiral stair, foam dam, gauge strip
+      const W = o.w, H = o.h, cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 * .92, hh = .62 + .2 * W, f = Math.max(0, Math.min(1, o.fill == null ? .5 : o.fill));
+      p.flat(.03, .03, W - .03, H - .03, 0, '#a59c8a'); p.cyl(cx, cy, R * 1.06, 0, .14, '#b9ae9a');
+      p.cyl(cx, cy, R, .14, hh, '#3f8fb8', { top: '#2c6f94', band: '#1d5273', bandAt: .72 }); p.cyl(cx, cy, R * .95, hh - .04 - (1 - f) * .22, hh - .0, '#7fcdee'); p.cyl(cx, cy, R * 1.03, hh * .62, hh * .66, '#2c6f94');
+      const n = 8 + W * 3; for (let k = 0; k < n; k++) { const a0 = k / n * 5.2 - 1.2, a1 = (k + 1) / n * 5.2 - 1.2; p.line(cx + Math.cos(a0) * R * 1.02, cy + Math.sin(a0) * R * 1.02, .14 + k / n * (hh - .14), cx + Math.cos(a1) * R * 1.02, cy + Math.sin(a1) * R * 1.02, .14 + (k + 1) / n * (hh - .14), '#37424d', 1.1); }
+      p.line(.35, H - .2, .1, .35, H - .2, hh, 'rgba(25,30,35,.65)', 4); p.line(.35, H - .2, .1, .35, H - .2, .1 + (hh - .1) * f, '#bfeaff', 4, { bias: .3 });
       p.line(W - .05, cy, .24, W + 0, cy, .24, C.pipe, 4.4); p.line(cx, H - .05, .24, cx, H, .24, C.pipe, 4.4); p.dot(cx, cy, hh + .02, 2.4, C.yellow);
     },
     gasoline_tank(p, o) {                                                         // NxN: white cylindrical tank, red product band, domed (geodesic-style) fixed roof, rooftop vent, stairs

@@ -10,7 +10,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   ok((await p.innerText('#eh-cash')).replace(/[⁦⁩]/g, '').includes('$100M'), 'the demo starts with $100M');
   await p.locator('#g-nav [data-cat=process]').tap(); await p.waitForTimeout(300);
   ok((await co(() => [...document.querySelectorAll('#g-list .gcard')].every(c => !c.classList.contains('lock') && c.querySelector('[data-act=build]')))), 'every refinery / separator card is unlocked');
-  await p.locator('#g-nav [data-cat=storage]').tap(); await p.waitForTimeout(300); ok((await co(() => document.querySelectorAll('#g-list .gcard:not(.lock)').length)) === 16, 'all 16 storage buildings are unlocked (15 + the Stage 5 central store)');
+  await p.locator('#g-nav [data-cat=storage]').tap(); await p.waitForTimeout(300); ok((await co(() => document.querySelectorAll('#g-list .gcard:not(.lock)').length)) === 19, 'all 19 storage buildings are unlocked (15 + central store + 3 water tanks)');
   await p.locator('#g-nav [data-cat=pipes]').tap(); await p.waitForTimeout(300); ok((await co(() => document.querySelectorAll('#g-list .gcard:not(.lock)').length)) === 4, 'pipe, junction, valve and the Stage 5 Main Manifold are unlocked');
   await p.waitForFunction(() => __wp.world.regions.every(r => __wp.world.hasRegion(r.id)), null, { timeout: 120000 });
   const w = await co(() => { const W = __wp.world; let fields = 0, open = 0, un = 0; for (const r of W.regions) { if (r.unlocked) un++; for (const s of W.regionSites(r.id)) if (s.kind === 'FIELD') { fields++; const st = W.stateOf(s.id); if (st === 'DRILLABLE' || st === 'PRODUCING') open++; } } return { regions: W.regions.length, un, fields, open }; });
