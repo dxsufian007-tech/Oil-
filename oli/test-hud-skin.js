@@ -1,0 +1,24 @@
+// HUD skin: the restyled HUD still works (same ids / handlers), the tool column zooms / centres, nothing overflows at phone sizes.   OLI_DEMO=1 node build-www-map.js && NODE_PATH=/opt/npm-tools/node_modules node test-hud-skin.js
+const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path'), assert = require('assert'); const dir = path.join(__dirname, 'www');
+let n = 0; const ok = (c, m, x) => { if (!c) console.log('  FAIL ' + m + (x ? ' ' + JSON.stringify(x) : '')); assert(c, m); n++; console.log('  ok  ' + m); };
+const srv = http.createServer((q, r) => { const u = q.url.split('?')[0], f = path.join(dir, u === '/' ? 'index.html' : u); fs.readFile(f, (e, d) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : f.endsWith('.html') ? 'text/html' : f.endsWith('.css') ? 'text/css' : f.endsWith('.webp') ? 'image/webp' : 'application/octet-stream' }); r.end(d); }); });
+srv.listen(0, async () => { const b = await chromium.launch(), bad = [];
+  for (const [w, h] of [[543, 724], [412, 915], [360, 640], [915, 412]]) {
+    const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true }), p = await ctx.newPage(), errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('response', r => { if (r.status() >= 400) bad.push(r.url()); });
+    await p.goto('http://localhost:' + srv.address().port + '/'); await p.waitForFunction(() => window.OliHome && OliHome.ready(), null, { timeout: 120000 });
+    await p.evaluate(() => { [...document.querySelectorAll('button')].find(x => /ابدأ/.test(x.textContent)).click(); }); await p.waitForFunction(() => window.__lab && __lab.ready() && document.getElementById('hs-tools'), null, { timeout: 180000 }); await p.waitForTimeout(1500);
+    const tag = w + 'x' + h + ': ';
+    const geo = await p.evaluate(() => { const r = id => { const e = document.getElementById(id), q = e.getBoundingClientRect(); return { l: q.left, r: q.right, t: q.top, b: q.bottom, w: q.width, h: q.height }; }; return { hud: r('eco-hud'), time: r('eco-time'), tools: r('hs-tools'), nav: r('g-nav'), info: r('info'), fab: r('lyFab'), vw: innerWidth, vh: innerHeight, sw: document.documentElement.scrollWidth }; });
+    ok(geo.sw <= geo.vw + 1 && geo.hud.l >= 0 && geo.hud.r <= geo.vw && geo.nav.r <= geo.vw && geo.nav.b <= geo.vh, tag + 'nothing overflows the screen', geo);
+    ok(geo.tools.b <= geo.nav.t && geo.time.b <= geo.tools.t + 8 && geo.fab.b <= geo.info.t, tag + 'the tool column, layers button and info bar do not collide', geo);
+    // behaviour
+    const z0 = await p.evaluate(() => __wp.cam.z); await p.click('#hs-tools [data-t=in]'); const z1 = await p.evaluate(() => __wp.cam.z); await p.click('#hs-tools [data-t=out]'); await p.click('#hs-tools [data-t=out]'); const z2 = await p.evaluate(() => __wp.cam.z);
+    ok(z1 > z0 && z2 < z1, tag + 'zoom in / zoom out change the camera (' + z0.toFixed(2) + ' -> ' + z1.toFixed(2) + ' -> ' + z2.toFixed(2) + ')');
+    await p.click('#hs-tools [data-t=locate]'); ok(await p.evaluate(() => isFinite(__wp.cam.x) && isFinite(__wp.cam.y)), tag + 'locate keeps a valid camera');
+    const sp0 = await p.evaluate(() => document.getElementById('eh-speed').textContent); await p.click('#tm-fast'); const sp1 = await p.evaluate(() => document.getElementById('eh-speed').textContent); ok(sp0 !== sp1, tag + 'fast-forward still changes the speed (' + sp0 + ' -> ' + sp1 + ')');
+    await p.click('#eh-pause'); ok(await p.evaluate(() => document.getElementById('eco-time').classList.contains('paused')), tag + 'pause still works'); await p.click('#eh-pause');
+    await p.click('#g-nav button[data-cat=pipes]'); ok(await p.evaluate(() => document.getElementById('g-sheet').classList.contains('open')), tag + 'bottom menu still opens its sheet'); await p.click('#g-nav button[data-cat=pipes]');
+    await p.click('#lyFab'); ok(await p.evaluate(() => getComputedStyle(document.getElementById('lyPanel')).display !== 'none'), tag + 'layers button still opens the layers panel'); await p.click('#lyFab');
+    await p.click('#eh-menu'); ok(await p.evaluate(() => document.getElementById('eco-sheet').classList.contains('open') || getComputedStyle(document.getElementById('eco-sheet')).display !== 'none'), tag + 'the menu button still opens the company sheet');
+    ok(!errs.length, tag + 'no page errors ' + errs.join('|')); await ctx.close(); }
+  ok(!bad.length, 'no missing file (404): ' + bad.slice(0, 3).join(' ')); console.log('HUD SKIN TESTS PASSED (' + n + ' checks)'); await b.close(); srv.close(); });
