@@ -11,7 +11,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   const build = async x => p.evaluate(([o, x]) => { const v = __lab.store.place('crude_tank_m', o.x + x, o.y, 0, { instant: true }); if (!v.ok) return { err: v.reason }; return { id: v.building.id, note: __lab.autoLinkNote(v.building), lines: __lab.pipes.lines.size }; }, [O, x]);
   const a = await build(0), bq = await build(5), c = await build(10);
   ok(a.lines === 0 && !a.note, 'the first tank: nothing to link');
-  ok(bq.lines === 2 && /رُبط تلقائياً بـ 1 خزان/.test(bq.note) && /مفتوحة/.test(bq.note), 'the second tank: linked to the first, the message says the lines are open: ' + bq.note);
+  ok(bq.lines === 2 && /رُبط تلقائياً بـ 1 خزان/.test(bq.note) && /وحدة تخزين/.test(bq.note), 'the second tank: linked to the first, the message says they are one storage unit: ' + bq.note);
   ok(c.lines === 4 && /رُبط تلقائياً بـ 1 خزان/.test(c.note), 'the third tank joins at the end of the row: 4 lines in total, the first two untouched');
   const st = await p.evaluate(() => ({ open: [...__lab.pipes.lines.values()].map(l => l.open), conns: [...new Set([...__lab.pipes.lines.values()].map(l => l.conn))].length, nc: __lab.pipes.nextConn }));
   ok(st.open.every(o => o !== false) && st.conns === 2, 'every line is open, two connections');

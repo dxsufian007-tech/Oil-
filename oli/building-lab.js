@@ -96,7 +96,7 @@
     p.x += Math.round((w0 - w) / 2); p.y += Math.round((h0 - h) / 2); const g = evaluate({ def: p.def, r: p.r, x: p.x, y: p.y }, true); p.x = g.x; p.y = g.y; p.verdict = g.verdict; p.aligned = false; showBar(); WP.markDirty(); }
   /* a storage tank that was just built is linked to its adjacent tanks (see I.autoLinkTank): the note says what happened, and why not when it did not */
   function autoLinkNote(b) {
-    const al = I.autoLinkTank(STORE, pipes, ts, b.id); let msg = ''; if (al.linked.length) msg += ' · رُبط تلقائياً بـ ' + al.linked.length + ' خزان (الخطوط مفتوحة)';
+    const al = I.autoLinkTank(STORE, pipes, ts, b.id); let msg = ''; if (al.linked.length) msg += ' · رُبط تلقائياً بـ ' + al.linked.length + ' خزان (وحدة تخزين واحدة)';
     const bad = al.skipped.filter(x => x.reason !== 'exists'); if (bad.length) msg += ' · لم يُربط ' + bad.length + ': ' + [...new Set(bad.map(x => REASON[x.reason] || x.reason))].join('، ');
     if (al.linked.length) { state.pipeSel = null; WP.markDirty(); } return msg;
   }

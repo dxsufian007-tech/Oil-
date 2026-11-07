@@ -49,4 +49,7 @@ const chain = (n, pumps) => { const g = game(1e12), t = []; for (let i = 0; i < 
   // save / load: the stocks come back tank by tank, the group is derived again
   const n2 = I.PipeNet.fromJSON(g.ts.W, JSON.parse(JSON.stringify(g.net.toJSON()))); g.sim.net = n2; g.sim.builtRev = -1; const gi2 = g.sim.groupInfo(A);
   ok(gi2 && gi2.n === 2 && gi2.volume === 900 && S(A).vol === 700 && S(Bt).vol === 200, 'after save + load of the pipes the group is derived again, stocks untouched'); }
+// ---- the panel numbers ----
+{ const { g, t } = mk('crude_tank_c', 2), S = x => g.sim.ensure(x); S(t[0]).vol = 500000; S(t[1]).vol = 300000; const ind = k => g.sim.indicators(t[1]).list.find(x => x.k === k);
+  ok(ind('Group Tanks').v === 2 && ind('Group Stock').v === 800000 && ind('Group Capacity').v === 8000000 && ind('Level').v === 300000, 'the panel shows the group (2 tanks, 800,000 / 8,000,000) and the tank\'s own level (300,000)'); }
 process.exit(f ? 1 : 0);

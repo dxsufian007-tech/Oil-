@@ -109,7 +109,7 @@ console.log('AUTO CONNECT TESTS PASSED (' + n + ' checks)');
   prep(cap * .8, 0); g.sim.run(3); ok(g.sim.ensure(b).vol < 1, 'with the A -> B line closed, nothing flows A -> B (' + Math.round(g.sim.ensure(b).vol) + ')');
   prep(0, cap * .8); g.sim.run(3); ok(g.sim.ensure(a).vol > 1, 'but the B -> A line, with its own valve open, still carries oil (' + Math.round(g.sim.ensure(a).vol) + ')');
   I3.setLineOpen(g.net, l2.id, false); prep(0, cap * .8); g.sim.run(3); ok(g.sim.ensure(a).vol < 1, 'with both closed nothing moves at all (both valves are independent)');
-  I3.setLineOpen(g.net, l1.id, true); I3.setLineOpen(g.net, l2.id, true); prep(cap * .8, 0); g.sim.run(3); ok(g.sim.ensure(b).vol > 1, 'reopened: oil flows again');
+  I3.setLineOpen(g.net, l1.id, true); I3.setLineOpen(g.net, l2.id, true); prep(cap * .8, 0); g.sim.run(3); ok(g.sim.ensure(b).vol === 0 && !!g.sim.groupOf(a) && g.sim.groupInfo(a).n === 2, 'reopened: both lines open = one tank group again (no oil shuffles between the tanks)');
   I3.setLineOpen(g.net, l1.id, false); const j = JSON.parse(JSON.stringify(g.net.toJSON())), n2 = I3.PipeNet.fromJSON(g.ts.W, j); ok([...n2.lines.values()].filter(l => l.open === false).length === 1 && n2.lines.size === 2, 'a closed valve is saved and comes back closed (the other line is still open)');
   const cash0 = g.store.cash, rm = I3.removeConnection(g.store, g.net, l1.id, false); ok(rm.ok && g.net.lines.size === 0 && Math.abs(g.store.cash - cash0 - r.cost / 2) < 1, 'deleting the connection removes both lines and gives half the price back (' + rm.refund + ')');
   const again = I3.layConnect(g.store, g.net, g.ts, a.id, b.id); ok(again.ok && g.net.lines.size === 2, 'and the connection can be created again from scratch');
