@@ -120,7 +120,7 @@
       p.box(.4, 1.45, 3.3, 1.65, 1.0, 1.04, '#c4c9ce'); for (const u of [.5, 1.5, 2.5, 3.2]) p.line(u, 1.45, 1.0, u, 1.45, 1.35, C.yellow, 1.2);
       p.dot(.5, .5, .5, 2.5, C.green);
     },
-    water_pump(p, o) { this.pump_station(p, o); const W = o.w, H = o.h; p.box(W * .1, H * .1, W * .34, H * .34, .02, .22, '#3f8fb8', { top: '#7fcdee' }); },      // the oil pump with a blue water cap
+    water_pump(p, o) { ART.pump_station(p, o); const W = o.w, H = o.h; p.box(W * .1, H * .1, W * .34, H * .34, .02, .22, '#3f8fb8', { top: '#7fcdee' }); },      // the oil pump with a blue water cap
     pump_station(p, o) {                                                          // 2x2 / 3x2: pad, pump house, one motor+pump set per footprint column, suction/discharge stubs on the W and E ports
       const W = o.w, H = o.h, big = W > 2; p.flat(.03, .03, W - .03, H - .03, 0, C.pad); p.box(.45, .08, W - .45, .7, 0, .62, C.cream, { top: C.roof });
       for (let i = 0; i < W - 1; i++) { const u = .75 + i * (W - 1.5) / Math.max(1, W - 2) * (W > 2 ? 1 : 0) + (W > 2 ? 0 : .25); p.box(u - .3, H - .75, u + .3, H - .2, 0, .34, C.dark); p.hcyl(u - .45, H - .48, .9, 'u', .14, .12, i % 2 ? C.steel : C.blue); p.dot(u, H - .48, .5, 2.2, C.green); }
