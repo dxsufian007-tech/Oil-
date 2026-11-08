@@ -36,4 +36,7 @@ for (let k = 0; k < 5; k++) {
   const g2 = mk(); put(g2.g, 'water_pump_s', 40, 70); g2.g.sim.build(); S(g2.g, g2.T[0]).vol = 5000; ok(g2.g.co.waterInfo().loaders === 0 && !g2.g.co.sellWater(100).ok, 'pump placed but not connected: no sale'); }
 // E. price override hook
 { const { g } = mk(); const p0 = g.co.waterPrice(); g.co.market.price.WATER = 2.25; ok(p0 === 1.5 && g.co.waterPrice() === 2.25, 'price: default 1.5, overridable through the market price table (market.price.WATER)'); }
+// F. auto-connect through water junctions / valves (regression: it used to answer "start and end at a building")
+{ const g = game(1e13), wt = put(g, 'water_tank_m', 30, 30), j = put(g, 'junction', 50, 32), pu = put(g, 'water_pump_s', 64, 30), wt2 = put(g, 'water_tank_m', 80, 30), v = put(g, 'valve', 50, 50);
+  for (const [x, y] of [[wt, j], [j, pu], [pu, wt2], [wt2, v]]) { const r = I.layConnect(g.store, g.net, g.ts, x.id, y.id, {}); ok(r.ok, 'auto-connect ' + x.d + ' > ' + y.d + ' ' + (r.reason || '')); } }
 console.log('WATER GROUP/PUMP REVIEW TESTS PASSED (' + n + ' checks)');
