@@ -66,7 +66,7 @@ function waterSite(vols, loaderSize, pumpOn) {
 }
 { // 7. selling water: the quantity leaves the tanks ONCE, in proportion; revenue only now
   const { g, T, lp } = waterSite([5000, 3000, 2000], 'water_pump_l', 1); const co = g.co;
-  ok(co.waterLoaders().length === 1 && co.waterLoaders()[0].tanks.length === 3, 'the loading pump (no outlet) reaches its tank AND its whole tank group (3 tanks)');
+  ok(co.waterSellable().tanks.length === 3, 'instant sale: all 3 water tanks are sellable (no loading pump needed)');
   const info = co.waterInfo(); ok(info.stock === 10000 && info.sellable === 10000 && info.price > 0 && info.capacity === 150000, 'water info: stock 10,000, sellable 10,000, price ' + info.price + ', capacity 150,000');
   const rev0 = co.led.life.revenue, cash0 = g.store.cash, q = co.waterQuote(1000); ok(q.ok && near(q.total, 1000 * info.price), 'quote: 1,000 bbl = ' + q.total + ' (qty x price)');
   const r = co.sellWater(1000); ok(r.ok && r.qty === 1000 && near(g.store.cash - cash0, 1000 * info.price), 'sold 1,000 bbl: cash +' + (g.store.cash - cash0) + ' (price x qty)');
@@ -76,11 +76,11 @@ function waterSite(vols, loaderSize, pumpOn) {
   const e1 = co.sellWater(10000); ok(!e1.ok && e1.reason === 'notEnough' && near(co.waterInfo().stock, 9000) && co.water.sold === 1000, 'cannot sell more than the real stock: refused, nothing changed'); const e2 = co.sellWater(0); ok(!e2.ok, 'a zero / negative quantity is refused');
   const e3 = (() => { const { g: g2, T: T2 } = waterSite([4000], 'water_pump_s', 0); const c2 = g2.co; const a = c2.sellWater(4000); return { a, left: S(g2, T2[0]).vol }; })(); ok(e3.a.ok && e3.left === 0, 'selling everything leaves exactly 0');
 }
-{ // 7b. loading limit: the loading pump's capacity per day
-  const { g, T } = waterSite([50000, 50000, 50000], 'water_pump_s', 0), co = g.co, cap = B.DEFS.water_pump_s.params.maxFlow;
-  const a = co.sellWater(cap + 1); ok(!a.ok && a.reason === 'loadLimit', 'more than one day of loading capacity (' + cap + ') in one day is refused'); ok(co.sellWater(cap).ok, 'one pump loads up to ' + cap + ' bbl a day');
-  ok(!co.sellWater(1).ok && co.waterInfo().dayLeft === 0, 'the day is used up'); co.advanceHours(24); ok(co.sellWater(1000).ok, 'a new day: loading is possible again');
-  const noPump = game(1e12), t = put(noPump, 'water_tank_m', 40, 40); noPump.sim.build(); S(noPump, t).vol = 1000; ok(noPump.co.sellWater(10).reason === 'noLoader' && S(noPump, t).vol === 1000, 'without a loading pump nothing can be sold (and nothing is taken)');
+{ // 7b. instant sale: no loading pump and no daily limit
+  const g = game(1e12), t = put(g, 'water_tank_m', 40, 40), co = g.co; g.sim.build(); S(g, t).vol = 30000;
+  ok(co.waterInfo().sellable === 30000 && co.waterInfo().loaders === 0, 'no loading pump: all 30,000 bbl are sellable');
+  const r = co.sellWater(30000); ok(r.ok && S(g, t).vol === 0 && co.sellWater(1).reason === 'nothingToSell', 'the whole stock sells in one go (no daily limit), then nothing is left to sell');
+  const e = co.sellWater(10); ok(!e.ok && S(g, t).vol === 0, 'nothing beyond the real stock can be sold');
 }
 { // 8. save + load: quantities, sales log and totals
   const { g, T } = waterSite([5000, 3000, 2000], 'water_pump_l', 1), co = g.co; co.sellWater(1000); co.water.produced = 777;

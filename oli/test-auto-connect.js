@@ -35,7 +35,7 @@ const contiguous = L => L.path.every((t, i) => i === 0 || Math.abs(t[0] - L.path
     const g = game(), t = put(g, 'crude_tank_s', 50, 50), p = put(g, 'pump_station_s', 58, 52), [first, second] = order ? [p, t] : [t, p], v = I.planConnect(g.store, g.net, g.ts, first.id, second.id);
     const tl = v.lines.find(l => l.from === t.id), pl = v.lines.find(l => l.from === p.id);      // Stage 5-6: a pump pushes one way, so it gets ONE line (no meaningless return into its own feed)
     ok(v.ok && v.lines.length === 1 && (order ? (pl && pl.a.port === 'OUTPUT' && roleOf(t, pl.b.port) === 'in') : (tl && roleOf(t, tl.a.port) === 'out' && tl.b.port === 'INPUT')), (order ? 'pump -> tank' : 'tank -> pump') + ': ONE line, from the sender to the receiver (pump is one-way)');
-    ok(v.lines.every(l => l.dia === Math.max(I.autoDia(B.DEFS[p.d]), I.autoDia(B.DEFS[t.d]))), 'the pipe diameter is chosen automatically from the larger end (' + v.lines.map(l => l.dia).join('/') + ')');
+    ok(v.lines.every(l => l.dia === I.sizeFor(Math.min(B.DEFS[p.d].capacity.value, B.DEFS[t.d].capacity.value))), 'the pipe size is chosen automatically from the real flow (small tank <-> 5,000/day pump: ' + v.lines.map(l => l.dia).join('/') + ' = the 30k pipe)');
   }
 }
 { // 4. tank <-> refinery

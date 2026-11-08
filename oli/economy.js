@@ -617,13 +617,12 @@
         const g = this.sim.groupOf(far.b), ids = g ? g.members.slice() : [far.b.id]; out.push({ pump: b.id, cap: d.params.maxFlow, tanks: ids }); }
       return out;
     }
-    waterSellable() {                                                       // what can be sold NOW: the water of the tanks the loading pumps reach, and today's remaining loading capacity
-      const L = this.waterLoaders(), ids = new Set(); let cap = 0; for (const l of L) { cap += l.cap; for (const id of l.tanks) ids.add(id); }
-      const tanks = [...ids].map(id => this.store.get(id)).filter(b => b && b.st !== 'UNDER_CONSTRUCTION'), stock = tanks.reduce((q, b) => q + this.sim.ensure(b).vol, 0), day = Math.floor(this.hours / 24), today = this.water.day === day ? this.water.today : 0;
-      return { loaders: L.length, loadCap: cap, soldToday: today, dayLeft: Math.max(0, cap - today), tanks, stock, qty: Math.max(0, Math.min(stock, cap - today)) };
+    waterSellable() {                                                       // INSTANT sale: all the water in all water tanks can be sold now (no loading pump, no daily limit)
+      const tanks = this.waterTanks().filter(b => b && b.st !== 'UNDER_CONSTRUCTION'), stock = tanks.reduce((q, b) => q + this.sim.ensure(b).vol, 0), day = Math.floor(this.hours / 24), today = this.water.day === day ? this.water.today : 0;
+      return { loaders: 0, loadCap: 0, soldToday: today, dayLeft: stock, tanks, stock, qty: Math.max(0, stock) };
     }
     waterInfo() { const sl = this.waterSellable(), stock = this.waterStock(), cap = this.waterCapacity(); return { stock, capacity: cap, free: Math.max(0, cap - stock), fill: cap ? stock / cap : 0, tanks: this.waterTanks().length, price: this.waterPrice(), sellable: sl.qty, loaders: sl.loaders, loadCap: sl.loadCap, soldToday: sl.soldToday, dayLeft: sl.dayLeft, produced: this.water.produced, sold: this.water.sold, revenue: this.water.revenue, full: cap > 0 && stock >= cap - 1e-6 }; }
-    waterQuote(qty) { const sl = this.waterSellable(), price = this.waterPrice(); qty = +qty; if (!(qty > 0)) return { ok: false, reason: 'qty' }; if (!sl.loaders) return { ok: false, reason: 'noLoader' }; if (sl.stock <= 1e-6) return { ok: false, reason: 'nothingToSell', have: 0 }; if (qty > sl.stock + 1e-6) return { ok: false, reason: 'notEnough', have: sl.stock }; if (qty > sl.dayLeft + 1e-6) return { ok: false, reason: 'loadLimit', have: sl.dayLeft }; return { ok: true, qty, price, total: qty * price }; }
+    waterQuote(qty) { const sl = this.waterSellable(), price = this.waterPrice(); qty = +qty; if (!(qty > 0)) return { ok: false, reason: 'qty' }; if (sl.stock <= 1e-6) return { ok: false, reason: 'nothingToSell', have: 0 }; if (qty > sl.stock + 1e-6) return { ok: false, reason: 'notEnough', have: sl.stock }; return { ok: true, qty, price, total: qty * price }; }
     sellWater(qty) {
       if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); const q = this.waterQuote(qty); if (!q.ok) return q; const sl = this.waterSellable(), take = q.qty, parts = [];
       for (const b of sl.tanks) { const s = this.sim.ensure(b), part = take * s.vol / sl.stock; if (part <= 0) continue; s.vol = Math.max(0, s.vol - part); parts.push({ tank: b.id, qty: part }); }   // proportional to each tank's water; each tank's stock is reduced by exactly its share, ONCE

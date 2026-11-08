@@ -19,21 +19,14 @@ for (let k = 0; k < 5; k++) {
   ok(sinks.every(k => S(g, k).vol <= cap + 1e-6), 'no single pump moved more than its own capacity (' + sinks.map(k => Math.round(S(g, k).vol)).join('/') + ')');
   for (let s = 0; s < 80; s++) g.sim.step(0.05);
   ok(near(got(), TOT, 1e-9) && T.every(t => S(g, t).vol < 1e-6), 'all 20,000 bbl end in the sinks, exactly (no loss, no duplication)'); }
-// C. loading pumps: each linked in turn, sale deducted proportionally from the whole group, once, within the loader capacity
+// C. instant sale from a group of tanks, with a pump on each tank in turn (pumps do not matter for selling): proportional, once
 for (let k = 0; k < 5; k++) {
-  const { g, T } = mk(), lp = put(g, 'water_pump_s', 40 + k * 5, 70); conn(g, T[k], lp); g.sim.build(); STOCK.forEach((v, i) => { S(g, T[i]).vol = v; });
-  const C = g.co, info = C.waterInfo();
-  ok(info.loaders === 1 && near(info.sellable, 5000) && near(info.stock, TOT), 'loader on tank ' + (k + 1) + ': sees the whole group (' + info.stock + ' bbl), sellable ' + info.sellable + ' (daily capacity 5,000)');
+  const { g, T } = mk(); g.sim.build(); STOCK.forEach((v, i) => { S(g, T[i]).vol = v; });
+  const C = g.co, info = C.waterInfo(); ok(near(info.sellable, TOT) && near(info.stock, TOT), 'sale ' + (k + 1) + ': the whole group is sellable (' + info.sellable + ' bbl), no loading pump');
   const r = C.sellWater(1000); ok(r.ok && near(r.gross, 1000 * C.waterPrice()), 'sale of 1000 at ' + C.waterPrice() + ' = ' + r.gross);
   const d = T.map((t, i) => STOCK[i] - S(g, t).vol); ok(d.every((x, i) => near(x, 1000 * STOCK[i] / TOT, 1e-9)), 'deducted proportionally ' + d.map(Math.round).join('/') + ', once');
-  ok(!C.sellWater(5000).ok, 'above the remaining daily loading capacity: refused');
+  ok(!C.sellWater(TOT).ok, 'more than the remaining stock: refused');
 }
-// D. loader link must be real: closing the loader line (or no line) = nothing sellable
-{ const { g, T } = mk(), lp = put(g, 'water_pump_s', 40, 70); const r = conn(g, T[0], lp); g.sim.build(); S(g, T[0]).vol = 5000;
-  ok(g.co.waterInfo().sellable > 0, 'connected loader: sellable');
-  for (const l of g.net.lines.values()) I.setLineOpen(g.net, l.id, false); g.sim.build(); g.sim.dirty && g.sim.dirty();
-  ok(g.co.waterInfo().loaders === 0 && g.co.waterInfo().sellable === 0 && !g.co.sellWater(100).ok, 'loader line closed: no loader, nothing sellable, sale refused');
-  const g2 = mk(); put(g2.g, 'water_pump_s', 40, 70); g2.g.sim.build(); S(g2.g, g2.T[0]).vol = 5000; ok(g2.g.co.waterInfo().loaders === 0 && !g2.g.co.sellWater(100).ok, 'pump placed but not connected: no sale'); }
 // E. price override hook
 { const { g } = mk(); const p0 = g.co.waterPrice(); g.co.market.price.WATER = 2.25; ok(p0 === 1.5 && g.co.waterPrice() === 2.25, 'price: default 1.5, overridable through the market price table (market.price.WATER)'); }
 // F. auto-connect through water junctions / valves (regression: it used to answer "start and end at a building")

@@ -45,7 +45,7 @@
     /* backward compatible view: Phase C pipes carry no product, so every legacy tile is CRUDE with the default diameter */
     static legacyView(tiles, W) { const n = new PipeNet(W); for (const k of tiles) { n.add(k); } n.legacy = true; n.legacyProduct = P.CRUDE; return n; }
     toJSON() { return { v: 1, next: this.nextId, nc: this.nextConn, lines: [...this.lines.values()].map(L => { const o = { id: L.id, a: L.a, b: L.b, path: L.path, product: L.product, dia: L.dia }; if (L.conn) o.conn = L.conn; if (L.open === false) o.open = false; return o; }) }; }
-    static fromJSON(W, d) { const n = new PipeNet(W); if (!d || !Array.isArray(d.lines)) return n; for (const L of d.lines) { if (!Array.isArray(L.path) || !L.path.length) continue; { const X = { a: L.a, b: L.b, path: L.path, product: L.product || ANY, dia: CFG.PIPES[L.dia] ? L.dia : CFG.PIPE_DEFAULT }; if (L.conn) X.conn = L.conn; if (L.open === false) X.open = false; n.lay(X); } } n.nextConn = Math.max(d.nc | 0, 1, ...[...n.lines.values()].map(L => (L.conn | 0) + 1)); return n; }
+    static fromJSON(W, d) { const n = new PipeNet(W); if (!d || !Array.isArray(d.lines)) return n; for (const L of d.lines) { if (!Array.isArray(L.path) || !L.path.length) continue; { const X = { a: L.a, b: L.b, path: L.path, product: L.product || ANY, dia: CFG.PIPES[L.dia] ? L.dia : (L.dia === 24 ? 36 : CFG.PIPE_DEFAULT) }; if (L.conn) X.conn = L.conn; if (L.open === false) X.open = false; n.lay(X); } } n.nextConn = Math.max(d.nc | 0, 1, ...[...n.lines.values()].map(L => (L.conn | 0) + 1)); return n; }
   }
   const lineSpec = L => { const s = CFG.PIPES[L.dia] || CFG.PIPES[CFG.PIPE_DEFAULT]; return { length: L.path.length * CFG.TILE_METERS, capacity: s.capacity, maxPressure: s.maxPressure }; };
 
@@ -140,14 +140,44 @@
   const portsOf = b => B.worldPoints(b).filter(p => p.kind === 'pipe' && !p.reserved);
   const canSend = p => p.role === 'out' || p.role === 'both', canTake = p => p.role === 'in' || p.role === 'both';
   function autoDia(def) { const need = def && def.capacity && /day/.test(def.capacity.unit || '') ? def.capacity.value : 0; if (!need) return CFG.PIPE_DEFAULT; const ds = Object.keys(CFG.PIPES).map(Number).sort((a, b) => a - b); return ds.find(d => CFG.PIPES[d].capacity >= need) || ds[ds.length - 1]; }
+  /* ================= SMART PIPE SIZING =================
+     The size of a line follows the flow it will really carry, not the name of a building: the steady-state flow of every building is derived from the network itself
+     (producers + everything that flows in, branches and merges included, limited by the building's own throughput), shared out over its outlets, and limited by what the receiver can take. */
+  const sizesAsc = () => Object.keys(CFG.PIPES).map(Number).sort((a, b) => CFG.PIPES[a].capacity - CFG.PIPES[b].capacity);
+  const sizeFor = need => { const ds = sizesAsc(); return ds.find(d => CFG.PIPES[d].capacity >= need - 1e-9) || ds[ds.length - 1]; };
+  const accepts = b => { const d = DEFS[b.d]; return (d.type === 'tank' || d.type === 'gas') && d.capacity ? d.capacity.value : throughput(b); };       /* what a receiver can take per day: a tank at most its own capacity (so a small tank never asks for a big pipe) */
+  const throughput = b => { const d = DEFS[b.d]; if (d.type === 'tank' || d.type === 'gas') return Infinity; const m = d.params && d.params.maxFlow; if (m > 0) return m; return d.capacity && /day/.test(d.capacity.unit || '') ? d.capacity.value : Infinity; };
+  function flowModel(store, net) {
+    const into = new Map(), outs = new Map(); for (const L of net.lines.values()) { if (!L.a || !L.b || L.open === false || !store.get(L.a.b) || !store.get(L.b.b)) continue; (into.get(L.b.b) || into.set(L.b.b, []).get(L.b.b)).push(L); (outs.get(L.a.b) || outs.set(L.a.b, []).get(L.a.b)).push(L); }
+    const memo = new Map(), busy = new Set();
+    const share = (b, port, nOut) => { const d = DEFS[b.d]; if (d.type === 'tank' || d.type === 'gas') return port === 'WATER_OUT' ? 0.1 : 1; if (d.type === 'separator' || d.type === 'refinery') { const first = d.connections.find(c => c.role === 'out'); return first && first.id === port ? 1 : 0.35; } return 1; };       /* every outlet of a pump / manifold / junction can carry the whole flow (the other outlets may be closed or full), limited by its own receiver */       // a tank's outlets each see the whole stock; the other devices split their flow over their used outlets (a separator's / refinery's side products are a fraction of the main flow)
+    const supply = id => { if (memo.has(id)) return memo.get(id); if (busy.has(id)) return 0; const b = store.get(id); if (!b) return 0; busy.add(id);
+      const d = DEFS[b.d]; let v = d.type === 'well' ? (d.capacity ? d.capacity.value : 0) : 0; for (const L of into.get(id) || []) v += lineFlow(L); v = Math.min(v, throughput(b)); busy.delete(id); memo.set(id, v); return v; };
+    const flowOf = (a, port, c, nOut) => { const da = DEFS[a.d], dc = DEFS[c.d]; if ((da.type === 'tank' || da.type === 'gas') && port !== 'WATER_OUT' && dc.type !== 'tank' && dc.type !== 'gas') return accepts(c);       /* a tank pushes whatever its receiver can take */
+      return Math.min(supply(a.id) * share(a, port, nOut), accepts(c)); };
+    const lineFlow = L => flowOf(store.get(L.a.b), L.a.port, store.get(L.b.b), (outs.get(L.a.b) || []).length);
+    return { supply, lineFlow, need: L => lineFlow(L), newLine: (src, srcPort, dst) => flowOf(src, srcPort, dst, (outs.get(src.id) || []).length + 1) };
+  }
+  const sizeNew = (store, net, src, srcPort, dst) => { const need = flowModel(store, net).newLine(src, srcPort, dst); return { need, dia: need > 0 ? sizeFor(need) : CFG.PIPE_DEFAULT }; };
+  /* upgrade advice: lines whose real flow exceeds their capacity (new branches / buildings change the flow); upgrade only, never smaller; the player confirms and pays the price difference */
+  function pipeAdvice(store, net) {
+    const m = flowModel(store, net), list = []; let cost = 0;
+    for (const L of net.lines.values()) { if (!L.a || !L.b || L.open === false || !store.get(L.a.b) || !store.get(L.b.b)) continue; const need = m.need(L), cap = (CFG.PIPES[L.dia] || CFG.PIPES[CFG.PIPE_DEFAULT]).capacity; if (!(need > cap + 1e-6)) continue;
+      const to = sizeFor(need); if (CFG.PIPES[to].capacity <= cap) continue; const extra = L.path.length * (CFG.PIPES[to].cost - (CFG.PIPES[L.dia] || CFG.PIPES[CFG.PIPE_DEFAULT]).cost); list.push({ id: L.id, from: L.dia, to, need, tiles: L.path.length, cost: extra }); cost += extra; }
+    return { list, cost };
+  }
+  function upgradeLines(store, net, ids) {
+    const adv = pipeAdvice(store, net), pick = adv.list.filter(x => !ids || ids.includes(x.id)); if (!pick.length) return { ok: false, reason: 'nothing' }; const cost = pick.reduce((a, x) => a + x.cost, 0);
+    if (store.cash !== Infinity && store.cash < cost) return { ok: false, reason: 'cash', cost }; for (const x of pick) { const L = net.lines.get(x.id); L.dia = x.to; } net.rev++; if (store.cash !== Infinity) store.cash -= cost; return { ok: true, n: pick.length, cost };
+  }
   const REASON_RANK = { cash: 5, noRoute: 4, portTaken: 3, invalidProduct: 2, portRoles: 1, noPort: 0 };
   function planDirection(store, net, ts, src, dst, o) {
     const pairs = []; for (const pa of portsOf(src)) if (canSend(pa)) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product) && !B.refuses(pa, pb) && !B.refuses(pb, pa)) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
     if (!pairs.length) return { natural: true };
     const sp = (b, free) => q => { if (portTaken(net, { b: b.id, port: q.id })) return 0; const nb = portsOf(b).filter(z => z.id !== q.id && z.side === q.side && z.role === q.role && z.group === q.group && Math.abs(z.ax - q.ax) + Math.abs(z.ay - q.ay) === 1 && !portTaken(net, { b: b.id, port: z.id })); return nb.length >= 2 ? 1 : 0; };    // a port in the MIDDLE of a run of free ports would wall the others in: take the ends of the run first
-    const spS = sp(src), spD = sp(dst); for (const q of pairs) q.k = q.d + 1000 * (spS(q.pa) + spD(q.pb)) + (((q.pa.product === 'WATER') !== (q.pb.product === 'WATER') && (q.pa.product === '*' || q.pb.product === '*')) ? 100000 : 0); pairs.sort((x, y) => x.k - y.k); const dia = o.dia || Math.max(autoDia(DEFS[src.d]), autoDia(DEFS[dst.d])); let best = null, worst = null, tried = 0;       // auto-connect never PREFERS a water port on a generic (oil) port; it is still allowed when nothing else exists (water tank <-> junction / valve)
+    const spS = sp(src), spD = sp(dst); for (const q of pairs) q.k = q.d + 1000 * (spS(q.pa) + spD(q.pb)) + (((q.pa.product === 'WATER') !== (q.pb.product === 'WATER') && (q.pa.product === '*' || q.pb.product === '*')) ? 100000 : 0); pairs.sort((x, y) => x.k - y.k); const fm = o.dia ? null : flowModel(store, net), diaFor = q => o.dia || sizeFor(fm.newLine(src, q.pa.id, dst)); let best = null, worst = null, tried = 0;       // auto-connect never PREFERS a water port on a generic (oil) port; it is still allowed when nothing else exists (water tank <-> junction / valve)
     for (const q of pairs) { if (tried >= (o.tries || 10)) break; if (portTaken(net, { b: src.id, port: q.pa.id }) || portTaken(net, { b: dst.id, port: q.pb.id })) { worst = worst || { reason: 'portTaken' }; continue; } tried++;
-      const v = planPipe(store, net, ts, { b: src.id, port: q.pa.id }, { b: dst.id, port: q.pb.id }, dia, { ignoreCash: true, margin: o.margin || 22 });
+      const v = planPipe(store, net, ts, { b: src.id, port: q.pa.id }, { b: dst.id, port: q.pb.id }, diaFor(q), { ignoreCash: true, margin: o.margin || 22 });
       if (v.ok) { if (!best || v.path.length < best.path.length) best = v; } else if (!worst || (REASON_RANK[v.reason] || 0) > (REASON_RANK[worst.reason] || 0)) worst = { reason: v.reason, wants: v.wants, has: v.has, products: v.products }; }
     if (best) { const cap = CFG.PIPES[best.dia].capacity, flow = DEFS[src.d].capacity && /day/.test(DEFS[src.d].capacity.unit || '') ? DEFS[src.d].capacity.value : 0; return { plan: best, warn: flow > cap ? { reason: 'pipeSmall', capacity: cap, flow } : null }; }
     return { fail: worst || { reason: 'noPort' } };
@@ -326,7 +356,7 @@
       if (e.int) return 0;                                                  // a link INSIDE a tank group: no oil is pushed through it (the group draws and fills as one unit)
       const room = e.cap - e.flow; let r = Math.min(f.r, room);
       if (e.lvl && f.sv != null) { const fs = this.ensure(far.b), fd = DEFS[far.b.d], fc = fd.capacity.value * levelOf(far.b).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
-      const ratio = r / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * (e.line && e.line.dia ? 16 / e.line.dia : 1); let p = f.p - loss;
+      const ratio = r / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * (e.line && CFG.PIPES[e.line.dia] ? CFG.PIPES[e.line.dia].fric : 1); let p = f.p - loss;
       if (p < 0) { r *= Math.max(0, f.p / (loss || 1)); p = 0; if (commit) e.lowP = true; }
       if (r <= 1e-9) return 0; const acc = this.accept(far.b, far.port, Object.assign({}, f, { r, p }), commit, vis);
       if (commit && acc > 0) { e.flow += acc; e.p = p; e.prod = f.prod; if (e.line) e.line.flow = e.flow; if (p > e.maxP) e.hiP = true; }
@@ -573,5 +603,5 @@
   }
 
   const TANK_KIND_AR = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
-  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, planConnect, layConnect, autoLinkTank, ADJ_GAP, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
+  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, planConnect, layConnect, flowModel, sizeFor, sizeNew, pipeAdvice, upgradeLines, autoLinkTank, ADJ_GAP, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });

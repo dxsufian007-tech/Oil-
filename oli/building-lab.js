@@ -105,7 +105,7 @@
     if (!r.ok) { p.verdict = r; showBar(); toast(REASON[r.reason] || r.reason); return; }
     state.pending = null; hideBar(); state.sel = r.building.id; if (B.DEFS[p.def].type === 'well') SIM.ensure(r.building).started = false; let msg = nameOf(p.def) + ' · جارٍ البناء · −' + fmt$(r.cost);
     msg += autoLinkNote(r.building);
-    toast(msg); save(); showBuilding(r.building.id); WP.markDirty(); updateCash();
+    toast(msg); save(); showBuilding(r.building.id); WP.markDirty(); updateCash(); adviseUpgrade();
   }
 
   /* ------------------------------------------------------------ existing buildings: panel, demolish */
@@ -315,16 +315,26 @@
     else pipeBar('🔴 ' + (plan.state === 'UNAFFORDABLE' ? 'الرصيد لا يكفي' : REASON[plan.reason] || plan.reason), 'bad', false, '<button id="bPipeBack">↩ البداية</button>');
     state.pipeDrag = null; WP.markDirty(); return true;
   }
+  /* SMART PIPE SIZING: after the network changes, lines whose real flow now exceeds their size are offered an upgrade; the player confirms and pays the price difference (upgrade only, never smaller) */
+  let advSig = '';
+  function adviseUpgrade(force) {
+    let el = document.getElementById('pipeAdvice'); const adv = I.pipeAdvice(STORE, pipes), sig = adv.list.map(x => x.id + ':' + x.to).join(',');
+    if (!adv.list.length) { if (el) el.style.display = 'none'; advSig = ''; return; } if (!force && sig === advSig) return; advSig = sig;
+    if (!el) { el = document.createElement('div'); el.id = 'pipeAdvice'; el.style.cssText = 'position:fixed;left:12px;right:12px;top:calc(96px + env(safe-area-inset-top,0px));z-index:60;background:#12202e;color:#fff;border:1px solid #4aa9d6;border-radius:14px;padding:10px 12px;font:600 14px system-ui;display:none;direction:rtl;box-shadow:0 6px 20px rgba(0,0,0,.45)'; document.body.appendChild(el); el.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.a === 'up') { const r = I.upgradeLines(STORE, pipes); if (r.ok) { toast('✅ تمت ترقية ' + r.n + ' أنبوب · −' + fmt$(r.cost)); save(); updateCash(); WP.markDirty(); } else toast(r.reason === 'cash' ? 'الرصيد لا يكفي للترقية (' + fmt$(r.cost) + ')' : 'لا ترقية مطلوبة'); }
+      el.style.display = 'none'; advSig = ''; if (b.dataset.a !== 'up') advSig = '*' + advSig; }); }
+    const n = adv.list.length; el.innerHTML = '<div>🔧 تحليل الشبكة: ' + n + (n === 1 ? ' أنبوب' : ' أنابيب') + ' لا يكفي تدفقها الفعلي. ترقيتها إلى الحجم المناسب تكلّف <b>' + fmt$(adv.cost) + '</b>.</div><div style="display:flex;gap:8px;margin-top:8px"><button data-a="up" style="flex:1;padding:9px;border-radius:10px;border:0;background:#2f9e5a;color:#fff;font:700 14px system-ui">ترقية الآن</button><button data-a="later" style="flex:1;padding:9px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff;font:700 14px system-ui">لاحقاً</button></div>'; el.style.display = 'block';
+  }
   function commitPlan() {
     const pm = state.pipeMode; if (!pm || !pm.plan || !(pm.plan.ok || (pm.oneWay && pm.plan.partial && pm.plan.lines.length))) return; const pl = pm.plan; let r = null;
     if (pm.kind === 'auto' || pm.kind === 'branch') {
       r = pm.kind === 'auto' ? I.layConnect(STORE, pipes, ts, pm.a.id, pm.tgt, { allowOneWay: pm.oneWay }) : I.branchTo(STORE, pipes, ts, pm.a.id, { line: pm.tgt, idx: pm.idx }, { allowOneWay: pm.oneWay });
       if (!r.ok) { toast(r.state === 'UNAFFORDABLE' ? 'الرصيد لا يكفي' : REASON[r.reason] || r.reason || 'تعذّر التوصيل'); autoBar(pm, r, pm.kind); WP.markDirty(); return; }
-      toast('✅ تم التوصيل · ' + r.made.length + (r.made.length === 2 ? ' خطان' : ' خط') + ' · −' + fmt$(r.cost)); save(); updateCash(); pipeMode(false); WP.markDirty(); return;
+      toast('✅ تم التوصيل · ' + r.made.length + (r.made.length === 2 ? ' خطان' : ' خط') + ' · −' + fmt$(r.cost)); save(); updateCash(); pipeMode(true); adviseUpgrade(); WP.markDirty(); return;
     }
     if (pm.kind === 'pipe') r = I.layPipe(STORE, pipes, ts, pl.a, pl.b, dia, {}); else if (pm.kind === 'open') r = I.layOpenPipe(STORE, pipes, ts, pl.a, pm.end, dia, {}); else r = I.closePipe(STORE, pipes, ts, pl.id, { b: pl.bid, port: pl.port }, {});
     if (!r.ok) { toast(r.state === 'UNAFFORDABLE' ? 'الرصيد لا يكفي للأنبوب' : REASON[r.reason] || r.reason); return; }
-    toast(pm.kind === 'open' ? '🟠 تم مد الأنبوب ولم يتصل بعد' : '✅ تم الربط · الحالة: متصل · −' + fmt$(r.cost)); save(); updateCash(); pipeMode(false); WP.markDirty();
+    toast(pm.kind === 'open' ? '🟠 تم مد الأنبوب ولم يتصل بعد' : '✅ تم الربط · الحالة: متصل · −' + fmt$(r.cost)); save(); updateCash(); pipeMode(true); WP.markDirty();
   }
   /* the oil field card: the player taps a field and is offered "dig a well" */
   function fieldNear(t) { let best = null, bd = 4.5; for (const f of fieldSites()) { const d = Math.hypot(f.x - t.x, f.y - t.y); if (d < bd) { bd = d; best = f; } } return best; }
@@ -533,7 +543,7 @@
   function newGame() { reset(); try { localStorage.removeItem('oli-lab-v2'); } catch (_) { } const f = fieldSites()[0]; if (f && !GU.dev) WP.goto(f.x, f.y, .55); if (GU.closeSheet) GU.closeSheet(); const es = document.getElementById('eco-sheet'); if (es) es.classList.remove('open'); toast('🔄 بدأت لعبة جديدة · $10M'); save(); WP.markDirty(); }
   if (!GU.dev && !window.OLI_HOME) {   // in the app the reset lives in the main menu (with its own confirmation)
     const top = document.querySelector('#eco-sheet .top'); if (top) { const nb = document.createElement('button'); nb.id = 'es-new'; nb.textContent = '🔄 لعبة جديدة'; nb.style.cssText = 'min-height:40px;margin-inline-start:8px;background:#7a2a2a;border:1px solid #a33;color:#fff;border-radius:8px;padding:0 12px;font-weight:700'; let armed = 0; nb.onclick = () => { if (!armed) { armed = 1; nb.textContent = '⚠️ اضغط للتأكيد: سيُمسح كل شيء'; setTimeout(() => { armed = 0; nb.textContent = '🔄 لعبة جديدة'; }, 4000); return; } armed = 0; nb.textContent = '🔄 لعبة جديدة'; newGame(); }; top.insertBefore(nb, top.querySelector('#es-close')); } }
-  window.__lab = { groupFrame: () => lastGroupFrame, autoLinkNote, ts, newGame, startBuild, pipeMode, pipeTap, commitPlan, spotsFor, nameOf, showField, fieldNear, fieldSites, GU, REASON, company: COMPANY, EU, buildDemo, store: STORE, pipes, sim: SIM, I, BC, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, showPipe, anchorFor, commitPipe, planFor, portNear, connect, updateCash, showSection, setDia: d => { dia = d; }, ready: () => true };
+  window.__lab = { adviseUpgrade, groupFrame: () => lastGroupFrame, autoLinkNote, ts, newGame, startBuild, pipeMode, pipeTap, commitPlan, spotsFor, nameOf, showField, fieldNear, fieldSites, GU, REASON, company: COMPANY, EU, buildDemo, store: STORE, pipes, sim: SIM, I, BC, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, showPipe, anchorFor, commitPipe, planFor, portNear, connect, updateCash, showSection, setDia: d => { dia = d; }, ready: () => true };
   updateCash(); window.__lab.GU.mount(); if (AR) AR.install();
   const wait = setInterval(() => { if (WP.idle && WP.idle()) { clearInterval(wait); const r = load({ sliced: true }); window.__lab.restored = r; if (r.from !== 'save' && !GU.dev) { const f = fieldSites()[0]; if (f) WP.goto(f.x, f.y, .55); } if (r.loaded) toast('Restored ' + r.loaded + ' buildings'); if (r.away && r.away.ok) EU.showAway(r.away); if (r.job) runCatchUp(r.job, a => { r.away = a; r.job = null; if (a && a.ok) EU.showAway(a); WP.markDirty(); save(); }); WP.markDirty(); } }, 200);
 })();

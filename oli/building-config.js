@@ -12,7 +12,7 @@
   const PRODUCT_COLOR = { CRUDE: '#3b2a1c', GASOLINE: '#e0584a', DIESEL: '#e2b32c', JET_FUEL: '#4aa3ff', GAS: '#8fd694', WATER: '#5fb8d9', OTHER: '#9a7ec8' };
 
   // pipe diameters: capacity (bbl/day), max pressure (psi), cost per tile ($)
-  const PIPES = { 8: { capacity: 30000, maxPressure: 1500, cost: 12000 }, 16: { capacity: 100000, maxPressure: 3000, cost: 40000 }, 24: { capacity: 200000, maxPressure: 3000, cost: 80000 }, 36: { capacity: 300000, maxPressure: 3000, cost: 120000 } };   // four sizes, 30k / 100k / 200k / 300k bbl/day; the keys 8/16/24/36 stay so old saves keep their line sizes (a line takes the new capacity of its size)
+  const PIPES = { 8: { capacity: 30000, maxPressure: 1500, cost: 12000, fric: 1.25 }, 16: { capacity: 100000, maxPressure: 3000, cost: 40000, fric: 1 }, 36: { capacity: 300000, maxPressure: 3000, cost: 120000, fric: 0.6 } };   // three sizes, 30k / 100k / 300k bbl/day; the keys 8/16/36 stay (a saved 24 line loads as 36), the smart sizing picks the smallest that carries the flow
   const PIPE_DEFAULT = 16, TILE_METERS = 12;
 
   // sizes: S / M / L share one tank formula
