@@ -125,6 +125,10 @@
     return h;
   }
   function showBuilding(id) {
+    try { return showBuilding_(id); } catch (e) {        /* a card that throws must never be silent: show a basic card + the reason so it can be reported */
+      const b = STORE.get(id); state.sel = id; $('info').innerHTML = '<h4>' + (b ? nameOf(b.d) : '') + '</h4><span class="k">تعذّر عرض التفاصيل الكاملة: ' + String(e && e.message || e).slice(0, 90) + '</span>'; try { console.error('showBuilding', e && e.stack); } catch (_) {} WP.markDirty(); }
+  }
+  function showBuilding_(id) {
     const b = STORE.get(id); if (!b) return; state.sel = id; const d = B.DEFS[b.d], st = SIM.status(b), ind = SIM.indicators(b), warn = SIM.warnings(b), list = showAll ? ind.list : ind.list.slice(0, ind.top);
     const lv = d.type === 'tank' ? SIM.levelStateOf(b) : d.type === 'gas' ? SIM.gasSafetyOf(b) : null;
     const stopped = d.type === 'well' && b.s && b.s.started === false && st !== 'UNDER_CONSTRUCTION', stTxt = stopped ? 'متوقف — اضغط «ابدأ الإنتاج»' : (STAR[st] || st);
