@@ -40,6 +40,8 @@
     constructor(W) { super(); this.W = W; this.lines = new Map(); this.at = new Map(); this.nextId = 1; this.nextConn = 1; this.rev = 0; }
     lay(line) { const id = line.id != null && !this.lines.has(line.id) ? line.id : this.nextId++; if (id >= this.nextId) this.nextId = id + 1; const L = Object.assign({ flow: 0 }, line, { id }); this.lines.set(id, L); for (const [x, y] of L.path) { const k = key(this.W, x, y); this.add(k); this.at.set(k, id); } this.rev++; return L; }
     remove(id) { const L = this.lines.get(id); if (!L) return false; for (const [x, y] of L.path) { const k = key(this.W, x, y); this.delete(k); this.at.delete(k); } this.lines.delete(id); this.rev++; return true; }
+    /* change the tiles of an existing line IN PLACE (same id, ports, product, diameter, open flag, flow): the tiles it leaves are freed, the new ones taken */
+    setPath(id, path) { const L = this.lines.get(id); if (!L) return false; for (const [x, y] of L.path) { const k = key(this.W, x, y); if (this.at.get(k) === id) { this.delete(k); this.at.delete(k); } } L.path = path; for (const [x, y] of path) { const k = key(this.W, x, y); this.add(k); this.at.set(k, id); } this.rev++; return true; }
     lineAt(x, y) { const id = this.at.get(key(this.W, x, y)); return id ? this.lines.get(id) : null; }
     productAt(x, y) { const L = this.lineAt(x, y); return L ? L.product : null; }
     /* backward compatible view: Phase C pipes carry no product, so every legacy tile is CRUDE with the default diameter */
@@ -68,7 +70,7 @@
   function route(store, net, ts, from, to, opts) {
     opts = opts || {}; const W = store.W, margin = opts.margin || 14, x0 = Math.min(from[0], to[0]) - margin, x1 = Math.max(from[0], to[0]) + margin, y0 = Math.min(from[1], to[1]) - margin, y1 = Math.max(from[1], to[1]) + margin;
     const own = opts.own || new Set(), acc = new Set(); for (const o of store.query(x0, y0, x1, y1)) for (const p of B.worldPoints(o)) if (p.kind === 'pipe' && !p.reserved) acc.add(key(W, p.ax, p.ay)); const okTile = (x, y, end) => {
-      if (x < 0 || y < 0 || x >= W || y >= store.H) return false; const t = ts.tile(x, y); if (!t || !ts.terrain[t.terrain].buildable) return false; if (store.at(x, y)) return false;
+      if (x < 0 || y < 0 || x >= W || y >= store.H) return false; if (opts.block && opts.block.has(key(W, x, y))) return false; const t = ts.tile(x, y); if (!t || !ts.terrain[t.terrain].buildable) return false; if (store.at(x, y)) return false;
       { const ln = net.lineAt(x, y); if (ln && ln.id !== opts.ignoreLine) return false; } if (!end && acc.has(key(W, x, y))) return false; return true; };
     if (!okTile(from[0], from[1], true) || !okTile(to[0], to[1], true)) return null;
     const idx = (x, y) => (y - y0) * (x1 - x0 + 1) + (x - x0), prev = new Map(), q = [from], seen = new Set([idx(from[0], from[1])]); let head = 0, guard = 0;
@@ -227,6 +229,45 @@
   function layConnect(store, net, ts, idA, idB, o) { o = o || {}; return commitPlan(store, net, planConnect(store, net, ts, idA, idB, o), o); }
 
 
+
+  /* ------------------------------------------------------------ ROUTE EDITING (Phase 2.5): change the tiles an existing line runs over, in place. Same line id, same ports, same product / diameter / open flag / flow: nothing is deleted and rebuilt, so no stock can be lost or counted twice (a line holds no oil: the stock lives in the buildings).
+   * The ends never move (they are the two ports), so the real connection cannot break; junctions and valves are buildings at the ends and are untouched. A change is "replace the part of the path between index i and index k by a route through the given points"; everything outside i..k stays tile for tile. */
+  const dirOf = (a, b) => (b[0] - a[0]) + 3 * (b[1] - a[1]);
+  function controlPoints(L) {                                       // the handles the player sees: both ends and every corner of the path
+    const p = L.path, out = []; for (let i = 0; i < p.length; i++) { const end = i === 0 || i === p.length - 1; if (end || dirOf(p[i - 1], p[i]) !== dirOf(p[i], p[i + 1])) out.push({ i, x: p[i][0], y: p[i][1], end }); } return out;
+  }
+  function planReroute(store, net, ts, lineId, edit, opts) {
+    opts = opts || {}; edit = edit || {}; const L = net.lines.get(lineId), fail = (reason, kind) => ({ ok: false, state: 'INVALID', kind: kind || 'RULE', reason });
+    if (!L || !L.a || !L.b) return fail(L && !L.b ? 'openLine' : 'noLine'); const p = L.path, n = p.length, i = edit.from | 0, k = edit.to | 0, via = (edit.via || []).map(v => [v[0] | 0, v[1] | 0]);
+    if (!(i >= 0 && k > i && k <= n - 1)) return fail('badRange'); const W = store.W;
+    const block = new Set(); for (let j = 0; j < n; j++) if (j <= i || j >= k) block.add(key(W, p[j][0], p[j][1])); block.delete(key(W, p[i][0], p[i][1])); block.delete(key(W, p[k][0], p[k][1]));
+    for (const v of via) { if (block.has(key(W, v[0], v[1])) || (v[0] === p[i][0] && v[1] === p[i][1]) || (v[0] === p[k][0] && v[1] === p[k][1])) return fail('viaBlocked', 'ROUTE'); }
+    const pts = [p[i]].concat(via, [p[k]]), mid = [p[i]]; const used = new Set(block);
+    for (let s = 0; s + 1 < pts.length; s++) {
+      used.delete(key(W, pts[s][0], pts[s][1])); const r = route(store, net, ts, pts[s], pts[s + 1], Object.assign({}, opts, { ignoreLine: L.id, block: used, margin: opts.margin || 24 })); if (!r) return fail('noRoute', 'ROUTE');
+      for (let q = 0; q < r.length; q++) { if (q > 0) mid.push(r[q]); used.add(key(W, r[q][0], r[q][1])); }                    // what this part of the route took is closed to the next part (the route never crosses itself)
+    }
+    const path = p.slice(0, i).concat(mid, p.slice(k + 1)), oldKeys = new Set(p.map(t => key(W, t[0], t[1]))), newKeys = new Set(path.map(t => key(W, t[0], t[1])));
+    if (newKeys.size !== path.length) return fail('selfOverlap', 'ROUTE');
+    const spec = CFG.PIPES[L.dia] || CFG.PIPES[CFG.PIPE_DEFAULT], dLen = path.length - n, cost = Math.max(0, dLen) * spec.cost, warnings = [];
+    if (store.cash < cost && !opts.ignoreCash) return { ok: false, state: 'UNAFFORDABLE', reason: 'cash', cost, kind: null };
+    const flow = L.flow || 0, ratio = Math.min(1.5, flow / spec.capacity), fr = spec.fric == null ? 1 : spec.fric, loss = t => t * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * fr, dPsi = loss(path.length) - loss(n);
+    if (dPsi > 5) warnings.push({ code: 'lowerPressure', psi: Math.round(dPsi), flow: Math.round(flow) });          // a longer route loses more pressure: the line may deliver less at the far end
+    if (dLen > 0 && flow > 0.6 * spec.capacity) warnings.push({ code: 'longerBusy', tiles: dLen });
+    if (L.open === false) warnings.push({ code: 'closedLine' });
+    return { ok: true, state: 'VALID', id: L.id, path, oldPath: p.map(t => t.slice()), from: i, to: k, via, cost, deltaLen: dLen, added: path.filter(t => !oldKeys.has(key(W, t[0], t[1]))), removed: p.filter(t => !newKeys.has(key(W, t[0], t[1]))), warnings, flow, length: path.length * CFG.TILE_METERS };
+  }
+  function commitReroute(store, net, ts, plan) {
+    if (!plan || !plan.ok) return plan || { ok: false, reason: 'noPlan' }; const L = net.lines.get(plan.id); if (!L) return { ok: false, reason: 'noLine' };
+    if (L.path.length !== plan.oldPath.length || L.path.some((t, j) => t[0] !== plan.oldPath[j][0] || t[1] !== plan.oldPath[j][1])) return { ok: false, reason: 'changed' };      // the line was changed since the preview
+    net.setPath(L.id, plan.path); if (store.cash !== Infinity) store.cash -= plan.cost; (net.editLog || (net.editLog = [])).push({ id: L.id, old: plan.oldPath, neu: plan.path.map(t => t.slice()), cost: plan.cost }); if (net.editLog.length > 40) net.editLog.shift(); return Object.assign({}, plan, { line: L });
+  }
+  function undoReroute(store, net) {
+    const log = net.editLog || []; const e = log[log.length - 1]; if (!e) return { ok: false, reason: 'nothing' }; const L = net.lines.get(e.id); if (!L) { log.pop(); return { ok: false, reason: 'noLine' }; }
+    if (L.path.length !== e.neu.length || L.path.some((t, j) => t[0] !== e.neu[j][0] || t[1] !== e.neu[j][1])) { log.pop(); return { ok: false, reason: 'changed' }; }
+    const W = store.W; for (const t of e.old) { const o = net.lineAt(t[0], t[1]); if (o && o.id !== L.id) return { ok: false, reason: 'blocked' }; if (store.at(t[0], t[1]) && !L.path.some(q => q[0] === t[0] && q[1] === t[1])) { const b = store.at(t[0], t[1]); if (b) return { ok: false, reason: 'blocked' }; } }
+    net.setPath(L.id, e.old.map(t => t.slice())); if (store.cash !== Infinity) store.cash += e.cost; log.pop(); return { ok: true, id: L.id, refund: e.cost };
+  }
 
   /* ---- branching: a building is connected to an EXISTING line by putting a junction on that line (the only place where lines merge or split, as before), then the ordinary two-line connection */
   const lineCopy = L => ({ id: L.id, a: L.a, b: L.b, path: L.path.map(p => p.slice()), product: L.product, dia: L.dia, conn: L.conn, open: L.open });
@@ -603,5 +644,5 @@
   }
 
   const TANK_KIND_AR = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
-  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, planConnect, layConnect, flowModel, sizeFor, sizeNew, pipeAdvice, upgradeLines, autoLinkTank, ADJ_GAP, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
+  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, controlPoints, planReroute, commitReroute, undoReroute, planConnect, layConnect, flowModel, sizeFor, sizeNew, pipeAdvice, upgradeLines, autoLinkTank, ADJ_GAP, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });
