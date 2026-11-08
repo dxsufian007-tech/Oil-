@@ -26,7 +26,7 @@ const log = m => console.log('ok   ' + m);
   assert(Math.hypot(k1[0] - k0[0], k1[1] - k0[1]) > 100); log('pan with one finger moves across the map');
   // settings
   await page.tap('#b-settings'); await wait(200); assert(await page.locator('#settings').isVisible());
-  const items = await G(() => [...document.querySelectorAll('#settings .row > span')].map(e => e.textContent)); assert.deepStrictEqual(items, ['الأصوات', 'الموسيقى', 'الاهتزاز', 'اللغة', 'جودة الرسوم']); assert(await page.locator('#st-reset').isVisible());
+  const items = await G(() => [...document.querySelectorAll('#settings .row > span')].map(e => e.textContent)); assert.deepStrictEqual(items, ['الأصوات', 'الموسيقى', 'الاهتزاز', 'اللغة', 'الخريطة', 'جودة الرسوم']); assert(await page.locator('#st-reset').isVisible());
   await page.screenshot({ path: `${OUT}/settings-ar.png` }); log('settings: exactly ' + items.join(' / ') + ' + restart');
   await page.tap('[data-pref=sound] [data-v="0"]'); await page.tap('[data-pref=music] [data-v="0"]'); await page.tap('[data-pref=vib] [data-v="0"]'); await wait(150);
   // restart needs the confirmation dialog: cancel keeps everything

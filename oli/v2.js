@@ -12,16 +12,22 @@
 
   /* ---------- game state (core) ---------- */
   const game = new Game();
+  /* ---------- the ground: the new map (a 140 x 88 window of the new world) or the old one. Only the picture and the water/blocked tiles differ; core.js is the same either way ---------- */
+  const MAPQ = /[?&]map=(old|new)\b/.exec(location.search), MAPW = /[?&]win=(\w+)/.exec(location.search), OP = (window.OliLang && OliLang.prefs) || {};
+  const MAPMODE = MAPQ ? MAPQ[1] : (OP.map === 'old' ? 'old' : 'new');
+  let mapWin = null;
+  if (MAPMODE === 'new' && window.OliMapWindow && window.OliWorldV4) { try { mapWin = OliMapWindow.install(game, { preset: MAPW ? MAPW[1] : OP.win }); } catch (e) { mapWin = null; console.warn('new map unavailable, old map used:', e && e.message); } }
   let saved = null;
   for (const key of [SAVE_KEY, OLD_KEY]) {
     try { const raw = localStorage.getItem(key); if (raw) { const d = JSON.parse(raw); game.load(d.game); saved = key === SAVE_KEY ? d : {}; break; } } catch (e) { game.reset(); }
   }
+  if (mapWin) OliMapWindow.protect(game, mapWin);       // an old save: every tile with a building or a pipe stays valid
   // offline production (OliOffline, offline.js): the saved record carries a timestamp; on launch / resume the existing Game.step is run forward for the time that passed
   const OFF = window.OliOffline; let offMeta = (saved && saved.offline) || null;
   const offClock = () => ({ now: Date.now() });
   const resumeOffline = () => { if (!OFF || !offMeta) return null; try { const r = OFF.resume(game, offMeta, offClock()); offMeta = r.meta; return r; } catch (e) { return null; } };
   const offReport = resumeOffline();
-  const prefs = Object.assign({ sound: 1, music: 1, vib: 1, lang: 'ar', gfx: 'auto' }, (window.OliLang && OliLang.prefs) || {});
+  const prefs = Object.assign({ sound: 1, music: 1, vib: 1, lang: 'ar', gfx: 'auto', map: 'new' }, (window.OliLang && OliLang.prefs) || {});
   const buzz = ms => { if (prefs.vib && navigator.vibrate) try { navigator.vibrate(ms); } catch (e) { /* not supported */ } };   // short haptic feedback
   // graphics quality: low = 30 fps, no smoothing, fewer oil dots | medium = 60 fps, no smoothing | high = 60 fps, smoothing | auto = picked from the device
   const GFX = (() => { let q = prefs.gfx; if (q === 'auto') q = (navigator.hardwareConcurrency || 4) >= 6 && (window.devicePixelRatio || 1) <= 3 ? 'high' : 'medium';
@@ -104,6 +110,7 @@
       view.bounds = { x: -H * 32 - 48, y: -48, w: (W + H) * 32 + 96, h: (W + H) * 16 + 96 };          // the whole world diamond and a thin margin: nothing beyond
       this.input.addPointer(2);
       this.makeGround();
+      if (mapWin) this.drawReserveFence();
       this.fxG = this.add.graphics().setDepth(5e5);         // oil moving in pipes (each frame, a few dots); dots behind a building are skipped
       this.prevG = this.add.graphics().setDepth(6e5).setAlpha(.82);   // the route preview, above everything (redrawn only when the route changes)
       this.placeG = this.add.graphics().setDepth(5.9e5);    // building preview: footprint cells + connection points (redrawn only when the preview moves to another tile)
@@ -130,7 +137,7 @@
         if (i === 7) { g.fillStyle = 'rgba(20,30,45,.22)'; g.fillRect(0, 0, 64, 32); }
         g.restore();
       }
-      this.textures.addCanvas('groundset', cv);
+      if (mapWin) { cv.width = 1; cv.height = 1; this.textures.addCanvas('groundset', OliMapWindow.tilesetCanvas(mapWin)); } else this.textures.addCanvas('groundset', cv);
       // an isometric map must be BORN isometric (its cull / convert functions are chosen in the constructor)
       const md = new Phaser.Tilemaps.MapData({ width: W, height: H, tileWidth: 64, tileHeight: 32, orientation: Phaser.Tilemaps.Orientation.ISOMETRIC, format: Phaser.Tilemaps.Formats.ARRAY_2D });
       const map = new Phaser.Tilemaps.Tilemap(this, md);
@@ -138,8 +145,19 @@
       this.ground = map.createBlankLayer('ground', ts, -33, -1).setDepth(0);
       this.paintGround(true);
     }
+    /* the C3 strategic reserve: a fence along its edge, nothing else (no roads, no gates). Only drawn where C3 lies inside the window. */
+    drawReserveFence() {
+      const r = mapWin.c3; if (!r) return; const g = this.add.graphics().setDepth(.5), P = (x, y) => ({ x: (x - y) * 32, y: (x + y) * 16 });
+      const x0 = Math.max(0, r.x0), y0 = Math.max(0, r.y0), x1 = Math.min(W, r.x1), y1 = Math.min(H, r.y1), edges = [];
+      if (r.x0 >= 0) edges.push([[r.x0, y0], [r.x0, y1]]); if (r.x1 <= W) edges.push([[r.x1, y0], [r.x1, y1]]);
+      if (r.y0 >= 0) edges.push([[x0, r.y0], [x1, r.y0]]); if (r.y1 <= H) edges.push([[x0, r.y1], [x1, r.y1]]);
+      g.lineStyle(3, 0x2a2210, .55); for (const [a, b] of edges) { const p = P(a[0], a[1]), q = P(b[0], b[1]); g.lineBetween(p.x + 1, p.y + 2, q.x + 1, q.y + 2); }
+      g.lineStyle(2, 0xd4aa52, .9); for (const [a, b] of edges) { const p = P(a[0], a[1]), q = P(b[0], b[1]); g.lineBetween(p.x, p.y, q.x, q.y);
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.floor(L / 6); for (let i = 0; i <= n; i++) { const t = L ? i * 6 / L : 0, s = P(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t); g.fillStyle(0xd4aa52, 1); g.fillCircle(s.x, s.y, 2.2); } }
+    }
     groundIndex(x, y) {
       const k = idx(x, y), a = game.areaAt(x, y);
+      if (mapWin) return OliMapWindow.tileIndex(mapWin, k, a && !game.regionOpen(a.region) ? 3 : a && a.st === 2 ? (a.kind !== 'empty' && a.remaining > 0 ? 1 : 2) : 0);
       if (game.map.water[k]) return 5;
       if (game.map.block[k]) return 6;
       if (a && !game.regionOpen(a.region)) return 7;
@@ -856,9 +874,9 @@
   $('#b-settings').addEventListener('click', () => { if (st.hidden) { setTool(null); select(null); paintSettings(); } st.hidden = !st.hidden; });
   $('#st-close').addEventListener('click', () => { st.hidden = true; });
   $$('#settings [data-pref]').forEach(g => g.addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return; const k = g.dataset.pref, v = k === 'lang' || k === 'gfx' ? b.dataset.v : +b.dataset.v;
+    const b = e.target.closest('button'); if (!b) return; const k = g.dataset.pref, v = k === 'lang' || k === 'gfx' || k === 'map' ? b.dataset.v : +b.dataset.v;
     if (prefs[k] === v) return; prefs[k] = v; savePrefs(); paintSettings(); buzz(20);
-    if (k === 'lang' || k === 'gfx') { save(); location.reload(); return; }          // language / graphics are set when the game starts: save the game and restart it
+    if (k === 'lang' || k === 'gfx' || k === 'map') { save(); location.reload(); return; }          // language / graphics are set when the game starts: save the game and restart it
     toast(T('تم حفظ الإعداد'), 'good');
   }));
   $('#st-reset').addEventListener('click', () => { dlg.hidden = false; });
@@ -880,5 +898,5 @@
   if (offReport && offReport.elapsed.sec > 0) setTimeout(() => { refreshHud(); offlineToast(offReport); }, 1500);
 
   // test / debug handle (read-only use by the automated tests)
-  window.__v2 = { offline: { resume: resumeOffline, meta: () => offMeta, report: offReport }, touch, prefs, GFX, game, ui, flowStretches, flowSpeed, renderPanel, view, camApi, pickNode, magnetTarget, freeRoute, pipeDragMove, pipeDragStart, tc, toTile, pipeGeom, nodeAnchor, setTool, select, confirmAction, cancel, save };
+  window.__v2 = { mapMode: MAPMODE, mapWin, offline: { resume: resumeOffline, meta: () => offMeta, report: offReport }, touch, prefs, GFX, game, ui, flowStretches, flowSpeed, renderPanel, view, camApi, pickNode, magnetTarget, freeRoute, pipeDragMove, pipeDragStart, tc, toTile, pipeGeom, nodeAnchor, setTool, select, confirmAction, cancel, save };
 })();

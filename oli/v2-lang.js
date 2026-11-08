@@ -106,7 +106,7 @@
     'بدأت لعبة جديدة': 'A new game has started', 'بيع ': 'Sold ', ' برميل · +': ' bbl · +',
     'النقد': 'Cash', 'النفط': 'Oil', 'سعر البرميل': 'Oil price', 'الإعدادات': 'Settings',
     'أنبوب فرعي': 'Branch pipe', 'أنبوب رئيسي': 'Main pipe', 'بناء': 'Build', 'بيع النفط': 'Sell oil', 'تركيز': 'Focus', 'إغلاق': 'Close', 'تأكيد': 'Confirm', 'إلغاء': 'Cancel',
-    'الأصوات': 'Sound', 'الموسيقى': 'Music', 'الاهتزاز': 'Vibration', 'اللغة': 'Language', 'جودة الرسوم': 'Graphics quality',
+    'الأصوات': 'Sound', 'الموسيقى': 'Music', 'الاهتزاز': 'Vibration', 'اللغة': 'Language', 'الخريطة': 'Map', 'الجديدة': 'New', 'القديمة': 'Old', 'جودة الرسوم': 'Graphics quality',
     'تشغيل': 'On', 'إيقاف': 'Off', 'العربية': 'العربية', 'تلقائي': 'Auto', 'منخفضة': 'Low', 'متوسطة': 'Medium', 'عالية': 'High',
     'إعادة اللعبة من البداية': 'Restart the game', 'إعادة اللعبة؟': 'Restart the game?',
     'سيُحذف كل ما بنيته وتبدأ من جديد. لا يمكن التراجع.': 'Everything you built will be removed and you start over. This cannot be undone.',
