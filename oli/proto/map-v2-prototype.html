@@ -1,0 +1,316 @@
+<title>نموذج خريطة OLI الجديدة</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
+<style>
+/* layout: a full-screen map; header strip on top, preset chips under it, a collapsible drawer (layers / numbers / giant buildings) at the bottom.
+   chrome keeps the navy + gold identity of the game; the land itself stays in calm stone / sage / sea tones. */
+:root{--bg:#eef0f3;--panel:#ffffff;--panel2:#f3f5f8;--fg:#14233a;--mute:#5d6b80;--line:#d3d9e2;--navy:#14233a;--gold:#b88a2a;--goldfg:#ffffff;--ok:#2f8f5b;--bad:#c4473a;--chip:#e6eaf0;--font:'IBM Plex Sans Arabic','Segoe UI',Tahoma,system-ui,sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1422;--panel:#13213a;--panel2:#192a47;--fg:#e8edf5;--mute:#93a3ba;--line:#26385a;--navy:#0b1422;--gold:#d4aa52;--goldfg:#14233a;--ok:#4fbf86;--bad:#e5695b;--chip:#1f3253;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0b1422;--panel:#13213a;--panel2:#192a47;--fg:#e8edf5;--mute:#93a3ba;--line:#26385a;--navy:#0b1422;--gold:#d4aa52;--goldfg:#14233a;--ok:#4fbf86;--bad:#e5695b;--chip:#1f3253;color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:14px;margin:0;overflow:hidden;position:relative}
+*{box-sizing:border-box}
+#app{position:absolute;inset:0;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:10px;padding:8px max(16px,env(safe-area-inset-right,0px)) 8px max(16px,env(safe-area-inset-left,0px));background:var(--navy);color:#fff;flex:none}
+header h1{font-size:15px;font-weight:700;margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{font-size:11px;font-weight:600;background:var(--gold);color:var(--goldfg);padding:3px 8px;border-radius:4px;white-space:nowrap}
+#stage{position:relative;flex:1;min-height:0;background:#1c3a4c;touch-action:none}
+canvas#c{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#mini{position:absolute;left:max(10px,env(safe-area-inset-left,0px));top:10px;width:150px;height:96px;border:1px solid rgba(255,255,255,.55);border-radius:4px;background:#1c3a4c;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+#chips{position:absolute;right:max(10px,env(safe-area-inset-right,0px));top:10px;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.chip{border:0;font:600 12px var(--font);color:var(--fg);background:var(--panel);padding:8px 12px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer;min-height:36px}
+.chip:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+#zoom{position:absolute;left:max(10px,env(safe-area-inset-left,0px));bottom:10px;display:flex;flex-direction:column;gap:6px}
+#zoom button{width:42px;height:42px;font:700 20px var(--font);border:0;border-radius:6px;background:var(--panel);color:var(--fg);box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer}
+#hud{position:absolute;right:max(10px,env(safe-area-inset-right,0px));bottom:10px;font-size:11px;background:rgba(10,20,34,.72);color:#e8edf5;padding:5px 8px;border-radius:4px;font-variant-numeric:tabular-nums;max-width:60%}
+#drawer{flex:none;background:var(--panel);border-top:2px solid var(--gold);max-height:46%;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}
+#tabs{display:flex;gap:4px;padding:6px max(12px,env(safe-area-inset-right,0px)) 0 max(12px,env(safe-area-inset-left,0px));align-items:center}
+#tabs button{flex:1;border:0;background:var(--chip);color:var(--fg);font:600 13px var(--font);padding:9px 6px;border-radius:6px 6px 0 0;cursor:pointer}
+#tabs button[aria-selected="true"]{background:var(--gold);color:var(--goldfg)}
+#tabs .fold{flex:none;width:40px;background:transparent;font-size:16px}
+#body{overflow:auto;padding:12px max(16px,env(safe-area-inset-right,0px)) 14px max(16px,env(safe-area-inset-left,0px));min-height:0}
+#body[hidden]{display:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+label.sw{display:flex;align-items:center;gap:8px;background:var(--panel2);padding:9px 10px;border-radius:6px;cursor:pointer;font-weight:500;min-width:0}
+label.sw input{width:18px;height:18px;accent-color:var(--gold);flex:none}
+.dot{width:12px;height:12px;border-radius:3px;flex:none}
+.bar{position:relative;height:22px;background:var(--panel2);border-radius:4px;overflow:hidden;margin:6px 0 2px}
+.bar i{position:absolute;inset:0 auto 0 0;display:block}
+.bar b{position:absolute;top:0;bottom:0;width:2px;background:var(--fg);opacity:.8}
+.row{display:flex;justify-content:space-between;gap:10px;font-variant-numeric:tabular-nums;align-items:baseline}
+.row span:first-child{font-weight:600}
+.note{color:var(--mute);font-size:12.5px;line-height:1.6;margin:8px 0 0}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.btn{border:0;background:var(--chip);color:var(--fg);font:600 13px var(--font);padding:10px 14px;border-radius:6px;cursor:pointer;min-height:40px}
+.btn.pri{background:var(--gold);color:var(--goldfg)}
+.btn.bad{background:var(--bad);color:#fff}
+.btn[disabled]{opacity:.45;cursor:default}
+.sizes{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.sizes button{border:2px solid transparent;background:var(--panel2);color:var(--fg);font:500 12.5px var(--font);padding:9px;border-radius:6px;text-align:right;cursor:pointer;line-height:1.5}
+.sizes button[aria-pressed="true"]{border-color:var(--gold)}
+.sizes strong{display:block;font-size:13.5px}
+.ok{color:var(--ok);font-weight:700}.no{color:var(--bad);font-weight:700}
+h3{margin:14px 0 6px;font-size:13px}
+h3:first-child{margin-top:0}
+</style>
+<div id="app" dir="rtl">
+  <header><h1>نموذج الخريطة الجديدة (مرحلة 3)</h1><span class="badge">نموذج أولي منفصل · لا يمس اللعبة</span></header>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <canvas id="mini" width="300" height="192" aria-label="خريطة مصغّرة"></canvas>
+    <div id="chips">
+      <button class="chip" data-go="all">كامل العالم</button>
+      <button class="chip" data-go="coast">الساحل</button>
+      <button class="chip" data-go="c3">C3 الاحتياطي</button>
+      <button class="chip" data-go="ind">منطقة صناعية</button>
+      <button class="chip" data-go="close">منظر قريب</button>
+    </div>
+    <div id="zoom"><button id="zin" aria-label="تقريب">+</button><button id="zout" aria-label="تصغير">−</button></div>
+    <div id="hud"></div>
+  </div>
+  <div id="drawer">
+    <div id="tabs" role="tablist">
+      <button role="tab" data-tab="layers" aria-selected="true">الطبقات</button>
+      <button role="tab" data-tab="stats" aria-selected="false">الأرقام</button>
+      <button role="tab" data-tab="giant" aria-selected="false">المباني العملاقة</button>
+      <button class="fold" id="fold" aria-label="طيّ اللوحة">▾</button>
+    </div>
+    <div id="body"></div>
+  </div>
+</div>
+<script>
+(function(){'use strict';
+/* ============ world definition (independent of the game; seed-based, deterministic) ============ */
+const WW=2560, WH=1600, RC=320, CH=128, RES=2, SEED=20260101;      // 8 x 5 regions of 320 tiles; 1 tile = 12 m
+const TILE_M=12, OLD={w:1920,h:1280};
+function hash(ix,iy,s){let h=(Math.imul(ix,374761393)+Math.imul(iy,668265263)+Math.imul(s,1442695041))|0;h=Math.imul(h^(h>>>13),1274126177);return((h^(h>>>16))>>>0)/4294967296}
+function vn(x,y,s){const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,u=fx*fx*(3-2*fx),v=fy*fy*(3-2*fy);const a=hash(ix,iy,s),b=hash(ix+1,iy,s),c=hash(ix,iy+1,s),d=hash(ix+1,iy+1,s);return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v}
+function fbm(x,y,s,o){let a=.5,f=1,t=0,n=0;for(let i=0;i<o;i++){t+=a*vn(x*f,y*f,s+i*17);n+=a;a*=.5;f*=2}return t/n}
+const sm=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t)};
+const coast=y=>540+70*(vn(y/260,3.1,11)*2-1)+22*(vn(y/55,7.7,12)*2-1);          // water lies west of this x (448..632)
+const coastRoadX=y=>Math.min(coast(y)+112,628);
+/* classes */
+const K={DEEP:0,SHALLOW:1,BEACH:2,FLAT:3,HILL:4,ROCK:5,WADI:6,LAKE:7};
+const KN=['بحر عميق','بحر ضحل','شاطئ','أرض مستوية','تلال خفيفة','صخور / جبال','وادٍ جاف','بحيرة'];
+/* zones. kind -> look + label */
+const KIND={
+  EXTRACT:{n:'استخراج',c:'#8c6a4a'},STORE:{n:'تخزين',c:'#4a6f8c'},PROCESS:{n:'تكرير وتحويل',c:'#7b5a8c'},TRANSPORT:{n:'نقل وطرق',c:'#6b7380'},
+  RESERVE:{n:'احتياطي استراتيجي',c:'#d4aa52'},FUTURE:{n:'منطقة مستقبلية',c:'#5f8f7a'},COAST:{n:'الساحل والميناء',c:'#3f8c9c'},FUTSEA:{n:'بحر مستقبلي',c:'#5aa0c8'}};
+const ZONES=[
+ {id:'E1',k:'EXTRACT',n:'استخراج شمال',x:1180,y:180,w:360,h:300},{id:'E2',k:'EXTRACT',n:'استخراج شرق',x:1760,y:300,w:380,h:320},
+ {id:'E3',k:'EXTRACT',n:'استخراج جنوب',x:1300,y:1020,w:340,h:300},{id:'E4',k:'EXTRACT',n:'استخراج جنوب شرق',x:1900,y:980,w:240,h:280},
+ {id:'S1',k:'STORE',n:'تخزين مركزي',x:1120,y:640,w:260,h:220},{id:'S2',k:'STORE',n:'تخزين شرقي',x:1620,y:760,w:260,h:200},
+ {id:'P1',k:'PROCESS',n:'تكرير شمال',x:780,y:200,w:320,h:220},{id:'P2',k:'PROCESS',n:'تكرير جنوب',x:1000,y:1100,w:300,h:240},
+ {id:'T1',k:'TRANSPORT',n:'محور النقل',x:1400,y:520,w:200,h:120},
+ {id:'C3',k:'RESERVE',n:'C3 · احتياطي استراتيجي',x:640,y:640,w:320,h:320},
+ {id:'F1',k:'FUTURE',n:'مستقبلية 1',x:2180,y:110,w:260,h:260},{id:'F2',k:'FUTURE',n:'مستقبلية 2',x:2160,y:1160,w:280,h:280},{id:'F3',k:'FUTURE',n:'مستقبلية 3',x:740,y:1130,w:240,h:300},{id:'F4',k:'FUTURE',n:'مستقبلية 4',x:1700,y:1340,w:380,h:130},{id:'F5',k:'FUTURE',n:'مستقبلية 5',x:1560,y:110,w:560,h:130}];
+const C3=ZONES.find(z=>z.id==='C3'), RESV=C3;
+const inRect=(z,x,y)=>x>=z.x&&y>=z.y&&x<z.x+z.w&&y<z.y+z.h;
+const coastZone=(x,y)=>{if(y<160||y>1440)return false;const c=coast(y);return x>=c+10&&x<c+110};
+const futSea=(x,y)=>{if(y<200||y>1400)return false;const c=coast(y);return x>=c-200&&x<c-24};
+function zoneAt(x,y){for(const z of ZONES)if(inRect(z,x,y))return z;return null}
+/* roads (a visible layer only: nothing here blocks building) */
+const ROADS=[];
+(function(){const pts=[];for(let y=140;y<=1460;y+=20)pts.push([coastRoadX(y),y]);ROADS.push({w:3.4,p:pts,t:'trunk'});
+ for(const y of[560,1060])ROADS.push({w:3,p:[[coastRoadX(y),y],[2400,y]],t:'trunk'});
+ for(const x of[1040,1560,2100])ROADS.push({w:2.4,p:[[x,560],[x,1060]],t:'sec'});
+ for(const z of ZONES){if(z.k==='RESERVE'||z.k==='FUTURE')continue;const cx=z.x+z.w/2,cy=z.y+z.h/2;const ys=[560,1060];let best=null;for(const y of ys){const d=cy<y?y-(z.y+z.h):z.y-y;if(d>=0&&(!best||d<best.d))best={y,d}}
+  if(best&&best.d>0){const from=cy<best.y?z.y+z.h:z.y;ROADS.push({w:1.8,p:[[cx,from],[cx,best.y]],t:'spur'})}}})();
+/* ground */
+function lakeAt(x,y){const L=[[1500,360,22],[2000,820,26],[880,1010,0],[1760,1290,18],[1180,880,0]];for(const l of L){if(!l[2])continue;const d=Math.hypot(x-l[0],y-l[1]);if(d<l[2]*(0.85+0.3*vn(x/9,y/9,41)))return true}return false}
+function elev(x,y){
+  const c=coast(y);let e=.30+.05*(fbm(x/260,y/260,3,3)-.5);
+  const d=Math.min(y,WH-y,WW-x),bw=26+48*fbm(x/190,y/190,5,2),mh=Math.max(0,1-d/bw);
+  if(mh>0)e+=mh*(.55+.45*fbm(x/40,y/40,6,3));
+  const h=sm(.54,.74,fbm(x/230,y/230,7,3));e+=h*.2;                               // light hills
+  if(x<c)return -sm(0,150,c-x)*.9-.02;                                              // sea floor
+  e-=(1-sm(c,c+30,x))*.12;                                                          // gentle fall to the beach
+  for(const z of ZONES){if(z.k==='FUTURE'||z.k==='RESERVE')continue;const dx=Math.max(z.x-x,0,x-z.x-z.w),dy=Math.max(z.y-y,0,y-z.y-z.h),dd=Math.hypot(dx,dy);if(dd<16){const w=1-dd/16;e=e*(1-w)+.30*w}}
+  if(coastZone(x,y)){e=e*.35+.30*.65}
+  return e;
+}
+function classify(x,y,e){
+  const c=coast(y);if(x<c)return(c-x>70)?K.DEEP:K.SHALLOW;
+  if(x<c+9)return K.BEACH;
+  if(lakeAt(x,y))return K.LAKE;
+  const inZ=zoneAt(x,y)&&zoneAt(x,y).k!=='FUTURE'||coastZone(x,y);
+  const d=Math.min(y,WH-y,WW-x);
+  if(e>.62)return K.ROCK;
+  if(!inZ&&e<.5&&Math.abs(fbm(x/210,y/210,7+30,3)-.5)<.0055&&x>c+90)return K.WADI;
+  if(e>.38&&!inZ)return K.HILL;
+  return K.FLAT;
+}
+const COL={[K.FLAT]:[160,157,138],[K.HILL]:[132,143,118],[K.ROCK]:[116,113,108],[K.BEACH]:[207,199,174],[K.WADI]:[183,176,154],[K.LAKE]:[72,128,150]};
+function shade(x,y,e){const dx=elev(x+1.5,y)-elev(x-1.5,y),dy=elev(x,y+1.5)-elev(x,y-1.5);return{s:Math.max(.55,Math.min(1.35,1-(dx+dy)*5.2)),slope:Math.hypot(dx,dy)/3}}
+function pixel(x,y,out){
+  const e=elev(x,y),k=classify(x,y,e);let r,g,b;
+  if(k===K.DEEP||k===K.SHALLOW){const c=coast(y),t=Math.min(1,(c-x)/140),w=.5+.5*Math.sin((x*.35+y*.12)+vn(x/14,y/14,2)*6),m=1-t;
+    r=(86-56*t+4*w);g=(150-74*t+3*w);b=(168-62*t+3*w);if(c-x<4){r+=40;g+=34;b+=24}}
+  else{const base=COL[k],sh=shade(x,y,e),gr=(hash(x|0,y|0,9)-.5)*7,pat=(fbm(x/60,y/60,13,2)-.5)*14;let s=k===K.ROCK||k===K.HILL?sh.s:1+(sh.s-1)*.5;
+    r=base[0]*s+gr+pat;g=base[1]*s+gr+pat*.8;b=base[2]*s+gr+pat*.5;
+    const z=zoneAt(x,y);if(z&&z.k!=='FUTURE'&&z.k!=='RESERVE'&&k!==K.LAKE){r=r*.88+10;g=g*.88+14;b=b*.88+18;const gx=(x-z.x)%16,gy=(y-z.y)%16;if(gx<.7||gy<.7){r-=9;g-=9;b-=8}}}
+  out[0]=r;out[1]=g;out[2]=b;out[3]=k;return k;
+}
+/* ============ rasters ============ */
+const OVS=4, OVW=WW/OVS, OVH=WH/OVS, ovc=document.createElement('canvas');ovc.width=OVW;ovc.height=OVH;
+const stats={sea:0,beach:0,flat:0,hill:0,rock:0,wadi:0,lake:0,future:0,total:0,slopeFlat:0,slopeLight:0,slopeSteep:0,genMs:0,chunks:0,chunkMs:0};
+function buildOverview(){const t0=performance.now(),g=ovc.getContext('2d'),im=g.createImageData(OVW,OVH),o=[0,0,0,0];const cnt=new Array(8).fill(0);let fut=0,fl=0,lt=0,st=0,land=0;
+  for(let j=0;j<OVH;j++)for(let i=0;i<OVW;i++){const x=i*OVS+OVS/2,y=j*OVS+OVS/2,k=pixel(x,y,o),p=(j*OVW+i)*4;im.data[p]=o[0];im.data[p+1]=o[1];im.data[p+2]=o[2];im.data[p+3]=255;cnt[k]++;
+    const z=zoneAt(x,y);if(z&&z.k==='FUTURE'&&k!==K.DEEP&&k!==K.SHALLOW)fut++;
+    if(k>=K.BEACH){land++;const sl=shade(x,y).slope;if(sl<.0045)fl++;else if(sl<.02)lt++;else st++}}
+  g.putImageData(im,0,0);const T=OVW*OVH;Object.assign(stats,{sea:cnt[0]+cnt[1],beach:cnt[2],flat:cnt[3],hill:cnt[4],rock:cnt[5],wadi:cnt[6],lake:cnt[7],future:fut,total:T,land,slopeFlat:fl,slopeLight:lt,slopeSteep:st,genMs:performance.now()-t0});
+}
+const chunks=new Map(),MAXCH=110;let genQueue=0;
+function chunkCanvas(cx,cy,make){const key=cy*100+cx;let c=chunks.get(key);if(c){chunks.delete(key);chunks.set(key,c);return c}if(!make)return null;
+  const t0=performance.now(),N=CH*RES,cv=document.createElement('canvas');cv.width=N;cv.height=N;const g=cv.getContext('2d'),im=g.createImageData(N,N),o=[0,0,0,0];
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const x=cx*CH+(i+.5)/RES,y=cy*CH+(j+.5)/RES;pixel(x,y,o);const p=(j*N+i)*4;im.data[p]=o[0];im.data[p+1]=o[1];im.data[p+2]=o[2];im.data[p+3]=255}
+  g.putImageData(im,0,0);chunks.set(key,cv);if(chunks.size>MAXCH)chunks.delete(chunks.keys().next().value);stats.chunks++;stats.chunkMs+=performance.now()-t0;return cv}
+/* ============ view ============ */
+const cv=document.getElementById('c'),ctx=cv.getContext('2d',{alpha:false}),mini=document.getElementById('mini'),mg=mini.getContext('2d'),hud=document.getElementById('hud');
+const cam={x:WW*.45,y:WH*.5,z:.01};let VW=0,VH=0,DPR=1,dirty=true,fitZ=.01;
+const L={zones:true,roads:true,grid:false,reserve:true,future:true,labels:true,old:false,tilegrid:false};
+const sx=(x,y)=>VW/2+((x-y)-(cam.x-cam.y))*32*cam.z, sy=(x,y)=>VH/2+((x+y)-(cam.x+cam.y))*16*cam.z;
+function toTile(px,py){const X=(px-VW/2)/(32*cam.z)+(cam.x-cam.y),Y=(py-VH/2)/(16*cam.z)+(cam.x+cam.y);return{x:(X+Y)/2,y:(Y-X)/2}}
+function resize(){const r=cv.getBoundingClientRect();DPR=Math.min(2,window.devicePixelRatio||1);VW=r.width;VH=r.height;cv.width=Math.round(VW*DPR);cv.height=Math.round(VH*DPR);fitZ=Math.min(VW/((WW+WH)*32),VH/((WW+WH)*16))*1.0;if(!inited){cam.z=fitZ;inited=true}dirty=true}
+let inited=false;
+const ZMAX=1.6,zmin=()=>fitZ*.8;
+const clampCam=()=>{cam.z=Math.max(zmin(),Math.min(ZMAX,cam.z));cam.x=Math.max(0,Math.min(WW,cam.x));cam.y=Math.max(0,Math.min(WH,cam.y))};
+function zoomAt(px,py,nz){const a=toTile(px,py);cam.z=Math.max(zmin(),Math.min(ZMAX,nz));const b=toTile(px,py);cam.x+=a.x-b.x;cam.y+=a.y-b.y;clampCam();dirty=true}
+let tween=null;function goto(x,y,z,ms){const t0=performance.now(),a={x:cam.x,y:cam.y,z:cam.z};if(!ms){cam.x=x;cam.y=y;cam.z=z;clampCam();dirty=true;return}tween=(now)=>{const t=Math.min(1,(now-t0)/ms),e=t*t*(3-2*t);cam.x=a.x+(x-a.x)*e;cam.y=a.y+(y-a.y)*e;cam.z=Math.exp(Math.log(a.z)+(Math.log(z)-Math.log(a.z))*e);clampCam();dirty=true;if(t>=1)tween=null}}
+/* ============ draw ============ */
+const poly=(pts,fill,stroke,lw,dash)=>{ctx.beginPath();pts.forEach((p,i)=>{const X=sx(p[0],p[1]),Y=sy(p[0],p[1]);i?ctx.lineTo(X,Y):ctx.moveTo(X,Y)});ctx.closePath();if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.setLineDash(dash||[]);ctx.strokeStyle=stroke;ctx.lineWidth=lw||1;ctx.stroke();ctx.setLineDash([])}};
+const rectPts=(x,y,w,h)=>[[x,y],[x+w,y],[x+w,y+h],[x,y+h]];
+const onScreen=(x,y,w,h)=>{const xs=[sx(x,y),sx(x+w,y),sx(x,y+h),sx(x+w,y+h)],ys=[sy(x,y),sy(x+w,y),sy(x,y+h),sy(x+w,y+h)];return Math.max(...xs)>-40&&Math.min(...xs)<VW+40&&Math.max(...ys)>-40&&Math.min(...ys)<VH+40};
+function label(t,x,y,size,color,bold){ctx.font=(bold?'700 ':'600 ')+size+'px '+getComputedStyle(document.body).fontFamily;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineWidth=Math.max(2,size/4);ctx.strokeStyle='rgba(10,18,30,.78)';ctx.lineJoin='round';ctx.strokeText(t,x,y);ctx.fillStyle=color||'#fff';ctx.fillText(t,x,y)}
+const placed=[];let sel=null,ghost=null,giant={id:'g2',w:24,h:16,ht:3},rot=0;
+const GIANTS=[{id:'cur',n:'أكبر مبنى حالياً',s:'مصفاة ضخمة',w:12,h:9,ht:2},{id:'g1',n:'عملاق صغير',s:'16×12',w:16,h:12,ht:2.6},{id:'g2',n:'عملاق متوسط',s:'24×16',w:24,h:16,ht:3},{id:'g3',n:'عملاق كبير',s:'32×24',w:32,h:24,ht:3.6}];
+function fpDims(g,r){return r%2?[g.h,g.w]:[g.w,g.h]}
+function checkFootprint(g,x0,y0,r){const[w,h]=fpDims(g,r);let bad=0,tot=0,worst=0,why=null,steep=0;
+  for(let j=0;j<h;j++)for(let i=0;i<w;i++){const x=x0+i+.5,y=y0+j+.5;tot++;const e=elev(x,y),k=classify(x,y,e);
+    if(inRect(RESV,x,y)){bad++;why=why||'داخل C3: أرض احتياطي استراتيجي';continue}
+    if(k===K.DEEP||k===K.SHALLOW){bad++;why=why||'في البحر';continue}
+    if(k===K.LAKE){bad++;why=why||'بحيرة';continue}if(k===K.ROCK){bad++;why=why||'صخور / جبل';continue}if(k===K.WADI){bad++;why=why||'وادٍ جاف';continue}
+    if(inRect({x:0,y:0,w:WW,h:WH},x,y)===false){bad++;why=why||'خارج العالم';continue}
+    const sl=shade(x,y,e).slope;if(sl>worst)worst=sl;if(sl>.05){steep++;bad++;why=why||'ميل أكبر من المسموح للمبنى العملاق'}}
+  return{ok:bad===0,bad,tot,worst,why,steep}}
+const BOX=(g,x,y,w,h,ht,top,side1,side2,alpha)=>{const z=cam.z,hp=ht*16*z*2.2,p=[[x,y],[x+w,y],[x+w,y+h],[x,y+h]].map(q=>[sx(q[0],q[1]),sy(q[0],q[1])]);
+  ctx.globalAlpha=alpha==null?1:alpha;ctx.fillStyle=side1;ctx.beginPath();ctx.moveTo(p[3][0],p[3][1]);ctx.lineTo(p[2][0],p[2][1]);ctx.lineTo(p[2][0],p[2][1]-hp);ctx.lineTo(p[3][0],p[3][1]-hp);ctx.closePath();ctx.fill();
+  ctx.fillStyle=side2;ctx.beginPath();ctx.moveTo(p[1][0],p[1][1]);ctx.lineTo(p[2][0],p[2][1]);ctx.lineTo(p[2][0],p[2][1]-hp);ctx.lineTo(p[1][0],p[1][1]-hp);ctx.closePath();ctx.fill();
+  ctx.fillStyle=top;ctx.beginPath();p.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]-hp):ctx.moveTo(q[0],q[1]-hp));ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=1;ctx.stroke();ctx.globalAlpha=1;return hp};
+function drawPorts(x,y,w,h,r){const z=cam.z;if(z<.06)return;const mark=(tx,ty,col,sh)=>{const X=sx(tx,ty),Y=sy(tx,ty),s=Math.max(4,Math.min(12,5*z*14));ctx.fillStyle=col;ctx.beginPath();if(sh==='c')ctx.arc(X,Y,s*.55,0,7);else{ctx.moveTo(X,Y-s);ctx.lineTo(X+s,Y+s*.7);ctx.lineTo(X-s,Y+s*.7);ctx.closePath()}ctx.fill();ctx.strokeStyle='#0b1422';ctx.lineWidth=1.2;ctx.stroke()};
+  mark(x,y+h/2,'#4fa3ff','t');mark(x+w,y+h/2,'#ff9a3c','t');for(let i=1;i<=4;i++)mark(x+w*i/5,y+h,'#f1f3f5','c')}
+function draw(now){
+  const t0=performance.now();ctx.setTransform(DPR,0,0,DPR,0,0);ctx.fillStyle='#1c3a4c';ctx.fillRect(0,0,VW,VH);
+  const z=cam.z;
+  /* terrain: overview under everything; chunks (2 px / tile) when the view is closer */
+  {const sc=OVS;ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='low';ctx.save();ctx.setTransform(DPR*32*z*sc,DPR*16*z*sc,-DPR*32*z*sc,DPR*16*z*sc,DPR*sx(0,0),DPR*sy(0,0));ctx.drawImage(ovc,0,0,OVW+.4,OVH+.4);ctx.restore()}
+  if(z>=.05){const a=toTile(0,0),b=toTile(VW,0),c=toTile(0,VH),d=toTile(VW,VH),x0=Math.max(0,Math.floor(Math.min(a.x,b.x,c.x,d.x)/CH)),x1=Math.min(WW/CH-1,Math.floor(Math.max(a.x,b.x,c.x,d.x)/CH)),y0=Math.max(0,Math.floor(Math.min(a.y,b.y,c.y,d.y)/CH)),y1=Math.min(WH/CH-1,Math.floor(Math.max(a.y,b.y,c.y,d.y)/CH));let made=0,miss=0;
+    const k=1/RES;for(let cy=y0;cy<=y1;cy++)for(let cx=x0;cx<=x1;cx++){let im=chunkCanvas(cx,cy,false);if(!im){miss++;if(made<2){im=chunkCanvas(cx,cy,true);made++}}if(!im)continue;
+      ctx.save();ctx.setTransform(DPR*32*z*k,DPR*16*z*k,-DPR*32*z*k,DPR*16*z*k,DPR*sx(cx*CH,cy*CH),DPR*sy(cx*CH,cy*CH));ctx.drawImage(im,0,0,im.width+.5,im.height+.5);ctx.restore()}
+    if(miss>made)dirty=true;}
+  /* close-up ground detail: shrubs and stones scattered by a fixed hash (drawn only for the visible tiles) */
+  if(z>=.55){const A=toTile(0,0),B=toTile(VW,0),C=toTile(0,VH),D=toTile(VW,VH),xl=Math.floor(Math.min(A.x,B.x,C.x,D.x)),xh=Math.ceil(Math.max(A.x,B.x,C.x,D.x)),yl=Math.floor(Math.min(A.y,B.y,C.y,D.y)),yh=Math.ceil(Math.max(A.y,B.y,C.y,D.y)),st=z<1?2:1;
+    for(let y=Math.max(0,yl);y<Math.min(WH,yh);y+=st)for(let x=Math.max(0,xl);x<Math.min(WW,xh);x+=st){const h=hash(x,y,77);if(h>.16)continue;const e=elev(x+.5,y+.5),k=classify(x+.5,y+.5,e);if(k===K.DEEP||k===K.SHALLOW||k===K.LAKE||k===K.BEACH)continue;const zz=zoneAt(x,y);if(zz&&zz.k!=='FUTURE'&&zz.k!=='RESERVE')continue;
+      const X=sx(x+hash(x,y,78),y+hash(x,y,79)),Y=sy(x+hash(x,y,78),y+hash(x,y,79)),r=(1.2+h*14)*z*1.6;if(X<-10||X>VW+10||Y<-10||Y>VH+10)continue;
+      if(k===K.ROCK||h<.05){ctx.fillStyle='rgba(95,92,88,.75)';ctx.beginPath();ctx.ellipse(X,Y,r*1.1,r*.6,0,0,7);ctx.fill()}else{ctx.fillStyle=k===K.HILL?'rgba(88,112,84,.7)':'rgba(104,124,92,.62)';ctx.beginPath();ctx.ellipse(X,Y,r*1.3,r*.7,0,0,7);ctx.fill()}}}
+  /* shelf / coast / future strips */
+  const strip=(f0,f1,y0,y1)=>{const pts=[];for(let y=y0;y<=y1;y+=24)pts.push([coast(y)+f0,y]);for(let y=y1;y>=y0;y-=24)pts.push([coast(y)+f1,y]);return pts};
+  if(L.zones||L.future){
+    if(L.zones){const p=strip(10,110,160,1440);poly(p,'rgba(63,140,156,.20)','rgba(120,210,225,.9)',Math.max(1,z*5),[8,5]);}
+    if(L.future){const p=strip(-200,-24,200,1400);poly(p,'rgba(90,160,200,.16)','rgba(170,220,250,.9)',Math.max(1,z*5),[10,7])}
+  }
+  if(L.zones||L.future||L.reserve)for(const zn of ZONES){const kd=KIND[zn.k];if(zn.k==='RESERVE'){if(!L.reserve)continue}else if(zn.k==='FUTURE'){if(!L.future)continue}else if(!L.zones)continue;if(!onScreen(zn.x,zn.y,zn.w,zn.h))continue;
+    const pts=rectPts(zn.x,zn.y,zn.w,zn.h);
+    if(zn.k==='RESERVE'){poly(pts,'rgba(212,170,82,.14)','#d4aa52',Math.max(2,z*10),[14,8])}
+    else if(zn.k==='FUTURE'){poly(pts,'rgba(120,170,150,.13)','rgba(190,235,215,.95)',Math.max(1.2,z*6),[9,7])}
+    else poly(pts,kd.c+'33',kd.c+'dd',Math.max(1,z*5))}
+  /* roads */
+  if(L.roads){for(const R of ROADS){const wpx=Math.max(R.t==='trunk'?3.2:R.t==='sec'?2.4:1.8,R.w*z*22);let bb=false;const P=R.p;for(const q of P){const X=sx(q[0],q[1]),Y=sy(q[0],q[1]);if(X>-60&&X<VW+60&&Y>-60&&Y<VH+60){bb=true;break}}if(!bb&&P.length==2){const m=[(P[0][0]+P[1][0])/2,(P[0][1]+P[1][1])/2];const X=sx(m[0],m[1]),Y=sy(m[0],m[1]);bb=X>-300&&X<VW+300&&Y>-300&&Y<VH+300}if(!bb)continue;
+      ctx.lineCap='round';ctx.lineJoin='round';const path=()=>{ctx.beginPath();P.forEach((q,i)=>i?ctx.lineTo(sx(q[0],q[1]),sy(q[0],q[1])):ctx.moveTo(sx(q[0],q[1]),sy(q[0],q[1])))};
+      path();ctx.strokeStyle='rgba(225,228,232,.9)';ctx.lineWidth=wpx+Math.max(1,wpx*.35);ctx.stroke();path();ctx.strokeStyle='#3a4049';ctx.lineWidth=wpx;ctx.stroke();
+      if(wpx>6){path();ctx.setLineDash([wpx*1.4,wpx*1.2]);ctx.strokeStyle='rgba(235,235,225,.8)';ctx.lineWidth=Math.max(1,wpx*.1);ctx.stroke();ctx.setLineDash([])}}}
+  /* regions grid */
+  if(L.grid){ctx.lineWidth=1;ctx.strokeStyle='rgba(255,255,255,.35)';ctx.setLineDash([5,5]);for(let ry=0;ry<WH/RC;ry++)for(let rx=0;rx<WW/RC;rx++){const x=rx*RC,y=ry*RC;if(!onScreen(x,y,RC,RC))continue;poly(rectPts(x,y,RC,RC),null,'rgba(255,255,255,.4)',1,[5,5]);if(z>.012){const nm=String.fromCharCode(65+ry)+(rx+1);label(nm,sx(x+RC/2,y+RC/2),sy(x+RC/2,y+RC/2),Math.max(9,Math.min(22,z*900)),'rgba(255,255,255,.75)')}}ctx.setLineDash([])}
+  if(L.tilegrid&&z>.7){ctx.strokeStyle='rgba(255,255,255,.14)';ctx.lineWidth=1;const a=toTile(0,0),b=toTile(VW,VH),lo=Math.floor(Math.min(a.x,b.x,toTile(VW,0).x,toTile(0,VH).x))-2,hi=Math.ceil(Math.max(a.x,b.x,toTile(VW,0).x,toTile(0,VH).x))+2,ylo=Math.floor(Math.min(a.y,b.y,toTile(VW,0).y,toTile(0,VH).y))-2,yhi=Math.ceil(Math.max(a.y,b.y,toTile(VW,0).y,toTile(0,VH).y))+2;ctx.beginPath();for(let x=lo;x<=hi;x+=4){ctx.moveTo(sx(x,ylo),sy(x,ylo));ctx.lineTo(sx(x,yhi),sy(x,yhi))}for(let y=ylo;y<=yhi;y+=4){ctx.moveTo(sx(lo,y),sy(lo,y));ctx.lineTo(sx(hi,y),sy(hi,y))}ctx.stroke()}
+  if(L.old){poly(rectPts(0,0,OLD.w,OLD.h),'rgba(255,255,255,.04)','#ff7a6b',Math.max(2,z*8),[16,9]);label('حدود الخريطة الحالية 1920×1280',sx(OLD.w/2,OLD.h/2),sy(OLD.w/2,OLD.h*.9),Math.max(11,Math.min(26,z*1100)),'#ffb4aa',true)}
+  /* placed giants */
+  for(const p of placed){const[w,h]=fpDims(p.g,p.r);if(!onScreen(p.x,p.y,w,h))continue;const s=sel===p;if(s)poly(rectPts(p.x-1.5,p.y-1.5,w+3,h+3),'rgba(255,214,120,.25)','#ffd778',2.5);BOX(p.g,p.x,p.y,w,h,p.g.ht,'#aeb8c6','#6c7a8c','#8493a6',1);drawPorts(p.x,p.y,w,h,p.r);if(z>.05)label(p.g.n,sx(p.x+w/2,p.y+h/2),sy(p.x+w/2,p.y+h/2)-p.g.ht*16*z*2.4,Math.max(10,Math.min(16,z*60)),'#fff')}
+  if(ghost){const[w,h]=fpDims(giant,rot),res=ghost.res,col=res.ok?'rgba(80,220,130,.45)':'rgba(240,80,70,.5)';poly(rectPts(ghost.x-1,ghost.y-1,w+2,h+2),null,res.ok?'#8dffb4':'#ff8a80',2,[6,4]);BOX(giant,ghost.x,ghost.y,w,h,giant.ht*.55,col,col,col,.9);drawPorts(ghost.x,ghost.y,w,h,rot)}
+  /* labels */
+  if(L.labels){const fs=Math.max(10,Math.min(20,z*820));if(z>.008){for(const zn of ZONES){if(zn.k==='RESERVE'?!L.reserve:zn.k==='FUTURE'?!L.future:!L.zones)continue;if(!onScreen(zn.x,zn.y,zn.w,zn.h))continue;const cx=sx(zn.x+zn.w/2,zn.y+zn.h/2),cy=sy(zn.x+zn.w/2,zn.y+zn.h/2);label(zn.n,cx,cy,zn.k==='RESERVE'?fs+2:fs,zn.k==='RESERVE'?'#ffe29a':'#fff',zn.k==='RESERVE')}
+    if(L.zones){label('الساحل والميناء',sx(coast(800)+60,800),sy(coast(800)+60,800),fs,'#bff0f8')}if(L.future){label('بحر مستقبلي (للمنصات والموانئ لاحقاً)',sx(coast(700)-110,700),sy(coast(700)-110,700),fs,'#cfe8fb')}
+    label('البحر',sx(coast(800)-420,800),sy(coast(800)-420,800),fs+4,'#d4ecf5',true)}}
+  /* scale bar */
+  {const px=z*32*Math.SQRT2,ML=[5,10,20,50,100,200,500,1000,2000],m=ML.filter(t=>t*px<=200).pop()||5,w=m*px,x0=VW-16-w;ctx.fillStyle='rgba(10,20,34,.7)';ctx.fillRect(x0-6,VH-62,w+12,22);ctx.fillStyle='#fff';ctx.fillRect(x0,VH-48,w,3);ctx.font='600 11px sans-serif';ctx.textAlign='center';ctx.textBaseline='alphabetic';ctx.fillText(m+' بلاطة = '+(m*TILE_M>=1000?(m*TILE_M/1000)+' كم':m*TILE_M+' م'),x0+w/2,VH-52+0)}
+  /* minimap */
+  {mg.clearRect(0,0,300,192);mg.drawImage(ovc,0,0,OVW,OVH,0,0,300,192);const mx=300/WW,my=192/WH;mg.strokeStyle='#d4aa52';mg.lineWidth=1.5;mg.setLineDash([5,3]);mg.strokeRect(C3.x*mx,C3.y*my,C3.w*mx,C3.h*my);mg.setLineDash([]);
+    mg.strokeStyle='#fff';mg.lineWidth=2;mg.beginPath();[[0,0],[VW,0],[VW,VH],[0,VH]].forEach((p,i)=>{const t=toTile(p[0],p[1]),X=Math.max(0,Math.min(300,t.x*mx)),Y=Math.max(0,Math.min(192,t.y*my));i?mg.lineTo(X,Y):mg.moveTo(X,Y)});mg.closePath();mg.stroke()}
+  const ms=performance.now()-t0;frames.n++;frames.t+=ms;frames.last=ms;
+  hud.textContent='تكبير '+cam.z.toFixed(3)+' · رسم '+ms.toFixed(1)+' مللي · كتل مخزنة '+chunks.size;
+}
+const frames={n:0,t:0,last:0};
+/* ============ input ============ */
+const ptrs=new Map();let moved=0,pinch=null,hover=null;
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY,rx:e.offsetX,ry:e.offsetY});moved=0;tween=null;if(ptrs.size===2){const[a,b]=[...ptrs.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),z:cam.z}}});
+cv.addEventListener('pointermove',e=>{const p=ptrs.get(e.pointerId);if(!p){if(placing){setGhost(e.offsetX,e.offsetY)}return}
+  if(ptrs.size>=2&&pinch){p.x=e.clientX;p.y=e.clientY;const[a,b]=[...ptrs.values()],d=Math.hypot(a.x-b.x,a.y-b.y),r=cv.getBoundingClientRect();zoomAt((a.x+b.x)/2-r.left,(a.y+b.y)/2-r.top,pinch.z*d/pinch.d);moved=99;return}
+  const dx=e.clientX-p.x,dy=e.clientY-p.y;moved+=Math.abs(dx)+Math.abs(dy);p.x=e.clientX;p.y=e.clientY;if(moved>8||!placing){cam.x-=(dx/(32*cam.z)+dy/(16*cam.z))/2;cam.y-=(dy/(16*cam.z)-dx/(32*cam.z))/2;clampCam();dirty=true}});
+const up=e=>{const was=ptrs.has(e.pointerId);ptrs.delete(e.pointerId);if(ptrs.size<2)pinch=null;if(was&&ptrs.size===0&&moved<8)tap(e.offsetX,e.offsetY)};
+cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',e=>{ptrs.delete(e.pointerId);pinch=null});
+cv.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.offsetX,e.offsetY,cam.z*Math.exp(-e.deltaY*.0016))},{passive:false});
+mini.addEventListener('pointerdown',e=>{const r=mini.getBoundingClientRect();goto((e.clientX-r.left)/r.width*WW,(e.clientY-r.top)/r.height*WH,cam.z,0)});
+document.getElementById('zin').onclick=()=>zoomAt(VW/2,VH/2,cam.z*1.6);document.getElementById('zout').onclick=()=>zoomAt(VW/2,VH/2,cam.z/1.6);
+const zc=z=>({x:z.x+z.w/2,y:z.y+z.h/2});
+const GO={all:()=>goto(WW*.45,WH*.5,fitZ,500),coast:()=>goto(coast(800)+60,800,Math.max(.06,fitZ*5),600),c3:()=>goto(C3.x+160,C3.y+160,Math.max(.2,fitZ*14),600),ind:()=>{const p=ZONES.find(z=>z.id==='P1');goto(p.x+p.w/2,p.y+p.h/2,.55,600)},close:()=>{const p=ZONES.find(z=>z.id==='S1');goto(p.x+p.w/2,p.y+p.h/2,1.25,600)}};
+document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>GO[b.dataset.go]());
+/* ============ giant buildings: footprint preview, confirm, select by touch ============ */
+let placing=false;
+function setGhost(px,py){const t=toTile(px,py),[w,h]=fpDims(giant,rot),x=Math.round(t.x-w/2),y=Math.round(t.y-h/2);ghost={x,y,res:checkFootprint(giant,x,y,rot)};dirty=true;renderGiantInfo()}
+function tap(px,py){
+  if(placing){setGhost(px,py);return}
+  const t=toTile(px,py),pad=Math.max(1.5,10/(cam.z*28));let hit=null;for(const p of placed){const[w,h]=fpDims(p.g,p.r);if(t.x>=p.x-pad&&t.y>=p.y-pad&&t.x<p.x+w+pad&&t.y<p.y+h+pad)hit=p}
+  sel=hit;dirty=true;renderGiantInfo()}
+function renderGiantInfo(){const el=document.getElementById('ginfo');if(!el)return;const[w,h]=fpDims(giant,rot);let s='';
+  if(placing){if(!ghost)s='المس الخريطة لوضع المعاينة، واسحب لتحريك الخريطة.';else{const r=ghost.res;s='<div class="row"><span>المساحة</span><span><bdi dir="ltr">'+w+'×'+h+'</bdi> = '+w*h+' بلاطة ('+(w*h*TILE_M*TILE_M/10000).toFixed(1)+' هكتار)</span></div><div class="row"><span>الخلايا الصالحة</span><span>'+(r.tot-r.bad)+' من '+r.tot+'</span></div><div class="row"><span>الحالة</span><span class="'+(r.ok?'ok':'no')+'">'+(r.ok?'يمكن البناء':'مرفوض: '+r.why)+'</span></div>'}}
+  else if(sel){const[sw,sh]=fpDims(sel.g,sel.r);s='<div class="row"><span>المحدد</span><span>'+sel.g.n+' · <bdi dir="ltr">'+sw+'×'+sh+'</bdi></span></div><div class="row"><span>الموضع</span><span>'+sel.x+' , '+sel.y+'</span></div>'}
+  else s='لا شيء محدد. المس أي جزء من مبنى عملاق (حتى حوله بقليل) لتحديده.';el.innerHTML=s;const ok=document.getElementById('gok');if(ok)ok.disabled=!(placing&&ghost&&ghost.res.ok);const del=document.getElementById('gdel');if(del)del.disabled=!sel}
+/* ============ drawer ============ */
+const body=document.getElementById('body');let tab='layers';
+function pct(n,d){return(100*n/d)}
+function renderStats(){const S=stats,T=S.total,sf=S.sea+S.future,buildable=T-sf-S.rock-S.wadi-S.lake;const terr=S.rock+S.wadi+S.lake;
+  const bar=(v,col,target,lab,val)=>'<div class="row"><span>'+lab+'</span><span>'+val.toFixed(1)+'% <small style="color:var(--mute)">(الهدف ≈ '+target+'%)</small></span></div><div class="bar"><i style="width:'+val+'%;background:'+col+'"></i><b style="left:'+target+'%"></b></div>';
+  const LA=S.land||1;
+  body.innerHTML='<h3>توزيع العالم (محسوب من الخريطة المعروضة)</h3>'+bar(0,'#7d8f75',65,'أرض صناعية قابلة للبناء',pct(buildable,T)).replace('width:0%','width:'+pct(buildable,T)+'%')
+   +bar(0,'#4f8fb0',30,'بحر ومناطق مستقبلية',pct(sf,T))+bar(0,'#8a8780',5,'تضاريس غير قابلة للبناء (جبال، صخور، أودية، بحيرات)',pct(terr,T))
+  +'<h3>ميل الأرض اليابسة</h3><div class="row"><span>مستوية</span><span>'+pct(S.slopeFlat,LA).toFixed(0)+'%</span></div><div class="row"><span>ميل خفيف إلى متوسط</span><span>'+pct(S.slopeLight,LA).toFixed(0)+'%</span></div><div class="row"><span>شديد (زينة وحواف)</span><span>'+pct(S.slopeSteep,LA).toFixed(0)+'%</span></div>'
+  +'<h3>المقارنة بالخريطة الحالية</h3><div class="row"><span>الحالية</span><span><bdi dir="ltr">1920×1280</bdi> = 2.46 مليون بلاطة</span></div><div class="row"><span>الجديدة</span><span>'+WW+'×'+WH+' = '+(WW*WH/1e6).toFixed(2)+' مليون بلاطة</span></div><div class="row"><span>النسبة</span><span>'+(WW*WH/(OLD.w*OLD.h)).toFixed(2)+'× المساحة</span></div><div class="row"><span>الأبعاد الحقيقية</span><span>'+(WW*TILE_M/1000).toFixed(1)+' × '+(WH*TILE_M/1000).toFixed(1)+' كم</span></div><div class="row"><span>المناطق</span><span>8×5 = 40 (القديمة 6×4 = 24)</span></div>'
+  +'<h3>الأداء (هذا الجهاز)</h3><div class="row"><span>توليد الصورة العامة</span><span>'+S.genMs.toFixed(0)+' مللي</span></div><div class="row"><span>توليد كتلة 128×128</span><span>'+(S.chunks?(S.chunkMs/S.chunks).toFixed(0):'—')+' مللي (حتى الآن '+S.chunks+')</span></div><div class="row"><span>متوسط زمن الرسم</span><span>'+(frames.n?(frames.t/frames.n).toFixed(1):'—')+' مللي</span></div>'
+  +'<p class="note">النسب تقريبية وتتغير بضبط الأرقام فقط. الأرض الصناعية تشمل السهول المستوية والتلال الخفيفة والشاطئ.</p>'}
+function swatch(c){return '<span class="dot" style="background:'+c+'"></span>'}
+function renderLayers(){const items=[['zones','المناطق الصناعية',KIND.EXTRACT.c],['roads','شبكة الطرق (اختيارية)','#3a4049'],['grid','تقسيم المناطق (A1…E8)','#ffffff'],['reserve','C3 الاحتياطي','#d4aa52'],['future','المناطق المستقبلية والبحر','#5f8f7a'],['labels','التسميات','#cfd6df'],['old','حدود الخريطة الحالية','#ff7a6b'],['tilegrid','شبكة البلاطات (تكبير قريب)','#9aa5b4']];
+  body.innerHTML='<div class="grid">'+items.map(i=>'<label class="sw"><input type="checkbox" data-l="'+i[0]+'" '+(L[i[0]]?'checked':'')+'>'+swatch(i[2])+'<span>'+i[1]+'</span></label>').join('')+'</div>'
+  +'<h3>دليل الألوان</h3><div class="grid">'+[[K.FLAT,'أرض مستوية'],[K.HILL,'تلال خفيفة'],[K.ROCK,'صخور / جبال (الأطراف)'],[K.BEACH,'شاطئ'],[K.WADI,'وادٍ جاف'],[K.LAKE,'بحيرة صغيرة'],[K.SHALLOW,'بحر ضحل'],[K.DEEP,'بحر عميق']].map(a=>{const c=COL[a[0]]||(a[0]===K.SHALLOW?[86,150,168]:[30,74,100]);return '<div class="row" style="justify-content:flex-start;gap:8px">'+swatch('rgb('+c.join(',')+')')+'<span style="font-weight:500">'+a[1]+'</span></div>'}).join('')+'</div>'
+  +'<p class="note">الطرق طبقة بصرية فقط: لا شيء يمنع البناء خارجها ولا يتغير الإنتاج بسببها. المناطق باللون الذهبي المتقطع (C3) أرض احتياطي لا تُبنى فيها مبانٍ تجارية.</p>';
+  body.querySelectorAll('[data-l]').forEach(c=>c.onchange=()=>{L[c.dataset.l]=c.checked;dirty=true})}
+function renderGiant(){body.innerHTML='<div class="sizes">'+GIANTS.map(g=>'<button data-g="'+g.id+'" aria-pressed="'+(giant.id===g.id)+'"><strong>'+g.n+'</strong>'+g.s+' · <bdi dir="ltr">'+g.w+'×'+g.h+'</bdi></button>').join('')+'</div>'
+  +'<div class="btns"><button class="btn pri" id="gplace">'+(placing?'إنهاء المعاينة':'ابدأ المعاينة')+'</button><button class="btn" id="grot">تدوير</button><button class="btn" id="gok" disabled>تثبيت هنا</button><button class="btn bad" id="gdel" disabled>حذف المحدد</button></div>'
+  +'<h3>المعاينة</h3><div id="ginfo" class="note" style="margin:0"></div>'
+  +'<p class="note">الدائرة البيضاء منافذ الأنابيب، المثلث الأزرق الدخول، والبرتقالي الخروج. الأخضر يعني أن كل الخلايا صالحة. الأحمر يعني رفض البناء وسببه. المبنى المثبَّت هنا للتجربة فقط ولا يُحفظ.</p>';
+  body.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{giant=GIANTS.find(g=>g.id===b.dataset.g);ghost=null;renderGiant();if(placing){const t={x:cam.x,y:cam.y};}});
+  document.getElementById('gplace').onclick=()=>{placing=!placing;if(placing){sel=null;const[w,h]=fpDims(giant,rot);ghost={x:Math.round(cam.x-w/2),y:Math.round(cam.y-h/2)};ghost.res=checkFootprint(giant,ghost.x,ghost.y,rot);if(cam.z<.16)goto(cam.x,cam.y,.3,350)}else ghost=null;renderGiant();dirty=true};
+  document.getElementById('grot').onclick=()=>{rot=(rot+1)%2;if(ghost){ghost.res=checkFootprint(giant,ghost.x,ghost.y,rot)}renderGiantInfo();dirty=true};
+  document.getElementById('gok').onclick=()=>{if(placing&&ghost&&ghost.res.ok){const p={g:giant,x:ghost.x,y:ghost.y,r:rot};placed.push(p);sel=p;placing=false;ghost=null;renderGiant();dirty=true}};
+  document.getElementById('gdel').onclick=()=>{if(sel){placed.splice(placed.indexOf(sel),1);sel=null;renderGiant();dirty=true}};
+  renderGiantInfo()}
+function renderTab(){document.querySelectorAll('#tabs [data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab));if(tab==='layers')renderLayers();else if(tab==='stats')renderStats();else renderGiant()}
+document.querySelectorAll('#tabs [data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;body.hidden=false;document.getElementById('fold').textContent='▾';renderTab();setTimeout(resize,0)});
+document.getElementById('fold').onclick=function(){body.hidden=!body.hidden;this.textContent=body.hidden?'▴':'▾';setTimeout(resize,0)};
+/* ============ boot ============ */
+let hasPlan=false;
+function loop(now){if(tween)tween(now);if(dirty){dirty=false;draw(now)}requestAnimationFrame(loop)}
+window.addEventListener('resize',resize);
+if(window.ResizeObserver)new ResizeObserver(resize).observe(document.getElementById('stage'));
+resize();buildOverview();renderTab();goto(WW*.45,WH*.5,fitZ,0);dirty=true;requestAnimationFrame(loop);
+window.__proto={goto,cam,L,stats,draw:()=>{dirty=true},setTab:t=>{tab=t;renderTab()},giantMode:(id,x,y)=>{giant=GIANTS.find(g=>g.id===id)||giant;placing=true;ghost={x,y,res:checkFootprint(giant,x,y,rot)};renderGiant();dirty=true},place:()=>document.getElementById('gok').click(),ZONES,coast,fit:()=>fitZ,check:checkFootprint,GIANTS,frames,tile:(x,y)=>{const e=elev(x,y);return classify(x,y,e)}};
+})();
+</script>
