@@ -1,0 +1,103 @@
+{
+  "note": "desktop headless Chromium, software rendering; not an Android measurement",
+  "before": {
+    "ready_ms": 1264,
+    "frames": {
+      "نظرة كاملة": {
+        "median_ms": 2.9,
+        "p95_ms": 3.1,
+        "max_ms": 3.3
+      },
+      "مناطق (0.12)": {
+        "median_ms": 7.1,
+        "p95_ms": 7.7,
+        "max_ms": 9.1
+      },
+      "متوسط (0.35)": {
+        "median_ms": 6.1,
+        "p95_ms": 6.7,
+        "max_ms": 6.8
+      },
+      "قريب (1.0)": {
+        "median_ms": 6.3,
+        "p95_ms": 7.1,
+        "max_ms": 7.8
+      }
+    },
+    "zoom_anim": {
+      "frames": 152,
+      "max_gap_ms": 332,
+      "p95_gap_ms": 17.899999999906868,
+      "over_50ms": 3,
+      "over_100ms": 3,
+      "longtasks": 3,
+      "longest_task_ms": 333
+    },
+    "pan": {
+      "frames": 115,
+      "max_gap_ms": 334.5,
+      "p95_gap_ms": 17.9000000001397,
+      "over_50ms": 5,
+      "longtasks": 4,
+      "longest_task_ms": 327
+    },
+    "heap_mb": 11.2,
+    "stats": {
+      "mode": "main thread",
+      "overview_ms": 902.3999999999069,
+      "chunks_made": 22,
+      "chunk_ms_each": 155.70454545455604,
+      "cache_blocks": 22
+    }
+  },
+  "after": {
+    "ready_ms": 1642,
+    "frames": {
+      "نظرة كاملة": {
+        "median_ms": 3.2,
+        "p95_ms": 4.2,
+        "max_ms": 4.3
+      },
+      "مناطق (0.12)": {
+        "median_ms": 7.1,
+        "p95_ms": 7.5,
+        "max_ms": 7.6
+      },
+      "متوسط (0.35)": {
+        "median_ms": 6.5,
+        "p95_ms": 9,
+        "max_ms": 10.7
+      },
+      "قريب (1.0)": {
+        "median_ms": 8.5,
+        "p95_ms": 10.3,
+        "max_ms": 19
+      }
+    },
+    "zoom_anim": {
+      "frames": 206,
+      "max_gap_ms": 28,
+      "p95_gap_ms": 20.5,
+      "over_50ms": 0,
+      "over_100ms": 0,
+      "longtasks": 0,
+      "longest_task_ms": 0
+    },
+    "pan": {
+      "frames": 180,
+      "max_gap_ms": 23.899999999906868,
+      "p95_gap_ms": 19.9000000001397,
+      "over_50ms": 0,
+      "longtasks": 0,
+      "longest_task_ms": 0
+    },
+    "heap_mb": 2.8,
+    "stats": {
+      "mode": "worker",
+      "overview_ms": 1243.6000000000931,
+      "chunks_made": 54,
+      "chunk_ms_each": 134.55740740739188,
+      "cache_blocks": 54
+    }
+  }
+}

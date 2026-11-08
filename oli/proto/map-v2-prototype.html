@@ -79,23 +79,16 @@ h3:first-child{margin-top:0}
   </div>
 </div>
 <script>
-(function(){'use strict';
-/* ============ world definition (independent of the game; seed-based, deterministic) ============ */
-const WW=2560, WH=1600, RC=320, CH=128, RES=2, SEED=20260101;      // 8 x 5 regions of 320 tiles; 1 tile = 12 m
-const TILE_M=12, OLD={w:1920,h:1280};
+/* ============ the world (pure, deterministic; the same source runs on the main thread and inside the Web Worker) ============ */
+function WORLD(){
+'use strict';
+const WW=2560, WH=1600, RC=320, CH=128, RES=2, OVS=4;                    /* 8 x 5 regions of 320 tiles; 1 tile = 12 m */
 function hash(ix,iy,s){let h=(Math.imul(ix,374761393)+Math.imul(iy,668265263)+Math.imul(s,1442695041))|0;h=Math.imul(h^(h>>>13),1274126177);return((h^(h>>>16))>>>0)/4294967296}
 function vn(x,y,s){const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,u=fx*fx*(3-2*fx),v=fy*fy*(3-2*fy);const a=hash(ix,iy,s),b=hash(ix+1,iy,s),c=hash(ix,iy+1,s),d=hash(ix+1,iy+1,s);return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v}
 function fbm(x,y,s,o){let a=.5,f=1,t=0,n=0;for(let i=0;i<o;i++){t+=a*vn(x*f,y*f,s+i*17);n+=a;a*=.5;f*=2}return t/n}
 const sm=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t)};
-const coast=y=>540+70*(vn(y/260,3.1,11)*2-1)+22*(vn(y/55,7.7,12)*2-1);          // water lies west of this x (448..632)
-const coastRoadX=y=>Math.min(coast(y)+112,628);
-/* classes */
+const coast=y=>540+70*(vn(y/260,3.1,11)*2-1)+22*(vn(y/55,7.7,12)*2-1);          /* water lies west of this x (448..632) */
 const K={DEEP:0,SHALLOW:1,BEACH:2,FLAT:3,HILL:4,ROCK:5,WADI:6,LAKE:7};
-const KN=['بحر عميق','بحر ضحل','شاطئ','أرض مستوية','تلال خفيفة','صخور / جبال','وادٍ جاف','بحيرة'];
-/* zones. kind -> look + label */
-const KIND={
-  EXTRACT:{n:'استخراج',c:'#8c6a4a'},STORE:{n:'تخزين',c:'#4a6f8c'},PROCESS:{n:'تكرير وتحويل',c:'#7b5a8c'},TRANSPORT:{n:'نقل وطرق',c:'#6b7380'},
-  RESERVE:{n:'احتياطي استراتيجي',c:'#d4aa52'},FUTURE:{n:'منطقة مستقبلية',c:'#5f8f7a'},COAST:{n:'الساحل والميناء',c:'#3f8c9c'},FUTSEA:{n:'بحر مستقبلي',c:'#5aa0c8'}};
 const ZONES=[
  {id:'E1',k:'EXTRACT',n:'استخراج شمال',x:1180,y:180,w:360,h:300},{id:'E2',k:'EXTRACT',n:'استخراج شرق',x:1760,y:300,w:380,h:320},
  {id:'E3',k:'EXTRACT',n:'استخراج جنوب',x:1300,y:1020,w:340,h:300},{id:'E4',k:'EXTRACT',n:'استخراج جنوب شرق',x:1900,y:980,w:240,h:280},
@@ -104,81 +97,156 @@ const ZONES=[
  {id:'T1',k:'TRANSPORT',n:'محور النقل',x:1400,y:520,w:200,h:120},
  {id:'C3',k:'RESERVE',n:'C3 · احتياطي استراتيجي',x:640,y:640,w:320,h:320},
  {id:'F1',k:'FUTURE',n:'مستقبلية 1',x:2180,y:110,w:260,h:260},{id:'F2',k:'FUTURE',n:'مستقبلية 2',x:2160,y:1160,w:280,h:280},{id:'F3',k:'FUTURE',n:'مستقبلية 3',x:740,y:1130,w:240,h:300},{id:'F4',k:'FUTURE',n:'مستقبلية 4',x:1700,y:1340,w:380,h:130},{id:'F5',k:'FUTURE',n:'مستقبلية 5',x:1560,y:110,w:560,h:130}];
-const C3=ZONES.find(z=>z.id==='C3'), RESV=C3;
+const C3=ZONES.find(z=>z.id==='C3');
 const inRect=(z,x,y)=>x>=z.x&&y>=z.y&&x<z.x+z.w&&y<z.y+z.h;
 const coastZone=(x,y)=>{if(y<160||y>1440)return false;const c=coast(y);return x>=c+10&&x<c+110};
-const futSea=(x,y)=>{if(y<200||y>1400)return false;const c=coast(y);return x>=c-200&&x<c-24};
 function zoneAt(x,y){for(const z of ZONES)if(inRect(z,x,y))return z;return null}
-/* roads (a visible layer only: nothing here blocks building) */
-const ROADS=[],PIERS=[],GATES=[];
-(function(){const W={main:3.6,sec:2.4,svc:1.2},add=(t,p)=>ROADS.push({t,w:W[t],p});
- const cp=[];for(let y=140;y<=1460;y+=20)cp.push([coastRoadX(y),y]);add('main',cp);                         /* coast highway */
- for(const y of[560,1060])add('main',[[coastRoadX(y),y],[2400,y]]);                                         /* two east-west arteries */
- add('main',[[1560,160],[1560,1440]]);                                                                       /* inland north-south artery */
- for(const x of[1040])add('sec',[[x,560],[x,1060]]);add('sec',[[2100,300],[2100,1300]]);
- add('sec',[[coastRoadX(160),160],[2100,160]]);add('sec',[[coastRoadX(1440),1440],[2100,1440]]);add('sec',[[2100,160],[2100,300]]);add('sec',[[2100,1300],[2100,1440]]);
- for(const z of ZONES){if(z.k==='FUTURE')continue;const i=z.k==='RESERVE'?8:7,x0=z.x+i,y0=z.y+i,x1=z.x+z.w-i,y1=z.y+z.h-i;add('svc',[[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]);       /* service ring inside every compound */
-  if(z.k==='RESERVE'){GATES.push({x:z.x+z.w/2,y:z.y,n:'بوابة شمالية'},{x:z.x+z.w,y:z.y+z.h/2,n:'بوابة شرقية'});add('svc',[[z.x+z.w/2,y0],[z.x+z.w/2,560]]);add('svc',[[z.x+z.w/2,y0],[z.x+z.w/2,y1]]);add('svc',[[x0,z.y+z.h/2],[x1,z.y+z.h/2]]);add('svc',[[x1,z.y+z.h/2],[1040,z.y+z.h/2]]);continue}
-  const cx=z.x+z.w/2,cy=z.y+z.h/2;let best=null;for(const y of[560,1060,160,1440]){const d=cy<y?y-(z.y+z.h):z.y-y;if(d>=0&&(!best||d<best.d))best={y,d}}
-  if(best&&best.d>0){const from=cy<best.y?z.y+z.h:z.y;add('svc',[[cx,from],[cx,best.y]])}}
- for(const y of[700,1000,1250]){add('svc',[[coastRoadX(y),y],[coast(y)+14,y]]);PIERS.push({y})}})();
-/* ground */
-function lakeAt(x,y){const L=[[1500,360,22],[2000,820,26],[1760,1290,18],[2330,700,20],[1420,880,16],[1380,1400,22],[900,880,12]];for(const l of L){if(!l[2])continue;const d=Math.hypot(x-l[0],y-l[1]);if(d<l[2]*(0.85+0.3*vn(x/9,y/9,41)))return true}return false}
+/* 0..1: 1 inside any built compound (C3 included), fading out over m tiles; natural features are kept out of these */
+function zoneW(x,y,m){let w=0;for(const z of ZONES){if(z.k==='FUTURE')continue;const dx=Math.max(z.x-x,0,x-z.x-z.w),dy=Math.max(z.y-y,0,y-z.y-z.h),dd=Math.hypot(dx,dy);if(dd<m){const q=1-dd/m;if(q>w)w=q}}return w}
+function lakeAt(x,y){const L=[[1600,330,20],[2000,820,26],[1760,1290,18],[2330,700,20],[1420,880,16],[1380,1400,22],[880,1050,12]];for(const l of L){const d=Math.hypot(x-l[0],y-l[1]);if(d<l[2]*(0.85+0.3*vn(x/9,y/9,41)))return true}return false}
+/* rock clusters: small outcrops (a main lump and two satellites) scattered on open land, never inside compounds */
+const CS=60;let CV=0,AP=0;
+function lumps(cx,cy){if(hash(cx,cy,91)>.24)return null;const px=(cx+.15+.7*hash(cx,cy,92))*CS,py=(cy+.15+.7*hash(cx,cy,93))*CS,R=4.5+8.5*hash(cx,cy,94);
+  return[[px,py,R],[px+(hash(cx,cy,95)-.5)*R*1.6,py+(hash(cx,cy,96)-.5)*R*1.6,R*.55],[px+(hash(cx,cy,97)-.5)*R*1.6,py+(hash(cx,cy,98)-.5)*R*1.6,R*.5]]}
+function clusterV(x,y){const gx=Math.floor(x/CS),gy=Math.floor(y/CS);CV=0;AP=0;let nz=-1;
+  for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++){const L=lumps(gx+i,gy+j);if(!L)continue;if(nz<0)nz=.8+.4*vn(x/4,y/4,99);
+    for(const q of L){const d=Math.hypot(x-q[0],y-q[1])/(q[2]*nz);if(d<1){const v=1-d;if(v>CV)CV=v}const a=1-d/2.2;if(a>AP)AP=a}}}
+/* dry valleys: a warped, meandering channel with a thinner tributary; the value is the distance from the bed in bed-widths (<1 = bed) */
+function wadiW(x,y){const wx=x+(fbm(x/90,y/90,31,2)-.5)*70,wy=y+(fbm(x/90,y/90,32,2)-.5)*70;
+  const d1=Math.abs(fbm(wx/210,wy/210,37,3)-.5)/(.0068*(.8+.9*vn(x/120,y/120,55))),d2=Math.abs(fbm(wx/130,wy/130,47,2)-.5)/.0020;return Math.min(d1,d2)}
 function elev(x,y){
   const c=coast(y);let e=.30+.05*(fbm(x/260,y/260,3,3)-.5);
   const d=Math.min(y,WH-y,WW-x),bw=26+48*fbm(x/190,y/190,5,2),mh=Math.max(0,1-d/bw);
   if(mh>0)e+=mh*(.55+.45*fbm(x/40,y/40,6,3));
-  const h=sm(.63,.82,fbm(x/230,y/230,7,3));e+=h*.2;const ms=sm(.675,.76,fbm(x/310,y/310,21,3));if(ms>0&&x>c+160)e+=ms*(.4+.4*fbm(x/34,y/34,22,3));                               // light hills
-  if(x<c)return -sm(0,150,c-x)*.9-.02;                                              // sea floor
-  e-=(1-sm(c,c+30,x))*.12;                                                          // gentle fall to the beach
+  const h=sm(.615,.82,fbm(x/230,y/230,7,3));e+=h*.2;const ms=sm(.70,.78,fbm(x/310,y/310,21,3));if(ms>0&&x>c+160)e+=ms*(.4+.4*fbm(x/34,y/34,22,3));
+  if(x<c)return -sm(0,150,c-x)*.9-.02;
+  e-=(1-sm(c,c+30,x))*.12;
   for(const z of ZONES){if(z.k==='FUTURE'||z.k==='RESERVE')continue;const dx=Math.max(z.x-x,0,x-z.x-z.w),dy=Math.max(z.y-y,0,y-z.y-z.h),dd=Math.hypot(dx,dy);if(dd<16){const w=1-dd/16;e=e*(1-w)+.30*w}}
   if(coastZone(x,y)){e=e*.35+.30*.65}
-  return e;
-}
-function classify(x,y,e){
-  const c=coast(y);if(x<c)return(c-x>70)?K.DEEP:K.SHALLOW;
-  if(x<c+9)return K.BEACH;
-  if(lakeAt(x,y))return K.LAKE;
-  const inZ=zoneAt(x,y)&&zoneAt(x,y).k!=='FUTURE'||coastZone(x,y);
-  const d=Math.min(y,WH-y,WW-x);
-  if(e>.62)return K.ROCK;
-  if(!inZ&&e<.5&&Math.abs(fbm(x/210,y/210,7+30,3)-.5)<.0085&&x>c+90)return K.WADI;
-  if(e>.38&&!inZ)return K.HILL;
-  return K.FLAT;
-}
-const COL={[K.FLAT]:[160,157,138],[K.HILL]:[132,143,118],[K.ROCK]:[116,113,108],[K.BEACH]:[207,199,174],[K.WADI]:[183,176,154],[K.LAKE]:[72,128,150]};
-function shade(x,y,e){const dx=elev(x+1.5,y)-elev(x-1.5,y),dy=elev(x,y+1.5)-elev(x,y-1.5);return{s:Math.max(.55,Math.min(1.35,1-(dx+dy)*5.2)),slope:Math.hypot(dx,dy)/3}}
-function pixel(x,y,out){
-  const e=elev(x,y),k=classify(x,y,e);let r,g,b;
-  if(k===K.DEEP||k===K.SHALLOW){const c=coast(y),t=Math.min(1,(c-x)/140),w=.5+.5*Math.sin((x*.35+y*.12)+vn(x/14,y/14,2)*6),m=1-t;
+  const fw=coastZone(x,y)?0:1-zoneW(x,y,14);
+  if(fw>0&&x>c+80){
+    if(e<.5){const wd=wadiW(x,y);if(wd<7)e-=.030*fw*(1-sm(0,7,wd))}                 /* the channel is cut into the ground */
+    clusterV(x,y);if(CV>0)e+=CV*.36*fw}                                                  /* outcrops stand above it */
+  return e}
+const A={k:3,wd:9,cv:0,ap:0,z:null,inZ:false};
+/* classify one point; also leaves the wadi distance / outcrop strength for the colouring in A */
+function analyze(x,y,e){
+  const c=coast(y);A.wd=9;A.cv=0;A.ap=0;A.z=zoneAt(x,y);A.inZ=!!((A.z&&A.z.k!=='FUTURE')||coastZone(x,y));
+  if(x<c){A.k=(c-x>70)?K.DEEP:K.SHALLOW;return A.k}
+  if(x<c+9){A.k=K.BEACH;return A.k}
+  if(lakeAt(x,y)){A.k=K.LAKE;return A.k}
+  const fw=A.inZ?0:1-zoneW(x,y,14);
+  if(fw>.5&&x>c+80){clusterV(x,y);A.cv=CV;A.ap=AP;if(CV>.2){A.k=K.ROCK;return A.k}}
+  if(e>.62){A.k=K.ROCK;return A.k}
+  if(fw>.5&&e<.62&&x>c+90){A.wd=wadiW(x,y);if(A.wd<1){A.k=K.WADI;return A.k}}
+  if(e>.372&&!A.inZ){A.k=K.HILL;return A.k}
+  A.k=K.FLAT;return A.k}
+function classify(x,y,e){return analyze(x,y,e)}
+const COL=[null,null,[207,199,174],[160,157,138],[142,142,121],[148,143,134],[183,176,154],[72,128,150]];
+function slopeAt(x,y,e){const dx=elev(x+1.5,y)-elev(x-1.5,y),dy=elev(x,y+1.5)-elev(x,y-1.5);return{s:Math.max(.55,Math.min(1.35,1-(dx+dy)*5.2)),slope:Math.hypot(dx,dy)/3}}
+function shade(x,y,e){return slopeAt(x,y,e)}
+/* colour of one point (needs analyze() to have just run for the same point) */
+function colorOf(x,y,e,dx,dy,k,out){let r,g,b;
+  if(k===0||k===1){const c=coast(y),t=Math.min(1,(c-x)/140),w=.5+.5*Math.sin((x*.35+y*.12)+vn(x/14,y/14,2)*6);
     r=(86-56*t+4*w);g=(150-74*t+3*w);b=(168-62*t+3*w);if(c-x<4){r+=40;g+=34;b+=24}}
-  else{const base=COL[k],sh=shade(x,y,e),gr=(hash(x|0,y|0,9)-.5)*7,pat=(fbm(x/60,y/60,13,2)-.5)*14;let s=k===K.ROCK||k===K.HILL?sh.s:1+(sh.s-1)*.5;
-    r=base[0]*s+gr+pat;g=base[1]*s+gr+pat*.8;b=base[2]*s+gr+pat*.5;
-    const z=zoneAt(x,y);if(z&&z.k!=='FUTURE'&&z.k!=='RESERVE'&&k!==K.LAKE){r=r*.88+10;g=g*.88+14;b=b*.88+18;const gx=(x-z.x)%16,gy=(y-z.y)%16;if(gx<.7||gy<.7){r-=9;g-=9;b-=8}}
-    if(z&&z.k==='RESERVE'&&k!==K.LAKE){r=r*.9+16;g=g*.9+12;b=b*.9+2;const gx=(x-z.x)%40,gy=(y-z.y)%40;if(gx<.8||gy<.8){r-=12;g-=11;b-=9}const ccx=z.x+z.w/2,ccy=z.y+z.h/2;if(Math.abs(x-ccx)<18&&Math.abs(y-ccy)<13){r+=14;g+=14;b+=10}}}
-  out[0]=r;out[1]=g;out[2]=b;out[3]=k;return k;
+  else{
+    const base=COL[k],sh=Math.max(.55,Math.min(1.35,1-(dx+dy)*5.2)),z=A.z,inZ=A.inZ,s=k===5?Math.max(.86,Math.min(1.18,sh)):k===4?sh:1+(sh-1)*.5;
+    const n1=fbm(x/420,y/420,13,2)-.5,n2=fbm(x/110,y/110,14,2)-.5,gr=(hash((x*2)|0,(y*2)|0,9)-.5)*(inZ?2.5:7),tn=inZ?.18:1;
+    r=base[0]*s+gr+(n1*34+n2*12)*tn;g=base[1]*s+gr+(n1*22+n2*9)*tn;b=base[2]*s+gr*.9+(n1*-10+n2*7)*tn;
+    if(k===5){const f=(vn(x/2.4,y/2.4,63)-.5)*26+Math.sin(x*1.15+y*.55+vn(x/6,y/6,66)*7)*10,rim=A.cv>0&&A.cv<.4?(.4-A.cv)*30:0;r+=f+rim;g+=f+rim;b+=f+rim*.9}                    /* faceted stone */
+    if(A.wd<7&&k!==7&&k!==5){const bank=1-sm(.6,7,A.wd);r+=-3*bank;g+=0*bank;b+=-2*bank;                                          /* soft dry banks */
+      if(k===6){const t=Math.max(0,1-A.wd),stk=vn(x/2.6,y/14,61)-.5,m=.38;r=r*(1-m)+186*m-8*t*t-stk*12;g=g*(1-m)+176*m-7*t*t-stk*11;b=b*(1-m)+150*m-6*t*t-stk*9}}
+    if(A.ap>.02&&k!==5){const a=A.ap*.42,sp=(hash((x*3)|0,(y*3)|0,64)-.5)*16*A.ap;r=r*(1-a)+128*a+sp;g=g*(1-a)+124*a+sp;b=b*(1-a)+116*a+sp}   /* debris apron round an outcrop */
+    if(z&&z.k!=='FUTURE'&&z.k!=='RESERVE'&&k!==7){r=r*.9+10;g=g*.9+14;b=b*.9+16;const ed=Math.min(x-z.x,z.x+z.w-x,y-z.y,z.y+z.h-y);if(ed<1.4){r-=16;g-=16;b-=14}}
+    if(z&&z.k==='RESERVE'&&k!==7){r=r*.9+16;g=g*.9+12;b=b*.9+2;const ccx=z.x+z.w/2,ccy=z.y+z.h/2;if(Math.abs(x-ccx)<140&&Math.abs(y-ccy)<114){r+=7;g+=7;b+=5}}}
+  out[0]=r;out[1]=g;out[2]=b}
+function genChunk(cx,cy){const N=CH*RES,M=N+6,E=new Float32Array(M*M),x0=cx*CH,y0=cy*CH;
+  for(let j=0;j<M;j++){const y=y0+(j-3+.5)/RES;for(let i=0;i<M;i++)E[j*M+i]=elev(x0+(i-3+.5)/RES,y)}
+  const buf=new Uint8ClampedArray(N*N*4),o=[0,0,0];
+  for(let j=0;j<N;j++){const y=y0+(j+.5)/RES;for(let i=0;i<N;i++){const x=x0+(i+.5)/RES,id=(j+3)*M+(i+3),e=E[id],dx=E[id+3]-E[id-3],dy=E[id+3*M]-E[id-3*M],k=analyze(x,y,e);colorOf(x,y,e,dx,dy,k,o);const p=(j*N+i)*4;buf[p]=o[0];buf[p+1]=o[1];buf[p+2]=o[2];buf[p+3]=255}}
+  return{buf,deco:genDeco(cx,cy)}}
+/* ground detail points of one block: stones round the outcrops, dry scrub on the wadi banks, a thin scatter. type 0 stone, 1 shrub, 2 hill scrub, 3 boulder, 4 wadi scrub */
+function genDeco(cx,cy){const out=[],x0=cx*CH,y0=cy*CH,x1=x0+CH,y1=y0+CH;
+  const ok=(x,y)=>{const e=elev(x,y),k=analyze(x,y,e);return(k===3||k===4||k===5||k===6)&&!A.inZ};
+  for(let gy=Math.floor((y0-24)/CS);gy<=Math.floor((y1+24)/CS);gy++)for(let gx=Math.floor((x0-24)/CS);gx<=Math.floor((x1+24)/CS);gx++){const L=lumps(gx,gy);if(!L)continue;const R=L[0][2],n=Math.floor(R*R*.5);
+    for(let k=0;k<n;k++){const lp=L[k%3],a=hash(gx*257+k,gy,201)*6.2832,rad=Math.sqrt(hash(gx*257+k,gy,202))*lp[2]*1.55,x=lp[0]+Math.cos(a)*rad,y=lp[1]+Math.sin(a)*rad;
+      if(x<x0||x>=x1||y<y0||y>=y1)continue;if(!ok(x,y))continue;const core=1-rad/(lp[2]*1.55),r=1.1+core*3.4+hash(gx*257+k,gy,203)*1.3;out.push(x,y,r,r>3.4?3:0)}}
+  for(let y=y0;y<y1;y+=2)for(let x=x0;x<x1;x+=2){const h=hash(x,y,211);if(h>.05)continue;const px=x+hash(x,y,212)*2,py=y+hash(x,y,213)*2,e=elev(px,py),k=analyze(px,py,e);
+    if((k===3||k===4)&&!A.inZ&&A.wd>1&&A.wd<6)out.push(px,py,.9+hash(x,y,214)*1.3,4)}
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const h=hash(x,y,77);if(h>.011)continue;const px=x+hash(x,y,78),py=y+hash(x,y,79),e=elev(px,py),k=analyze(px,py,e);if(A.inZ&&!(A.z&&A.z.k==='FUTURE'))continue;
+    if(k===3)out.push(px,py,1.1+h*40,1);else if(k===4)out.push(px,py,1.2+h*40,2)}
+  return new Float32Array(out)}
+/* the overview: 1 px per 4 tiles, direct sampling; also returns the area figures */
+function genOverview(){const OVW=WW/OVS,OVH=WH/OVS,buf=new Uint8ClampedArray(OVW*OVH*4),o=[0,0,0],cnt=new Array(8).fill(0);let fut=0,fl=0,lt=0,st=0,land=0;
+  for(let j=0;j<OVH;j++)for(let i=0;i<OVW;i++){const x=i*OVS+OVS/2,y=j*OVS+OVS/2,e=elev(x,y),dx=elev(x+1.5,y)-elev(x-1.5,y),dy=elev(x,y+1.5)-elev(x,y-1.5),k=analyze(x,y,e);colorOf(x,y,e,dx,dy,k,o);
+    const p=(j*OVW+i)*4;buf[p]=o[0];buf[p+1]=o[1];buf[p+2]=o[2];buf[p+3]=255;cnt[k]++;
+    const z=A.z;if(z&&z.k==='FUTURE'&&k!==0&&k!==1)fut++;
+    if(k>=2){land++;const sl=Math.hypot(dx,dy)/3;if(sl<.0045)fl++;else if(sl<.02)lt++;else st++}}
+  const T=OVW*OVH;return{buf,stats:{sea:cnt[0]+cnt[1],beach:cnt[2],flat:cnt[3],hill:cnt[4],rock:cnt[5],wadi:cnt[6],lake:cnt[7],future:fut,total:T,land,slopeFlat:fl,slopeLight:lt,slopeSteep:st}}}
+return{WW,WH,RC,CH,RES,OVS,hash,vn,fbm,sm,coast,K,ZONES,C3,inRect,coastZone,zoneAt,zoneW,lakeAt,elev,analyze,classify,A:()=>A,shade,slopeAt,colorOf,genChunk,genOverview,genDeco,wadiW,clusterV,CV:()=>CV}
 }
-/* ============ rasters ============ */
-const OVS=4, OVW=WW/OVS, OVH=WH/OVS, ovc=document.createElement('canvas');ovc.width=OVW;ovc.height=OVH;
-const stats={sea:0,beach:0,flat:0,hill:0,rock:0,wadi:0,lake:0,future:0,total:0,slopeFlat:0,slopeLight:0,slopeSteep:0,genMs:0,chunks:0,chunkMs:0};
-function buildOverview(){const t0=performance.now(),g=ovc.getContext('2d'),im=g.createImageData(OVW,OVH),o=[0,0,0,0];const cnt=new Array(8).fill(0);let fut=0,fl=0,lt=0,st=0,land=0;
-  for(let j=0;j<OVH;j++)for(let i=0;i<OVW;i++){const x=i*OVS+OVS/2,y=j*OVS+OVS/2,k=pixel(x,y,o),p=(j*OVW+i)*4;im.data[p]=o[0];im.data[p+1]=o[1];im.data[p+2]=o[2];im.data[p+3]=255;cnt[k]++;
-    const z=zoneAt(x,y);if(z&&z.k==='FUTURE'&&k!==K.DEEP&&k!==K.SHALLOW)fut++;
-    if(k>=K.BEACH){land++;const sl=shade(x,y).slope;if(sl<.0045)fl++;else if(sl<.02)lt++;else st++}}
-  g.putImageData(im,0,0);const T=OVW*OVH;Object.assign(stats,{sea:cnt[0]+cnt[1],beach:cnt[2],flat:cnt[3],hill:cnt[4],rock:cnt[5],wadi:cnt[6],lake:cnt[7],future:fut,total:T,land,slopeFlat:fl,slopeLight:lt,slopeSteep:st,genMs:performance.now()-t0});
-}
-const chunks=new Map(),MAXCH=(navigator.deviceMemory&&navigator.deviceMemory<=4)?48:110;let genQueue=0;
-function chunkCanvas(cx,cy,make){const key=cy*100+cx;let c=chunks.get(key);if(c){chunks.delete(key);chunks.set(key,c);return c}if(!make)return null;
-  const t0=performance.now(),N=CH*RES,cv=document.createElement('canvas');cv.width=N;cv.height=N;const g=cv.getContext('2d'),im=g.createImageData(N,N),o=[0,0,0,0];
-  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const x=cx*CH+(i+.5)/RES,y=cy*CH+(j+.5)/RES;pixel(x,y,o);const p=(j*N+i)*4;im.data[p]=o[0];im.data[p+1]=o[1];im.data[p+2]=o[2];im.data[p+3]=255}
-  g.putImageData(im,0,0);chunks.set(key,cv);if(chunks.size>MAXCH)chunks.delete(chunks.keys().next().value);stats.chunks++;stats.chunkMs+=performance.now()-t0;return cv}
-const deco=new Map();
-function decoOf(cx,cy){const key=cy*100+cx;let L=deco.get(key);if(L)return L;L=[];for(let y=cy*CH;y<cy*CH+CH;y++)for(let x=cx*CH;x<cx*CH+CH;x++){const h=hash(x,y,77);if(h>.16)continue;const e=elev(x+.5,y+.5),k=classify(x+.5,y+.5,e);if(k===K.DEEP||k===K.SHALLOW||k===K.LAKE||k===K.BEACH)continue;const zz=zoneAt(x,y);if(zz&&zz.k!=='FUTURE'&&zz.k!=='RESERVE')continue;
-  L.push({x:x+hash(x,y,78),y:y+hash(x,y,79),r:1.2+h*14,t:(k===K.ROCK||h<.05)?0:(k===K.HILL?2:1)})}deco.set(key,L);if(deco.size>MAXCH)deco.delete(deco.keys().next().value);return L}
-/* ============ view ============ */
+(function(){'use strict';
+const W=WORLD();
+const {WW,WH,RC,CH,RES,OVS,coast,K,ZONES,C3,inRect,zoneAt,elev,classify,slopeAt}=W;
+const TILE_M=12, OLD={w:1920,h:1280}, RESV=C3;
+const KN=['بحر عميق','بحر ضحل','شاطئ','أرض مستوية','تلال خفيفة','صخور / جبال','وادٍ جاف','بحيرة'];
+const KIND={
+  EXTRACT:{n:'استخراج',c:'#8c6a4a'},STORE:{n:'تخزين',c:'#4a6f8c'},PROCESS:{n:'تكرير وتحويل',c:'#7b5a8c'},TRANSPORT:{n:'نقل وضخ',c:'#6b7380'},
+  RESERVE:{n:'احتياطي استراتيجي',c:'#d4aa52'},FUTURE:{n:'منطقة مستقبلية',c:'#5f8f7a'},COAST:{n:'الساحل والميناء',c:'#3f8c9c'},FUTSEA:{n:'بحر مستقبلي',c:'#5aa0c8'}};
+const COLV=[null,null,[207,199,174],[160,157,138],[132,143,118],[116,113,108],[183,176,154],[72,128,150]];
+/* ---------- no road network: the only visible links are pipes. An organised layout of slots per compound, collector points and illustrative pipes. ---------- */
+const SLOTS=[], HUBS=[], PIPES=[], PIERS=[{y:700},{y:1000},{y:1250}];
+const ZID=id=>ZONES.find(z=>z.id===id);
+(function(){
+  const SPEC={EXTRACT:{w:14,h:14,gx:38,gy:38,n:'بئر'},STORE:{w:26,h:26,gx:52,gy:52,n:'خزان'},PROCESS:{w:44,h:34,gx:80,gy:68,n:'مصفاة'},TRANSPORT:{w:22,h:18,gx:62,gy:48,n:'مضخة'}};
+  for(const z of ZONES){const s=SPEC[z.k];if(!s)continue;const m=22,cols=Math.max(1,Math.floor((z.w-2*m-s.w)/s.gx)+1),rows=Math.max(1,Math.floor((z.h-2*m-s.h)/s.gy)+1),x0=z.x+(z.w-((cols-1)*s.gx+s.w))/2,y0=z.y+(z.h-((rows-1)*s.gy+s.h))/2;
+    for(let j=0;j<rows;j++)for(let i=0;i<cols;i++)SLOTS.push({z:z.id,k:z.k,n:s.n,x:Math.round(x0+i*s.gx),y:Math.round(y0+j*s.gy),w:s.w,h:s.h})}
+  /* C3: twelve plots along the inside of the fence; the centre stays open for tanks, pumps and the five expansion levels */
+  const cx=C3.x+C3.w/2,cy=C3.y+C3.h/2,PW=50,PH=32;
+  for(const sx of[-150,-94,44,100]){SLOTS.push({z:'C3',k:'RESERVE',n:'قطعة مخزن',x:Math.round(cx+sx),y:C3.y+12,w:PW,h:PH});SLOTS.push({z:'C3',k:'RESERVE',n:'قطعة مخزن',x:Math.round(cx+sx),y:C3.y+C3.h-12-PH,w:PW,h:PH})}
+  for(const sy of[-100,30]){SLOTS.push({z:'C3',k:'RESERVE',n:'قطعة مخزن',x:C3.x+12,y:Math.round(cy+sy),w:PH,h:70});SLOTS.push({z:'C3',k:'RESERVE',n:'قطعة مخزن',x:C3.x+C3.w-12-PH,y:Math.round(cy+sy),w:PH,h:70})}
+  /* collector points and illustrative pipes between compounds (a drawing aid only: it does not touch the game's pipe network) */
+  const LINKS=[['E1','P1','c'],['E1','S1','c'],['E2','T1','c'],['E2','S2','c'],['E3','S1','c'],['E3','P2','c'],['E4','S2','c'],['S1','P1','p'],['S2','T1','p'],['P2','S1','p'],['T1','S1','p'],['S1','C3','r']];
+  const cnt={};const hubOf=(id,toId)=>{const a=ZID(id),b=ZID(toId),ac={x:a.x+a.w/2,y:a.y+a.h/2},bc={x:b.x+b.w/2,y:b.y+b.h/2},dx=bc.x-ac.x,dy=bc.y-ac.y,horiz=Math.abs(dx)/a.w>Math.abs(dy)/a.h,side=horiz?(dx>0?'E':'W'):(dy>0?'S':'N'),key=id+side,n=cnt[key]=(cnt[key]||0)+1,off=(n-1)*34-17*(n>1?1:0);
+    const cc=v=>(Math.floor(v/8)+.5)*8;let x,y,ox,oy;if(side==='E'){x=a.x+a.w;y=cc(ac.y+off);ox=cc(x+12);oy=y}else if(side==='W'){x=a.x;y=cc(ac.y+off);ox=cc(x-12);oy=y}else if(side==='S'){y=a.y+a.h;x=cc(ac.x+off);oy=cc(y+12);ox=x}else{y=a.y;x=cc(ac.x+off);oy=cc(y-12);ox=x}
+    const h={zone:id,side,x,y,ox,oy};HUBS.push(h);return h};
+  const GS=8,GW=WW/GS,GH=WH/GS,block=new Uint8Array(GW*GH);
+  for(const z of ZONES){if(z.k==='FUTURE'||z.k==='COAST')continue;for(let gy=Math.floor((z.y-6)/GS);gy<=Math.floor((z.y+z.h+6)/GS);gy++)for(let gx=Math.floor((z.x-6)/GS);gx<=Math.floor((z.x+z.w+6)/GS);gx++)if(gx>=0&&gy>=0&&gx<GW&&gy<GH)block[gy*GW+gx]=1}
+  function route(a,b){const sx=Math.floor(a.ox/GS),sy=Math.floor(a.oy/GS),tx=Math.floor(b.ox/GS),ty=Math.floor(b.oy/GS),N=GW*GH,D=new Float32Array(N*4).fill(1e9),P=new Int32Array(N*4).fill(-1),dirs=[[1,0],[0,1],[-1,0],[0,-1]];
+    const heap=[];const push=(c,s)=>{heap.push([c,s]);let i=heap.length-1;while(i>0){const p=(i-1)>>1;if(heap[p][0]<=heap[i][0])break;[heap[p],heap[i]]=[heap[i],heap[p]];i=p}};
+    const pop=()=>{const t=heap[0],l=heap.pop();if(heap.length){heap[0]=l;let i=0;for(;;){let m=i;const L=2*i+1,R=L+1;if(L<heap.length&&heap[L][0]<heap[m][0])m=L;if(R<heap.length&&heap[R][0]<heap[m][0])m=R;if(m===i)break;[heap[m],heap[i]]=[heap[i],heap[m]];i=m}}return t};
+    for(let d=0;d<4;d++){const s=(sy*GW+sx)*4+d;D[s]=0;push(0,s)}let end=-1;
+    while(heap.length){const[c,s]=pop();if(c>D[s])continue;const cell=s>>2,d=s&3,x=cell%GW,y=(cell/GW)|0;if(x===tx&&y===ty){end=s;break}
+      for(let nd=0;nd<4;nd++){if(nd===((d+2)&3))continue;const nx=x+dirs[nd][0],ny=y+dirs[nd][1];if(nx<0||ny<0||nx>=GW||ny>=GH)continue;const nc=ny*GW+nx;if(block[nc]&&!(Math.abs(nx-tx)<=3&&Math.abs(ny-ty)<=3)&&!(Math.abs(nx-sx)<=3&&Math.abs(ny-sy)<=3))continue;
+        const cost=c+1+(nd!==d?4:0)+(block[nc]?30:0),ns=nc*4+nd;if(cost<D[ns]){D[ns]=cost;P[ns]=s;push(cost,ns)}}}
+    if(end<0)return null;const pts=[];for(let s=end;s>=0;s=P[s]){const cell=s>>2;pts.push([(cell%GW+.5)*GS,(((cell/GW)|0)+.5)*GS])}pts.reverse();
+    const out=[[a.x,a.y],[a.ox,a.oy]];pts[0]=[a.ox,a.oy];pts[pts.length-1]=[b.ox,b.oy];
+    for(let i=1;i<pts.length;i++){const q=out[out.length-1],p=pts[i];/* keep orthogonal: insert an elbow when the cell centre differs in both axes */if(Math.abs(p[0]-q[0])>.5&&Math.abs(p[1]-q[1])>.5)out.push([p[0],q[1]]);out.push(p)}
+    out.push([b.x,b.y]);const sim=[out[0]];for(let i=1;i<out.length-1;i++){const a1=sim[sim.length-1],b1=out[i],c1=out[i+1];if((a1[0]===b1[0]&&b1[0]===c1[0])||(a1[1]===b1[1]&&b1[1]===c1[1]))continue;sim.push(b1)}sim.push(out[out.length-1]);return sim}
+  for(const L of LINKS){const a=hubOf(L[0],L[1]),b=hubOf(L[1],L[0]),p=route(a,b);if(p)PIPES.push({from:L[0],to:L[1],t:L[2],p})}
+})();
+/* ---------- rasters, generated off the main thread ---------- */
+const stats={sea:0,beach:0,flat:0,hill:0,rock:0,wadi:0,lake:0,future:0,total:1,land:1,slopeFlat:0,slopeLight:0,slopeSteep:0,genMs:0,chunks:0,chunkMs:0,miss:0,mode:'init'};
+const OVW=WW/OVS, OVH=WH/OVS, ovc=document.createElement('canvas');ovc.width=OVW;ovc.height=OVH;let ovReady=false;
+const chunks=new Map(),MAXCH=(navigator.deviceMemory&&navigator.deviceMemory<=4)?48:110;
+let workers=[],gotHi=false,queue=[],pending=new Set(),visKeys=new Set();
+function storeChunk(cx,cy,buf,deco,ms){const N=CH*RES,c=document.createElement('canvas');c.width=N;c.height=N;c.getContext('2d').putImageData(new ImageData(buf,N,N),0,0);const key=cy*100+cx;chunks.set(key,{cv:c,deco,ms});stats.chunks++;stats.chunkMs+=ms;
+  if(chunks.size>MAXCH){for(const k of chunks.keys()){if(!visKeys.has(k)){chunks.delete(k);break}}}}
+function useOverview(buf,st,ms){const g=ovc.getContext('2d');g.putImageData(new ImageData(buf,OVW,OVH),0,0);Object.assign(stats,st,{genMs:ms});ovReady=true;dirty=true;if(tab==='stats')renderTab()}
+function failWorkers(){if(stats.mode==='sync')return;stats.mode='sync';for(const w of workers)try{w.terminate()}catch(e){}workers=[];pending.clear();
+  if(!ovReady)setTimeout(()=>{const t0=performance.now(),r=W.genOverview();useOverview(r.buf,r.stats,performance.now()-t0)},30)}
+function onMsg(ev){const m=ev.data;if(m.t==='hi'){gotHi=true;return}
+  if(m.t==='chunk'){pending.delete(m.cy*100+m.cx);this.busy--;storeChunk(m.cx,m.cy,m.buf,m.deco,m.ms);dirty=true;pump()}
+  else if(m.t==='ov')useOverview(m.buf,m.stats,m.ms)}
+function startWorkers(){try{
+  const src='(function(){const W=('+WORLD.toString()+')();onmessage=function(ev){const m=ev.data;if(m.t==="chunk"){const t0=performance.now(),r=W.genChunk(m.cx,m.cy);postMessage({t:"chunk",cx:m.cx,cy:m.cy,buf:r.buf,deco:r.deco,ms:performance.now()-t0},[r.buf.buffer,r.deco.buffer])}else if(m.t==="ov"){const t0=performance.now(),r=W.genOverview();postMessage({t:"ov",buf:r.buf,stats:r.stats,ms:performance.now()-t0},[r.buf.buffer])}};postMessage({t:"hi"})})()';
+  const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'})),n=Math.max(2,Math.min(3,(navigator.hardwareConcurrency||2)));
+  for(let i=0;i<n;i++){const w=new Worker(url);w.busy=0;w.onmessage=onMsg;w.onerror=failWorkers;workers.push(w)}
+  workers[0].postMessage({t:'ov'});stats.mode='worker';setTimeout(()=>{if(!gotHi)failWorkers()},6000)}catch(e){failWorkers()}}
+function pump(){if(stats.mode!=='worker')return;for(const w of workers){while(w.busy<2&&queue.length){const[cx,cy]=queue.shift(),key=cy*100+cx;if(chunks.has(key)||pending.has(key))continue;pending.add(key);w.busy++;w.postMessage({t:'chunk',cx,cy})}}}
 const cv=document.getElementById('c'),ctx=cv.getContext('2d',{alpha:false}),mini=document.getElementById('mini'),mg=mini.getContext('2d'),hud=document.getElementById('hud');
-const cam={x:WW*.45,y:WH*.5,z:.01};let VW=0,VH=0,DPR=1,dirty=true,fitZ=.01;
-const L={zones:true,roads:true,grid:false,reserve:true,future:true,labels:true,old:false,tilegrid:false};
+const cam={x:WW*.45,y:WH*.5,z:.01};let VW=0,VH=0,DPR=1,dirty=true,fitZ=.01,tab='layers';
+const L={zones:true,slots:true,pipes:true,grid:false,reserve:true,future:true,labels:true,old:false,tilegrid:false};
 const sx=(x,y)=>VW/2+((x-y)-(cam.x-cam.y))*32*cam.z, sy=(x,y)=>VH/2+((x+y)-(cam.x+cam.y))*16*cam.z;
 function toTile(px,py){const X=(px-VW/2)/(32*cam.z)+(cam.x-cam.y),Y=(py-VH/2)/(16*cam.z)+(cam.x+cam.y);return{x:(X+Y)/2,y:(Y-X)/2}}
 function resize(){const r=cv.getBoundingClientRect();DPR=Math.min(2,window.devicePixelRatio||1);VW=r.width;VH=r.height;cv.width=Math.round(VW*DPR);cv.height=Math.round(VH*DPR);fitZ=Math.min(VW/((WW+WH)*32),VH/((WW+WH)*16))*1.0;if(!inited){cam.z=fitZ;inited=true}dirty=true}
@@ -187,94 +255,130 @@ const ZMAX=1.6,zmin=()=>fitZ*.8;
 const clampCam=()=>{cam.z=Math.max(zmin(),Math.min(ZMAX,cam.z));cam.x=Math.max(0,Math.min(WW,cam.x));cam.y=Math.max(0,Math.min(WH,cam.y))};
 function zoomAt(px,py,nz){const a=toTile(px,py);cam.z=Math.max(zmin(),Math.min(ZMAX,nz));const b=toTile(px,py);cam.x+=a.x-b.x;cam.y+=a.y-b.y;clampCam();dirty=true}
 let tween=null;function goto(x,y,z,ms){const t0=performance.now(),a={x:cam.x,y:cam.y,z:cam.z};if(!ms){cam.x=x;cam.y=y;cam.z=z;clampCam();dirty=true;return}tween=(now)=>{const t=Math.min(1,(now-t0)/ms),e=t*t*(3-2*t);cam.x=a.x+(x-a.x)*e;cam.y=a.y+(y-a.y)*e;cam.z=Math.exp(Math.log(a.z)+(Math.log(z)-Math.log(a.z))*e);clampCam();dirty=true;if(t>=1)tween=null}}
-/* ============ draw ============ */
+/* ---------- fine ground grain for the close view: one small tiling texture, drawn once per frame (no per-tile work) ---------- */
+const grain=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');for(let i=0;i<520;i++){const x=W.hash(i,1,301)*128,y=W.hash(i,2,301)*128,r=.6+W.hash(i,3,301)*1.5,d=W.hash(i,4,301)<.5;g.fillStyle=d?'rgba(60,52,40,.20)':'rgba(255,250,235,.17)';g.beginPath();g.ellipse(x,y,r*1.3,r*.8,0,0,7);g.fill()}
+  for(let i=0;i<26;i++){const x=W.hash(i,5,301)*128,y=W.hash(i,6,301)*128;g.strokeStyle='rgba(70,60,45,.10)';g.lineWidth=.8;g.beginPath();g.moveTo(x,y);g.lineTo(x+(W.hash(i,7,301)-.5)*22,y+(W.hash(i,8,301)-.5)*9);g.stroke()}
+  return ctx.createPattern(c,'repeat')})();
+/* ---------- giant buildings ---------- */
+const placed=[];let sel=null,ghost=null,giant={id:'g2',w:24,h:16,ht:3},rot=0,placing=false;
+const GIANTS=[{id:'cur',n:'أكبر مبنى حالياً',s:'مصفاة ضخمة',w:12,h:9,ht:2},{id:'g1',n:'عملاق صغير',s:'16×12',w:16,h:12,ht:2.6},{id:'g2',n:'عملاق متوسط',s:'24×16',w:24,h:16,ht:3},{id:'g3',n:'عملاق كبير',s:'32×24',w:32,h:24,ht:3.6}];
+function fpDims(g,r){return r%2?[g.h,g.w]:[g.w,g.h]}
+function checkFootprint(g,x0,y0,r,want){const[w,h]=fpDims(g,r);let bad=0,tot=0,worst=0,why=null,steep=0;const badList=want?[]:null;
+  for(const q of placed){const[qw,qh]=fpDims(q.g,q.r);if(x0<q.x+qw&&x0+w>q.x&&y0<q.y+qh&&y0+h>q.y){return{ok:false,bad:w*h,tot:w*h,worst:0,why:'يتداخل مع مبنى مثبَّت',steep:0,badList:null,all:true}}}
+  for(let j=0;j<h;j++)for(let i=0;i<w;i++){const x=x0+i+.5,y=y0+j+.5;tot++;let b=false;
+    if(x<0||y<0||x>=WW||y>=WH){bad++;b=true;why=why||'خارج حدود العالم'}
+    else{const e=elev(x,y),k=classify(x,y,e);
+      if(inRect(RESV,x,y)){bad++;b=true;why=why||'داخل C3: أرض احتياطي استراتيجي'}
+      else if(k===K.DEEP||k===K.SHALLOW){bad++;b=true;why=why||'في البحر'}
+      else if(k===K.LAKE){bad++;b=true;why=why||'بحيرة'}else if(k===K.ROCK){bad++;b=true;why=why||'صخور / جبل'}else if(k===K.WADI){bad++;b=true;why=why||'وادٍ جاف'}
+      else{const sl=slopeAt(x,y,e).slope;if(sl>worst)worst=sl;if(sl>.05){steep++;bad++;b=true;why=why||'ميل أكبر من المسموح للمبنى العملاق'}}}
+    if(b&&badList)badList.push([i,j])}
+  return{ok:bad===0,bad,tot,worst,why,steep,badList}}
+/* the six ports turn with the building (0 / 90 / 180 / 270 degrees clockwise); each has its point on the border, the direction it faces and the outside cell a pipe attaches to */
+function portsOf(g,x,y,r){const lw=g.w,lh=g.h,v0=Math.floor((lh-1)/2)+.5,loc=[{u:0,v:v0,t:'in',du:-1,dv:0},{u:lw,v:v0,t:'out',du:1,dv:0}];for(let i=1;i<=4;i++)loc.push({u:Math.floor(lw*i/5)+.5,v:lh,t:'pipe',du:0,dv:1});
+  return loc.map(p=>{let X,Y,dx,dy;switch(((r%4)+4)%4){case 0:X=p.u;Y=p.v;dx=p.du;dy=p.dv;break;case 1:X=lh-p.v;Y=p.u;dx=-p.dv;dy=p.du;break;case 2:X=lw-p.u;Y=lh-p.v;dx=-p.du;dy=-p.dv;break;default:X=p.v;Y=lw-p.u;dx=p.dv;dy=-p.du}
+    const PX=x+X,PY=y+Y;return{x:PX,y:PY,t:p.t,dx,dy,cx:dx?Math.floor(PX+dx*.5):Math.floor(PX),cy:dy?Math.floor(PY+dy*.5):Math.floor(PY)}})}
+const STUBLEN=6;
+function stubsOf(g,x,y,r,self){const[w,h]=fpDims(g,r);return portsOf(g,x,y,r).map(q=>{let ok=true;for(let k=0;k<STUBLEN;k++){const cx=q.cx+q.dx*k,cy=q.cy+q.dy*k;for(const p of placed){if(p===self)continue;const[pw,ph]=fpDims(p.g,p.r);if(cx>=p.x&&cx<p.x+pw&&cy>=p.y&&cy<p.y+ph)ok=false}}return{port:q,ok}})}
+/* pipes are never held back by the ground: a route only goes round buildings. (Orthogonal breadth-first search on the tile grid.) */
+function pipeRoute(a,b,avoid,pad){pad=pad||24;const x0=Math.min(a.x,b.x)-pad,x1=Math.max(a.x,b.x)+pad,y0=Math.min(a.y,b.y)-pad,y1=Math.max(a.y,b.y)+pad,w=x1-x0+1,h=y1-y0+1,seen=new Int32Array(w*h).fill(-2),blocked=(x,y)=>{for(const r of avoid)if(x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h)return true;return false};
+  const s=(a.y-y0)*w+(a.x-x0),t=(b.y-y0)*w+(b.x-x0);if(blocked(a.x,a.y)||blocked(b.x,b.y))return null;const qu=[s];seen[s]=-1;
+  for(let i=0;i<qu.length;i++){const c=qu[i];if(c===t)break;const x=c%w,y=(c/w)|0;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;const n=ny*w+nx;if(seen[n]!==-2||blocked(nx+x0,ny+y0))continue;seen[n]=c;qu.push(n)}}
+  if(seen[t]===-2)return null;const path=[];for(let c=t;c!==-1;c=seen[c])path.push({x:c%w+x0,y:((c/w)|0)+y0});return path.reverse()}
+/* ---------- draw ---------- */
 const poly=(pts,fill,stroke,lw,dash)=>{ctx.beginPath();pts.forEach((p,i)=>{const X=sx(p[0],p[1]),Y=sy(p[0],p[1]);i?ctx.lineTo(X,Y):ctx.moveTo(X,Y)});ctx.closePath();if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.setLineDash(dash||[]);ctx.strokeStyle=stroke;ctx.lineWidth=lw||1;ctx.stroke();ctx.setLineDash([])}};
 const rectPts=(x,y,w,h)=>[[x,y],[x+w,y],[x+w,y+h],[x,y+h]];
 const onScreen=(x,y,w,h)=>{const xs=[sx(x,y),sx(x+w,y),sx(x,y+h),sx(x+w,y+h)],ys=[sy(x,y),sy(x+w,y),sy(x,y+h),sy(x+w,y+h)];return Math.max(...xs)>-40&&Math.min(...xs)<VW+40&&Math.max(...ys)>-40&&Math.min(...ys)<VH+40};
 function label(t,x,y,size,color,bold){ctx.font=(bold?'700 ':'600 ')+size+'px '+getComputedStyle(document.body).fontFamily;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineWidth=Math.max(2,size/4);ctx.strokeStyle='rgba(10,18,30,.78)';ctx.lineJoin='round';ctx.strokeText(t,x,y);ctx.fillStyle=color||'#fff';ctx.fillText(t,x,y)}
-const placed=[];let sel=null,ghost=null,giant={id:'g2',w:24,h:16,ht:3},rot=0;
-const GIANTS=[{id:'cur',n:'أكبر مبنى حالياً',s:'مصفاة ضخمة',w:12,h:9,ht:2},{id:'g1',n:'عملاق صغير',s:'16×12',w:16,h:12,ht:2.6},{id:'g2',n:'عملاق متوسط',s:'24×16',w:24,h:16,ht:3},{id:'g3',n:'عملاق كبير',s:'32×24',w:32,h:24,ht:3.6}];
-function fpDims(g,r){return r%2?[g.h,g.w]:[g.w,g.h]}
-function checkFootprint(g,x0,y0,r){const[w,h]=fpDims(g,r);let bad=0,tot=0,worst=0,why=null,steep=0;
-  for(const q of placed){const[qw,qh]=fpDims(q.g,q.r);if(x0<q.x+qw&&x0+w>q.x&&y0<q.y+qh&&y0+h>q.y){return{ok:false,bad:w*h,tot:w*h,worst:0,why:'يتداخل مع مبنى مثبَّت',steep:0}}}
-  for(let j=0;j<h;j++)for(let i=0;i<w;i++){const x=x0+i+.5,y=y0+j+.5;tot++;
-    if(x<0||y<0||x>=WW||y>=WH){bad++;why=why||'خارج حدود العالم';continue}
-    const e=elev(x,y),k=classify(x,y,e);
-    if(inRect(RESV,x,y)){bad++;why=why||'داخل C3: أرض احتياطي استراتيجي';continue}
-    if(k===K.DEEP||k===K.SHALLOW){bad++;why=why||'في البحر';continue}
-    if(k===K.LAKE){bad++;why=why||'بحيرة';continue}if(k===K.ROCK){bad++;why=why||'صخور / جبل';continue}if(k===K.WADI){bad++;why=why||'وادٍ جاف';continue}
-    const sl=shade(x,y,e).slope;if(sl>worst)worst=sl;if(sl>.05){steep++;bad++;why=why||'ميل أكبر من المسموح للمبنى العملاق'}}
-  return{ok:bad===0,bad,tot,worst,why,steep}}
-function portsOf(g,x,y,r){const lw=g.w,lh=g.h,loc=[{u:0,v:lh/2,t:'in'},{u:lw,v:lh/2,t:'out'}];for(let i=1;i<=4;i++)loc.push({u:lw*i/5,v:lh,t:'pipe'});return loc.map(p=>{let X=p.u,Y=p.v;if(r%2){X=lh-p.v;Y=p.u}return{x:x+X,y:y+Y,t:p.t}})}
-const BOX=(g,x,y,w,h,ht,top,side1,side2,alpha)=>{const z=cam.z,hp=ht*16*z*2.2,p=[[x,y],[x+w,y],[x+w,y+h],[x,y+h]].map(q=>[sx(q[0],q[1]),sy(q[0],q[1])]);
+const BOX=(x,y,w,h,ht,top,side1,side2,alpha)=>{const z=cam.z,hp=ht*16*z*2.2,p=[[x,y],[x+w,y],[x+w,y+h],[x,y+h]].map(q=>[sx(q[0],q[1]),sy(q[0],q[1])]);
   ctx.globalAlpha=alpha==null?1:alpha;ctx.fillStyle=side1;ctx.beginPath();ctx.moveTo(p[3][0],p[3][1]);ctx.lineTo(p[2][0],p[2][1]);ctx.lineTo(p[2][0],p[2][1]-hp);ctx.lineTo(p[3][0],p[3][1]-hp);ctx.closePath();ctx.fill();
   ctx.fillStyle=side2;ctx.beginPath();ctx.moveTo(p[1][0],p[1][1]);ctx.lineTo(p[2][0],p[2][1]);ctx.lineTo(p[2][0],p[2][1]-hp);ctx.lineTo(p[1][0],p[1][1]-hp);ctx.closePath();ctx.fill();
   ctx.fillStyle=top;ctx.beginPath();p.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]-hp):ctx.moveTo(q[0],q[1]-hp));ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=1;ctx.stroke();ctx.globalAlpha=1;return hp};
-function drawPorts(g,x,y,r){const z=cam.z;if(z<.06)return;for(const q of portsOf(g,x,y,r)){const X=sx(q.x,q.y),Y=sy(q.x,q.y),sz=Math.max(4,Math.min(12,70*z));ctx.fillStyle=q.t==='in'?'#4fa3ff':q.t==='out'?'#ff9a3c':'#f1f3f5';ctx.beginPath();if(q.t==='pipe')ctx.arc(X,Y,sz*.55,0,7);else{ctx.moveTo(X,Y-sz);ctx.lineTo(X+sz,Y+sz*.7);ctx.lineTo(X-sz,Y+sz*.7);ctx.closePath()}ctx.fill();ctx.strokeStyle='#0b1422';ctx.lineWidth=1.2;ctx.stroke()}}
+const PCOL={in:'#4fa3ff',out:'#ff9a3c',pipe:'#f1f3f5'};
+function drawPorts(g,x,y,r,self,showStubs){const z=cam.z;if(z<.05)return;const q=portsOf(g,x,y,r),stubs=showStubs&&L.pipes?stubsOf(g,x,y,r,self):null;
+  if(stubs&&z>=.08){ctx.lineCap='round';for(const s of stubs){const p=s.port,X0=sx(p.x,p.y),Y0=sy(p.x,p.y),ex=p.x+p.dx*STUBLEN,ey=p.y+p.dy*STUBLEN,X1=sx(ex,ey),Y1=sy(ex,ey),w=Math.max(2.5,1.6*z*22);
+      ctx.strokeStyle='rgba(12,22,38,.85)';ctx.lineWidth=w+2.5;ctx.beginPath();ctx.moveTo(X0,Y0);ctx.lineTo(X1,Y1);ctx.stroke();ctx.strokeStyle=s.ok?PCOL[p.t]==='#f1f3f5'?'#9fb4c8':PCOL[p.t]:'#e5695b';ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(X0,Y0);ctx.lineTo(X1,Y1);ctx.stroke()}}
+  for(const p of q){const X=sx(p.x,p.y),Y=sy(p.x,p.y),sz=Math.max(4,Math.min(13,70*z)),vx=(p.dx-p.dy)*32,vy=(p.dx+p.dy)*16,vl=Math.hypot(vx,vy)||1,ux=vx/vl,uy=vy/vl,fx=p.t==='in'?-ux:ux,fy=p.t==='in'?-uy:uy;
+    ctx.fillStyle=PCOL[p.t];ctx.strokeStyle='#0b1422';ctx.lineWidth=1.3;ctx.beginPath();
+    if(p.t==='pipe'){ctx.arc(X,Y,sz*.62,0,7)}else{ctx.moveTo(X+fx*sz*1.1,Y+fy*sz*1.1);ctx.lineTo(X-fx*sz*.7-fy*sz*.85,Y-fy*sz*.7+fx*sz*.85);ctx.lineTo(X-fx*sz*.7+fy*sz*.85,Y-fy*sz*.7-fx*sz*.85);ctx.closePath()}
+    ctx.fill();ctx.stroke();
+    if(z>.3&&showStubs){const cX=sx(p.cx+.5,p.cy+.5),cY=sy(p.cx+.5,p.cy+.5);ctx.strokeStyle='rgba(255,255,255,.65)';ctx.lineWidth=1.2;poly(rectPts(p.cx,p.cy,1,1),null,'rgba(255,255,255,.7)',1.2)}}
+  if(z>.35&&showStubs){for(const p of q){if(p.t==='pipe')continue;const X=sx(p.x+p.dx*2.6,p.y+p.dy*2.6),Y=sy(p.x+p.dx*2.6,p.y+p.dy*2.6);label(p.t==='in'?'دخول':'خروج',X,Y-8,Math.max(9,Math.min(13,z*34)),PCOL[p.t])}}}
+function drawFootprint(g,x,y,r,res){const[w,h]=fpDims(g,r),z=cam.z;
+  if(res&&res.all)poly(rectPts(x,y,w,h),'rgba(240,70,60,.4)');
+  else if(res&&res.badList&&res.badList.length){ctx.fillStyle='rgba(240,70,60,.55)';ctx.beginPath();for(const[i,j]of res.badList){const a=[x+i,y+j],b=[x+i+1,y+j],c=[x+i+1,y+j+1],d=[x+i,y+j+1];ctx.moveTo(sx(a[0],a[1]),sy(a[0],a[1]));ctx.lineTo(sx(b[0],b[1]),sy(b[0],b[1]));ctx.lineTo(sx(c[0],c[1]),sy(c[0],c[1]));ctx.lineTo(sx(d[0],d[1]),sy(d[0],d[1]));ctx.closePath()}ctx.fill()}
+  if(z>.2){ctx.strokeStyle='rgba(255,255,255,.3)';ctx.lineWidth=1;ctx.beginPath();for(let i=4;i<w;i+=4){ctx.moveTo(sx(x+i,y),sy(x+i,y));ctx.lineTo(sx(x+i,y+h),sy(x+i,y+h))}for(let j=4;j<h;j+=4){ctx.moveTo(sx(x,y+j),sy(x,y+j));ctx.lineTo(sx(x+w,y+j),sy(x+w,y+j))}ctx.stroke()}
+  const ok=!res||res.ok;poly(rectPts(x-.5,y-.5,w+1,h+1),null,ok?'#8dffb4':'#ff8a80',2.2,[7,4]);
+  ctx.strokeStyle=ok?'#d9ffe6':'#ffd1cc';ctx.lineWidth=3;for(const c of[[x,y,1,1],[x+w,y,-1,1],[x+w,y+h,-1,-1],[x,y+h,1,-1]]){const k=Math.min(4,w/4,h/4);ctx.beginPath();ctx.moveTo(sx(c[0]+c[2]*k,c[1]),sy(c[0]+c[2]*k,c[1]));ctx.lineTo(sx(c[0],c[1]),sy(c[0],c[1]));ctx.lineTo(sx(c[0],c[1]+c[3]*k),sy(c[0],c[1]+c[3]*k));ctx.stroke()}
+  if(z>.1){const fs=Math.max(10,Math.min(15,z*50));label(w+' بلاطة',sx(x+w/2,y+h+1.8),sy(x+w/2,y+h+1.8),fs,'#e8edf5');label(h+' بلاطة',sx(x+w+2,y+h/2),sy(x+w+2,y+h/2),fs,'#e8edf5');label(w*h+' خلية',sx(x+w/2,y+h/2),sy(x+w/2,y+h/2),fs+1,'#fff',true)}}
 function draw(now){
   const t0=performance.now();ctx.setTransform(DPR,0,0,DPR,0,0);ctx.fillStyle='#1c3a4c';ctx.fillRect(0,0,VW,VH);
   const z=cam.z;
-  /* terrain: overview under everything; chunks (2 px / tile) when the view is closer */
-  {const sc=OVS;ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='low';ctx.save();ctx.setTransform(DPR*32*z*sc,DPR*16*z*sc,-DPR*32*z*sc,DPR*16*z*sc,DPR*sx(0,0),DPR*sy(0,0));ctx.drawImage(ovc,0,0,OVW+.4,OVH+.4);ctx.restore()}
-  if(z>=.05){const a=toTile(0,0),b=toTile(VW,0),c=toTile(0,VH),d=toTile(VW,VH),x0=Math.max(0,Math.floor(Math.min(a.x,b.x,c.x,d.x)/CH)),x1=Math.min(WW/CH-1,Math.floor(Math.max(a.x,b.x,c.x,d.x)/CH)),y0=Math.max(0,Math.floor(Math.min(a.y,b.y,c.y,d.y)/CH)),y1=Math.min(WH/CH-1,Math.floor(Math.max(a.y,b.y,c.y,d.y)/CH));let made=0,miss=0;
-    const k=1/RES;for(let cy=y0;cy<=y1;cy++)for(let cx=x0;cx<=x1;cx++){let im=chunkCanvas(cx,cy,false);if(!im){miss++;if(made<2){im=chunkCanvas(cx,cy,true);made++}}if(!im)continue;
-      ctx.save();ctx.setTransform(DPR*32*z*k,DPR*16*z*k,-DPR*32*z*k,DPR*16*z*k,DPR*sx(cx*CH,cy*CH),DPR*sy(cx*CH,cy*CH));ctx.drawImage(im,0,0,im.width+.5,im.height+.5);ctx.restore()}
-    stats.miss=Math.max(0,miss-made);if(miss>made)dirty=true;}else stats.miss=0;
-  /* close-up ground detail: shrubs and stones scattered by a fixed hash; the points of each 128-tile block are computed once and cached */
-  if(z>=.55){const P0=new Path2D(),P1=new Path2D(),P2=new Path2D(),A=toTile(0,0),B=toTile(VW,0),C=toTile(0,VH),D=toTile(VW,VH),xl=Math.min(A.x,B.x,C.x,D.x),xh=Math.max(A.x,B.x,C.x,D.x),yl=Math.min(A.y,B.y,C.y,D.y),yh=Math.max(A.y,B.y,C.y,D.y),st=z<1?2:1;
-    for(let cy=Math.max(0,Math.floor(yl/CH));cy<=Math.min(WH/CH-1,Math.floor(yh/CH));cy++)for(let cx=Math.max(0,Math.floor(xl/CH));cx<=Math.min(WW/CH-1,Math.floor(xh/CH));cx++){const L=decoOf(cx,cy);
-      for(let i=0;i<L.length;i+=st){const q=L[i],X=sx(q.x,q.y),Y=sy(q.x,q.y);if(X<-10||X>VW+10||Y<-10||Y>VH+10)continue;const r=q.r*z*1.6,P=q.t===0?P0:q.t===2?P2:P1,w=r*(q.t===0?1.1:1.3),h=r*(q.t===0?.6:.7);P.moveTo(X+w,Y);P.ellipse(X,Y,w,h,0,0,7)}}
-    ctx.fillStyle='rgba(95,92,88,.75)';ctx.fill(P0);ctx.fillStyle='rgba(104,124,92,.62)';ctx.fill(P1);ctx.fillStyle='rgba(88,112,84,.7)';ctx.fill(P2)}
-  /* shelf / coast / future strips */
+  if(ovReady){const sc=OVS;ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='low';ctx.save();ctx.setTransform(DPR*32*z*sc,DPR*16*z*sc,-DPR*32*z*sc,DPR*16*z*sc,DPR*sx(0,0),DPR*sy(0,0));ctx.drawImage(ovc,0,0,OVW+.4,OVH+.4);ctx.restore()}
+  else{label('جارٍ توليد الخريطة…',VW/2,VH/2,16,'#d7e6f0',true)}
+  visKeys=new Set();
+  if(z>=.05&&ovReady){const a=toTile(0,0),b=toTile(VW,0),c=toTile(0,VH),d=toTile(VW,VH),mx=Math.min(a.x,b.x,c.x,d.x),Mx=Math.max(a.x,b.x,c.x,d.x),my=Math.min(a.y,b.y,c.y,d.y),My=Math.max(a.y,b.y,c.y,d.y),
+      x0=Math.max(0,Math.floor(mx/CH)),x1=Math.min(WW/CH-1,Math.floor(Mx/CH)),y0=Math.max(0,Math.floor(my/CH)),y1=Math.min(WH/CH-1,Math.floor(My/CH));let miss=0;const want=[];
+    const k=1/RES;for(let cy=y0;cy<=y1;cy++)for(let cx=x0;cx<=x1;cx++){const key=cy*100+cx;visKeys.add(key);const e=chunks.get(key);if(!e){miss++;want.push([cx,cy]);continue}
+      chunks.delete(key);chunks.set(key,e);ctx.save();ctx.setTransform(DPR*32*z*k,DPR*16*z*k,-DPR*32*z*k,DPR*16*z*k,DPR*sx(cx*CH,cy*CH),DPR*sy(cx*CH,cy*CH));ctx.drawImage(e.cv,0,0,e.cv.width+.5,e.cv.height+.5);ctx.restore()}
+    stats.miss=miss;
+    if(miss){const ccx=(x0+x1)/2,ccy=(y0+y1)/2;want.sort((p,q)=>Math.hypot(p[0]-ccx,p[1]-ccy)-Math.hypot(q[0]-ccx,q[1]-ccy));
+      /* one ring beyond the view is requested too, so a pan or zoom meets ready blocks */
+      queue=want;if(stats.mode==='worker')pump();else if(stats.mode==='sync'){const[cx,cy]=want[0],t=performance.now(),r=W.genChunk(cx,cy);storeChunk(cx,cy,r.buf,r.deco,performance.now()-t);dirty=true}}
+    else{const pre=[];for(let cy=Math.max(0,y0-1);cy<=Math.min(WH/CH-1,y1+1);cy++)for(let cx=Math.max(0,x0-1);cx<=Math.min(WW/CH-1,x1+1);cx++){const key=cy*100+cx;if(!chunks.has(key)&&!pending.has(key)){pre.push([cx,cy]);visKeys.add(key)}}queue=pre;if(pre.length&&stats.mode==='worker')pump()}
+  }else stats.miss=0;
+  /* close view: fine ground grain over the whole view, then the compounds are laid flat again so industrial land stays clean */
+  if(z>=.45&&ovReady){ctx.save();ctx.globalAlpha=Math.min(1,(z-.45)/.3);const kk=7/128;grain.setTransform(new DOMMatrix([kk*32*z,kk*16*z,-kk*32*z,kk*16*z,sx(0,0),sy(0,0)]));ctx.fillStyle=grain;ctx.fillRect(0,0,VW,VH);ctx.restore()}
+  /* close-up ground detail: stones round the outcrops, dry scrub along the wadis, thin scatter; the points come with each block */
+  if(z>=.55){const P0=new Path2D(),P1=new Path2D(),P2=new Path2D(),P3s=new Path2D(),P3=new Path2D(),P3h=new Path2D(),P4=new Path2D(),st=z<1?2:1;
+    for(const key of visKeys){const e=chunks.get(key);if(!e)continue;const D=e.deco;
+      for(let i=0;i<D.length;i+=4){const t=D[i+3];if(t!==3&&st===2&&(i>>2)%2)continue;const X=sx(D[i],D[i+1]),Y=sy(D[i],D[i+1]);if(X<-14||X>VW+14||Y<-14||Y>VH+14)continue;const r=D[i+2]*z*1.6;
+        if(t===3){const w=r*1.25,h=r*.78;P3s.moveTo(X+w+r*.45,Y+r*.35);P3s.ellipse(X+r*.45,Y+r*.35,w*1.05,h*.8,0,0,7);P3.moveTo(X+w,Y);P3.ellipse(X,Y,w,h,0,0,7);P3h.moveTo(X-r*.15+w*.5,Y-h*.3);P3h.ellipse(X-r*.15,Y-h*.3,w*.5,h*.4,0,0,7)}
+        else{const P=t===0?P0:t===2?P2:t===4?P4:P1,w=r*(t===0?1.1:1.3),h=r*(t===0?.6:.7);P.moveTo(X+w,Y);P.ellipse(X,Y,w,h,0,0,7)}}}
+    ctx.fillStyle='rgba(60,52,44,.35)';ctx.fill(P3s);ctx.fillStyle='rgba(138,133,125,.97)';ctx.fill(P3);ctx.fillStyle='rgba(176,172,164,.55)';ctx.fill(P3h);
+    ctx.fillStyle='rgba(112,108,101,.9)';ctx.fill(P0);ctx.fillStyle='rgba(104,124,92,.62)';ctx.fill(P1);ctx.fillStyle='rgba(88,112,84,.7)';ctx.fill(P2);ctx.fillStyle='rgba(132,112,76,.72)';ctx.fill(P4)}
   const strip=(f0,f1,y0,y1)=>{const pts=[];for(let y=y0;y<=y1;y+=24)pts.push([coast(y)+f0,y]);for(let y=y1;y>=y0;y-=24)pts.push([coast(y)+f1,y]);return pts};
   if(L.zones||L.future){
-    if(L.zones){const p=strip(10,110,160,1440);poly(p,'rgba(63,140,156,.20)','rgba(120,210,225,.9)',Math.max(1,z*5),[8,5]);}
-    if(L.future){const p=strip(-200,-24,200,1400);poly(p,'rgba(90,160,200,.16)','rgba(170,220,250,.9)',Math.max(1,z*5),[10,7])}
-  }
+    if(L.zones){const p=strip(10,110,160,1440);poly(p,'rgba(63,140,156,.20)','rgba(120,210,225,.9)',Math.max(1,z*5),[8,5])}
+    if(L.future){const p=strip(-200,-24,200,1400);poly(p,'rgba(90,160,200,.16)','rgba(170,220,250,.9)',Math.max(1,z*5),[10,7])}}
   if(L.zones||L.future||L.reserve)for(const zn of ZONES){const kd=KIND[zn.k];if(zn.k==='RESERVE'){if(!L.reserve)continue}else if(zn.k==='FUTURE'){if(!L.future)continue}else if(!L.zones)continue;if(!onScreen(zn.x,zn.y,zn.w,zn.h))continue;
     const pts=rectPts(zn.x,zn.y,zn.w,zn.h);
-    if(zn.k==='RESERVE'){poly(pts,'rgba(212,170,82,.14)','#d4aa52',Math.max(2,z*10),[14,8])}
+    if(zn.k==='RESERVE'){if(z>=.45)poly(pts,'rgba(176,160,120,.5)');poly(pts,'rgba(212,170,82,.14)','#d4aa52',Math.max(2,z*10),[14,8])}
     else if(zn.k==='FUTURE'){poly(pts,'rgba(120,170,150,.13)','rgba(190,235,215,.95)',Math.max(1.2,z*6),[9,7])}
-    else poly(pts,kd.c+'33',kd.c+'dd',Math.max(1,z*5))}
-  /* piers prepared on the coast (not operational) */
+    else{if(z>=.45)poly(pts,'rgba(150,152,146,.5)');poly(pts,kd.c+'33',kd.c+'dd',Math.max(1,z*5))}}
+  /* the organised layout: a faint square for each place a well / tank / refinery / pump is meant to stand */
+  if(L.slots&&L.zones&&z>.03)for(const s of SLOTS){if(s.z==='C3'){if(!L.reserve)continue}else if(!L.zones)continue;if(!onScreen(s.x,s.y,s.w,s.h))continue;const col=s.k==='RESERVE'?'255,226,154':'255,255,255';poly(rectPts(s.x,s.y,s.w,s.h),'rgba('+col+',.07)','rgba('+col+',.5)',Math.max(1,z*3),[5,4]);
+    if(z>.45&&L.labels)label(s.n,sx(s.x+s.w/2,s.y+s.h/2),sy(s.x+s.w/2,s.y+s.h/2),Math.max(9,Math.min(12,z*22)),s.k==='RESERVE'?'#ffe9b8':'#e8edf5')}
   if(L.zones&&z>.02)for(const P of PIERS){const y=P.y,c=coast(y),a=[c+10,y],b=[c-46,y];ctx.lineCap='butt';ctx.strokeStyle='#cfd5da';ctx.lineWidth=Math.max(2,z*60);ctx.beginPath();ctx.moveTo(sx(a[0],a[1]),sy(a[0],a[1]));ctx.lineTo(sx(b[0],b[1]),sy(b[0],b[1]));ctx.stroke();ctx.fillStyle='#e7ebee';ctx.fillRect(sx(b[0],b[1])-Math.max(3,z*45),sy(b[0],b[1])-Math.max(3,z*45),Math.max(6,z*90),Math.max(6,z*90));if(z>.05&&L.labels)label('رصيف مجهّز',sx(c-20,y),sy(c-20,y)-14,Math.max(9,Math.min(13,z*200)),'#e7f3f8')}
-  /* C3: fence, inner plots, expansion levels, gates */
+  /* C3: fence, open space, expansion levels */
   if(L.reserve&&onScreen(C3.x,C3.y,C3.w,C3.h)){poly(rectPts(C3.x+3,C3.y+3,C3.w-6,C3.h-6),null,'rgba(255,226,154,.55)',Math.max(1,z*3));
-    if(z>.045){ctx.setLineDash([]);const cx=C3.x+C3.w/2,cy=C3.y+C3.h/2,LV=[[20,14],[24,17],[28,20],[32,23],[36,26]];LV.forEach((q,i)=>{poly(rectPts(cx-q[0]/2,cy-q[1]/2,q[0],q[1]),i===0?'rgba(255,226,154,.20)':null,'rgba(255,226,154,'+(.95-i*.12)+')',Math.max(1,z*5),i?[6,4]:null)});
-      if(z>.2&&L.labels){label('مستويات التوسعة 0–4',sx(cx,cy+19),sy(cx,cy+19),Math.max(10,Math.min(15,z*60)),'#ffe9b8')}}
-    if(z>.04){const cx=C3.x+C3.w/2,cy=C3.y+C3.h/2;for(let i=-2;i<=2;i++)for(let j=-1;j<=1;j++){if(i===0&&j===0)continue;const px=cx+i*62-23,py=cy+j*86-23;if(i===0)continue;poly(rectPts(px,py,46,46),'rgba(255,226,154,.07)','rgba(255,226,154,.45)',Math.max(1,z*3),[5,4])}
-      if(z>.3&&L.labels)for(let i=-2;i<=2;i++)for(let j=-1;j<=1;j+=2){if(i===0)continue;label('قطعة مخزن',sx(cx+i*62,cy+j*86),sy(cx+i*62,cy+j*86),Math.max(9,Math.min(13,z*45)),'#ffe9b8')}}
-    for(const gt of GATES){const X=sx(gt.x,gt.y),Y=sy(gt.x,gt.y),q=Math.max(4,Math.min(10,z*80));ctx.fillStyle='#d4aa52';ctx.fillRect(X-q,Y-q,q*2,q*2);ctx.strokeStyle='#14233a';ctx.lineWidth=1.5;ctx.strokeRect(X-q,Y-q,q*2,q*2);if(z>.1&&L.labels)label(gt.n,X,Y-q-9,Math.max(9,Math.min(13,z*80)),'#ffe9b8')}}
-  /* roads: main / secondary / service, corners rounded; a visual layer only */
-  if(L.roads){const MIN={main:3.6,sec:2.6,svc:1.4};for(const R of ROADS){const wpx=Math.max(MIN[R.t],R.w*z*22),P=R.p;if(R.t==='svc'&&z<.012)continue;let bb=false;for(let i=0;i<P.length;i+=Math.max(1,P.length>40?4:1)){const X=sx(P[i][0],P[i][1]),Y=sy(P[i][0],P[i][1]);if(X>-80&&X<VW+80&&Y>-80&&Y<VH+80){bb=true;break}}
-      if(!bb&&P.length>=2){const a0=P[0],a1=P[P.length-1];for(const t of[.25,.5,.75]){const X=sx(a0[0]+(a1[0]-a0[0])*t,a0[1]+(a1[1]-a0[1])*t),Y=sy(a0[0]+(a1[0]-a0[0])*t,a0[1]+(a1[1]-a0[1])*t);if(X>-200&&X<VW+200&&Y>-200&&Y<VH+200){bb=true;break}}}if(!bb)continue;
-      ctx.lineCap='round';ctx.lineJoin='round';const rr=Math.max(4,18*z*22);const path=()=>{ctx.beginPath();const q0=P[0];ctx.moveTo(sx(q0[0],q0[1]),sy(q0[0],q0[1]));for(let i=1;i<P.length-1&&P.length<60;i++){ctx.arcTo(sx(P[i][0],P[i][1]),sy(P[i][0],P[i][1]),sx(P[i+1][0],P[i+1][1]),sy(P[i+1][0],P[i+1][1]),rr)}if(P.length>=60){for(let i=1;i<P.length;i++)ctx.lineTo(sx(P[i][0],P[i][1]),sy(P[i][0],P[i][1]))}else{const q=P[P.length-1];ctx.lineTo(sx(q[0],q[1]),sy(q[0],q[1]))}};
-      const edge=R.t==='svc'?'rgba(210,214,218,.55)':'rgba(228,231,235,.92)',asp=R.t==='svc'?'#59606a':'#363c45';
-      path();ctx.strokeStyle=edge;ctx.lineWidth=wpx+Math.max(1,wpx*.32);ctx.stroke();path();ctx.strokeStyle=asp;ctx.lineWidth=wpx;ctx.stroke();
-      if(R.t==='main'&&wpx>5){path();ctx.setLineDash([wpx*1.5,wpx*1.1]);ctx.strokeStyle='rgba(240,236,205,.85)';ctx.lineWidth=Math.max(1,wpx*.09);ctx.stroke();ctx.setLineDash([])}
-      else if(R.t==='sec'&&wpx>7){path();ctx.setLineDash([wpx,wpx*1.4]);ctx.strokeStyle='rgba(235,235,225,.7)';ctx.lineWidth=Math.max(1,wpx*.08);ctx.stroke();ctx.setLineDash([])}}}
-  /* regions grid */
-  if(L.grid){ctx.lineWidth=1;ctx.strokeStyle='rgba(255,255,255,.35)';ctx.setLineDash([5,5]);for(let ry=0;ry<WH/RC;ry++)for(let rx=0;rx<WW/RC;rx++){const x=rx*RC,y=ry*RC;if(!onScreen(x,y,RC,RC))continue;poly(rectPts(x,y,RC,RC),null,'rgba(255,255,255,.4)',1,[5,5]);if(z>.012){const nm=String.fromCharCode(65+ry)+(rx+1);label(nm,sx(x+RC/2,y+RC/2),sy(x+RC/2,y+RC/2),Math.max(9,Math.min(22,z*900)),'rgba(255,255,255,.75)')}}ctx.setLineDash([])}
-  if(L.tilegrid&&z>.7){ctx.strokeStyle='rgba(255,255,255,.14)';ctx.lineWidth=1;const a=toTile(0,0),b=toTile(VW,VH),lo=Math.floor(Math.min(a.x,b.x,toTile(VW,0).x,toTile(0,VH).x))-2,hi=Math.ceil(Math.max(a.x,b.x,toTile(VW,0).x,toTile(0,VH).x))+2,ylo=Math.floor(Math.min(a.y,b.y,toTile(VW,0).y,toTile(0,VH).y))-2,yhi=Math.ceil(Math.max(a.y,b.y,toTile(VW,0).y,toTile(0,VH).y))+2;ctx.beginPath();for(let x=lo;x<=hi;x+=4){ctx.moveTo(sx(x,ylo),sy(x,ylo));ctx.lineTo(sx(x,yhi),sy(x,yhi))}for(let y=ylo;y<=yhi;y+=4){ctx.moveTo(sx(lo,y),sy(lo,y));ctx.lineTo(sx(hi,y),sy(hi,y))}ctx.stroke()}
+    if(z>.045){const cx=C3.x+C3.w/2,cy=C3.y+C3.h/2,LV=[[20,14],[24,17],[28,20],[32,23],[36,26]];poly(rectPts(cx-110,cy-95,220,190),'rgba(255,226,154,.05)','rgba(255,226,154,.28)',Math.max(1,z*3),[3,6]);
+      LV.forEach((q,i)=>{poly(rectPts(cx-q[0]/2,cy-q[1]/2,q[0],q[1]),i===0?'rgba(255,226,154,.20)':null,'rgba(255,226,154,'+(.95-i*.12)+')',Math.max(1,z*5),i?[6,4]:null)});
+      if(z>.2&&L.labels){label('مستويات التوسعة 0–4',sx(cx,cy+19),sy(cx,cy+19),Math.max(10,Math.min(15,z*60)),'#ffe9b8');label('مساحة مفتوحة للخزانات والمضخات والتوسعة',sx(cx,cy-40),sy(cx,cy-40),Math.max(10,Math.min(15,z*50)),'#ffe9b8')}}}
+  /* illustrative pipes between the compounds: the only visible link between facilities */
+  if(L.pipes&&L.zones){const w=Math.max(2.2,1.5*z*22),colr={c:'#c8782a',p:'#4a90c8',r:'#d4aa52'};ctx.lineCap='round';ctx.lineJoin='round';
+    for(const P of PIPES){let on=false;for(let i=0;i<P.p.length&&!on;i++){const X=sx(P.p[i][0],P.p[i][1]),Y=sy(P.p[i][0],P.p[i][1]);if(X>-60&&X<VW+60&&Y>-60&&Y<VH+60)on=true}if(!on){const a=P.p[0],b=P.p[P.p.length-1];for(const t of[.3,.5,.7]){const X=sx(a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t),Y=sy(a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t);if(X>-200&&X<VW+200&&Y>-200&&Y<VH+200)on=true}}if(!on)continue;
+      const path=()=>{ctx.beginPath();P.p.forEach((q,i)=>i?ctx.lineTo(sx(q[0],q[1]),sy(q[0],q[1])):ctx.moveTo(sx(q[0],q[1]),sy(q[0],q[1])))};
+      path();ctx.strokeStyle='rgba(12,22,38,.85)';ctx.lineWidth=w+2.6;ctx.stroke();path();ctx.strokeStyle=colr[P.t];ctx.lineWidth=w;ctx.stroke();
+      if(w>4.5){path();ctx.setLineDash([w*.9,w*2.4]);ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=Math.max(1,w*.28);ctx.stroke();ctx.setLineDash([])}}
+    for(const h of HUBS){if(!onScreen(h.x-4,h.y-4,8,8))continue;const X=sx(h.x,h.y),Y=sy(h.x,h.y),q=Math.max(3,Math.min(9,z*60));ctx.fillStyle='#e8edf5';ctx.strokeStyle='#0b1422';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(X,Y,q,0,7);ctx.fill();ctx.stroke();if(z>.3&&L.labels)label('نقطة تجميع',X,Y-q-8,Math.max(9,Math.min(12,z*28)),'#e8edf5')}}
+  if(L.grid){ctx.lineWidth=1;ctx.setLineDash([5,5]);for(let ry=0;ry<WH/RC;ry++)for(let rx=0;rx<WW/RC;rx++){const x=rx*RC,y=ry*RC;if(!onScreen(x,y,RC,RC))continue;poly(rectPts(x,y,RC,RC),null,'rgba(255,255,255,.4)',1,[5,5]);if(z>.012){const nm=String.fromCharCode(65+ry)+(rx+1);label(nm,sx(x+RC/2,y+RC/2),sy(x+RC/2,y+RC/2),Math.max(9,Math.min(22,z*900)),'rgba(255,255,255,.75)')}}ctx.setLineDash([])}
+  if(L.tilegrid&&z>.7){ctx.strokeStyle='rgba(255,255,255,.14)';ctx.lineWidth=1;const a=toTile(0,0),b=toTile(VW,VH),c=toTile(VW,0),d=toTile(0,VH),lo=Math.floor(Math.min(a.x,b.x,c.x,d.x))-2,hi=Math.ceil(Math.max(a.x,b.x,c.x,d.x))+2,ylo=Math.floor(Math.min(a.y,b.y,c.y,d.y))-2,yhi=Math.ceil(Math.max(a.y,b.y,c.y,d.y))+2;ctx.beginPath();for(let x=lo;x<=hi;x+=4){ctx.moveTo(sx(x,ylo),sy(x,ylo));ctx.lineTo(sx(x,yhi),sy(x,yhi))}for(let y=ylo;y<=yhi;y+=4){ctx.moveTo(sx(lo,y),sy(lo,y));ctx.lineTo(sx(hi,y),sy(hi,y))}ctx.stroke()}
   if(L.old){poly(rectPts(0,0,OLD.w,OLD.h),'rgba(255,255,255,.04)','#ff7a6b',Math.max(2,z*8),[16,9]);label('حدود الخريطة الحالية 1920×1280',sx(OLD.w/2,OLD.h/2),sy(OLD.w/2,OLD.h*.9),Math.max(11,Math.min(26,z*1100)),'#ffb4aa',true)}
-  /* placed giants */
-  for(const p of placed){const[w,h]=fpDims(p.g,p.r);if(!onScreen(p.x,p.y,w,h))continue;const s=sel===p;if(s)poly(rectPts(p.x-1.5,p.y-1.5,w+3,h+3),'rgba(255,214,120,.25)','#ffd778',2.5);BOX(p.g,p.x,p.y,w,h,p.g.ht,'#aeb8c6','#6c7a8c','#8493a6',1);drawPorts(p.g,p.x,p.y,p.r);if(z>.05)label(p.g.n,sx(p.x+w/2,p.y+h/2),sy(p.x+w/2,p.y+h/2)-p.g.ht*16*z*2.4,Math.max(10,Math.min(16,z*60)),'#fff')}
-  if(ghost){const[w,h]=fpDims(giant,rot),res=ghost.res,col=res.ok?'rgba(80,220,130,.45)':'rgba(240,80,70,.5)';poly(rectPts(ghost.x-1,ghost.y-1,w+2,h+2),null,res.ok?'#8dffb4':'#ff8a80',2,[6,4]);BOX(giant,ghost.x,ghost.y,w,h,giant.ht*.55,col,col,col,.9);drawPorts(giant,ghost.x,ghost.y,rot)}
-  /* labels */
-  if(L.labels){const fs=Math.max(10,Math.min(20,z*820));if(z>.008){for(const zn of ZONES){if(zn.k==='RESERVE'?!L.reserve:zn.k==='FUTURE'?!L.future:!L.zones)continue;if(!onScreen(zn.x,zn.y,zn.w,zn.h))continue;const cx=sx(zn.x+zn.w/2,zn.y+zn.h/2),cy=sy(zn.x+zn.w/2,zn.y+zn.h/2);label(zn.n,cx,cy,zn.k==='RESERVE'?fs+2:fs,zn.k==='RESERVE'?'#ffe29a':'#fff',zn.k==='RESERVE');if(zn.k==='RESERVE'&&z>.04)label('أرض محمية: خزانات الاحتياطي والمضخات فقط',cx,cy+fs+6,Math.max(9,fs-3),'#ffe9b8')}
+  for(const p of placed){const[w,h]=fpDims(p.g,p.r);if(!onScreen(p.x,p.y,w,h))continue;const s=sel===p;if(s)poly(rectPts(p.x-1.5,p.y-1.5,w+3,h+3),'rgba(255,214,120,.25)','#ffd778',2.5);BOX(p.x,p.y,w,h,p.g.ht,'#aeb8c6','#6c7a8c','#8493a6',1);drawPorts(p.g,p.x,p.y,p.r,p,true);if(z>.05)label(p.g.n,sx(p.x+w/2,p.y+h/2),sy(p.x+w/2,p.y+h/2)-p.g.ht*16*z*2.4,Math.max(10,Math.min(16,z*60)),'#fff')}
+  if(ghost){const[w,h]=fpDims(giant,rot),res=ghost.res,col=res.ok?'rgba(80,220,130,.45)':'rgba(240,80,70,.5)';drawFootprint(giant,ghost.x,ghost.y,rot,res);BOX(ghost.x,ghost.y,w,h,giant.ht*.55,col,col,col,.85);drawPorts(giant,ghost.x,ghost.y,rot,null,true)}
+  if(L.labels){const fs=Math.max(10,Math.min(20,z*820));if(z>.008){for(const zn of ZONES){if(zn.k==='RESERVE'?!L.reserve:zn.k==='FUTURE'?!L.future:!L.zones)continue;if(!onScreen(zn.x,zn.y,zn.w,zn.h))continue;const cx=sx(zn.x+zn.w/2,zn.y+zn.h/2),cy=sy(zn.x+zn.w/2,zn.y+zn.h/2);if(zn.k==='RESERVE'&&z>.2)continue;label(zn.n,cx,cy,zn.k==='RESERVE'?fs+2:fs,zn.k==='RESERVE'?'#ffe29a':'#fff',zn.k==='RESERVE');if(zn.k==='RESERVE'&&z>.04)label('أرض محمية: خزانات الاحتياطي والمضخات فقط',cx,cy+fs+6,Math.max(9,fs-3),'#ffe9b8')}
     if(L.zones){label('الساحل والميناء',sx(coast(800)+60,800),sy(coast(800)+60,800),fs,'#bff0f8')}if(L.future){label('بحر مستقبلي (للمنصات والموانئ لاحقاً)',sx(coast(700)-110,700),sy(coast(700)-110,700),fs,'#cfe8fb')}
     label('البحر',sx(coast(800)-420,800),sy(coast(800)-420,800),fs+4,'#d4ecf5',true)}}
-  /* scale bar */
   {const px=z*32*Math.SQRT2,ML=[5,10,20,50,100,200,500,1000,2000],m=ML.filter(t=>t*px<=200).pop()||5,w=m*px,x0=VW-16-w;ctx.fillStyle='rgba(10,20,34,.7)';ctx.fillRect(x0-6,VH-62,w+12,22);ctx.fillStyle='#fff';ctx.fillRect(x0,VH-48,w,3);ctx.font='600 11px sans-serif';ctx.textAlign='center';ctx.textBaseline='alphabetic';ctx.fillText(m+' بلاطة = '+(m*TILE_M>=1000?(m*TILE_M/1000)+' كم':m*TILE_M+' م'),x0+w/2,VH-52+0)}
-  /* minimap */
-  {mg.clearRect(0,0,300,192);mg.drawImage(ovc,0,0,OVW,OVH,0,0,300,192);const mx=300/WW,my=192/WH;mg.strokeStyle='#d4aa52';mg.lineWidth=1.5;mg.setLineDash([5,3]);mg.strokeRect(C3.x*mx,C3.y*my,C3.w*mx,C3.h*my);mg.setLineDash([]);
+  {mg.clearRect(0,0,300,192);if(ovReady)mg.drawImage(ovc,0,0,OVW,OVH,0,0,300,192);const mx=300/WW,my=192/WH;mg.strokeStyle='#d4aa52';mg.lineWidth=1.5;mg.setLineDash([5,3]);mg.strokeRect(C3.x*mx,C3.y*my,C3.w*mx,C3.h*my);mg.setLineDash([]);
     mg.strokeStyle='#fff';mg.lineWidth=2;mg.beginPath();[[0,0],[VW,0],[VW,VH],[0,VH]].forEach((p,i)=>{const t=toTile(p[0],p[1]),X=Math.max(0,Math.min(300,t.x*mx)),Y=Math.max(0,Math.min(192,t.y*my));i?mg.lineTo(X,Y):mg.moveTo(X,Y)});mg.closePath();mg.stroke()}
   const ms=performance.now()-t0;frames.n++;frames.t+=ms;frames.last=ms;
-  hud.textContent='تكبير '+cam.z.toFixed(3)+' · رسم '+ms.toFixed(1)+' مللي · كتل مخزنة '+chunks.size;
+  hud.textContent='تكبير '+cam.z.toFixed(3)+' · رسم '+ms.toFixed(1)+' مللي · كتل مخزنة '+chunks.size+(stats.mode==='worker'?' · توليد خارج الخيط الرئيسي':stats.mode==='sync'?' · توليد على الخيط الرئيسي':'');
 }
 const frames={n:0,t:0,last:0};
-/* ============ input ============ */
-const ptrs=new Map();let moved=0,pinch=null,hover=null;
+/* ---------- input ---------- */
+const ptrs=new Map();let moved=0,pinch=null;
 cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY,rx:e.offsetX,ry:e.offsetY});moved=0;tween=null;if(ptrs.size===2){const[a,b]=[...ptrs.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),z:cam.z}}});
 cv.addEventListener('pointermove',e=>{const p=ptrs.get(e.pointerId);if(!p){if(placing){setGhost(e.offsetX,e.offsetY)}return}
   if(ptrs.size>=2&&pinch){p.x=e.clientX;p.y=e.clientY;const[a,b]=[...ptrs.values()],d=Math.hypot(a.x-b.x,a.y-b.y),r=cv.getBoundingClientRect();zoomAt((a.x+b.x)/2-r.left,(a.y+b.y)/2-r.top,pinch.z*d/pinch.d);moved=99;return}
@@ -284,56 +388,60 @@ cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',e=>{ptrs
 cv.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.offsetX,e.offsetY,cam.z*Math.exp(-e.deltaY*.0016))},{passive:false});
 mini.addEventListener('pointerdown',e=>{const r=mini.getBoundingClientRect();goto((e.clientX-r.left)/r.width*WW,(e.clientY-r.top)/r.height*WH,cam.z,0)});
 document.getElementById('zin').onclick=()=>zoomAt(VW/2,VH/2,cam.z*1.6);document.getElementById('zout').onclick=()=>zoomAt(VW/2,VH/2,cam.z/1.6);
-const zc=z=>({x:z.x+z.w/2,y:z.y+z.h/2});
-const GO={all:()=>goto(WW*.45,WH*.5,fitZ,500),coast:()=>goto(coast(800)+60,800,Math.max(.06,fitZ*5),600),c3:()=>goto(C3.x+160,C3.y+160,Math.max(.2,fitZ*14),600),ind:()=>{const p=ZONES.find(z=>z.id==='P1');goto(p.x+p.w/2,p.y+p.h/2,.55,600)},close:()=>{const p=ZONES.find(z=>z.id==='S1');goto(p.x+p.w/2,p.y+p.h/2,1.25,600)}};
+/* a spot with a dry valley and a rock cluster close together, outside every compound (for the "close view" shortcut) */
+let spot=null;function closeSpot(){if(spot)return spot;let best=null,bs=-1;for(let y=330;y<1270;y+=36)for(let x=800;x<2300;x+=36){let wa=0,ro=0,zn=0,rx=0,ry=0;for(let j=-3;j<=3;j++)for(let i=-3;i<=3;i++){const px=x+i*8,py=y+j*8,k=classify(px,py,elev(px,py));if(k===K.WADI)wa++;else if(k===K.ROCK&&W.A().cv>.2){ro++;rx+=px;ry+=py}if(W.zoneW(px,py,0)>0)zn++}
+    if(zn===0&&wa>=3&&ro>=4){const s=Math.min(wa,10)*Math.min(ro,12);if(s>bs){bs=s;best={x:Math.round(rx/ro),y:Math.round(ry/ro)}}}}spot=best||{x:1180,y:560};return spot}
+const GO={all:()=>goto(WW*.45,WH*.5,fitZ,500),coast:()=>goto(coast(800)+60,800,Math.max(.06,fitZ*5),600),c3:()=>goto(C3.x+160,C3.y+160,Math.max(.2,fitZ*14),600),ind:()=>goto(1090,340,.1,600),close:()=>{const s=closeSpot();goto(s.x,s.y,.8,600)}};
 document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>GO[b.dataset.go]());
-/* ============ giant buildings: footprint preview, confirm, select by touch ============ */
-let placing=false;
-function setGhost(px,py){const t=toTile(px,py),[w,h]=fpDims(giant,rot),x=Math.round(t.x-w/2),y=Math.round(t.y-h/2);ghost={x,y,res:checkFootprint(giant,x,y,rot)};dirty=true;renderGiantInfo()}
+function setGhost(px,py){const t=toTile(px,py),[w,h]=fpDims(giant,rot),x=Math.round(t.x-w/2),y=Math.round(t.y-h/2);ghost={x,y,res:checkFootprint(giant,x,y,rot,true)};dirty=true;renderGiantInfo()}
 function tap(px,py){
   if(placing){setGhost(px,py);return}
   const t=toTile(px,py),pad=Math.max(1.5,10/(cam.z*28));let hit=null;for(const p of placed){const[w,h]=fpDims(p.g,p.r);if(t.x>=p.x-pad&&t.y>=p.y-pad&&t.x<p.x+w+pad&&t.y<p.y+h+pad)hit=p}
   sel=hit;dirty=true;renderGiantInfo()}
 function renderGiantInfo(){const el=document.getElementById('ginfo');if(!el)return;const[w,h]=fpDims(giant,rot);let s='';
-  if(placing){if(!ghost)s='المس الخريطة لوضع المعاينة، واسحب لتحريك الخريطة.';else{const r=ghost.res;s='<div class="row"><span>المساحة</span><span><bdi dir="ltr">'+w+'×'+h+'</bdi> = '+w*h+' بلاطة ('+(w*h*TILE_M*TILE_M/10000).toFixed(1)+' هكتار)</span></div><div class="row"><span>الخلايا الصالحة</span><span>'+(r.tot-r.bad)+' من '+r.tot+'</span></div><div class="row"><span>الحالة</span><span class="'+(r.ok?'ok':'no')+'">'+(r.ok?'يمكن البناء':'مرفوض: '+r.why)+'</span></div>'}}
-  else if(sel){const[sw,sh]=fpDims(sel.g,sel.r);s='<div class="row"><span>المحدد</span><span>'+sel.g.n+' · <bdi dir="ltr">'+sw+'×'+sh+'</bdi></span></div><div class="row"><span>الموضع</span><span>'+sel.x+' , '+sel.y+'</span></div>'}
+  if(placing){if(!ghost)s='المس الخريطة لوضع المعاينة، واسحب لتحريك الخريطة.';else{const r=ghost.res;s='<div class="row"><span>المساحة</span><span><bdi dir="ltr">'+w+'×'+h+'</bdi> = '+w*h+' بلاطة ('+(w*h*TILE_M*TILE_M/10000).toFixed(1)+' هكتار)</span></div><div class="row"><span>التدوير</span><span>'+rot*90+'°</span></div><div class="row"><span>الخلايا الصالحة</span><span>'+(r.tot-r.bad)+' من '+r.tot+'</span></div><div class="row"><span>الحالة</span><span class="'+(r.ok?'ok':'no')+'">'+(r.ok?'يمكن البناء':'مرفوض: '+r.why)+'</span></div>'}}
+  else if(sel){const[sw,sh]=fpDims(sel.g,sel.r);s='<div class="row"><span>المحدد</span><span>'+sel.g.n+' · <bdi dir="ltr">'+sw+'×'+sh+'</bdi> · '+sel.r*90+'°</span></div><div class="row"><span>الموضع</span><span>'+sel.x+' , '+sel.y+'</span></div>'}
   else s='لا شيء محدد. المس أي جزء من مبنى عملاق (حتى حوله بقليل) لتحديده.';el.innerHTML=s;const ok=document.getElementById('gok');if(ok)ok.disabled=!(placing&&ghost&&ghost.res.ok);const del=document.getElementById('gdel');if(del)del.disabled=!sel}
-/* ============ drawer ============ */
-const body=document.getElementById('body');let tab='layers';
+/* ---------- drawer ---------- */
+const body=document.getElementById('body');
 function pct(n,d){return(100*n/d)}
 function renderStats(){const S=stats,T=S.total,sf=S.sea+S.future,terr=S.rock+S.wadi+S.lake,buildable=T-sf-terr,LA=S.land||1,flatL=S.flat+S.beach,hillL=S.hill;
   const bar=(col,target,lab,val)=>'<div class="row"><span>'+lab+'</span><span>'+val.toFixed(1)+'% <small style="color:var(--mute)">(الهدف ≈ '+target+'%)</small></span></div><div class="bar"><i style="width:'+val+'%;background:'+col+'"></i><b style="left:'+target+'%"></b></div>';
-  body.innerHTML='<h3>الأرض اليابسة (تضاريسها)</h3>'+bar('#7d8f75',80,'مستوية أو شبه مستوية',pct(flatL,LA))+bar('#8d9c7a',10,'ميل خفيف ومتوسط (تلال)',pct(hillL,LA))+bar('#8a8780',10,'شديدة ومعالم طبيعية (جبال، صخور، أودية، بحيرات)',pct(terr,LA))
+  body.innerHTML='<h3>الأرض اليابسة (تضاريسها)</h3>'+bar('#7d8f75',80,'مستوية أو شبه مستوية',pct(flatL,LA))+bar('#8d9c7a',10,'ميل خفيف ومتوسط (تلال)',pct(hillL,LA))+bar('#8a8780',10,'شديدة ومعالم طبيعية (جبال، تجمعات صخرية، أودية، بحيرات)',pct(terr,LA))
   +'<h3>توزيع العالم كله</h3>'+bar('#7d8f75',65,'أرض صناعية قابلة للبناء',pct(buildable,T))+bar('#4f8fb0',30,'بحر ومناطق مستقبلية',pct(sf,T))+bar('#8a8780',5,'تضاريس غير قابلة للبناء',pct(terr,T))
   +'<h3>المقارنة بالخريطة الحالية</h3><div class="row"><span>الحالية</span><span><bdi dir="ltr">1920×1280</bdi> = 2.46 مليون بلاطة</span></div><div class="row"><span>الجديدة</span><span><bdi dir="ltr">'+WW+'×'+WH+'</bdi> = '+(WW*WH/1e6).toFixed(2)+' مليون بلاطة</span></div><div class="row"><span>النسبة</span><span>'+(WW*WH/(OLD.w*OLD.h)).toFixed(2)+'× المساحة</span></div><div class="row"><span>الأبعاد الحقيقية</span><span>'+(WW*TILE_M/1000).toFixed(1)+' × '+(WH*TILE_M/1000).toFixed(1)+' كم</span></div><div class="row"><span>المناطق</span><span>8×5 = 40 (القديمة 6×4 = 24)</span></div>'
-  +'<h3>الأداء (هذا الجهاز)</h3><div class="row"><span>توليد الصورة العامة</span><span>'+S.genMs.toFixed(0)+' مللي</span></div><div class="row"><span>توليد كتلة 128×128</span><span>'+(S.chunks?(S.chunkMs/S.chunks).toFixed(0):'—')+' مللي (حتى الآن '+S.chunks+')</span></div><div class="row"><span>ذاكرة الكتل المخزنة</span><span>'+(chunks.size*CH*RES*CH*RES*4/1048576).toFixed(1)+' ميغابايت ('+chunks.size+' من '+MAXCH+')</span></div><div class="row"><span>متوسط زمن الرسم</span><span>'+(frames.n?(frames.t/frames.n).toFixed(1):'—')+' مللي</span></div>'
+  +'<h3>الأداء (هذا الجهاز)</h3><div class="row"><span>طريقة التوليد</span><span>'+(S.mode==='worker'?'Worker (خارج الخيط الرئيسي)':S.mode==='sync'?'الخيط الرئيسي (بديل)':'—')+'</span></div><div class="row"><span>توليد الصورة العامة</span><span>'+S.genMs.toFixed(0)+' مللي</span></div><div class="row"><span>توليد كتلة 128×128</span><span>'+(S.chunks?(S.chunkMs/S.chunks).toFixed(0):'—')+' مللي (حتى الآن '+S.chunks+')</span></div><div class="row"><span>ذاكرة الكتل المخزنة</span><span>'+(chunks.size*CH*RES*CH*RES*4/1048576).toFixed(1)+' ميغابايت ('+chunks.size+' من '+MAXCH+')</span></div><div class="row"><span>متوسط زمن الرسم</span><span>'+(frames.n?(frames.t/frames.n).toFixed(1):'—')+' مللي</span></div>'
   +'<p class="note">الأرقام تُحسب من الخريطة المعروضة نفسها. قياس الكمبيوتر لا يغني عن اختبار أندرويد.</p>'}
 function swatch(c){return '<span class="dot" style="background:'+c+'"></span>'}
-function renderLayers(){const items=[['zones','المناطق الصناعية',KIND.EXTRACT.c],['roads','شبكة الطرق (اختيارية)','#3a4049'],['grid','تقسيم المناطق (A1…E8)','#ffffff'],['reserve','C3 الاحتياطي','#d4aa52'],['future','المناطق المستقبلية والبحر','#5f8f7a'],['labels','التسميات','#cfd6df'],['old','حدود الخريطة الحالية','#ff7a6b'],['tilegrid','شبكة البلاطات (تكبير قريب)','#9aa5b4']];
+function renderLayers(){const items=[['zones','المناطق الصناعية',KIND.EXTRACT.c],['slots','مواقع التنظيم (آبار، خزانات، مصافي، مضخات)','#e8edf5'],['pipes','أنابيب توضيحية بين المجمعات','#4a90c8'],['grid','تقسيم المناطق (A1…E8)','#ffffff'],['reserve','C3 الاحتياطي','#d4aa52'],['future','المناطق المستقبلية والبحر','#5f8f7a'],['labels','التسميات','#cfd6df'],['old','حدود الخريطة الحالية','#ff7a6b'],['tilegrid','شبكة البلاطات (تكبير قريب)','#9aa5b4']];
   body.innerHTML='<div class="grid">'+items.map(i=>'<label class="sw"><input type="checkbox" data-l="'+i[0]+'" '+(L[i[0]]?'checked':'')+'>'+swatch(i[2])+'<span>'+i[1]+'</span></label>').join('')+'</div>'
-  +'<h3>دليل الألوان</h3><div class="grid">'+[[K.FLAT,'أرض مستوية'],[K.HILL,'تلال خفيفة'],[K.ROCK,'صخور / جبال (الأطراف)'],[K.BEACH,'شاطئ'],[K.WADI,'وادٍ جاف'],[K.LAKE,'بحيرة صغيرة'],[K.SHALLOW,'بحر ضحل'],[K.DEEP,'بحر عميق']].map(a=>{const c=COL[a[0]]||(a[0]===K.SHALLOW?[86,150,168]:[30,74,100]);return '<div class="row" style="justify-content:flex-start;gap:8px">'+swatch('rgb('+c.join(',')+')')+'<span style="font-weight:500">'+a[1]+'</span></div>'}).join('')+'</div>'
-  +'<h3>أنواع الطرق</h3><div class="grid">'+[['طريق رئيسي (سريع ساحلي وشرايين)','#363c45',9],['طريق فرعي','#363c45',6],['طريق خدمة (حلقات المجمعات والمداخل)','#59606a',3]].map(a=>'<div class="row" style="justify-content:flex-start;gap:8px"><span style="width:28px;height:'+a[2]+'px;background:'+a[1]+';border-radius:3px;flex:none;outline:1px solid #ccd"></span><span style="font-weight:500">'+a[0]+'</span></div>').join('')+'</div>'
-  +'<p class="note">الطرق طبقة بصرية فقط: لا شيء يمنع البناء خارجها ولا يتغير الإنتاج بسببها. المناطق باللون الذهبي المتقطع (C3) أرض احتياطي لا تُبنى فيها مبانٍ تجارية.</p>';
+  +'<h3>دليل الألوان</h3><div class="grid">'+[[K.FLAT,'أرض مستوية'],[K.HILL,'تلال خفيفة'],[K.ROCK,'صخور: جبال الأطراف وتجمعات صخرية'],[K.BEACH,'شاطئ'],[K.WADI,'وادٍ جاف'],[K.LAKE,'بحيرة صغيرة'],[K.SHALLOW,'بحر ضحل'],[K.DEEP,'بحر عميق']].map(a=>{const c=COLV[a[0]]||(a[0]===K.SHALLOW?[86,150,168]:[30,74,100]);return '<div class="row" style="justify-content:flex-start;gap:8px">'+swatch('rgb('+c.join(',')+')')+'<span style="font-weight:500">'+a[1]+'</span></div>'}).join('')+'</div>'
+  +'<h3>الأنابيب (توضيحية)</h3><div class="grid">'+[['خام من الاستخراج','#c8782a'],['منتجات بين التخزين والتكرير والضخ','#4a90c8'],['خط الاحتياطي إلى C3','#d4aa52']].map(a=>'<div class="row" style="justify-content:flex-start;gap:8px"><span style="width:28px;height:6px;background:'+a[1]+';border-radius:3px;flex:none;outline:1px solid #ccd"></span><span style="font-weight:500">'+a[0]+'</span></div>').join('')+'</div>'
+  +'<p class="note">لا توجد طرق في هذه الخريطة: الأنابيب هي وسيلة الربط والنقل الوحيدة بين المنشآت، ولا تقيّدها الأرض. الأنابيب المرسومة هنا مثال توضيحي للنموذج فقط، ولا تغيّر شبكة الأنابيب ولا الضغط ولا التدفق في اللعبة. المربعات الباهتة داخل المجمعات تقترح أين تقف الآبار والخزانات والمصافي والمضخات كي يسهل جمع الأنابيب. C3 (الذهبي المتقطع) أرض احتياطي لا تُبنى فيها مبانٍ تجارية.</p>';
   body.querySelectorAll('[data-l]').forEach(c=>c.onchange=()=>{L[c.dataset.l]=c.checked;dirty=true})}
 function renderGiant(){body.innerHTML='<div class="sizes">'+GIANTS.map(g=>'<button data-g="'+g.id+'" aria-pressed="'+(giant.id===g.id)+'"><strong>'+g.n+'</strong>'+g.s+' · <bdi dir="ltr">'+g.w+'×'+g.h+'</bdi></button>').join('')+'</div>'
-  +'<div class="btns"><button class="btn pri" id="gplace">'+(placing?'إنهاء المعاينة':'ابدأ المعاينة')+'</button><button class="btn" id="grot">تدوير</button><button class="btn" id="gok" disabled>تثبيت هنا</button><button class="btn bad" id="gdel" disabled>حذف المحدد</button></div>'
+  +'<div class="btns"><button class="btn pri" id="gplace">'+(placing?'إنهاء المعاينة':'ابدأ المعاينة')+'</button><button class="btn" id="grot">تدوير 90°</button><button class="btn" id="gok" disabled>تثبيت هنا</button><button class="btn bad" id="gdel" disabled>حذف المحدد</button></div>'
   +'<h3>المعاينة</h3><div id="ginfo" class="note" style="margin:0"></div>'
-  +'<p class="note">الدائرة البيضاء منافذ الأنابيب، المثلث الأزرق الدخول، والبرتقالي الخروج. الأخضر يعني أن كل الخلايا صالحة. الأحمر يعني رفض البناء وسببه. المبنى المثبَّت هنا للتجربة فقط ولا يُحفظ.</p>';
-  body.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{giant=GIANTS.find(g=>g.id===b.dataset.g);ghost=null;renderGiant();if(placing){const t={x:cam.x,y:cam.y};}});
-  document.getElementById('gplace').onclick=()=>{placing=!placing;if(placing){sel=null;const[w,h]=fpDims(giant,rot);ghost={x:Math.round(cam.x-w/2),y:Math.round(cam.y-h/2)};ghost.res=checkFootprint(giant,ghost.x,ghost.y,rot);if(cam.z<.16)goto(cam.x,cam.y,.3,350)}else ghost=null;renderGiant();dirty=true};
-  document.getElementById('grot').onclick=()=>{rot=(rot+1)%2;if(ghost){ghost.res=checkFootprint(giant,ghost.x,ghost.y,rot)}renderGiantInfo();dirty=true};
+  +'<p class="note">المنافذ الستة تدور مع المبنى: المثلث الأزرق دخول (يشير إلى الداخل)، والبرتقالي خروج (يشير إلى الخارج)، والدوائر البيضاء منافذ أنابيب. الخلية البيضاء المؤطَّرة خارج الحافة هي التي يتصل بها الأنبوب. الأخضر يعني أن كل الخلايا صالحة، والأحمر خلايا مرفوضة مع السبب. المبنى المثبَّت هنا للتجربة فقط ولا يُحفظ.</p>';
+  body.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{giant=GIANTS.find(g=>g.id===b.dataset.g);ghost=null;renderGiant();dirty=true});
+  document.getElementById('gplace').onclick=()=>{placing=!placing;if(placing){sel=null;const[w,h]=fpDims(giant,rot);ghost={x:Math.round(cam.x-w/2),y:Math.round(cam.y-h/2)};ghost.res=checkFootprint(giant,ghost.x,ghost.y,rot,true);if(cam.z<.16)goto(cam.x,cam.y,.3,350)}else ghost=null;renderGiant();dirty=true};
+  document.getElementById('grot').onclick=()=>{setRot((rot+1)%4)};
   document.getElementById('gok').onclick=()=>{if(placing&&ghost&&ghost.res.ok){const p={g:giant,x:ghost.x,y:ghost.y,r:rot};placed.push(p);sel=p;placing=false;ghost=null;renderGiant();dirty=true}};
   document.getElementById('gdel').onclick=()=>{if(sel){placed.splice(placed.indexOf(sel),1);sel=null;renderGiant();dirty=true}};
   renderGiantInfo()}
+function setRot(n){rot=((n%4)+4)%4;if(ghost){const[w,h]=fpDims(giant,rot);ghost.res=checkFootprint(giant,ghost.x,ghost.y,rot,true)}renderGiantInfo();dirty=true}
 function renderTab(){document.querySelectorAll('#tabs [data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab));if(tab==='layers')renderLayers();else if(tab==='stats')renderStats();else renderGiant()}
 document.querySelectorAll('#tabs [data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;body.hidden=false;document.getElementById('fold').textContent='▾';renderTab();setTimeout(resize,0)});
 document.getElementById('fold').onclick=function(){body.hidden=!body.hidden;this.textContent=body.hidden?'▴':'▾';setTimeout(resize,0)};
-/* ============ boot ============ */
-let hasPlan=false;
 function loop(now){if(tween)tween(now);if(dirty){dirty=false;draw(now)}requestAnimationFrame(loop)}
 window.addEventListener('resize',resize);
 if(window.ResizeObserver)new ResizeObserver(resize).observe(document.getElementById('stage'));
-resize();buildOverview();renderTab();goto(WW*.45,WH*.5,fitZ,0);dirty=true;requestAnimationFrame(loop);
-window.__proto={missing:()=>stats.miss||0,drawNow:()=>draw(performance.now()),cacheSize:()=>chunks.size,ports:portsOf,placed,toScreen:(x,y)=>({x:sx(x,y),y:sy(x,y)}),sel:()=>sel,goto,cam,L,stats,draw:()=>{dirty=true},setTab:t=>{tab=t;renderTab()},giantMode:(id,x,y)=>{giant=GIANTS.find(g=>g.id===id)||giant;placing=true;ghost={x,y,res:checkFootprint(giant,x,y,rot)};renderGiant();dirty=true},place:()=>document.getElementById('gok').click(),ZONES,coast,fit:()=>fitZ,check:checkFootprint,GIANTS,frames,tile:(x,y)=>{const e=elev(x,y);return classify(x,y,e)}};
+resize();renderTab();goto(WW*.45,WH*.5,fitZ,0);startWorkers();dirty=true;requestAnimationFrame(loop);
+const sum=cv2=>{const d=cv2.getContext('2d').getImageData(0,0,cv2.width,cv2.height).data;let h=2166136261;for(let i=0;i<d.length;i+=7){h^=d[i];h=Math.imul(h,16777619)}return h>>>0};
+window.__proto={ready:()=>ovReady,missing:()=>stats.miss||0,drawNow:()=>draw(performance.now()),cacheSize:()=>chunks.size,ports:portsOf,stubs:stubsOf,route:pipeRoute,placed,toScreen:(x,y)=>({x:sx(x,y),y:sy(x,y)}),sel:()=>sel,goto,cam,L,stats,draw:()=>{dirty=true},setTab:t=>{tab=t;renderTab()},
+  giantMode:(id,x,y)=>{giant=GIANTS.find(g=>g.id===id)||giant;placing=true;ghost={x,y,res:checkFootprint(giant,x,y,rot,true)};renderGiant();dirty=true},place:()=>document.getElementById('gok').click(),setRot,rot:()=>rot,
+  ZONES,SLOTS,HUBS,PIPES,coast,fit:()=>fitZ,check:checkFootprint,GIANTS,frames,closeSpot,tile:(x,y)=>classify(x,y,elev(x,y)),slope:(x,y)=>slopeAt(x,y,elev(x,y)).slope,wadiW:W.wadiW,
+  mode:()=>stats.mode,chunkSum:(cx,cy)=>{const e=chunks.get(cy*100+cx);return e?sum(e.cv):null},syncChunkSum:(cx,cy)=>{const N=CH*RES,r=W.genChunk(cx,cy),c=document.createElement('canvas');c.width=N;c.height=N;c.getContext('2d').putImageData(new ImageData(r.buf,N,N),0,0);return sum(c)},
+  roadsLayer:()=>null};
 })();
 </script>
