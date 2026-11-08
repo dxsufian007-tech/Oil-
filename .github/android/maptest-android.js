@@ -58,16 +58,18 @@ const check = (name, ok, info) => { results.push({ name, ok: !!ok, info }); if (
   const wp = await ev("const v = window.__v2, c = v.tc(90, 44); return v.camApi.w2s(c.x, c.y - 6);"); const dd = D(wp); adbShell(['input tap ' + dd.x + ' ' + dd.y]); await sleep(900);
   const sel = await ev("const v = window.__v2; return { sel: v.ui.sel && v.ui.sel.type, id: v.ui.sel && v.ui.sel.id };");
   check('M8. a real Android tap on the well selects it', sel && sel.id === b.id, JSON.stringify(sel)); shot('map-selected');
-  // a real one-finger swipe pans the map
-  const c0 = await ev("const c = window.__v2.view.cam; return { x: c.scrollX, y: c.scrollY };"); const s0 = D({ x: 200, y: 400 }), s1 = D({ x: 120, y: 330 });
+  // a real one-finger swipe pans the map (nothing selected, so the swipe cannot start a building drag)
+  await ev("const v = window.__v2; v.select && v.select(null); return 1;"); await sleep(400);
+  const c0 = await ev("const c = window.__v2.view.cam; return { x: c.scrollX, y: c.scrollY };"); const s0 = D({ x: 300, y: 250 }), s1 = D({ x: 200, y: 200 });
   adbShell(['input swipe ' + s0.x + ' ' + s0.y + ' ' + s1.x + ' ' + s1.y + ' 400']); await sleep(700);
   const c1 = await ev("const c = window.__v2.view.cam; return { x: c.scrollX, y: c.scrollY };"); check('M9. a real swipe moves the camera', Math.hypot(c1.x - c0.x, c1.y - c0.y) > 20, JSON.stringify([c0, c1]));
   // settings: the switch back to the old map (real taps), the game restarts on the old map, then back to the new one
+  const before = await ev("return window.__v2.game.buildings.map(b => [b.type, b.x, b.y].join(',')).sort();");
   await ev("const v = window.__v2; v.select && v.select(null); return 1;");
   await tapEl('#b-settings'); const so = await tapEl('#settings [data-pref=map] [data-v=old]'); await sleep(6000);
   const MO = await info(); check('M10. settings -> map -> old (real taps): the old map is back (mode ' + MO.mode + ', water tiles ' + MO.water + ')', so && MO.mode === 'old' && !MO.win && MO.water > 100, JSON.stringify(MO)); shot('map-old');
   const keep = await ev("return { b: window.__v2.game.buildings.map(b => [b.type, b.x, b.y].join(',')).sort() };");
-  check('M11. the save survived the switch: the same buildings on the same tiles', keep.b.length === 2 && keep.b.some(s => s === 'well,90,44') && keep.b.some(s => s === 'tank,100,44'), JSON.stringify(keep));
+  check('M11. the save survived the switch: the same ' + before.length + ' buildings on the same tiles', JSON.stringify(keep.b) === JSON.stringify(before), JSON.stringify(keep));
   await tapEl('#b-settings'); const sn = await tapEl('#settings [data-pref=map] [data-v=new]'); await sleep(6000);
   const MN = await info(); check('M12. settings -> map -> new: the new map is back, buildings still on their tiles', sn && MN.mode === 'new' && MN.win, JSON.stringify(MN.win));
   const h1 = await heap(); check('M13. JS heap after the whole session', h1 === null || h1 < 400, h0 + ' -> ' + h1 + ' MB');
