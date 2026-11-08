@@ -113,6 +113,22 @@ let n = 0; const ok = (c, m, x) => { if (!c) console.log('  FAIL ' + m + (x ? ' 
   const st = await E(() => { const S = __proto.stats, LA = S.land, T = S.total, t = S.rock + S.wadi + S.lake; return { flat: 100 * (S.flat + S.beach) / LA, hill: 100 * S.hill / LA, nat: 100 * t / LA, bld: 100 * (T - S.sea - S.future - t) / T }; });
   ok(Math.abs(st.flat - 80) < 1.5 && Math.abs(st.hill - 10) < 1.5 && Math.abs(st.nat - 10) < 1.5, 'land shares ' + st.flat.toFixed(1) + ' / ' + st.hill.toFixed(1) + ' / ' + st.nat.toFixed(1) + ' (target 80 / 10 / 10)');
 
+  /* 6b. R4: buildable share, slots and collection points are an optional visual aid only */
+  const bw = await E(() => { const S = __proto.stats, T = S.total; return 100 * (T - S.sea - S.future - S.rock - S.wadi - S.lake) / T });
+  ok(bw >= 65, 'buildable industrial land is ' + bw.toFixed(1) + '% of the world (target 65%)');
+  const aid = await E(() => { const P = __proto, G = P.GIANTS[0], pts = [[1090, 340], [1500, 700], [1600, 330]], snap = () => JSON.stringify([pts.map(p => P.check(G, p[0], p[1], 0, true).ok), (P.route({ x: 1000, y: 340 }, { x: 1200, y: 420 }, [], 10) || []).length]);
+    const L0 = { ...P.L }, a = snap(); P.L.slots = false; P.L.pipes = false; const b = snap(); P.L.slots = true; P.L.pipes = true; const c = snap(); Object.assign(P.L, L0);
+    const srcs = [P.route.toString(), P.check.toString(), P.stubs.toString(), P.ports.toString()].join(' ');
+    const s = P.SLOTS.find(s => s.zone !== 'C3' && s.w), o = s ? P.check(G, s.x, s.y, 0, true) : null;
+    return { same: a === b && b === c, refs: /SLOTS|HUBS|PIPES/.test(srcs), slotOk: o ? o.ok === true || (o.badList && o.badList.length >= 0) : null, nslots: P.SLOTS.length, nhubs: P.HUBS.length } });
+  ok(aid.same, 'toggling the slots/pipes layers changes no placement or pipe-route result');
+  ok(!aid.refs, 'placement checks, ports and pipe routing do not reference SLOTS, HUBS or the drawn PIPES');
+  ok(aid.nslots === 265 && aid.nhubs === 24, 'organisation data: ' + aid.nslots + ' slots and ' + aid.nhubs + ' collection points');
+  const hubRoute = await E(() => { const P = __proto, h = P.HUBS[0], g = P.GIANTS[0], p = P.ports(g, 1090, 340, 0)[2], q = P.ports(g, 1090, 400, 0)[2]; return { free: (P.route({ x: p.cx, y: p.cy }, { x: q.cx, y: q.cy }, [], 10) || []).length > 0 } });
+  ok(hubRoute.free, 'a pipe between two ports is routed freely, with no collection point in between');
+  const bn = await E(async () => { __proto.setTab('perf'); const r = await __proto.bench(null, { scale: .25 }); return { n: r.scenes.length, ui: !!document.getElementById('pgo'), dev: !!r.device.ua, cache: r.cache_blocks } });
+  ok(bn.n === 5 && bn.ui && bn.dev, 'the in-page Android benchmark tab runs 5 scenes and reports device info');
+
   /* 7. generation off the main thread, and identical to the in-page generator */
   ok(await E(() => __proto.mode()) === 'worker', 'terrain and blocks are generated in a Web Worker');
   await view(1000, 400, .3);

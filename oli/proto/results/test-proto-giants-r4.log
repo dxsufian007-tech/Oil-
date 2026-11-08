@@ -1,0 +1,158 @@
+  ok  four sizes: 12x9, 16x12, 24x16, 32x24
+  ok  12x9 rot 0: accepted in the north refinery zone (108 cells, all valid)
+  ok  12x9 rot 0: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  12x9 rot 0: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  12x9 rot 90: accepted in the north refinery zone (108 cells, all valid)
+  ok  12x9 rot 90: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  12x9 rot 90: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  12x9 rot 180: accepted in the north refinery zone (108 cells, all valid)
+  ok  12x9 rot 180: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  12x9 rot 180: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  12x9 rot 270: accepted in the north refinery zone (108 cells, all valid)
+  ok  12x9 rot 270: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  12x9 rot 270: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  16x12 rot 0: accepted in the north refinery zone (192 cells, all valid)
+  ok  16x12 rot 0: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  16x12 rot 0: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  16x12 rot 90: accepted in the north refinery zone (192 cells, all valid)
+  ok  16x12 rot 90: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  16x12 rot 90: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  16x12 rot 180: accepted in the north refinery zone (192 cells, all valid)
+  ok  16x12 rot 180: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  16x12 rot 180: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  16x12 rot 270: accepted in the north refinery zone (192 cells, all valid)
+  ok  16x12 rot 270: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  16x12 rot 270: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  24x16 rot 0: accepted in the north refinery zone (384 cells, all valid)
+  ok  24x16 rot 0: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  24x16 rot 0: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  24x16 rot 90: accepted in the north refinery zone (384 cells, all valid)
+  ok  24x16 rot 90: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  24x16 rot 90: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  24x16 rot 180: accepted in the north refinery zone (384 cells, all valid)
+  ok  24x16 rot 180: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  24x16 rot 180: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  24x16 rot 270: accepted in the north refinery zone (384 cells, all valid)
+  ok  24x16 rot 270: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  24x16 rot 270: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  32x24 rot 0: accepted in the north refinery zone (768 cells, all valid)
+  ok  32x24 rot 0: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  32x24 rot 0: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  32x24 rot 90: accepted in the north refinery zone (768 cells, all valid)
+  ok  32x24 rot 90: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  32x24 rot 90: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  32x24 rot 180: accepted in the north refinery zone (768 cells, all valid)
+  ok  32x24 rot 180: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  32x24 rot 180: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  32x24 rot 270: accepted in the north refinery zone (768 cells, all valid)
+  ok  32x24 rot 270: 6 ports on the border, each faces outward, each has its outside attach cell
+  ok  32x24 rot 270: entry and exit face opposite ways; the four pipe ports share the third side
+  ok  12x9: rotation 0° → 90° turns every port (position and direction) by exactly 90°
+  ok  12x9: rotation 90° → 180° turns every port (position and direction) by exactly 90°
+  ok  12x9: rotation 180° → 270° turns every port (position and direction) by exactly 90°
+  ok  12x9: rotation 270° → 0° turns every port (position and direction) by exactly 90°
+  ok  16x12: rotation 0° → 90° turns every port (position and direction) by exactly 90°
+  ok  16x12: rotation 90° → 180° turns every port (position and direction) by exactly 90°
+  ok  16x12: rotation 180° → 270° turns every port (position and direction) by exactly 90°
+  ok  16x12: rotation 270° → 0° turns every port (position and direction) by exactly 90°
+  ok  24x16: rotation 0° → 90° turns every port (position and direction) by exactly 90°
+  ok  24x16: rotation 90° → 180° turns every port (position and direction) by exactly 90°
+  ok  24x16: rotation 180° → 270° turns every port (position and direction) by exactly 90°
+  ok  24x16: rotation 270° → 0° turns every port (position and direction) by exactly 90°
+  ok  32x24: rotation 0° → 90° turns every port (position and direction) by exactly 90°
+  ok  32x24: rotation 90° → 180° turns every port (position and direction) by exactly 90°
+  ok  32x24: rotation 180° → 270° turns every port (position and direction) by exactly 90°
+  ok  32x24: rotation 270° → 0° turns every port (position and direction) by exactly 90°
+  ok  12x9 rot 0: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  12x9 rot 0: routes are near-shortest (a port facing away does not need a long detour)
+  ok  12x9 rot 90: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  12x9 rot 90: routes are near-shortest (a port facing away does not need a long detour)
+  ok  12x9 rot 180: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  12x9 rot 180: routes are near-shortest (a port facing away does not need a long detour)
+  ok  12x9 rot 270: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  12x9 rot 270: routes are near-shortest (a port facing away does not need a long detour)
+  ok  16x12 rot 0: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  16x12 rot 0: routes are near-shortest (a port facing away does not need a long detour)
+  ok  16x12 rot 90: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  16x12 rot 90: routes are near-shortest (a port facing away does not need a long detour)
+  ok  16x12 rot 180: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  16x12 rot 180: routes are near-shortest (a port facing away does not need a long detour)
+  ok  16x12 rot 270: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  16x12 rot 270: routes are near-shortest (a port facing away does not need a long detour)
+  ok  24x16 rot 0: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  24x16 rot 0: routes are near-shortest (a port facing away does not need a long detour)
+  ok  24x16 rot 90: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  24x16 rot 90: routes are near-shortest (a port facing away does not need a long detour)
+  ok  24x16 rot 180: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  24x16 rot 180: routes are near-shortest (a port facing away does not need a long detour)
+  ok  24x16 rot 270: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  24x16 rot 270: routes are near-shortest (a port facing away does not need a long detour)
+  ok  32x24 rot 0: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  32x24 rot 0: routes are near-shortest (a port facing away does not need a long detour)
+  ok  32x24 rot 90: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  32x24 rot 90: routes are near-shortest (a port facing away does not need a long detour)
+  ok  32x24 rot 180: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  32x24 rot 180: routes are near-shortest (a port facing away does not need a long detour)
+  ok  32x24 rot 270: a pipe route starts at the attach cell of all 6 ports and reaches its target without entering the building
+  ok  32x24 rot 270: routes are near-shortest (a port facing away does not need a long detour)
+  ok  96 port routes tested (4 sizes x 4 rotations x 6 ports)
+  ok  exit of a 32x24 reaches the entry of a 16x12 in all 16 rotation pairs (16 of 16)
+  ok  a pipe goes straight across a lake (41 lake cells on a 71-cell route): the ground does not hold pipes back
+  ok  and across rock ground: a straight 41-cell route through 23 rock cells
+  ok  32x24 inside C3 is refused: داخل C3: أرض احتياطي استراتيجي
+  ok  straddling the C3 border is refused (288 of 768 cells in C3)
+  ok  12x9 rot 90 inside C3 is refused
+  ok  12x9 rot 180 inside C3 is refused
+  ok  12x9 rot 270 inside C3 is refused
+  ok  16x12 rot 90 inside C3 is refused
+  ok  16x12 rot 180 inside C3 is refused
+  ok  16x12 rot 270 inside C3 is refused
+  ok  24x16 rot 90 inside C3 is refused
+  ok  24x16 rot 180 inside C3 is refused
+  ok  24x16 rot 270 inside C3 is refused
+  ok  32x24 rot 90 inside C3 is refused
+  ok  32x24 rot 180 inside C3 is refused
+  ok  32x24 rot 270 inside C3 is refused
+  ok  in the sea: في البحر
+  ok  off the west border: خارج حدود العالم
+  ok  off the east border: خارج حدود العالم
+  ok  half over the east border is refused (صخور / جبل)
+  ok  off the south border
+  ok  on a rock outcrop / mountain: refused (صخور / جبل), 411 bad cells listed for the red overlay
+  ok  on a lake: refused (بحيرة), 368 bad cells listed for the red overlay
+  ok  on a dry wadi: refused (وادٍ جاف), 197 bad cells listed for the red overlay
+  ok  tap on the industrial zone: preview is valid, confirm enabled
+  ok  rotate button step 1: rotation 90°, preview stays valid
+  ok  rotate button step 2: rotation 180°, preview stays valid
+  ok  rotate button step 3: rotation 270°, preview stays valid
+  ok  rotate button step 4: rotation 0°, preview stays valid
+  ok  four taps on rotate go 90°, 180°, 270°, back to 0°
+  ok  the 32x24 building is placed rotated 180° (1 on the map)
+  ok  a second building on top of it is refused: overlap
+  ok  next to it, touching edge to edge, is accepted
+  ok  touch inside the building selects it
+  ok  touch away from the building clears the selection
+  ok  touch one tile outside the edge still selects it (enlarged touch area)
+  ok  touch 12 tiles outside does not
+  ok  delete removes the selected building
+  ok  tap inside C3: confirm stays disabled, reason names C3
+  ok  buttons are at least 36 px high for fingers (40)
+  ok  no roads layer: zones,slots,pipes,grid,reserve,future,labels,old,tilegrid
+  ok  the layers panel says there are no roads and lists no road type
+  ok  illustrative pipes: 12 links, all straight orthogonal runs, none cross a compound (12 links, 24 collector points)
+  ok  layout slots: 265 places for wells, tanks, refineries, pumps; none overlap, all inside their compound
+  ok  C3: 12 plots along the fence and the central 220x190 open space stays free for tanks, pumps and expansion
+  ok  industrial land and C3 are clean: 21509 samples, all plain flat ground (steepest slope 0.0053)
+  ok  natural features exist outside the compounds: 2039 dry-wadi and 1009 rock samples
+  ok  land shares 80.3 / 9.7 / 10.1 (target 80 / 10 / 10)
+  ok  buildable industrial land is 65.2% of the world (target 65%)
+  ok  toggling the slots/pipes layers changes no placement or pipe-route result
+  ok  placement checks, ports and pipe routing do not reference SLOTS, HUBS or the drawn PIPES
+  ok  organisation data: 265 slots and 24 collection points
+  ok  a pipe between two ports is routed freely, with no collection point in between
+  ok  the in-page Android benchmark tab runs 5 scenes and reports device info
+  ok  terrain and blocks are generated in a Web Worker
+  ok  a block made by the Worker is pixel-identical to the same block made in the page (7,3)
+  ok  no page errors
+
+GIANT BUILDING / MAP PROTOTYPE TESTS PASSED (156 checks)
