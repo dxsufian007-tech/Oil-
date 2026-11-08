@@ -9,8 +9,8 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   await p.goto('http://localhost:' + srv.address().port + '/?unlock=all'); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 });
   await p.evaluate(() => { localStorage.clear(); __lab.reset(); __lab.company.speed = 0; __lab.store.cash = 5e8; const h = __wp.world.homeRegionOfWorld(), z = { x: h.x0 + 150, y: h.y0 + 150 }; __wp.goto(z.x - 10, z.y + 10, .7); window.__z = z; }); await p.waitForTimeout(3000);
   const r = await p.evaluate(() => {
-    const L = __lab, z = window.__z; let o = null;
-    for (let dx = -130; dx <= 130 && !o; dx += 2) for (let dy = -130; dy <= 130 && !o; dy += 2) { const x = z.x + dx, y = z.y + dy; if ([['separator', 0, 0], ['crude_tank_m', 14, 0], ['water_pump_s', 0, 14], ['water_tank_m', 12, 14], ['water_tank_m', 17, 14], ['water_pump_s', 24, 14]].every(a => L.store.validate(a[0], x + a[1], y + a[2], 0, {}).ok)) o = { x, y }; }
+    const L = __lab, z = window.__z; let o = null; const flat = (x0, y0, w, h) => { for (let j = 0; j < h; j += 2) for (let i = 0; i < w; i += 2) { const t = L.ts.tile(x0 + i, y0 + j); if (!t || t.slope > 3 || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU') return false; } return true; };
+    for (let dx = -130; dx <= 130 && !o; dx++) for (let dy = -130; dy <= 130 && !o; dy++) { const x = z.x + dx, y = z.y + dy; if (flat(x - 3, y - 3, 38, 26) && [['separator', 0, 0], ['crude_tank_m', 14, 0], ['water_pump_s', 0, 14], ['water_tank_m', 12, 14], ['water_tank_m', 17, 14], ['water_pump_s', 24, 14]].every(a => L.store.validate(a[0], x + a[1], y + a[2], 0, {}).ok)) o = { x, y }; }
     if (!o) return { err: 'no spot' };
     const put = (d, dx, dy) => { const v = L.store.place(d, o.x + dx, o.y + dy, 0, { instant: true }); if (!v.ok) throw new Error(d + ' ' + v.reason); return v.building; };
     const sep = put('separator', 0, 0), ot = put('crude_tank_m', 14, 0), pu = put('water_pump_s', 0, 14), w1 = put('water_tank_m', 12, 14), w2 = put('water_tank_m', 17, 14), lp = put('water_pump_s', 24, 14);
