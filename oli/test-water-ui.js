@@ -32,6 +32,9 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   // sales UI
   await p.evaluate(() => { document.getElementById('info').style.display = 'none'; __lab.EU.open('inventory'); }); await p.waitForTimeout(800);
   const sheet = await p.evaluate(() => document.getElementById('eco-sheet').innerText); ok(/مياه|Water/i.test(sheet), 'sales card present in Inventory');
+  ok(await p.evaluate(() => !!document.querySelector('#es-body [data-act=wauto]') && !!document.getElementById('wr-in') && !!document.querySelector('#es-body [data-act=wrset]')), 'auto-sale switch and reserve field are in the water card');
+  await p.evaluate(() => { document.getElementById('wr-in').value = '500'; document.querySelector('#es-body [data-act=wrset]').click(); document.querySelector('#es-body [data-act=wauto]').click(); });
+  ok(await p.evaluate(() => /مفعّل/.test(document.getElementById('es-body').innerText) && document.getElementById('wr-in').value === '500'), 'switch ON and reserve 500 saved from the card');
   await p.screenshot({ path: OUT + '/3-sales-ui.png' });
   const sold = await p.evaluate(() => { const C = __lab.company, a = C.waterInfo(); const rr = C.sellWater(1000); return { a, rr, after: C.waterInfo(), cash: __lab.store.cash }; });
   ok(sold.rr && sold.rr.ok !== false, 'sale ok ' + JSON.stringify(sold.rr).slice(0, 120)); ok(Math.abs((sold.a.stock || sold.a.stored || 0) - (sold.after.stock || sold.after.stored || 0)) > 0, 'stock dropped after sale');

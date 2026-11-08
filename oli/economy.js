@@ -140,7 +140,7 @@
       opts = opts || {}; this.mseed = opts.marketSeed; this.cfg = opts.config || EC; this.store = store; this.net = net; this.sim = sim; this.now = opts.now || (() => Date.now()); this._init(); this._wrap();
     }
     _init() {
-      this.water = { v: 1, produced: 0, sold: 0, revenue: 0, log: [], day: -1, today: 0 }; this.netOil = true; this.reserve = { v: 1, lv: 0, log: [] }; this._hookReserve();                       // the Strategic Reserve: one fixed zone, its open-area level and a small audit log
+      this.water = { v: 1, produced: 0, sold: 0, revenue: 0, log: [], day: -1, today: 0, auto: { on: false, reserve: 0, day: -1, used: {}, sold: 0 } }; this.netOil = true; this.reserve = { v: 1, lv: 0, log: [] }; this._hookReserve();                       // the Strategic Reserve: one fixed zone, its open-area level and a small audit log
       const c = this.cfg; this.hours = 0; this.dayIdx = 0; this.acc = 0; this.market = new Market(c, null, this.mseed); this.assets = new Map(); this.loans = []; this.nextLoan = 1; this.closed = []; this.contracts = []; this.history = []; this.offers = []; this.nextContract = 1;
       this.recv = []; this.nextRecv = 1; this.months = []; this.bsStart = null; this.qty = PZERO(); this.qty2 = { BYPRODUCT: 0, RESIDUE: 0 }; this.crudeShort = 0; this.crudeLoss = 0; this.bq = 0; this.explLog = []; this.bprod = {}; this.tradeLog = []; this.nextTrade = 1; this.boughtUsed = 0; this.refLast = null; this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.purchases = []; this.nextPur = 1; this.matLimit = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1; this.cutUntil = -1; this.powerBuy = false; this.pwStop = null; this.bsStart = null;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
       this.crng = new Rng(c.MARKET.seed ^ 0x5bd1e995); this.modes = {}; for (const p of SELL) this.modes[p] = c.AUTOSELL && c.AUTOSELL.defaultMode || 'SPOT'; this.tier = c.POWER.startTier; this.autoRepair = c.MAINTENANCE.autoRepair;
@@ -624,12 +624,39 @@
     waterInfo() { const sl = this.waterSellable(), stock = this.waterStock(), cap = this.waterCapacity(); return { stock, capacity: cap, free: Math.max(0, cap - stock), fill: cap ? stock / cap : 0, tanks: this.waterTanks().length, price: this.waterPrice(), sellable: sl.qty, loaders: sl.loaders, loadCap: sl.loadCap, soldToday: sl.soldToday, dayLeft: sl.dayLeft, produced: this.water.produced, sold: this.water.sold, revenue: this.water.revenue, full: cap > 0 && stock >= cap - 1e-6 }; }
     waterQuote(qty) { const sl = this.waterSellable(), price = this.waterPrice(); qty = +qty; if (!(qty > 0)) return { ok: false, reason: 'qty' }; if (sl.stock <= 1e-6) return { ok: false, reason: 'nothingToSell', have: 0 }; if (qty > sl.stock + 1e-6) return { ok: false, reason: 'notEnough', have: sl.stock }; return { ok: true, qty, price, total: qty * price }; }
     sellWater(qty) {
-      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); const q = this.waterQuote(qty); if (!q.ok) return q; const sl = this.waterSellable(), take = q.qty, parts = [];
-      for (const b of sl.tanks) { const s = this.sim.ensure(b), part = take * s.vol / sl.stock; if (part <= 0) continue; s.vol = Math.max(0, s.vol - part); parts.push({ tank: b.id, qty: part }); }   // proportional to each tank's water; each tank's stock is reduced by exactly its share, ONCE
-      const got = parts.reduce((a, x) => a + x.qty, 0), gross = got * q.price, day = Math.floor(this.hours / 24); if (this.water.day !== day) { this.water.day = day; this.water.today = 0; } this.water.today += got;
-      this._post({ type: 'SALE_WATER', flow: 'OP', desc: 'Water sale', src: 'SPOT' }, [['CASH', gross], ['REV_WATER', -gross]]);   // revenue exists only when the water is sold
-      this.water.sold += got; this.water.revenue += gross; this.water.log.push({ t: this.hours, qty: got, price: q.price, total: gross, tanks: parts.length }); if (this.water.log.length > 80) this.water.log.shift(); this._L(L => { L.soldRev += gross; });
-      return { ok: true, qty: got, price: q.price, gross, net: gross, parts };
+      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); const q = this.waterQuote(qty); if (!q.ok) return q;
+      return this._sellWaterFrom(this.waterSellable().tanks, q.qty, q.price, false);
+    }
+    /* the ONE place water leaves the tanks and revenue is posted (manual and automatic sales both come here): the quantity is taken from the given tanks in proportion to what each holds, each tank is reduced by exactly its share, ONCE, never below zero */
+    _sellWaterFrom(tanks, take, price, auto) {
+      const stock = tanks.reduce((a, b) => a + this.sim.ensure(b).vol, 0); take = Math.min(take, stock); if (!(take > 1e-9)) return { ok: false, reason: 'nothingToSell' };
+      const parts = []; for (const b of tanks) { const s = this.sim.ensure(b), part = take * s.vol / stock; if (part <= 0) continue; s.vol = Math.max(0, s.vol - part); parts.push({ tank: b.id, qty: part }); }
+      const got = parts.reduce((a, x) => a + x.qty, 0), gross = got * price, day = Math.floor(this.hours / 24); if (this.water.day !== day) { this.water.day = day; this.water.today = 0; } this.water.today += got;
+      this._post({ type: 'SALE_WATER', flow: 'OP', desc: auto ? 'Water sale (auto)' : 'Water sale', src: 'SPOT' }, [['CASH', gross], ['REV_WATER', -gross]]);   // revenue exists only when the water is sold
+      this.water.sold += got; this.water.revenue += gross; const lg = this.water.log, last = lg[lg.length - 1];
+      if (auto && last && last.auto && last.day === day && Math.abs(last.price - price) < 1e-9) { last.qty += got; last.total += gross; last.t = this.hours; }   // the automatic sales of one day are ONE log line (no flood)
+      else lg.push({ t: this.hours, qty: got, price, total: gross, tanks: parts.length, auto: !!auto, day });
+      if (lg.length > 80) lg.shift(); this._L(L => { L.soldRev += gross; });
+      return { ok: true, qty: got, price, gross, net: gross, parts };
+    }
+    /* AUTOMATIC water sale, run by the game clock (Company.tick), never by opening a screen: only the water above the reserve is sold, through loading pumps really connected to an open water line, each limited to its own daily capacity (bbl/day) */
+    setAutoWater(on, reserve) { const a = this.water.auto; if (on !== undefined) a.on = !!on; if (reserve !== undefined) a.reserve = Math.max(0, Math.floor(+reserve) || 0); return { on: a.on, reserve: a.reserve }; }
+    autoWaterInfo() {
+      const a = this.water.auto, stock = this.waterStock(), loaders = this.waterLoaders(), day = Math.floor(this.hours / 24), used = a.day === day ? a.used : {};
+      const cap = loaders.reduce((q, l) => q + l.cap, 0), left = loaders.reduce((q, l) => q + Math.max(0, l.cap - (used[l.pump] || 0)), 0);
+      return { on: a.on, reserve: a.reserve, stock, available: Math.max(0, stock - a.reserve), loaders: loaders.length, dailyCap: cap, dailyLeft: left, soldToday: Object.values(used).reduce((q, v) => q + v, 0), soldTotal: a.sold, active: a.on && loaders.length > 0 && stock > a.reserve + 1e-6 };
+    }
+    _autoWater(h) {
+      const a = this.water.auto; if (!a || !a.on || this.bankrupt || !(h > 0)) return;
+      const day = Math.floor(this.hours / 24); if (a.day !== day) { a.day = day; a.used = {}; }
+      let excess = this.waterStock() - a.reserve; if (!(excess > 1e-6)) return;                       // at (or under) the reserve: no sale; it resumes by itself when the stock rises again
+      const price = this.waterPrice();
+      for (const l of this.waterLoaders()) {                                                          // only a loading pump physically connected to an open water line sells
+        if (!(excess > 1e-6)) break; const tanks = l.tanks.map(id => this.store.get(id)).filter(b => b && b.st !== 'UNDER_CONSTRUCTION' && DEFS[b.d].product === 'WATER');
+        const perHour = l.cap / 24 * h, dayLeft = Math.max(0, l.cap - (a.used[l.pump] || 0)), reach = tanks.reduce((q, b) => q + this.sim.ensure(b).vol, 0);
+        const take = Math.min(excess, perHour, dayLeft, reach); if (!(take > 1e-6)) continue;
+        const r = this._sellWaterFrom(tanks, take, price, true); if (r.ok) { a.used[l.pump] = (a.used[l.pump] || 0) + r.qty; a.sold += r.qty; excess -= r.qty; }
+      }
     }
     waterLog(n) { return this.water.log.slice(-(n || 20)).reverse(); }
     /* ---- by-products: sellable; own inventory and revenue accounts; no physical tank yet (book stock only) ---- */
@@ -843,7 +870,7 @@
       if (pay > 0) this._post({ type: 'PAYROLL_EARNED', desc: 'Salaries earned' }, [['EXP_LABOR', pay], ['PAY_PAYROLL', -pay]]);
       for (const p of SELL) { const cap = this.capacity(p); this.market.stock[p] = cap ? this.physicalVol(p) / cap : 0; }
       for (let i = 0; i < h; i++) { this.market.tick(this.hours + i); }
-      this._auto(); this._contractClock(); this._finance(h);
+      this._auto(); this._autoWater(h); this._contractClock(); this._finance(h);
       this.hours += h; while (Math.floor(this.hours / 24) > this.dayIdx) { this.dayIdx++; this._newDay(); }
       this._notify();
     }
@@ -1086,7 +1113,7 @@
       this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.dlog = d.dlog || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSpeed = d.lastSpeed > 0 ? d.lastSpeed : (this.speed > 0 ? this.speed : 1); this.lastSim = d.savedAt == null ? null : d.savedAt;
       this.recv = (d.recv || []).map(r => Object.assign({ late: false, payOn: r.due }, r)); this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.purchases = d.purchases || []; this.nextPur = d.nextPur || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy; this.bsStart = d.bsStart || null;
       if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); this.qty2 = Object.assign({ BYPRODUCT: 0, RESIDUE: 0 }, d.qty2 || {}); }
-      this.water = Object.assign({ v: 1, produced: 0, sold: 0, revenue: 0, log: [], day: -1, today: 0 }, d.water || {}); this.netOil = !!d.netOil; this.reserve = Object.assign({ v: 1, lv: 0, log: [] }, d.reserve || {}); { const z = this.reserveZone(); this.reserve.lv = Math.max(0, Math.min(z ? z.levels.length - 1 : 0, this.reserve.lv | 0)); if (!Array.isArray(this.reserve.log)) this.reserve.log = []; } this._hookReserve();   // an old save has no reserve: it starts closed at level 0, with nothing moved into it
+      this.water = Object.assign({ v: 1, produced: 0, sold: 0, revenue: 0, log: [], day: -1, today: 0 }, d.water || {}); this.water.auto = Object.assign({ on: false, reserve: 0, day: -1, used: {}, sold: 0 }, this.water.auto || {}); this.netOil = !!d.netOil; this.reserve = Object.assign({ v: 1, lv: 0, log: [] }, d.reserve || {}); { const z = this.reserveZone(); this.reserve.lv = Math.max(0, Math.min(z ? z.levels.length - 1 : 0, this.reserve.lv | 0)); if (!Array.isArray(this.reserve.log)) this.reserve.log = []; } this._hookReserve();   // an old save has no reserve: it starts closed at level 0, with nothing moved into it
       this.bq = d.bq || 0; this.explLog = d.explLog || []; this.bprod = d.bprod || {}; this.tradeLog = d.tradeLog || []; this.nextTrade = d.nextTrade || 1; this.boughtUsed = d.boughtUsed || 0;
       if (!d.journal) this._migrate();                                                         // a save from before the journal: the company starts from an opening balance sheet of what it holds now
       this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.mirror = this.store.cash; if (!this.bsStart) this.bsStart = this._snap(); this.away = null; this.events = []; this.seen = new Set(); this._refreshOffers(); this.computeStaff(); return true;
