@@ -9,8 +9,8 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   await boot(); await p.evaluate(() => { localStorage.clear(); __lab.reset(); __lab.company.injectEquity(1e9, 't'); });
   const z = await p.evaluate(() => { const z = __wp.world.reserveZoneOfWorld(); return { levels: z.levels.length, last: z.levels[z.levels.length - 1], l4: z.levels[4] }; });
   ok(z.levels === 9 && z.last.w * z.last.h > z.l4.w * z.l4.h * 1.5, 'the zone has 9 levels and the last is much larger than the old 36x26: ' + JSON.stringify(z.last));
-  await p.evaluate(zz => __wp.goto(zz.x + zz.w / 2, zz.y + zz.h / 2, .5), z.last); await p.waitForTimeout(2500);
-  const edge = { x: z.last.x + 1, y: z.last.y + 1 };
+  await p.evaluate(zz => __wp.goto(zz.x + zz.w / 2, zz.y + zz.h / 2, .5), z.last); await p.waitForTimeout(2500); await p.waitForFunction(() => __wp.idle && __wp.idle(), null, { timeout: 60000 }); await p.waitForTimeout(500);
+  const edge = { x: z.last.x + 1, y: z.last.y + 1 }; await p.evaluate(e => __wp.goto(e.x + 6, e.y + 6, .5), edge); await p.waitForFunction(() => __wp.idle && __wp.idle(), null, { timeout: 60000 }); await p.waitForTimeout(800);
   let r = await p.evaluate(e => { const v = __lab.store.place('crude_tank_s', e.x, e.y, 0, { instant: true }); return v.ok ? 'ok' : v.reason; }, edge); ok(r === 'reserveBounds', 'a tank in the outer ring is refused while that ring is closed (' + r + ')');
   let costs = []; for (let i = 0; i < 8; i++) { const c = await p.evaluate(() => { const c0 = __lab.store.cash, x = __lab.company.reserveExpand(); return x.ok ? c0 - __lab.store.cash : x.reason; }); costs.push(c); }
   ok(costs.every(c => typeof c === 'number' && c > 0), 'all eight rings open one after another, each costing money: ' + costs.map(c => Math.round(c / 1e6)).join(' / ') + ' M');

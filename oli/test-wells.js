@@ -7,7 +7,7 @@ const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-6 : tol) * Math
 const WL = W.CONFIG.WELLS, CFGW = require('./building-config.js').WELL;
 
 function newWorld(seed) { const world = W.createWorld({ seed: seed || 20260101 }), ts = B.fromWorld(world), store = new B.BuildingStore(ts, { cash: 1e11 }), net = new I.PipeNet(ts.W), sim = new I.Sim(store, net); return { world, ts, store, net, sim }; }
-const fieldOf = (g, pick) => g.world.regionSites(g.world.regions.find(r => r.starter).id).filter(s => s.kind === 'FIELD').sort((a, b) => b.radius - a.radius)[pick || 0];
+const fieldOf = (g, pick) => g.world.regionSites(g.world.homeRegionOfWorld().id).filter(s => s.kind === 'FIELD').sort((a, b) => b.radius - a.radius)[pick || 0];
 const open = (g, f) => { g.world.discover(f.id); g.world.survey(f.id); g.world.makeDrillable(f.id); return f; };
 function spotNear(g, def, cx, cy, maxr, skip) { for (let r = 0; r <= maxr; r++) { const n = 16 + r * 6; for (let a = 0; a < n; a++) { const x = Math.round(cx + Math.cos(a / n * 6.283) * r), y = Math.round(cy + Math.sin(a / n * 6.283) * r); if (skip && skip(x, y)) continue; if (g.store.validate(def, x, y, 0, {}).ok) return [x, y]; } } return null; }
 /* n production wells on the field, each piped into its own crude tank, so every well can really deliver its oil */
@@ -26,7 +26,7 @@ function rig(g, f, n) {
 function run(g, wells, hours) { let oil = 0, mix = 0; for (let h = 0; h < hours; h++) { g.sim.step(1 / 24); for (const w of wells) { const s = w.s; if (s._out) { oil += s._out / 24 * (1 - s._wc - s._gas); mix += s._out / 24; } } } return { oil, mix }; }
 
 console.log('1. the four kinds of well');
-{ const g = newWorld(), real = g.world.regionSites(g.world.regions.find(r => r.starter).id).filter(s => s.kind === 'FIELD')[0], dry = g.world.allSites().find(s => s.kind === 'DRY' && g.world.regions[s.regionId].unlocked);
+{ const g = newWorld(), real = g.world.regionSites(g.world.homeRegionOfWorld().id).filter(s => s.kind === 'FIELD')[0], dry = g.world.allSites().find(s => s.kind === 'DRY' && g.world.regions[s.regionId].unlocked);
   T('1a an exploratory well needs a discovered site: refused on an unknown one', g.world.drillWell('EXPLORATORY', real.id).reason === 'state');
   g.world.discover(real.id); g.world.discover(dry.id);
   const e1 = g.world.drillWell('EXPLORATORY', real.id, 5), e2 = g.world.drillWell('EXPLORATORY', dry.id, 6);

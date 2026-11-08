@@ -16,7 +16,7 @@
 (function (root) {
   'use strict';
   const CONFIG = {
-    CHUNK: 64, REGION_CHUNKS: 5, CHUNKS_X: 30, CHUNKS_Y: 20,                    // 1920 x 1280 tiles
+    CHUNK: 64, REGION_CHUNKS: 5, CHUNKS_X: 30, CHUNKS_Y: 20, RESERVE_WHOLE_REGION: true,                    // 1920 x 1280 tiles
     LEGACY: { W: 140, H: 88 },                                                  // the current game map, for the scale statement and the adapter
     TERRAIN: {                                                                  // id order is the id stored in chunks
       FLAT_DESERT: { id: 0, label: 'Flat desert', buildable: true,  buildCost: 1.0, oilMod: 1.0,  maxSlope: 6,  color: [207, 172, 114] },
@@ -115,7 +115,7 @@
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v, clamp01 = v => clamp(v, 0, 1);
 
   function createWorld(opts) {
-    opts = opts || {}; const external = !!opts.external, seed = (opts.seed == null ? 20260101 : opts.seed) | 0, C = CONFIG.CHUNK, RC = CONFIG.REGION_CHUNKS;
+    opts = opts || {}; const wholeReserve = opts.reserveWholeRegion == null ? !!CONFIG.RESERVE_WHOLE_REGION : !!opts.reserveWholeRegion, external = !!opts.external, seed = (opts.seed == null ? 20260101 : opts.seed) | 0, C = CONFIG.CHUNK, RC = CONFIG.REGION_CHUNKS;
     const W = CONFIG.CHUNKS_X * C, H = CONFIG.CHUNKS_Y * C, RX = CONFIG.CHUNKS_X / RC, RY = CONFIG.CHUNKS_Y / RC;
     const S = { elev: seed ^ 0x1111, elev2: seed ^ 0x2222, mount: seed ^ 0x3333, ridge: seed ^ 0x4444, sand: seed ^ 0x5555, rock: seed ^ 0x6666, coast: seed ^ 0x7777, basin: seed ^ 0x8888, struct: seed ^ 0x9999, rich: seed ^ 0xaaaa, kind: seed ^ 0xbbbb, wadi: seed ^ 0xcccc, track: seed ^ 0xdddd };
     const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -432,6 +432,11 @@
     }
     /* the one reserve zone of the world (null while the starter region's data is not here yet) */
     const reserveZoneOfWorld = () => { const sr = regions.find(r => r.starter); return sr ? reserveZone(sr.id) : null; };
+    /* The WHOLE starter region (C3) is Strategic Reserve land: only reserve tanks, pumps, valves and junctions may be built there from now on (buildings.js reserveRule). Buildings and saves already in it stay exactly as they are (the rule is checked only when something is placed).
+     * reserveRegionOfWorld() = that region's rectangle; homeRegionOfWorld() = where the player's oil business starts (the richest unlocked neighbour, so the game stays playable). Both are data: CONFIG.RESERVE_WHOLE_REGION turns it off. */
+    const reserveRegionOfWorld = () => { if (!wholeReserve) return null; const sr = regions.find(r => r.starter); return sr ? { id: sr.id, name: sr.name, x: sr.x0, y: sr.y0, w: sr.w, h: sr.h } : null; };
+    let homeCache = null; const roughness = r => { const v = []; for (let j = 0; j < 7; j++) for (let i = 0; i < 7; i++) v.push(elevAt(r.x0 + (i + .5) * r.w / 7, r.y0 + (j + .5) * r.h / 7)); const m = v.reduce((q, x) => q + x, 0) / v.length; return v.reduce((q, x) => q + Math.abs(x - m), 0) / v.length; };   // from the analytic elevation only: never depends on which chunks are loaded (the same answer in a worker world)
+    const homeRegionOfWorld = () => { const sr = regions.find(r => r.starter); if (!sr || !wholeReserve) return sr; if (homeCache) return homeCache; let best = null; for (const r of regions) { if (r.starter || !r.unlocked || r.nonCommercial) continue; const f = r.richness === 'RICH' ? 2 : r.richness === 'MEDIUM' ? 1 : 0, d = Math.abs(r.rx - sr.rx) + Math.abs(r.ry - sr.ry); const sc = f * 10 - d * 3 - roughness(r) * 60; if (!best || sc > best.sc) best = { r, sc }; } return (homeCache = best ? best.r : sr); };   // richest unlocked neighbour, then the flattest
     // ---- worker support: chunk / region data can be computed elsewhere (a Web Worker) and injected into an `external` world, so the drawing thread never generates anything
     const exportChunk = (cx, cy) => { const c = chunk(cx, cy); return c && { cx, cy, terrain: c.terrain.slice(), elev: c.elev.slice(), slope: c.slope.slice() }; };
     const injectChunk = d => { chunks.set(d.cy * CONFIG.CHUNKS_X + d.cx, { cx: d.cx, cy: d.cy, terrain: d.terrain, elev: d.elev, slope: d.slope }); if (chunks.size > 220) chunks.delete(chunks.keys().next().value); };
@@ -470,7 +475,7 @@
     };
     const oilFieldAt = (x, y) => { for (const s of sitesNear(x, y, 2)) if (s.kind === 'FIELD' && Math.hypot(s.x - x, s.y - y) <= s.radius) return s; return null; };
 
-    return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, reserveZone, reserveZoneOfWorld, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
+    return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, reserveZone, reserveZoneOfWorld, reserveRegionOfWorld, homeRegionOfWorld, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
       zoneInfo, evaluateZone, zoneSnapshot, restoreZones, pressureOf, injectionSupport, injectorsTotal, liftFactor, take, drillWell, drillCost, wellsOf, reserveSnapshot, restoreReserve, discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
       scale: () => (W * H) / (CONFIG.LEGACY.W * CONFIG.LEGACY.H) };
   }

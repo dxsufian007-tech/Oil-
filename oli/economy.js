@@ -387,13 +387,13 @@
       return { storage, ops, total: storage + ops };
     }
     reserveInfo() {
-      const z = this.reserveZone(), f = this.fills(), A = this.reserveArea(); if (!z) return { exists: false, fills: f };
+      const z = this.reserveZone(), f = this.fills(), A = this.reserveArea(); if (!z) return { exists: false, fills: f }; const ts = this.store && this.store.ts, region = ts && ts.region ? ts.region() : null;
       const tanks = this.reserveTanks().map(b => { const d = DEFS[b.d], s = this._rt(b), crude = d.product === 'CRUDE', wat = crude ? Math.min(s.vol, s.wat || 0) : 0, bought = Math.min(s.vol - wat, s.bv || 0), net = s.vol - wat, cost = (s.cO || 0) + (s.cB || 0);
         return { id: b.id, name: d.name, product: d.product, capacity: d.capacity.value, volume: s.vol, net, water: wat, bought, own: Math.max(0, net - bought), fill: s.vol / d.capacity.value, status: this.sim.status(b), operational: b.st === 'OPERATIONAL', x: b.x, y: b.y,
           cost, avgCost: net > EPS2 ? cost / net : 0, quality: s.q == null ? 1 : s.q, release: s.rel || 0, inRate: s._in || 0, outRate: s._out || 0, hasOutlet: d.connections.some(c => c.role === 'out' && this.sim.edgeOf(b, c.id)), room: Math.max(0, d.capacity.value - s.vol) }; });
       const byProduct = SELL.map(p => ({ product: p, stock: this.reserveStock(p), capacity: this.reserveCapacity(p), avgCost: this.reserveAvgCost(p), tanks: this.reserveTanksOf(p).length })).filter(r => r.tanks > 0);
       const full = z.levels[z.levels.length - 1];
-      return { exists: true, zone: { id: z.id, name: z.name, x: z.x, y: z.y, w: z.w, h: z.h }, level: this.reserve.lv, maxLevel: z.levels.length - 1, area: A, areaTiles: A.w * A.h, maxAreaTiles: full.w * full.h, expandCost: this.reserveExpandCost(), tanks, byProduct, book: this.reserveBook(), marketValue: this.reserveMarketValue(), unrealized: this.reserveMarketValue() - this.reserveBook(), cost: this.reserveCostDay(), short: this.reserve.short || 0, fills: f };
+      return { exists: true, region: region ? { name: region.name, x: region.x, y: region.y, w: region.w, h: region.h } : null, zone: { id: z.id, name: z.name, x: z.x, y: z.y, w: z.w, h: z.h }, level: this.reserve.lv, maxLevel: z.levels.length - 1, area: A, areaTiles: A.w * A.h, maxAreaTiles: full.w * full.h, expandCost: this.reserveExpandCost(), tanks, byProduct, book: this.reserveBook(), marketValue: this.reserveMarketValue(), unrealized: this.reserveMarketValue() - this.reserveBook(), cost: this.reserveCostDay(), short: this.reserve.short || 0, fills: f };
     }
     /* ---- the Strategic Reserve: its own tanks (b.rs = 1, built inside the fixed zone), never counted with the commercial ones.
      * tanksOf() is the COMMERCIAL index only, so selling, auto-selling, buying, capacity and the commercial fill % can never see a reserve tank. */

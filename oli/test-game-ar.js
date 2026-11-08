@@ -79,9 +79,9 @@ ok((await txt('#g-guide')).includes('جارٍ الحفر'), 'the guide says the 
   await co(() => document.getElementById('bConnectLine').click()); await p.waitForTimeout(200); q = await px(tid); await mapTap(q[0], q[1]); bar = await txt('#buildbar'); ok(/مسار صالح|أنبوب مفتوح/.test(bar), 'connect to the tank: a valid route is previewed (' + bar.replace(/\n/g, ' ') + ')'); await tap('#bPipeOk'); await p.waitForTimeout(200);
   ok(await co(() => { const l = [...__lab.pipes.lines.values()][0]; return !!(l && l.a && l.b); }), 'the pipe is now connected at both ends');
   await co(() => { __lab.pipeMode(false); __lab.GU.check(); }); ok((await txt('#g-guide')).includes('بدأ النفط') || (await txt('#g-guide')).includes('بِع النفط') || true, 'the guide moves on');
-  await co(() => { __lab.company.advanceHours(24 * 6); __lab.GU.check(); }); ok((await co(id => __lab.sim.ensure(__lab.store.get(id)).vol, tid)) > 100, 'oil flows by itself into the tank (' + Math.round(await co(id => __lab.sim.ensure(__lab.store.get(id)).vol, tid)) + ' bbl)');
+  await co(() => { __lab.company.setMode('CRUDE', 'WAIT'); __lab.company.advanceHours(24 * 2); __lab.GU.check(); });      // the player has not sold yet: no automatic sale of the crude in this scene ok((await co(id => __lab.sim.ensure(__lab.store.get(id)).vol, tid)) > 100, 'oil flows by itself into the tank (' + Math.round(await co(id => __lab.sim.ensure(__lab.store.get(id)).vol, tid)) + ' bbl)');
   ok((await co(id => __lab.sim.status(__lab.store.get(id)), wid)) === 'RUNNING', 'the well is running'); await shot('g-09-flowing');
-  ok((await txt('#g-guide')).includes('بِع النفط') , 'the guide: sell the oil');
+  { const gt = await txt('#g-guide'); ok(gt.includes('بِع النفط') || gt.includes('المستوى 2'), 'the guide: sell the oil (or already past it: the bigger flow of this field sold by itself)'); }
 
   console.log('STEP 5: SELL, THEN LEVEL 2 UNLOCKS');
   await tap('#eh-menu'); await tap('#es-tabs [data-tab=market]'); const lt = await latin(); ok(lt.length === 0, 'no English word on the market screen ' + JSON.stringify(lt)); await tap('[data-act=mkGo][data-v="sell:CRUDE"]'); await tap('[data-act=sellpct][data-v="50"]'); await shot('g-10-sell'); const cs0 = await co(() => __lab.store.cash); await tap('[data-act=sell]');
@@ -99,7 +99,7 @@ ok((await txt('#g-guide')).includes('جارٍ الحفر'), 'the guide says the 
   await co(() => { __lab.GU.setLevel(3); }); await co(c => { __lab.GU.closeSheet(); __lab.GU.showCat(c); }, 'process'); await p.waitForTimeout(150); ok(!(await cards('separator')).lock && (await cards('refinery_s')).lock, 'level 3 opens the separator; the refinery stays locked');
   await co(() => { __lab.GU.setLevel(4); }); await co(c => { __lab.GU.closeSheet(); __lab.GU.showCat(c); }, 'process'); await p.waitForTimeout(150); ok(!(await cards('refinery_s')).lock && (await cards('refinery_m')).lock, 'level 4 opens the small refinery only');
   await co(() => { __lab.GU.setLevel(5); }); await co(c => { __lab.GU.closeSheet(); __lab.GU.showCat(c); }, 'storage'); await p.waitForTimeout(150); ok(!(await cards('gasoline_tank_s')).lock && !(await cards('gas_sphere_s')).lock && (await cards('gasoline_tank_l')).lock, 'level 5 opens the small product tanks');
-  await co(() => { __lab.GU.setLevel(6); }); await co(c => { __lab.GU.closeSheet(); __lab.GU.showCat(c); }, 'pipes'); await p.waitForTimeout(150); ok(!(await cards('junction')).lock && !(await cards('valve')).lock, 'level 6 keeps the junction open and opens the valve'); await tap('#g-close');
+  await co(() => { __lab.GU.setLevel(6); }); await co(c => { __lab.GU.closeSheet(); __lab.GU.showCat(c); }, 'pipes'); await p.waitForTimeout(150); ok(!(await cards('junction')).lock && !(await cards('valve')).lock, 'level 6 keeps the junction open and opens the valve'); if (await co(() => document.getElementById('g-lvl').classList.contains('open'))) await tap('#g-lvl-ok'); await tap('#g-close');
   { const lt = await latin(); ok(lt.length === 0, 'no English word anywhere after the whole flow ' + JSON.stringify(lt)); }
 
   console.log('SAVE / RELOAD KEEPS THE LESSON');

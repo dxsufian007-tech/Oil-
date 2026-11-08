@@ -14,9 +14,9 @@ const srv = http.createServer((q, r) => { const u = q.url.split('?')[0], f = pat
   await p.evaluate(() => __wp.goto(960, 640, 0.0045)); await shot('01-far-world');
   await p.evaluate(() => __wp.goto(960, 640, 0.03)); await shot('02-far-regions');
   // medium on the starter region: fields in several discovery states
-  await p.evaluate(() => { const w = __wp.world, r = w.regions.find(r => r.starter), k = w.regionSites(r.id).filter(s => w.stateOf(s.id) !== 'UNDISCOVERED'); let best = null; for (const a of k) for (const b of k) if (a !== b) { const sc = Math.hypot(a.x - b.x, a.y - b.y) - 4 * (k.filter(c => Math.hypot(c.x - (a.x + b.x) / 2, c.y - (a.y + b.y) / 2) < 60).length); if (!best || sc < best.sc) best = { sc, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; } __wp.goto(best.x, best.y, 0.2); }); await shot('03-medium-starter-region');
+  await p.evaluate(() => { const w = __wp.world, r = w.homeRegionOfWorld(), k = w.regionSites(r.id).filter(s => w.stateOf(s.id) !== 'UNDISCOVERED'); let best = null; for (const a of k) for (const b of k) if (a !== b) { const sc = Math.hypot(a.x - b.x, a.y - b.y) - 4 * (k.filter(c => Math.hypot(c.x - (a.x + b.x) / 2, c.y - (a.y + b.y) / 2) < 60).length); if (!best || sc < best.sc) best = { sc, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; } __wp.goto(best.x, best.y, 0.2); }); await shot('03-medium-starter-region');
   // close on a drillable field, then inspect it by tapping
-  const f = await p.evaluate(() => { const w = __wp.world, s = w.regionSites(__wp.world.regions.find(r => r.starter).id).filter(s => w.stateOf(s.id) === 'DRILLABLE')[0]; return { x: s.x, y: s.y, id: s.id }; });
+  const f = await p.evaluate(() => { const w = __wp.world, s = w.regionSites(__wp.world.homeRegionOfWorld().id).filter(s => w.stateOf(s.id) === 'DRILLABLE')[0]; return { x: s.x, y: s.y, id: s.id }; });
   await p.evaluate(f => __wp.goto(f.x, f.y, 0.7), f); await p.waitForTimeout(300); await p.waitForFunction(() => __wp.idle(), null, { timeout: 60000 });
   await p.evaluate(f => { const sx = __wp.sx(f.x, f.y), sy = __wp.sy(f.x, f.y); __wp.tap(sx, sy); }, f);
   ok(await p.evaluate(() => __wp.ui.sel) === f.id, 'tapping a field selects it'); ok(/DRILLABLE/.test(await p.textContent('#info')) && /drilling estimate/.test(await p.textContent('#info')), 'info shows depth and the estimate'); await shot('04-close-field-selected');

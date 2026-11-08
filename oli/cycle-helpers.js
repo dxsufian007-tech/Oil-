@@ -2,9 +2,9 @@
  *   wells -> junction -> pump -> separator -> PRODUCTION tank -> junction -> refinery -> 4 product stores ; a TRADE tank (+ pump) feeding the same junction ; a COMMERCIAL tank on its own. */
 const B = require('./buildings.js'), I = require('./industry.js'), E = require('./economy.js'), EC = require('./economy-config.js'), W = require('./worldmap.js');
 function newGame(opts) {
-  opts = opts || {}; const world = W.createWorld({ seed: opts.seed || 20260101 }), ts = B.fromWorld(world), store = new B.BuildingStore(ts, { cash: opts.cash == null ? 2e9 : opts.cash }), net = new I.PipeNet(ts.W), sim = new I.Sim(store, net);
+  opts = opts || {}; const world = W.createWorld({ seed: opts.seed || 20260101, reserveWholeRegion: false }), ts = B.fromWorld(world), store = new B.BuildingStore(ts, { cash: opts.cash == null ? 2e9 : opts.cash }), net = new I.PipeNet(ts.W), sim = new I.Sim(store, net);
   const co = new E.Company(store, net, sim, { now: () => 1e12, config: opts.config });
-  return { world, ts, store, net, sim, co, sr: world.regions.find(r => r.starter) };
+  return { world, ts, store, net, sim, co, sr: world.homeRegionOfWorld() };
 }
 const put = (g, def, x, y, rad) => { for (const R of [rad == null ? 5 : rad, 9, 14, 22]) { const sn = g.store.snap(def, Math.round(x), Math.round(y), 0, { radius: R, ignoreCash: true }); if (!sn) continue; const r = g.store.place(def, sn.x, sn.y, sn.r, { instant: true }); if (r.ok) return r.building; } return null; };
 function connect(g, a, b, o) {

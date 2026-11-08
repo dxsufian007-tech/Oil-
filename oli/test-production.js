@@ -7,8 +7,8 @@ let pass = 0, fail = 0; const T = (n, c, x) => { if (c) { pass++; console.log(' 
 const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-6 : tol) * Math.max(1, Math.abs(a), Math.abs(b));
 const P = W.CONFIG.PRODUCTION;
 
-function newWorld(seed) { const world = W.createWorld({ seed: seed || 20260101 }), ts = B.fromWorld(world), store = new B.BuildingStore(ts, { cash: 1e11 }), net = new I.PipeNet(ts.W), sim = new I.Sim(store, net); return { world, ts, store, net, sim }; }
-const fields = g => g.world.regionSites(g.world.regions.find(r => r.starter).id).filter(s => s.kind === 'FIELD').sort((a, b) => b.radius - a.radius);
+function newWorld(seed) { const world = W.createWorld({ seed: seed || 20260101, reserveWholeRegion: false }), ts = B.fromWorld(world), store = new B.BuildingStore(ts, { cash: 1e11 }), net = new I.PipeNet(ts.W), sim = new I.Sim(store, net); return { world, ts, store, net, sim }; }
+const fields = g => g.world.regionSites(g.world.homeRegionOfWorld().id).filter(s => s.kind === 'FIELD').sort((a, b) => b.radius - a.radius);
 const open = (g, f) => { g.world.discover(f.id); g.world.survey(f.id); g.world.makeDrillable(f.id); return f; };
 function spotNear(g, def, cx, cy, maxr, skip) { for (let r = 0; r <= maxr; r++) { const n = 16 + r * 6; for (let a = 0; a < n; a++) { const x = Math.round(cx + Math.cos(a / n * 6.283) * r), y = Math.round(cy + Math.sin(a / n * 6.283) * r); if (skip && skip(x, y)) continue; if (g.store.validate(def, x, y, 0, {}).ok) return [x, y]; } } return null; }
 function rig(g, f, n) {
