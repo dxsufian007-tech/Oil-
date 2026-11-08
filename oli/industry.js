@@ -456,7 +456,7 @@
       for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
         if (def.type === 'tank' && this._gof.has(b.id)) { const g = this._gof.get(b.id); if (!gdone.has(g)) { gdone.add(g); this.stepGroup(g, dt); } continue; }
         if (def.type === 'tank' || def.type === 'gas') {
-          if (def.product === P.CRUDE && !b.rs) this.drawBottomWater(b, [b]);
+          if (def.product === P.CRUDE) this.drawBottomWater(b, [b]);     // reserve tanks too: only the settled WATER leaves (net oil, cost and quality of the reserve are untouched)
           const hasOut = def.connections.some(c => c.role === 'out' && c.id !== 'WATER_OUT' && this.edgeOf(b, c.id)); if (!hasOut || s.vol <= 1e-6) continue;
           if (b.rs && !(s.rel > 0)) continue;                                  // a reserve tank never lets oil out by itself: only a release the player ordered (s.rel, stage 2) opens its outlet
           const gasT = def.type === 'gas', cap = def.capacity.value * levelOf(b).capacityMultiplier;

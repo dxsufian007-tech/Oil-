@@ -1,0 +1,21 @@
+// Water drawn from Strategic Reserve tanks: only the settled water leaves; net oil, book cost and quality of the reserve stay exactly the same.   node test-water-reserve.js
+const H = require('./test-reserve-helpers.js'), { B, I, game, put, ZN } = H, assert = require('assert');
+let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); };
+const near = (a, b, e) => Math.abs(a - b) <= (e || 1e-6) * Math.max(1, Math.abs(a), Math.abs(b));
+const g = game(1e13), co = g.co;
+const t = put(g, 'crude_tank_l', ZN.x + 10, ZN.y + 8); ok(t.rs === 1, 'a tank inside the reserve land is a reserve tank');
+const v = g.store.validate('water_tank_m', ZN.x + 20, ZN.y + 8, 0, {}); ok(!v.ok, 'a water TANK is refused inside the reserve land (' + v.reason + ')');
+const pu = put(g, 'water_pump_s', ZN.x + 16, ZN.y + 8); ok(!pu.rs, 'a water PUMP may stand inside the reserve land (infrastructure)');
+const wt = put(g, 'water_tank_m', ZN.x + ZN.w + 6, ZN.y + 8);
+const r1 = I.layConnect(g.store, g.net, g.ts, t.id, pu.id, {}); ok(r1.ok, 'reserve tank -> water pump connects ' + (r1.reason || ''));
+const r2 = I.layConnect(g.store, g.net, g.ts, pu.id, wt.id, {}); ok(r2.ok, 'water pump -> water tank (outside) connects ' + (r2.reason || ''));
+g.sim.build(); const s = g.sim.ensure(t); s.vol = 100000; s.wat = 20000; s.bv = 30000; s.cO = 1e6; s.cB = 2e6; s.q = 0.9; s.prod = 'CRUDE';
+const snap = () => ({ net: co.reserveStock('CRUDE'), cost: (s.cO || 0) + (s.cB || 0), q: s.q, bv: s.bv });
+const a = snap(); ok(near(a.net, 80000), 'reserve net oil before: 80,000 (100,000 minus 20,000 water)');
+g.sim.step(0.05); const d1 = 20000 - s.wat; ok(d1 > 0 && d1 <= 5000 * 0.05 + 1e-6 && near(g.sim.ensure(wt).vol, d1, 1e-9), 'draw is limited by the pump (' + Math.round(d1) + ' bbl in 0.05 day) and lands in the water tank exactly');
+for (let i = 0; i < 100; i++) g.sim.step(0.05);
+const b = snap(); ok(near(s.wat, 0) && near(g.sim.ensure(wt).vol, 20000, 1e-9), 'all 20,000 bbl of water left the reserve tank and are in the water tank (none lost, none duplicated)');
+ok(near(b.net, a.net, 1e-12) && b.cost === a.cost && b.q === a.q && b.bv === a.bv && near(s.vol, 80000), 'reserve net oil 80,000, book cost, quality and bought share are unchanged');
+ok(near(co.reserveStock('CRUDE'), 80000) && g.sim.ensure(wt).vol === g.sim.ensure(wt).vol, 'reserve stock still 80,000');
+ok(!(s.rel > 0), 'no oil was released from the reserve (outlet still closed)');
+console.log('WATER-FROM-RESERVE TESTS PASSED (' + n + ' checks)');
