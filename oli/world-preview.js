@@ -17,14 +17,15 @@
   const stats = { imgs: 0, regions: 0 };
 
   // ---- engines: the world is computed in Web Workers (images + overview in one, region data in another). Fallback (no Worker, or ?noworker): the same code on this thread, sliced with setTimeout.
+  const GROUND = qs.get('ground') || 'old';   /* old = the original ground (default); v4 / warm = the new ground, pixels only */
   const USE_WORKER = !!window.Worker && !qs.get('noworker');
   function makeEngine(onReply) {
     if (USE_WORKER) { const w = new Worker('world-worker.js'); w.onmessage = e => onReply(e.data); w.onerror = e => { stats.workerError = String(e.message || e); }; return { post: (m, tr) => w.postMessage(m, tr || []) }; }
-    const full = OW.createWorld({ seed }); let inited = true;
+    const full = OW.createWorld({ seed }); let inited = true; const gr = GROUND !== 'old' && window.OliGround && window.OliWorldV4 ? window.OliGround.make(full, window.OliWorldV4, GROUND === 'warm' ? .55 : 0) : null;
     return { post: m => setTimeout(() => {
       if (m.t === 'init') return onReply({ t: 'ready' });
-      if (m.t === 'overview') { const o = full.renderOverview(m.step); onReply({ t: 'overview', w: o.w, h: o.h, step: o.step, ids: o.ids, rgba: o.rgba }); }
-      else if (m.t === 'img') { const rgba = full.renderChunkRGBA(m.cx, m.cy, m.k), ch = full.exportChunk(m.cx, m.cy); onReply({ t: 'img', cx: m.cx, cy: m.cy, k: m.k, rgba, chunk: ch }); }
+      if (m.t === 'overview') { const o = full.renderOverview(m.step); if (gr) { const r = gr.overview(o, full.W, full.H); if (r) o.rgba = r; } onReply({ t: 'overview', w: o.w, h: o.h, step: o.step, ids: o.ids, rgba: o.rgba }); }
+      else if (m.t === 'img') { const rgba = gr ? gr.img(m.cx, m.cy, m.k) : full.renderChunkRGBA(m.cx, m.cy, m.k), ch = full.exportChunk(m.cx, m.cy); onReply({ t: 'img', cx: m.cx, cy: m.cy, k: m.k, rgba, chunk: ch }); }
       else if (m.t === 'region') onReply({ t: 'region', d: full.regionData(m.rid) });
       else if (m.t === 'heat') { const n = 32, a = new Uint8ClampedArray(n * n * 4); for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const p = full.oilProbability(m.cx * 64 + i * 2, m.cy * 64 + j * 2), q = (j * n + i) * 4; a[q] = 255; a[q + 1] = 80 + 80 * (1 - p); a[q + 2] = 20; a[q + 3] = Math.min(210, p * 330); } onReply({ t: 'heat', cx: m.cx, cy: m.cy, rgba: a }); }
     }, 0) };
@@ -47,7 +48,7 @@
     if (m.t === 'ready') { ready.reg = true; return; }
     busy.reg = false; dirty = true; if (m.t === 'region') { world.injectRegion(m.d); regNeed.delete(m.d.rid); stats.regions++; if (!demoDone && DEMO_REGIONS.every(r => world.hasRegion(r))) { applyDemo(); } if (DEMOALL) openAll(m.d.rid); }
   }
-  const imgEng = makeEngine(onImg), regEng = makeEngine(onReg); imgEng.post({ t: 'init', seed }); regEng.post({ t: 'init', seed });
+  const imgEng = makeEngine(onImg), regEng = makeEngine(onReg); imgEng.post({ t: 'init', seed, ground: GROUND }); regEng.post({ t: 'init', seed });
   /* DEMO build: every oil field of every region is drillable, every region is unlocked, all regions load (flag from the demo APK, ?demo=1 or localStorage oli-demo=1) */
   const DEMOALL = !!(window.OLI_DEMO || /[?&]demo=1/.test(location.search) || (function () { try { return localStorage.getItem('oli-demo') === '1'; } catch (_) { return false; } })()); window.OLI_DEMO = DEMOALL;
   const openAll = rid => { const R = world.regions[rid]; if (R) R.unlocked = true; for (const q of world.regionSites(rid)) if (q.kind === 'FIELD') { let g = 0; while (['UNDISCOVERED', 'DISCOVERED', 'SURVEYED'].includes(world.stateOf(q.id)) && g++ < 4) { const st = world.stateOf(q.id); (st === 'UNDISCOVERED' ? world.discover : st === 'DISCOVERED' ? world.survey : world.makeDrillable)(q.id); } } };
