@@ -172,6 +172,9 @@ function chunkCanvas(cx,cy,make){const key=cy*100+cx;let c=chunks.get(key);if(c)
   const t0=performance.now(),N=CH*RES,cv=document.createElement('canvas');cv.width=N;cv.height=N;const g=cv.getContext('2d'),im=g.createImageData(N,N),o=[0,0,0,0];
   for(let j=0;j<N;j++)for(let i=0;i<N;i++){const x=cx*CH+(i+.5)/RES,y=cy*CH+(j+.5)/RES;pixel(x,y,o);const p=(j*N+i)*4;im.data[p]=o[0];im.data[p+1]=o[1];im.data[p+2]=o[2];im.data[p+3]=255}
   g.putImageData(im,0,0);chunks.set(key,cv);if(chunks.size>MAXCH)chunks.delete(chunks.keys().next().value);stats.chunks++;stats.chunkMs+=performance.now()-t0;return cv}
+const deco=new Map();
+function decoOf(cx,cy){const key=cy*100+cx;let L=deco.get(key);if(L)return L;L=[];for(let y=cy*CH;y<cy*CH+CH;y++)for(let x=cx*CH;x<cx*CH+CH;x++){const h=hash(x,y,77);if(h>.16)continue;const e=elev(x+.5,y+.5),k=classify(x+.5,y+.5,e);if(k===K.DEEP||k===K.SHALLOW||k===K.LAKE||k===K.BEACH)continue;const zz=zoneAt(x,y);if(zz&&zz.k!=='FUTURE'&&zz.k!=='RESERVE')continue;
+  L.push({x:x+hash(x,y,78),y:y+hash(x,y,79),r:1.2+h*14,t:(k===K.ROCK||h<.05)?0:(k===K.HILL?2:1)})}deco.set(key,L);if(deco.size>MAXCH)deco.delete(deco.keys().next().value);return L}
 /* ============ view ============ */
 const cv=document.getElementById('c'),ctx=cv.getContext('2d',{alpha:false}),mini=document.getElementById('mini'),mg=mini.getContext('2d'),hud=document.getElementById('hud');
 const cam={x:WW*.45,y:WH*.5,z:.01};let VW=0,VH=0,DPR=1,dirty=true,fitZ=.01;
@@ -216,12 +219,12 @@ function draw(now){
   if(z>=.05){const a=toTile(0,0),b=toTile(VW,0),c=toTile(0,VH),d=toTile(VW,VH),x0=Math.max(0,Math.floor(Math.min(a.x,b.x,c.x,d.x)/CH)),x1=Math.min(WW/CH-1,Math.floor(Math.max(a.x,b.x,c.x,d.x)/CH)),y0=Math.max(0,Math.floor(Math.min(a.y,b.y,c.y,d.y)/CH)),y1=Math.min(WH/CH-1,Math.floor(Math.max(a.y,b.y,c.y,d.y)/CH));let made=0,miss=0;
     const k=1/RES;for(let cy=y0;cy<=y1;cy++)for(let cx=x0;cx<=x1;cx++){let im=chunkCanvas(cx,cy,false);if(!im){miss++;if(made<2){im=chunkCanvas(cx,cy,true);made++}}if(!im)continue;
       ctx.save();ctx.setTransform(DPR*32*z*k,DPR*16*z*k,-DPR*32*z*k,DPR*16*z*k,DPR*sx(cx*CH,cy*CH),DPR*sy(cx*CH,cy*CH));ctx.drawImage(im,0,0,im.width+.5,im.height+.5);ctx.restore()}
-    if(miss>made)dirty=true;}
-  /* close-up ground detail: shrubs and stones scattered by a fixed hash (drawn only for the visible tiles) */
-  if(z>=.55){const A=toTile(0,0),B=toTile(VW,0),C=toTile(0,VH),D=toTile(VW,VH),xl=Math.floor(Math.min(A.x,B.x,C.x,D.x)),xh=Math.ceil(Math.max(A.x,B.x,C.x,D.x)),yl=Math.floor(Math.min(A.y,B.y,C.y,D.y)),yh=Math.ceil(Math.max(A.y,B.y,C.y,D.y)),st=z<1?2:1;
-    for(let y=Math.max(0,yl);y<Math.min(WH,yh);y+=st)for(let x=Math.max(0,xl);x<Math.min(WW,xh);x+=st){const h=hash(x,y,77);if(h>.16)continue;const e=elev(x+.5,y+.5),k=classify(x+.5,y+.5,e);if(k===K.DEEP||k===K.SHALLOW||k===K.LAKE||k===K.BEACH)continue;const zz=zoneAt(x,y);if(zz&&zz.k!=='FUTURE'&&zz.k!=='RESERVE')continue;
-      const X=sx(x+hash(x,y,78),y+hash(x,y,79)),Y=sy(x+hash(x,y,78),y+hash(x,y,79)),r=(1.2+h*14)*z*1.6;if(X<-10||X>VW+10||Y<-10||Y>VH+10)continue;
-      if(k===K.ROCK||h<.05){ctx.fillStyle='rgba(95,92,88,.75)';ctx.beginPath();ctx.ellipse(X,Y,r*1.1,r*.6,0,0,7);ctx.fill()}else{ctx.fillStyle=k===K.HILL?'rgba(88,112,84,.7)':'rgba(104,124,92,.62)';ctx.beginPath();ctx.ellipse(X,Y,r*1.3,r*.7,0,0,7);ctx.fill()}}}
+    stats.miss=Math.max(0,miss-made);if(miss>made)dirty=true;}else stats.miss=0;
+  /* close-up ground detail: shrubs and stones scattered by a fixed hash; the points of each 128-tile block are computed once and cached */
+  if(z>=.55){const P0=new Path2D(),P1=new Path2D(),P2=new Path2D(),A=toTile(0,0),B=toTile(VW,0),C=toTile(0,VH),D=toTile(VW,VH),xl=Math.min(A.x,B.x,C.x,D.x),xh=Math.max(A.x,B.x,C.x,D.x),yl=Math.min(A.y,B.y,C.y,D.y),yh=Math.max(A.y,B.y,C.y,D.y),st=z<1?2:1;
+    for(let cy=Math.max(0,Math.floor(yl/CH));cy<=Math.min(WH/CH-1,Math.floor(yh/CH));cy++)for(let cx=Math.max(0,Math.floor(xl/CH));cx<=Math.min(WW/CH-1,Math.floor(xh/CH));cx++){const L=decoOf(cx,cy);
+      for(let i=0;i<L.length;i+=st){const q=L[i],X=sx(q.x,q.y),Y=sy(q.x,q.y);if(X<-10||X>VW+10||Y<-10||Y>VH+10)continue;const r=q.r*z*1.6,P=q.t===0?P0:q.t===2?P2:P1,w=r*(q.t===0?1.1:1.3),h=r*(q.t===0?.6:.7);P.moveTo(X+w,Y);P.ellipse(X,Y,w,h,0,0,7)}}
+    ctx.fillStyle='rgba(95,92,88,.75)';ctx.fill(P0);ctx.fillStyle='rgba(104,124,92,.62)';ctx.fill(P1);ctx.fillStyle='rgba(88,112,84,.7)';ctx.fill(P2)}
   /* shelf / coast / future strips */
   const strip=(f0,f1,y0,y1)=>{const pts=[];for(let y=y0;y<=y1;y+=24)pts.push([coast(y)+f0,y]);for(let y=y1;y>=y0;y-=24)pts.push([coast(y)+f1,y]);return pts};
   if(L.zones||L.future){
@@ -331,6 +334,6 @@ function loop(now){if(tween)tween(now);if(dirty){dirty=false;draw(now)}requestAn
 window.addEventListener('resize',resize);
 if(window.ResizeObserver)new ResizeObserver(resize).observe(document.getElementById('stage'));
 resize();buildOverview();renderTab();goto(WW*.45,WH*.5,fitZ,0);dirty=true;requestAnimationFrame(loop);
-window.__proto={drawNow:()=>draw(performance.now()),cacheSize:()=>chunks.size,ports:portsOf,placed,toScreen:(x,y)=>({x:sx(x,y),y:sy(x,y)}),sel:()=>sel,goto,cam,L,stats,draw:()=>{dirty=true},setTab:t=>{tab=t;renderTab()},giantMode:(id,x,y)=>{giant=GIANTS.find(g=>g.id===id)||giant;placing=true;ghost={x,y,res:checkFootprint(giant,x,y,rot)};renderGiant();dirty=true},place:()=>document.getElementById('gok').click(),ZONES,coast,fit:()=>fitZ,check:checkFootprint,GIANTS,frames,tile:(x,y)=>{const e=elev(x,y);return classify(x,y,e)}};
+window.__proto={missing:()=>stats.miss||0,drawNow:()=>draw(performance.now()),cacheSize:()=>chunks.size,ports:portsOf,placed,toScreen:(x,y)=>({x:sx(x,y),y:sy(x,y)}),sel:()=>sel,goto,cam,L,stats,draw:()=>{dirty=true},setTab:t=>{tab=t;renderTab()},giantMode:(id,x,y)=>{giant=GIANTS.find(g=>g.id===id)||giant;placing=true;ghost={x,y,res:checkFootprint(giant,x,y,rot)};renderGiant();dirty=true},place:()=>document.getElementById('gok').click(),ZONES,coast,fit:()=>fitZ,check:checkFootprint,GIANTS,frames,tile:(x,y)=>{const e=elev(x,y);return classify(x,y,e)}};
 })();
 </script>
