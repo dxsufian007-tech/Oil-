@@ -3,7 +3,7 @@ const B = require('./buildings.js'), I = require('./industry.js'), assert = requ
 let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); };
 const OLD = { INPUT_W: [-1, 0], INPUT_N: [0, -1] };      // (kept for the record) the old ports are checked against fixed expectations below
 const tanks = Object.keys(B.DEFS).filter(i => /_tank_|gas_sphere/.test(i) && !/^water_/.test(i));
-ok(tanks.length === 16, 'sixteen storage types (crude, gasoline, diesel, jet, gas x S/M/L + the central store)');
+ok(tanks.length === 19, 'nineteen storage types (crude, gasoline, diesel, jet, gas x S/M/L + the central stores of crude, gasoline, diesel and jet)');
 for (const id of tanks) {
   const w = B.worldPoints({ id: 1, d: id, x: 10, y: 10, r: 0, rot: 0, st: 'OPERATIONAL' }).filter(p => p.kind === 'pipe' && p.id !== 'WATER_OUT'), by = Object.fromEntries(w.map(p => [p.id, p]));
   assert(w.length === 8 && new Set(w.map(p => p.ax + ',' + p.ay)).size === 8, id + ': 8 ports on 8 different tiles');

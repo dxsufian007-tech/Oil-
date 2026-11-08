@@ -10,7 +10,7 @@
     { id: 'oil', icon: '🛢️', name: 'النفط', hint: 'آبار ومحطات ضخ', ids: ['oil_well', 'pump_station_s', 'pump_station_l', 'pump_station_c'] },
     { id: 'pumps', icon: '💧', name: 'المضخات', hint: 'مضخات المياه', ids: ['water_pump_s', 'water_pump_l'] },
     { id: 'pipes', icon: '🔧', name: 'الأنابيب', hint: 'ربط المنشآت ببعضها', ids: ['pipe', 'junction', 'valve', 'main_manifold'] },
-    { id: 'storage', icon: '🏗️', name: 'التخزين', hint: 'خزانات النفط والمنتجات والمياه', ids: ['water_tank_s', 'water_tank_m', 'water_tank_l', 'crude_tank_s', 'crude_tank_m', 'crude_tank_l', 'crude_tank_c', 'gasoline_tank_s', 'gasoline_tank_m', 'gasoline_tank_l', 'diesel_tank_s', 'diesel_tank_m', 'diesel_tank_l', 'jet_tank_s', 'jet_tank_m', 'jet_tank_l', 'gas_sphere_s', 'gas_sphere_m', 'gas_sphere_l'] },
+    { id: 'storage', icon: '🏗️', name: 'التخزين', hint: 'خزانات النفط والمنتجات والمياه', ids: ['water_tank_s', 'water_tank_m', 'water_tank_l', 'water_tank_c', 'crude_tank_s', 'crude_tank_m', 'crude_tank_l', 'crude_tank_c', 'gasoline_tank_s', 'gasoline_tank_m', 'gasoline_tank_l', 'gasoline_tank_c', 'diesel_tank_s', 'diesel_tank_m', 'diesel_tank_l', 'diesel_tank_c', 'jet_tank_s', 'jet_tank_m', 'jet_tank_l', 'jet_tank_c', 'gas_sphere_s', 'gas_sphere_m', 'gas_sphere_l'] },
     { id: 'process', icon: '🏭', name: 'المعالجة', hint: 'الفاصل والمصافي', ids: ['separator', 'refinery_s', 'refinery_m', 'refinery_l', 'refinery_x'] }
   ];
   /* level = the progress level at which the building unlocks (1 = from the first minute) */
@@ -46,6 +46,9 @@
     }
     INFO['gas_sphere_' + k] = { icon: '🔥', name: 'كرة غاز ' + sz, lv, short: 'تخزّن الغاز المسال.', does: 'تخزّن الغاز الخارج من المصفاة.', when: 'بعد بناء المصفاة.', links: 'أنبوب من مخرج الغاز في المصفاة.', prod: 'سعة ' + size + ' برميل مكافئ', chain: [['🏭', 'المصفاة'], ['🔧', 'الأنبوب'], ['🔥', 'كرة الغاز'], ['💵', 'البيع']] };
   }
+  for (const [pid, ic, nm] of [['gasoline', '⛽', 'البنزين'], ['diesel', '🚛', 'الديزل'], ['jet', '✈️', 'وقود الطائرات']])
+    INFO[pid + '_tank_c'] = { icon: ic, name: 'مخزن ' + nm + ' المركزي', lv: 6, short: 'يتسع لأربعة ملايين برميل.', does: 'مخزن ضخم واحد يجمع ' + nm + ' الخارج من المصافي.', when: 'عندما تنتج كميات كبيرة من ' + nm + ' وتحتاج مخزناً مركزياً.', links: 'أنابيب ' + nm + ' من المصفاة، وأنبوب البيع.', prod: 'سعة 4,000,000 برميل', chain: [['🏭', 'المصفاة'], ['🔧', 'الأنبوب'], [ic, 'المخزن المركزي'], ['💵', 'البيع']] };
+  INFO.water_tank_c = { icon: '💧', name: 'مخزن المياه المركزي', lv: 6, short: 'يتسع لأربعة ملايين برميل.', does: 'مخزن ضخم واحد يجمع المياه المفصولة من الشبكة كلها.', when: 'لحقول وفواصل كثيرة تنتج مياهاً كثيرة.', links: 'مضخات مياه وأنابيب مياه فقط.', prod: 'سعة 4,000,000 برميل', chain: [['🏭', 'الفاصل'], ['⚙️', 'مضخة مياه'], ['💧', 'المخزن المركزي'], ['💵', 'البيع']] };
   /* progress: level n is reached when its condition holds.  Players keep every earlier unlock. */
   const LEVELS = [
     { lv: 1, name: 'البداية', goal: 'بئر ← أنبوب ← خزان ← بيع النفط' },
