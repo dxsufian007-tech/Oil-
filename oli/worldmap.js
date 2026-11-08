@@ -26,6 +26,15 @@
       VALLEY:  { id: 4, label: 'Valley', buildable: true,   buildCost: 1.1, oilMod: 1.5,  maxSlope: 6,  color: [168, 152, 104], special: 'valley: may flood later, best oil odds' },
       WATER_WADI:       { id: 5, label: 'Water / wadi', buildable: false, buildCost: 0, oilMod: 0, maxSlope: 0, color: [58, 112, 138] }
     },
+    /* PHASE 3 FOUNDATION (data only; nothing here is used by the game yet and no saved id changes). The terrain ids stored in chunks stay 0..5; the ids below are RESERVED for the coast and the sea, so a later map can add them without touching a single old save.
+     * `offshore` tiles cannot be built on, but a pipeline that asks for it (route option allowSea) may cross them (subsea lines). */
+    FUTURE_TERRAIN: {
+      BEACH:        { id: 6, label: 'Beach',        buildable: true,  buildCost: 1.0, maxSlope: 3, offshore: false, color: [226, 208, 160] },
+      SHALLOW_SEA:  { id: 7, label: 'Shallow sea',  buildable: false, buildCost: 0,   maxSlope: 0, offshore: true,  color: [64, 150, 190] },
+      DEEP_SEA:     { id: 8, label: 'Deep sea',     buildable: false, buildCost: 0,   maxSlope: 0, offshore: true,  color: [24, 84, 140] }
+    },
+    /* the kinds of ground a zone can lie on. Every region has one (all LAND or COAST today); the sea is a domain of its own so ports, platforms and offshore plants can get their own rules later. The sea side of the world is the WEST (the coastal shelf column rx = 0). */
+    DOMAINS: { LAND: { buildable: true }, COAST: { buildable: true, ports: true }, SEA: { buildable: false, offshore: true } }, SEA_SIDE: 'W',
     SLOPE_K: 3,                                                                     // slope units per "maxSlope" step (slope values are 0..~45, 90% below 20)
     ELEV_LEVELS: 8,                                                             // elevation is also reported as a coarse level 0..7 (the "height" concept)
     /* ---- oil fields (Phase 3): five size classes, the design ranges of the oil-system spec x RESERVE_SCALE (0.25 = the middle option between the nominal ranges and a heavily shrunk world;
@@ -174,7 +183,7 @@
       const cxm = (rx + .5) * RC * C, cym = (ry + .5) * RC * C, e = elevAt(cxm, cym), coastal = rx === 0;
       const kind = coastal ? 'COASTAL SHELF' : e > .62 ? 'MOUNTAIN BELT' : e < .38 ? 'VALLEY BASIN' : KINDS[Math.floor(hash(S.kind, rx, ry) * 5)];
       const unlockedAtStart = starter || (Math.abs(rx - 2) + Math.abs(ry - 2) === 1), nonCommercial = !unlockedAtStart && hash(S.kind, rx + 50, ry + 50) < CONFIG.ZONE_NONCOMMERCIAL_SHARE;   // a closed-off zone with no real oil, only dry prospects
-      regions.push({ id, rx, ry, nonCommercial, x0: rx * RC * C, y0: ry * RC * C, w: RC * C, h: RC * C, kind, richness, starter, unlocked: starter || (Math.abs(rx - 2) + Math.abs(ry - 2) === 1 ? true : false), name: String.fromCharCode(65 + ry) + (rx + 1) });
+      regions.push({ id, rx, ry, nonCommercial, x0: rx * RC * C, y0: ry * RC * C, w: RC * C, h: RC * C, kind, domain: coastal ? 'COAST' : 'LAND', richness, starter, unlocked: starter || (Math.abs(rx - 2) + Math.abs(ry - 2) === 1 ? true : false), name: String.fromCharCode(65 + ry) + (rx + 1) });
     }
     function regionIdAt(x, y) { return Math.floor(y / (RC * C)) * RX + Math.floor(x / (RC * C)); }
 
@@ -435,6 +444,16 @@
     /* The WHOLE starter region (C3) is Strategic Reserve land: only reserve tanks, pumps, valves and junctions may be built there from now on (buildings.js reserveRule). Buildings and saves already in it stay exactly as they are (the rule is checked only when something is placed).
      * reserveRegionOfWorld() = that region's rectangle; homeRegionOfWorld() = where the player's oil business starts (the richest unlocked neighbour, so the game stays playable). Both are data: CONFIG.RESERVE_WHOLE_REGION turns it off. */
     const reserveRegionOfWorld = () => { if (!wholeReserve) return null; const sr = regions.find(r => r.starter); return sr ? { id: sr.id, name: sr.name, x: sr.x0, y: sr.y0, w: sr.w, h: sr.h } : null; };
+    /* the domain of a point (LAND / COAST / SEA): from its region today; a sea region or sea terrain will answer SEA without any caller changing */
+    const domainAt = (x, y) => { const r = regions[regionIdAt(x, y)]; return r ? (r.domain || 'LAND') : 'LAND'; };
+    /* ONE list of every zone of the world, whatever its kind: the reserve land, the reserve zone, refinery and tank-farm zones, and any kind registered later (port, platform field...). A rectangle each, in tile coordinates. */
+    const zoneKinds = new Map(), registerZoneKind = (kind, fn) => { zoneKinds.set(kind, fn); };
+    registerZoneKind('RESERVE_LAND', () => { const r = reserveRegionOfWorld(); return r ? [{ id: 'RESERVE_LAND', kind: 'RESERVE_LAND', name: r.name, x: r.x, y: r.y, w: r.w, h: r.h, regionId: r.id }] : []; });
+    registerZoneKind('RESERVE', () => { const z = reserveZoneOfWorld(); return z ? [{ id: z.id, kind: 'RESERVE', name: z.name, x: z.x, y: z.y, w: z.w, h: z.h, regionId: z.regionId }] : []; });
+    registerZoneKind('REFINERY', rid => refineryZones(rid).map(z => Object.assign({ kind: 'REFINERY', regionId: rid }, z)));
+    registerZoneKind('TANK_FARM', rid => tankZones(rid).map(z => Object.assign({ kind: 'TANK_FARM', regionId: rid }, z)));
+    const zones = (kind, rid) => { const out = []; for (const [k, fn] of zoneKinds) { if (kind && k !== kind) continue; if (rid == null) { const per = fn.length === 0; if (per) out.push(...fn()); else for (const r of regions) out.push(...fn(r.id)); } else out.push(...(fn.length === 0 ? fn().filter(z => z.regionId === rid) : fn(rid))); } return out; };
+    const extent = () => ({ x0: 0, y0: 0, x1: W, y1: H, seaSide: CONFIG.SEA_SIDE });          // today's world; a larger world only moves these numbers: no existing coordinate changes (the sea is added on the SEA_SIDE edge)
     let homeCache = null; const roughness = r => { const v = []; for (let j = 0; j < 7; j++) for (let i = 0; i < 7; i++) v.push(elevAt(r.x0 + (i + .5) * r.w / 7, r.y0 + (j + .5) * r.h / 7)); const m = v.reduce((q, x) => q + x, 0) / v.length; return v.reduce((q, x) => q + Math.abs(x - m), 0) / v.length; };   // from the analytic elevation only: never depends on which chunks are loaded (the same answer in a worker world)
     const homeRegionOfWorld = () => { const sr = regions.find(r => r.starter); if (!sr || !wholeReserve) return sr; if (homeCache) return homeCache; let best = null; for (const r of regions) { if (r.starter || !r.unlocked || r.nonCommercial) continue; const f = r.richness === 'RICH' ? 2 : r.richness === 'MEDIUM' ? 1 : 0, d = Math.abs(r.rx - sr.rx) + Math.abs(r.ry - sr.ry); const sc = f * 10 - d * 3 - roughness(r) * 60; if (!best || sc > best.sc) best = { r, sc }; } return (homeCache = best ? best.r : sr); };   // richest unlocked neighbour, then the flattest
     // ---- worker support: chunk / region data can be computed elsewhere (a Web Worker) and injected into an `external` world, so the drawing thread never generates anything
@@ -475,7 +494,7 @@
     };
     const oilFieldAt = (x, y) => { for (const s of sitesNear(x, y, 2)) if (s.kind === 'FIELD' && Math.hypot(s.x - x, s.y - y) <= s.radius) return s; return null; };
 
-    return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, reserveZone, reserveZoneOfWorld, reserveRegionOfWorld, homeRegionOfWorld, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
+    return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, reserveZone, reserveZoneOfWorld, reserveRegionOfWorld, homeRegionOfWorld, domainAt, zones, registerZoneKind, extent, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
       zoneInfo, evaluateZone, zoneSnapshot, restoreZones, pressureOf, injectionSupport, injectorsTotal, liftFactor, take, drillWell, drillCost, wellsOf, reserveSnapshot, restoreReserve, discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
       scale: () => (W * H) / (CONFIG.LEGACY.W * CONFIG.LEGACY.H) };
   }

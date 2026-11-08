@@ -1,0 +1,44 @@
+'use strict';
+/* PHASE 3 FOUNDATION: expandable zones, giant footprints, coast / sea domains, long and subsea pipe routes, performance numbers (simulated in Node, NOT a phone).   node test-world-foundation.js */
+const W = require('./worldmap.js'), B = require('./buildings.js'), I = require('./industry.js'), E = require('./economy.js'), assert = require('assert'), BC = require('./building-config.js');
+let n = 0; const ok = (c, m, x) => { if (!c) console.log('  FAIL ' + m + (x ? ' ' + JSON.stringify(x) : '')); assert(c, m); n++; console.log('  ok  ' + m); };
+const ms = f => { const t = process.hrtime.bigint(); const r = f(); return [r, Number(process.hrtime.bigint() - t) / 1e6]; };
+const world = W.createWorld({ seed: 20260101 }), ts = B.fromWorld(world);
+{ // 1. reserved ids: the coast and the sea cannot collide with a saved terrain id
+  const used = Object.values(W.CONFIG.TERRAIN).map(t => t.id), fut = Object.values(W.CONFIG.FUTURE_TERRAIN).map(t => t.id);
+  ok(used.length === 6 && Math.max(...used) === 5 && fut.every(i => i > 5) && new Set(used.concat(fut)).size === used.length + fut.length, 'saved terrain ids 0..5 are unchanged; beach / shallow sea / deep sea reserve ids ' + fut.join(',') + ' (no collision)');
+  ok(W.TBYID.length === 6, 'chunks still decode with the six existing terrains: old saves and old worlds are unaffected'); }
+{ // 2. domains
+  const d = new Set(world.regions.map(r => r.domain)); ok([...d].every(x => W.CONFIG.DOMAINS[x]) && d.has('COAST') && d.has('LAND'), 'every region has a domain (' + [...d].join(',') + '); the coast is the west column'); ok(world.domainAt(10, 10) === 'COAST' && world.domainAt(800, 800) === 'LAND', 'domainAt answers by place: west edge COAST, centre LAND');
+  ok(W.CONFIG.SEA_SIDE === 'W' && W.CONFIG.DOMAINS.SEA.offshore === true && W.CONFIG.DOMAINS.COAST.ports === true, 'the sea side is declared (west) and the SEA / COAST domains carry the rules a port or platform will need'); }
+{ // 3. one zone list, open to new kinds
+  const z0 = world.zones(); const kinds = new Set(z0.map(z => z.kind)); ok(['RESERVE_LAND', 'RESERVE', 'REFINERY', 'TANK_FARM'].every(k => kinds.has(k)), 'ONE list of all zones: ' + [...kinds].join(', ') + ' (' + z0.length + ')');
+  ok(z0.every(z => z.x >= 0 && z.y >= 0 && z.x + z.w <= world.W && z.y + z.h <= world.H), 'every zone lies inside the world');
+  const before = world.zones('REFINERY').length; world.registerZoneKind('PORT', () => [{ id: 'P1', kind: 'PORT', name: 'test port', x: 10, y: 400, w: 30, h: 20, regionId: 0 }]); ok(world.zones('PORT').length === 1 && world.zones().some(z => z.kind === 'PORT') && world.zones('REFINERY').length === before, 'a new zone kind (a port) registers in one line and joins the list; the old kinds are untouched'); }
+{ // 4. GIANT buildings with the existing machinery: define -> place -> connect -> save/load -> demolish
+  const GW = 40, GH = 30, base = B.DEFS.refinery_x, mid = v => v >> 1, pt = (id, kind, role, cell, side, o) => Object.assign({ id, kind, role, cell, side, required: true }, o || {});
+  B.define(Object.assign({}, base, { id: 'giant_refinery_test', name: 'Giant refinery (test)', footprint: [GW, GH], connections: [pt('CRUDE_IN', 'pipe', 'in', [0, mid(GH)], 1, { product: 'CRUDE' }), pt('GASOLINE_OUT', 'pipe', 'out', [GW - 1, 2], 0, { required: false, product: 'GASOLINE' })], allowedTerrain: base.allowedTerrain.slice(), capacity: Object.assign({}, base.capacity), zone: null, requires: {} }));
+  ok(!!B.DEFS.giant_refinery_test && B.dimsOf(B.DEFS.giant_refinery_test, 0)[0] === 40, 'a 40 x 30 building is defined with the ordinary define(): the engine has no size limit of its own');
+  const h = world.homeRegionOfWorld(), store = new B.BuildingStore(ts, { cash: 1e12 }); let spot = null, vt = 0;
+  for (let y = h.y0 + 20; y < h.y0 + 290 && !spot; y += 3) for (let x = h.x0 + 20; x < h.x0 + 290 && !spot; x += 3) { const [v, t] = ms(() => store.validate('giant_refinery_test', x, y, 0, {})); vt = Math.max(vt, t); if (v.ok) spot = [x, y, v]; }
+  ok(!!spot, 'a flat 40 x 30 spot exists on the real world (' + (spot && spot.slice(0, 2)) + '); slowest single validation ' + vt.toFixed(2) + ' ms');
+  const r = store.place('giant_refinery_test', spot[0], spot[1], 0, { instant: true }); ok(r.ok, 'placed'); const g = r.building; let cells = 0; for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) if (store.at(spot[0] + i, spot[1] + j) === g) cells++;
+  ok(cells === GW * GH, 'it owns exactly its 1,200 cells: every tap inside it selects it (' + cells + ')'); ok(store.at(spot[0] - 1, spot[1]) !== g && store.at(spot[0] + GW, spot[1]) !== g, 'and not one cell more'); ok(store.query(spot[0] + 20, spot[1] + 15, spot[0] + 21, spot[1] + 16).includes(g), 'the spatial query finds it from its middle (viewport culling / picking)');
+  const wp = B.worldPoints(g); ok(wp.some(p => p.id === 'CRUDE_IN') && wp.some(p => p.id === 'GASOLINE_OUT'), 'its pipe ports are on its edge where the definition put them');
+  const net = new I.PipeNet(ts.W), sim = new I.Sim(store, net), tank = store.place('crude_tank_m', spot[0] - 14, spot[1] + 8, 0, { instant: true });
+  if (tank.ok) { const L = I.layConnect(store, net, ts, tank.building.id, g.id, { ignoreCash: true }); ok(L.ok !== false && net.lines.size >= 1, 'a tank connects to the giant through the ordinary auto-connect (' + net.lines.size + ' line)'); } else ok(true, '(no spot for the feeding tank)');
+  const js = JSON.parse(JSON.stringify(store.toJSON())), r2 = B.BuildingStore.fromJSON(ts, js); ok(r2.report.dropped.length === 0 && r2.store.list().some(b => b.d === 'giant_refinery_test' && b.x === spot[0] && b.y === spot[1]), 'save / load keeps the giant with its coordinates'); ok(js.b.find(b => b[1] === 'giant_refinery_test') && JSON.stringify(js.b.find(b => b[1] === 'giant_refinery_test')).length < 120, 'a giant costs the same few bytes in a save as any building');
+  const dm = store.demolish(g.id, { building: true, pipes: true, pipeSet: net }); ok(dm.ok && store.at(spot[0] + 5, spot[1] + 5) === null || !store.at(spot[0] + 5, spot[1] + 5), 'demolishing frees all its cells'); }
+{ // 5. long pipe routes and subsea routes on a synthetic world (flat land with a strip of sea)
+  const T = { FLAT_DESERT: { buildable: true, buildCost: 1, maxSlope: 10 }, SHALLOW_SEA: { buildable: false, offshore: true, buildCost: 0, maxSlope: 0 } }, Wd = 1200, Hd = 200;
+  const fake = { W: Wd, H: Hd, tile: (x, y) => ({ terrain: x >= 500 && x < 560 ? 'SHALLOW_SEA' : 'FLAT_DESERT', slope: 0 }), oilFieldAt: () => null, stateOf: () => null, refineryZones: () => [], regionIdAt: () => 0, siteById: () => null, take: () => 0, reserveZoneOfWorld: () => null, injectorsTotal: () => 0, liftFactor: () => 1 };
+  const t2 = B.fromWorld(fake, { TERRAIN: T, SLOPE_K: 1, PRODUCTION: { INJ_OP_DAY: 0 } }), s2 = new B.BuildingStore(t2, { cash: 1e13 }), n2 = new I.PipeNet(Wd), a = s2.place('pump_station_s', 10, 100, 0, { instant: true }).building, b = s2.place('crude_tank_m', 1100, 100, 0, { instant: true }).building;
+  const pa = B.worldPoints(a).find(p => p.id === 'OUTPUT'), pb = B.worldPoints(b).find(p => p.role === 'in');
+  const [no, t0] = ms(() => I.route(s2, n2, t2, [pa.ax, pa.ay], [pb.ax, pb.ay], { margin: 6 })); ok(no === null, 'a pipe may not cross the sea by default (' + t0.toFixed(0) + ' ms to refuse)');
+  const [yes, t1] = ms(() => I.route(s2, n2, t2, [pa.ax, pa.ay], [pb.ax, pb.ay], { margin: 6, allowSea: true, guard: 400000 })); ok(Array.isArray(yes) && yes.length >= 1080 && yes.some(p => p[0] >= 500 && p[0] < 560), 'with allowSea the line crosses the sea strip: ' + (yes && yes.length) + ' tiles in ' + t1.toFixed(0) + ' ms');
+  ok(yes.every((p, i) => i === 0 || Math.abs(p[0] - yes[i - 1][0]) + Math.abs(p[1] - yes[i - 1][1]) === 1), 'the long route is a clean contiguous path'); console.log('  (measured in Node, not on a phone: ~1,090-tile route ' + t1.toFixed(0) + ' ms)'); }
+{ // 6. world performance numbers (simulation)
+  const w = W.createWorld({ seed: 4242 }); let [, tc] = ms(() => { for (let cy = 0; cy < 5; cy++) for (let cx = 0; cx < 5; cx++) w.chunk(cx + 10, cy + 5); }); const [, tt] = ms(() => { let k = 0; for (let i = 0; i < 100000; i++) k += w.tile(640 + (i % 300), 640 + ((i / 300) | 0))?.slope || 0; return k; });
+  const [z, tz] = ms(() => w.zones()); console.log('  (measured in Node: 25 chunks of 64x64 in ' + tc.toFixed(0) + ' ms = ' + (tc / 25).toFixed(1) + ' ms/chunk · 100k tile() lookups ' + tt.toFixed(0) + ' ms · all ' + z.length + ' zones ' + tz.toFixed(0) + ' ms)');
+  ok(tc / 25 < 80 && tt < 800, 'chunk generation and tile lookups are cheap enough to stream on demand (simulation numbers, not a device)'); ok(w.W * w.H === 1920 * 1280, 'the world is generated per chunk on demand: its size costs memory only for the chunks in view (1920 x 1280 tiles today)'); }
+console.log(n + ' checks passed');
