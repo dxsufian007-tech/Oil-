@@ -32,7 +32,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
     gasoline_tank_s: 'PRODUCT STORAGE', gasoline_tank_m: 'PRODUCT STORAGE', gasoline_tank_l: 'PRODUCT STORAGE', diesel_tank_s: 'PRODUCT STORAGE', diesel_tank_m: 'PRODUCT STORAGE', diesel_tank_l: 'PRODUCT STORAGE', jet_tank_s: 'PRODUCT STORAGE', jet_tank_m: 'PRODUCT STORAGE', jet_tank_l: 'PRODUCT STORAGE', gas_sphere_s: 'PRODUCT STORAGE', gas_sphere_m: 'PRODUCT STORAGE', gas_sphere_l: 'PRODUCT STORAGE' };
   console.log('BUILD MENU (6 sections)');
   ok((await p.$$eval('#tabs button', bs => bs.map(x => x.textContent))).join('|') === 'EXTRACTION|PIPELINE|CRUDE STORAGE|PROCESSING|PRODUCT STORAGE|WATER', 'the menu has the 6 sections (+ WATER): EXTRACTION / PIPELINE / CRUDE STORAGE / PROCESSING / PRODUCT STORAGE');
-  for (const [sec, n2] of [['EXTRACTION', 4], ['PIPELINE', 3], ['CRUDE STORAGE', 4], ['PROCESSING', 5], ['PRODUCT STORAGE', 12]]) { await tab(sec); ok((await p.$$('#pal .chip')).length === n2, sec + ' lists ' + n2 + ' buildings'); }
+  for (const [sec, n2] of [['EXTRACTION', 4], ['PIPELINE', 3], ['CRUDE STORAGE', 4], ['PROCESSING', 5], ['PRODUCT STORAGE', 15]]) { await tab(sec); ok((await p.$$('#pal .chip')).length === n2, sec + ' lists ' + n2 + ' buildings'); }
   { await tab('EXTRACTION'); const bb = await (await p.$('#pal .chip')).boundingBox(); ok(bb.height >= 60 && bb.width >= 70, 'palette chips are big enough for a finger (' + Math.round(bb.width) + 'x' + Math.round(bb.height) + ' px)'); }
 
   console.log('PLACE EVERY BUILDING (real mouse drag from the palette + Build button)');

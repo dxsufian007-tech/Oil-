@@ -6,8 +6,9 @@ const bal = (co, k) => co.journal.bal[k] || 0, days = (co, n) => { for (let d = 
 const plKeys = ['COGS', 'EXP_LOSS', 'REV_SPOT', 'EXP_FEES', 'EXP_OPERATING', 'EXP_MAINT', 'EXP_STORAGE'];
 /* reserve crude tank R (inside the zone), commercial tank C west of it (inbound pipe C -> R) and commercial tank D east of it (outbound pipe R -> D) */
 function rig(opt) {
-  opt = opt || {}; const g = game(), co = track(g.co), R = put(g, 'crude_tank_m', A0.x + 2, A0.y + 2), C = put(g, 'crude_tank_m', A0.x - 30, A0.y + 2), D = put(g, 'crude_tank_m', A0.x + 40, A0.y + 2); co.sync(); if (opt.cash != null) g.store.cash = opt.cash;
-  if (opt.inbound !== false) pipe(g, C, 'OUTPUT_E', R, 'INPUT_W', opt.dia); if (opt.outbound !== false) pipe(g, R, 'OUTPUT_E', D, 'INPUT_W', opt.dia); return Object.assign(g, { R, C, D });
+  opt = opt || {}; const g = game(), co = track(g.co), R = put(g, 'crude_tank_m', A0.x + 2, A0.y + 2), C = put(g, 'crude_tank_m', A0.x - 30, A0.y + 2), D = put(g, 'crude_tank_m', A0.x + 40, A0.y + 2); co.sync();
+  if (opt.inbound !== false) pipe(g, C, 'OUTPUT_E', R, 'INPUT_W', opt.dia); if (opt.outbound !== false) pipe(g, R, 'OUTPUT_E', D, 'INPUT_W', opt.dia); if (opt.cash != null) g.store.cash = opt.cash;       /* after the pipes are paid: pipe prices follow the capacity now */
+  return Object.assign(g, { R, C, D });
 }
 const tot = co => ({ cash: co.store.cash, inv: bal(co, 'INV_CRUDE') + bal(co, 'INV_CRUDE_BUY'), res: bal(co, 'INV_RESERVE') });
 const plSnap = co => Object.fromEntries(plKeys.map(k => [k, bal(co, k)]));
