@@ -35,7 +35,18 @@
     },
     /* the kinds of ground a zone can lie on. Every region has one (all LAND or COAST today); the sea is a domain of its own so ports, platforms and offshore plants can get their own rules later. The sea side of the world is the WEST (the coastal shelf column rx = 0). */
     DOMAINS: { LAND: { buildable: true }, COAST: { buildable: true, ports: true }, SEA: { buildable: false, offshore: true } }, SEA_SIDE: 'W',
-    SLOPE_K: 3,                                                                     // slope units per "maxSlope" step (slope values are 0..~45, 90% below 20)
+
+    /* ---- FUNCTIONAL ZONES (Phase 2 of the central-pipeline work): a DISPLAY layer over the existing world. 17 zones: A1-A7 extraction, B1-B5 storage, C1 strategic reserve, D1-D2 refining, E1 water, F1 sea.
+     * Nothing in the world data changes: every A zone IS an existing oil field (same id, place, radius, reserve, capacity), every B / D zone IS an existing tank-farm / refinery zone of the generator,
+     * C1 is the starter region (still 'C3' inside: ids, saves and the reserve data are untouched), E1 is free flat ground, F1 is the existing western sea strip.
+     * The plan is fixed for the default world seed (the one every save uses); another seed has no functional zones and everything is drawn exactly as before. */
+    FUNC_PLAN: { 20260101: {
+      A: [['A1', 'F8-10', 833, 380, 14], ['A2', 'F8-5', 702, 513, 9], ['A3', 'F13-15', 413, 795, 7], ['A4', 'F13-4', 551, 850, 8], ['A5', 'F15-8', 1143, 667, 8], ['A6', 'F15-9', 1235, 675, 9], ['A7', 'F20-2', 931, 1192, 6]],   // [code, field id, x, y, radius]
+      B: [['B1', 834, 436], ['B2', 592, 792], ['B3', 1202, 702], ['B4', 1160, 720], ['B5', 768, 1160]],      // tank-farm zones (18 x 12), [code, x, y]
+      D: [['D1', 552, 800], ['D2', 1032, 808]],                                                          // refinery zones (28 x 18)
+      E: ['E1', 810, 1066, 36, 24],                                                                      // water zone: free flat ground
+      F: ['F1', 640, 960, [[30, 700], [40, 800], [30, 900]]]                                             // the western sea strip between these rows + the prepared platform slots (data only)
+    } },    SLOPE_K: 3,                                                                     // slope units per "maxSlope" step (slope values are 0..~45, 90% below 20)
     ELEV_LEVELS: 8,                                                             // elevation is also reported as a coarse level 0..7 (the "height" concept)
     /* ---- oil fields (Phase 3): five size classes, the design ranges of the oil-system spec x RESERVE_SCALE (0.25 = the middle option between the nominal ranges and a heavily shrunk world;
        at 1 the ranges are the nominal ones). Keys are kept (MAJOR = giant) so saves and tests keep working; MARGINAL is new. Every number is meant to be tuned. */
@@ -443,7 +454,7 @@
     const reserveZoneOfWorld = () => { const sr = regions.find(r => r.starter); return sr ? reserveZone(sr.id) : null; };
     /* The WHOLE starter region (C3) is Strategic Reserve land: only reserve tanks, pumps, valves and junctions may be built there from now on (buildings.js reserveRule). Buildings and saves already in it stay exactly as they are (the rule is checked only when something is placed).
      * reserveRegionOfWorld() = that region's rectangle; homeRegionOfWorld() = where the player's oil business starts (the richest unlocked neighbour, so the game stays playable). Both are data: CONFIG.RESERVE_WHOLE_REGION turns it off. */
-    const reserveRegionOfWorld = () => { if (!wholeReserve) return null; const sr = regions.find(r => r.starter); return sr ? { id: sr.id, name: sr.name, x: sr.x0, y: sr.y0, w: sr.w, h: sr.h } : null; };
+    const reserveRegionOfWorld = () => { if (!wholeReserve) return null; const sr = regions.find(r => r.starter); return sr ? { id: sr.id, name: sr.name, label: regionLabel(sr.id), x: sr.x0, y: sr.y0, w: sr.w, h: sr.h } : null; };
     /* the domain of a point (LAND / COAST / SEA): from its region today; a sea region or sea terrain will answer SEA without any caller changing */
     const domainAt = (x, y) => { const r = regions[regionIdAt(x, y)]; return r ? (r.domain || 'LAND') : 'LAND'; };
     /* ONE list of every zone of the world, whatever its kind: the reserve land, the reserve zone, refinery and tank-farm zones, and any kind registered later (port, platform field...). A rectangle each, in tile coordinates. */
@@ -494,7 +505,24 @@
     };
     const oilFieldAt = (x, y) => { for (const s of sitesNear(x, y, 2)) if (s.kind === 'FIELD' && Math.hypot(s.x - x, s.y - y) <= s.radius) return s; return null; };
 
-    return { seed, W, H, CHUNK: C, regions, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, reserveZone, reserveZoneOfWorld, reserveRegionOfWorld, homeRegionOfWorld, domainAt, zones, registerZoneKind, extent, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
+    /* ---- functional zones: pure data derived from CONFIG.FUNC_PLAN (works in external mode too: nothing is read from chunks or sites) */
+    const funcZones = (() => {
+      const P = CONFIG.FUNC_PLAN[seed]; if (!P) return []; const out = [], sr = regions.find(r => r.starter);
+      for (const [code, fid, x, y, r] of P.A) out.push({ code, kind: 'A', name: 'منطقة استخراج', shape: 'ell', x, y, r, fieldId: fid });
+      for (const [code, x, y] of P.B) out.push({ code, kind: 'B', name: 'منطقة التخزين', shape: 'rect', x, y, w: 18, h: 12 });
+      if (sr) out.push({ code: 'C1', kind: 'C', name: 'الاحتياطي الاستراتيجي', shape: 'rect', x: sr.x0, y: sr.y0, w: sr.w, h: sr.h, regionId: sr.id, internalName: sr.name });
+      for (const [code, x, y] of P.D) out.push({ code, kind: 'D', name: 'منطقة التكرير', shape: 'rect', x, y, w: 28, h: 18 });
+      out.push({ code: P.E[0], kind: 'E', name: 'منطقة المياه', shape: 'rect', x: P.E[1], y: P.E[2], w: P.E[3], h: P.E[4] });
+      out.push({ code: P.F[0], kind: 'F', name: 'المنطقة البحرية', shape: 'sea', y0: P.F[1], y1: P.F[2], slots: P.F[3].map(s => s.slice()) });
+      return out;
+    })();
+    const funcZone = code => funcZones.find(z => z.code === code) || null;
+    const funcZoneOfSite = id => { const z = funcZones.find(q => q.fieldId === id); return z ? z.code : null; };
+    /* the code of a generator zone (kind 'B' = tank farm, 'D' = refinery zone) at that top-left corner, or null */
+    const funcZoneCodeAt = (kind, x, y) => { const z = funcZones.find(q => q.kind === kind && q.x === x && q.y === y); return z ? z.code : null; };
+    /* the name a REGION CELL is shown with. The reserve cell (C3 inside) is shown as C1; the other cells keep their grid name behind 'قطاع' so it never reads like a zone code. No plan -> the old name. */
+    const regionLabel = rid => { const r = regions[rid]; if (!r) return ''; if (!funcZones.length) return r.name; return r.starter ? 'C1' : 'قطاع ' + r.name; };
+    return { seed, W, H, CHUNK: C, regions, coastLine, funcZones, funcZone, funcZoneOfSite, funcZoneCodeAt, regionLabel, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, reserveZone, reserveZoneOfWorld, reserveRegionOfWorld, homeRegionOfWorld, domainAt, zones, registerZoneKind, extent, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
       zoneInfo, evaluateZone, zoneSnapshot, restoreZones, pressureOf, injectionSupport, injectorsTotal, liftFactor, take, drillWell, drillCost, wellsOf, reserveSnapshot, restoreReserve, discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
       scale: () => (W * H) / (CONFIG.LEGACY.W * CONFIG.LEGACY.H) };
   }

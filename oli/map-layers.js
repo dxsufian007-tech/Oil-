@@ -150,7 +150,7 @@
       const items = [];
       for (const r of regionsIn(v)) {
         const z = world.zoneInfo(r.id); if (!z) continue; const ev = z.evaluated, cls = z.potentialClass, col = ev ? classCol[z.commercial === false ? 'NON_COMMERCIAL' : cls] : '#9aa4ae';
-        items.push({ k: 'rect', x: r.x0, y: r.y0, w: r.w, h: r.h, fill: col, a: ev ? .20 : .07, stroke: col, dash: ev ? null : [6, 6], w2: 1.5, rid: r.id, label: r.name + ' · ' + (ev ? (z.commercial === false ? 'غير اقتصادية' : classAr[cls]) + ' · احتمال ' + pct(z.discoveryProbability) + '%' : 'لم تُقيَّم (تقدير أولي: ' + classAr[cls] + ')'), unlocked: z.unlocked });
+        items.push({ k: 'rect', x: r.x0, y: r.y0, w: r.w, h: r.h, fill: col, a: ev ? .20 : .07, stroke: col, dash: ev ? null : [6, 6], w2: 1.5, rid: r.id, label: world.regionLabel(r.id) + ' · ' + (ev ? (z.commercial === false ? 'غير اقتصادية' : classAr[cls]) + ' · احتمال ' + pct(z.discoveryProbability) + '%' : 'لم تُقيَّم (تقدير أولي: ' + classAr[cls] + ')'), unlocked: z.unlocked });
       }
       for (const r of regionsIn(v)) for (const s of world.regionSites(r.id)) {
         const vi = world.visibleInfo(s.id); if (!vi || !inView(s.x, s.y, v, s.radius)) continue;
@@ -196,7 +196,7 @@
       for (const r of regionsIn(v)) {
         const z = world.zoneInfo(r.id); if (!z) continue; const owned = z.unlocked, nearOpen = !owned && world.regions.some(q => q.unlocked && Math.abs(q.rx - r.rx) + Math.abs(q.ry - r.ry) === 1);
         const col = owned ? '#4ade80' : nearOpen ? '#f0be28' : '#7d8794';
-        items.push({ k: 'rect', x: r.x0, y: r.y0, w: r.w, h: r.h, fill: col, a: owned ? .13 : nearOpen ? .08 : .05, stroke: col, w2: owned ? 2.5 : 1.4, dash: owned ? null : [8, 6], rid: r.id, owned, available: nearOpen, label: r.name + ' · ' + (owned ? 'ضمن امتيازك' : nearOpen ? 'متاحة للاستكشاف · $' + nf(z.exploreCost) : 'غير متاحة بعد') });
+        items.push({ k: 'rect', x: r.x0, y: r.y0, w: r.w, h: r.h, fill: col, a: owned ? .13 : nearOpen ? .08 : .05, stroke: col, w2: owned ? 2.5 : 1.4, dash: owned ? null : [8, 6], rid: r.id, owned, available: nearOpen, label: world.regionLabel(r.id) + ' · ' + (owned ? 'ضمن امتيازك' : nearOpen ? 'متاحة للاستكشاف · $' + nf(z.exploreCost) : 'غير متاحة بعد') });
       }
       return { items, note: 'عروض البيع والاستثمار: لا توجد حاليًا (تُضاف في المرحلة السابعة)' };
     };
@@ -230,7 +230,7 @@
       const rid = world.regionIdAt(clamp(Math.floor(x), 0, world.W - 1), clamp(Math.floor(y), 0, world.H - 1));
       if (!out.length && rid != null && rid >= 0) {
         const z = world.zoneInfo(rid);
-        if (z && (has('EXPLORATION') || has('LAND'))) out.push({ kind: 'region', id: rid, title: 'منطقة ' + z.name, rows: [['النوع', KINDAR[z.kind] || z.kind], ['الحالة', z.unlocked ? 'ضمن امتيازك' : 'غير مفتوحة'], ['التقييم', z.evaluated ? (z.commercial === false ? 'غير اقتصادية' : classAr[z.potentialClass]) : 'لم تُقيَّم (تقدير أولي: ' + classAr[z.potentialClass] + ')'], ['الاحتياطي المتوقع', nf(z.reserveRange[0]) + ' – ' + nf(z.reserveRange[1]) + ' برميل'], ['عمق الآبار', nf(z.depthRange[0]) + ' – ' + nf(z.depthRange[1]) + ' م'], ['التكوين', z.geology.formation], ['تكلفة الاستكشاف', '$' + nf(z.exploreCost)]] });
+        if (z && (has('EXPLORATION') || has('LAND'))) out.push({ kind: 'region', id: rid, title: 'منطقة ' + world.regionLabel(rid), rows: [['النوع', KINDAR[z.kind] || z.kind], ['الحالة', z.unlocked ? 'ضمن امتيازك' : 'غير مفتوحة'], ['التقييم', z.evaluated ? (z.commercial === false ? 'غير اقتصادية' : classAr[z.potentialClass]) : 'لم تُقيَّم (تقدير أولي: ' + classAr[z.potentialClass] + ')'], ['الاحتياطي المتوقع', nf(z.reserveRange[0]) + ' – ' + nf(z.reserveRange[1]) + ' برميل'], ['عمق الآبار', nf(z.depthRange[0]) + ' – ' + nf(z.depthRange[1]) + ' م'], ['التكوين', z.geology.formation], ['تكلفة الاستكشاف', '$' + nf(z.exploreCost)]] });
       }
       if (has('GEOLOGY')) { const g = geology(Math.floor(x), Math.floor(y)); out.push({ kind: 'geology', title: 'جيولوجيا الموقع', rows: [['الصخر السطحي', g.label], ['أعلى المكمن', nf(g.reservoirTop) + ' م'], ['أسفل المكمن', nf(g.reservoirBottom) + ' م']] }); }
       if (has('TERRAIN')) { const t = world.tile(Math.floor(x), Math.floor(y)); if (t) { const c = TERCLS(t); out.push({ kind: 'terrain', title: 'التضاريس', rows: [['النوع', c[1]], ['مستوى الارتفاع', t.level + ' من 7'], ['الانحدار', Math.round(t.slope)]] }); } }

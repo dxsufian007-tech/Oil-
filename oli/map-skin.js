@@ -36,7 +36,7 @@
     ctx.save(); ctx.lineJoin = 'round'; edge(); ctx.strokeStyle = 'rgba(255,160,30,.22)'; ctx.lineWidth = 9; ctx.stroke(); ctx.strokeStyle = 'rgba(255,205,90,.95)'; ctx.lineWidth = 2; ctx.stroke();
     ctx.strokeStyle = 'rgba(255,205,90,.5)'; ctx.lineWidth = 1.1; ctx.beginPath(); for (const r of wp.world.regions) { if (r.x0 > b.x1 + 20 || r.y0 > b.y1 + 20 || r.x0 + r.w < b.x0 - 20 || r.y0 + r.h < b.y0 - 20) continue; ctx.moveTo(sx(r.x0, r.y0), sy(r.x0, r.y0)); ctx.lineTo(sx(r.x0 + r.w, r.y0), sy(r.x0 + r.w, r.y0)); ctx.lineTo(sx(r.x0 + r.w, r.y0 + r.h), sy(r.x0 + r.w, r.y0 + r.h)); ctx.lineTo(sx(r.x0, r.y0 + r.h), sy(r.x0, r.y0 + r.h)); ctx.lineTo(sx(r.x0, r.y0), sy(r.x0, r.y0)); } ctx.stroke(); ctx.restore();
     let rx = -1e9, ry = -1e9; if (RES) { rx = sx(RES.rz.x + RES.rz.w / 2, RES.rz.y + RES.rz.h / 2); ry = sy(RES.rz.x + RES.rz.w / 2, RES.rz.y + RES.rz.h / 2); }
-    if (z < .35) for (const r of wp.world.regions) { const X = sx(r.x0 + r.w / 2, r.y0 + r.h / 2), Y = sy(r.x0 + r.w / 2, r.y0 + r.h / 2); if (X < -40 || X > VW + 40 || Y < -20 || Y > VH + 20 || Math.hypot(X - rx, Y - ry) < 48) continue; plate(r.name, X, Y, z < .05 ? 18 : 16, r.unlocked ? 1 : .6); }
+    if (z < .35) for (const r of wp.world.regions) { const X = sx(r.x0 + r.w / 2, r.y0 + r.h / 2), Y = sy(r.x0 + r.w / 2, r.y0 + r.h / 2); if (X < -40 || X > VW + 40 || Y < -20 || Y > VH + 20 || Math.hypot(X - rx, Y - ry) < 48) continue; plate(wp.world.regionLabel ? wp.world.regionLabel(r.id) : r.name, X, Y, z < .05 ? 18 : 16, r.unlocked ? 1 : .6); }
     drawReserve(); };
   /* well pins: green = ready to drill, gold = producing, blue = surveyed, red = depleted */
   const PIN = { DRILLABLE: 'pin-green', PRODUCING: 'pin-gold', SURVEYED: 'pin-blue', DEPLETED: 'pin-red' };
