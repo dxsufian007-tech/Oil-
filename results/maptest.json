@@ -1,0 +1,99 @@
+{
+ "env": {
+  "ua": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36",
+  "dpr": 2.625,
+  "w": 412,
+  "h": 866,
+  "renderer": "WebGL",
+  "gl": "Android Emulator OpenGL ES Translator (Google SwiftShader)"
+ },
+ "fails": 0,
+ "results": [
+  {
+   "name": "M1. the new map is active: window c3east (920,676)",
+   "ok": true,
+   "info": "{\"preset\":\"c3east\",\"ox\":920,\"oy\":676,\"cols\":140,\"rows\":88,\"pal\":64}"
+  },
+  {
+   "name": "M2. the game grid is still 140 x 88 and the map arrays have 12320 cells",
+   "ok": true,
+   "info": "140x88 / 12320"
+  },
+  {
+   "name": "M3. no water in the default window (nothing an old save could stand on is water)",
+   "ok": true,
+   "info": "water tiles 0"
+  },
+  {
+   "name": "M4. the ground tileset texture was built (64 colours x 4 looks)",
+   "ok": true,
+   "info": "1056x544"
+  },
+  {
+   "name": "M5. whole world in view: frame time",
+   "ok": true,
+   "info": "{\"median\":50,\"p95\":83.3,\"max\":83.3}"
+  },
+  {
+   "name": "M6. close view (zoom 0.9): frame time",
+   "ok": true,
+   "info": "{\"median\":50,\"p95\":83.3,\"max\":83.3}"
+  },
+  {
+   "name": "M7. well + tank + pipe built on the new ground with the unchanged rules; network valid",
+   "ok": true,
+   "info": "{\"ok\":true,\"probs\":[],\"id\":18,\"tank\":19,\"line\":3}"
+  },
+  {
+   "name": "M8. a real Android tap on the well selects it",
+   "ok": true,
+   "info": "{\"id\":18}"
+  },
+  {
+   "name": "M9. a real swipe moves the camera",
+   "ok": true,
+   "info": "[{\"x\":1265.9047546386719,\"y\":1726.8571472167969},{\"x\":1346.6213148982442,\"y\":1767.2102436806317}]"
+  },
+  {
+   "name": "M10. settings -> map -> old (real taps): the old map is back (mode old, water tiles 425)",
+   "ok": true,
+   "info": "{\"mode\":\"old\",\"win\":null,\"water\":425,\"tiles\":12320,\"grid\":\"140x88\",\"tex\":\"528x34\"}"
+  },
+  {
+   "name": "M11. the save survived the switch: the same 5 buildings on the same tiles",
+   "ok": true,
+   "info": "{\"b\":[\"pump,45,22\",\"tank,100,44\",\"tank,72,22\",\"well,32,22\",\"well,90,44\"]}"
+  },
+  {
+   "name": "M12. settings -> map -> new: the new map is back, buildings still on their tiles",
+   "ok": true,
+   "info": "{\"preset\":\"c3east\",\"ox\":920,\"oy\":676,\"cols\":140,\"rows\":88,\"pal\":64}"
+  },
+  {
+   "name": "M13. JS heap after the whole session",
+   "ok": true,
+   "info": "26.3 -> 26.3 MB"
+  },
+  {
+   "name": "M14. no JavaScript errors in the WebView",
+   "ok": true,
+   "info": "none"
+  }
+ ],
+ "frames": {
+  "far": {
+   "median": 50,
+   "p95": 83.3,
+   "max": 83.3
+  },
+  "mid": {
+   "median": 50,
+   "p95": 83.3,
+   "max": 83.3
+  }
+ },
+ "heap": [
+  26.3,
+  26.3
+ ]
+}

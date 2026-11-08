@@ -1,0 +1,13 @@
+ENV {"dpr":2.625,"w":412,"h":866,"ua":"Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36"}
+PASS 1. Pump ON: RUNNING, pressure boost > 1 bar, oil flows  — {"flow":37.25909423828125,"tank":29.151374490657975,"state":"RUNNING","boost":6.143777109441042,"kw":97.83342241221725,"pin":1.5092949375090186,"pout":7.344330070547454,"warn":[]}
+PASS 2. Pump OFF: state OFF, boost 0, 0 kW, flow falls  — flow 37.3 -> 30.8
+PASS 3. Pump ON again + valve OPEN: flow restored  — flow 37.2
+PASS 4. Valve CLOSED: flow after the valve exactly 0, tank frozen, VALVE_CLOSED warning, pump stops  — {"flow":0,"tank":75.75421877374491,"state":"STOPPED","boost":0,"kw":0,"pin":23.78621459991318,"pout":23.78621459991318,"warn":["VALVE_CLOSED"]}
+PASS 5. Small pipe bottleneck: utilisation = flow/capacity = 100%, status BOTTLENECK, warning  — {"util":1,"status":"bottleneck"}
+PASS 6. Well depleted: pump STARVED, flow 0, 0 kW, PUMP_STARVED warning  — {"flow":0,"tank":99.52831793200221,"state":"STARVED","boost":0,"kw":0,"pin":1.0792470885629897,"pout":1.0792470885629897,"warn":["PUMP_STARVED"]}
+PASS 7. No NaN / Infinity / negative flow or inventory (300 steps, whole network)  — bad values 0
+PASS 8. Save/Load: pump OFF and valve CLOSED restored  — {"en":false,"valve":3}
+PASS 9. Real Android tap on the pump opens its panel (status, flow, pressure in/out, boost, head, cost + buttons)  — {"hidden":false,"title":"مضخة #17","rows":["الحالة","التدفق","ضغط الدخول","ضغط الخروج","دفع الضغط","رأس المضخة","تكلفة التشغيل","التكلفة الإجمالية"],"btns":4}
+PASS 10. Frame time with the pump panel open and oil moving (emulator: software GPU, not representative)  — {"median":50,"p95":100,"max":116.67299999999886}
+PASS 11. no JavaScript errors in the WebView  — none
+SUMMARY 11/11 PASS
