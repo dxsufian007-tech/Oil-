@@ -452,7 +452,7 @@
             acc = this.split(b, outs, Object.assign({}, f, { r: Math.min(f.r, room), p: f.p - 1 }), commit, vis); if (commit && acc > 0) { s._in = (s._in || 0) + acc; if (f.p > def.params.pressureLimit) s._hiP = true; }
             break;
           }
-          case 'central': { const cn = this.net.central, st = cn && cn.stOf(b.id); if (!st) break; s._off = Math.max(s._off || 0, f.r); acc = cn.deliver(this, st, CEN.CH_OF_PORT[port], f, commit, vis); if (commit && acc > 0) { s._in = (s._in || 0) + acc; (s._ch = s._ch || {})[CEN.CH_OF_PORT[port]] = ((s._ch || {})[CEN.CH_OF_PORT[port]] || 0) + acc; } break; }
+          case 'central': { const cn = this.net.central, st = cn && cn.stOf(b.id); if (!st) break; s._off = Math.max(s._off || 0, f.r); acc = cn.deliver(this, st, CEN.CH_OF_PORT[port], f, commit, vis, port); if (commit && acc > 0) { s._in = (s._in || 0) + acc; (s._ch = s._ch || {})[CEN.CH_OF_PORT[port]] = ((s._ch || {})[CEN.CH_OF_PORT[port]] || 0) + acc; } break; }
           case 'separator': acc = this.separate(b, s, def, f, commit, vis); break;
           case 'refinery': acc = this.refine(b, s, def, f, commit, vis); break;
         }

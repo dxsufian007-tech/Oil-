@@ -94,13 +94,15 @@
       allowedTerrain: FLAT, maxSlope: 2, capacity: { value: z.cap, unit: 'bbl/day' }, zone: 'REFINERY', clearance: 1, params: z,
       connections: [pt('CRUDE_IN', 'pipe', 'in', [0, mid(z.h)], 1, { product: P.CRUDE }), pt('GASOLINE_OUT', 'pipe', 'out', [z.w - 1, 1], 0, { required: false, product: P.GASOLINE }), pt('DIESEL_OUT', 'pipe', 'out', [z.w - 1, 2], 0, { required: false, product: P.DIESEL }),
         pt('JET_OUT', 'pipe', 'out', [z.w - 1, 3], 0, { required: false, product: P.JET_FUEL }), pt('GAS_OUT', 'pipe', 'out', [z.w - 2, 0], 3, { required: false, product: P.GAS })] }); }
-  /* Central Hybrid Network station (central.js): one 2x2 node of the grey trunk with SIX product-locked ports (one per channel, role 'both': a branch carries product into the trunk or out of it).
-   * Pre-built stations cost nothing; a station the player taps in on the trunk costs one tile of shell = one tile of each 36" channel. */
+  /* Central Hybrid Network station (central.js): one 3x3 node of the grey trunk with TWELVE product-locked ports - TWO for each of the six channels, on different sides (role 'both': a branch carries product into the trunk or out of it).
+   * A trunk arm that blocks one access tile never blocks a channel.  Pre-built stations cost nothing; a station the player taps in on the trunk costs one tile of shell = one tile of each 36" channel. */
   { const CN = (typeof OliCentral !== 'undefined') ? OliCentral : require('./central.js');
-    const cp = (ch, cell, side) => pt(ch + '_PORT', 'pipe', 'both', cell, side, { required: false, product: P[ch] });
-    define({ id: 'central_station', name: 'Central Network Station', category: 'PIPELINE', section: 'PIPELINE', family: 'CENTRAL', type: 'central', footprint: [2, 2], cost: CN.TILE_COST, maintenanceCost: CFG.JUNCTION.maint, operatingCost: CFG.JUNCTION.op, buildTime: CFG.JUNCTION.buildTime || 8, visual: 'junction',
+    const cp = (id, ch, cell, side) => pt(id, 'pipe', 'both', cell, side, { required: false, product: P[ch] });
+    const slots = { N0: [[0, 0], 3], N1: [[1, 0], 3], N2: [[2, 0], 3], E0: [[2, 0], 0], E1: [[2, 1], 0], E2: [[2, 2], 0], S0: [[0, 2], 2], S1: [[1, 2], 2], S2: [[2, 2], 2], W0: [[0, 0], 1], W1: [[0, 1], 1], W2: [[0, 2], 1] };
+    const asg = { CRUDE: ['N0', 'S2'], WATER: ['N1', 'S1'], GASOLINE: ['N2', 'S0'], DIESEL: ['E0', 'W2'], JET_FUEL: ['E1', 'W0'], GAS: ['E2', 'W1'] };
+    define({ id: 'central_station', name: 'Central Network Station', category: 'PIPELINE', section: 'PIPELINE', family: 'CENTRAL', type: 'central', footprint: [3, 3], cost: CN.TILE_COST, maintenanceCost: 0, operatingCost: 0, buildTime: CFG.JUNCTION.buildTime || 8, visual: 'junction',
       allowedTerrain: ALL_LAND, maxSlope: 12, capacity: { value: CFG.PIPES[36].capacity, unit: 'bbl/day' }, rotatable: true, params: { channels: CN.CHANNELS },
-      connections: [cp('CRUDE', [0, 0], 1), cp('WATER', [0, 1], 1), cp('GASOLINE', [0, 0], 3), cp('DIESEL', [1, 0], 3), cp('JET_FUEL', [1, 0], 0), cp('GAS', [1, 1], 0)] }); }
+      connections: [].concat(...CN.CHANNELS.map(ch => CN.PORTS[ch].map((id, k) => cp(id, ch, slots[asg[ch][k]][0], slots[asg[ch][k]][1])))) }); }
   const ORDER = Object.keys(DEFS);
 
   /* ---------------------------------------------------------------- rotation (footprint + connections together) */
@@ -274,20 +276,21 @@
       this.time += dt; for (const b of this.items.values()) if (b.st === STATUS.UNDER_CONSTRUCTION && this.time - b.t0 >= DEFS[b.d].buildTime) b.st = STATUS.OPERATIONAL;
     }
     move(id, x, y, r) {                                                              // drag an existing building: validated against everything except itself
-      const b = this.items.get(id); if (!b) return { ok: false, reason: 'nothing' }; const v = this.validate(b.d, x, y, r == null ? b.r : r, { ignoreId: id, ignoreCash: true }); if (!v.ok) return v;
+      const b = this.items.get(id); if (!b) return { ok: false, reason: 'nothing' }; if (DEFS[b.d].family === 'CENTRAL') return { ok: false, reason: 'centralStation' }; const v = this.validate(b.d, x, y, r == null ? b.r : r, { ignoreId: id, ignoreCash: true }); if (!v.ok) return v;
       if (!!v.reserve !== !!b.rs) return { ok: false, state: 'INVALID', kind: 'ZONE', reason: 'reserveMove' };      // a tank never changes system by being dragged: its stock would silently change owner
       this._index(b, false); b.x = x; b.y = y; b.r = v.r; this._index(b, true); return { ok: true, building: b };
     }
 
     /* ---- demolish: a plan first (what would be touched), then a confirmed removal that never leaves a broken link behind */
     demolishPlan(id, pipes) {
-      const b = this.items.get(id); if (!b) return null; const def = DEFS[b.d], pts = worldPoints(b), pipeTiles = [];
+      const b = this.items.get(id); if (!b) return null; if (DEFS[b.d].family === 'CENTRAL') return { id, name: DEFS[b.d].name, locked: true, refund: 0, connectedPipes: [], dependents: [], needsConfirm: true, needsPipeConfirm: false }; const def = DEFS[b.d], pts = worldPoints(b), pipeTiles = [];
       if (pipes) for (const p of pts) if (p.kind === 'pipe' && pipes.has(key(this.W, p.ax, p.ay))) pipeTiles.push([p.ax, p.ay]);
       const jacks = this.list().filter(o => o.link === id).map(o => o.id);
       return { id, name: def.name, refund: Math.floor(def.cost * 0.5), connectedPipes: pipeTiles, dependents: jacks, needsConfirm: true, needsPipeConfirm: pipeTiles.length > 0 };
     }
     demolish(id, confirm) {                                                         // confirm = { building: true, pipes: true } ; a missing flag refuses, nothing changes
       const plan = this.demolishPlan(id, confirm && confirm.pipeSet); if (!plan) return { ok: false, reason: 'nothing' };
+      if (plan.locked && !(confirm && confirm.force)) return { ok: false, reason: 'centralStation', plan };      // a station of the Central Network is infrastructure: it is never demolished (the graph would break)
       { const t = this.items.get(id); if (t && t.rs && t.s && t.s.vol > 1) return { ok: false, reason: 'reserveNotEmpty', plan }; }      // a reserve tank holding oil is never demolished (its stock and its book value would vanish)
       if (!confirm || !confirm.building) return { ok: false, reason: 'needsConfirm', plan };
       if (plan.needsPipeConfirm && !confirm.pipes) return { ok: false, reason: 'needsPipeConfirm', plan };

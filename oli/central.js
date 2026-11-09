@@ -16,8 +16,7 @@
   'use strict';
   const CHANNELS = ['CRUDE', 'WATER', 'GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'];
   const CLASS = CFG.PIPES[36], SIM = CFG.SIM, PU = CFG.PUMP.C, TILE_M = CFG.TILE_METERS;
-  const PORT = {}; for (const c of CHANNELS) PORT[c] = c + '_PORT';
-  const CH_OF_PORT = {}; for (const c of CHANNELS) CH_OF_PORT[PORT[c]] = c;
+  const PORT = {}, PORTS = {}, CH_OF_PORT = {}; for (const c of CHANNELS) { PORT[c] = c + '_PORT'; PORTS[c] = [c + '_PORT', c + '_PORT2']; for (const p of PORTS[c]) CH_OF_PORT[p] = c; }       // every channel has TWO ports on a station (on different sides), so a trunk arm that blocks one never blocks the channel
   const COLOR = { CRUDE: '#4a3a2c', WATER: CFG.PRODUCT_COLOR.WATER, GASOLINE: CFG.PRODUCT_COLOR.GASOLINE, DIESEL: CFG.PRODUCT_COLOR.DIESEL, JET_FUEL: '#4aa3ff', GAS: CFG.PRODUCT_COLOR.GAS };
   const TILE_COST = CLASS.cost * CHANNELS.length;                    // one tile of shell = one tile of each of the six 36" channels
   const BORE_BBL = Math.PI * Math.pow(36 * 0.0254 / 2, 2) * TILE_M * 6.28981;   // barrels in one tile of a 36" channel (real geometry of the existing pipe class)
@@ -27,7 +26,7 @@
 
   class CentralNet {
     constructor(W) {
-      this.W = W; this.st = new Map(); this.seg = new Map(); this.pumps = new Map(); this.at = new Map(); this.cen = new Set(); this.rev = 0; this.nextSt = 1; this.nextSeg = 1; this.nextPump = 1; this.time = 0;
+      this.W = W; this.st = new Map(); this.seg = new Map(); this.pumps = new Map(); this.at = new Map(); this.cen = new Set(); this.cov = new Set(); this.rev = 0; this.nextSt = 1; this.nextSeg = 1; this.nextPump = 1; this.time = 0;
       this.ch = {}; for (const c of CHANNELS) this.ch[c] = { state: 'OPEN', flow: 0, pressure: 0, qty: 0, moved: 0, dir: 0, fault: false, cap: CLASS.capacity, maxP: CLASS.maxPressure, status: 'READY' };
       this._used = null; this._adj = null; this._adjRev = -1; this._pused = new Map();
     }
@@ -40,11 +39,12 @@
       const id = o.id || ('S' + this.nextSeg++); const path = o.path.map(p => [p[0], p[1]]);
       const g = { id, kind: o.kind || 'main', a: o.a, b: o.b, path, fault: {}, f: {} }; for (const c of CHANNELS) g.f[c] = { flow: 0, net: 0, p: 0 };
       if (o.fault) for (const c in o.fault) if (o.fault[c]) g.fault[c] = true;
-      this.seg.set(id, g); for (const [x, y] of path) { const k = this.key(x, y); this.cen.add(k); if (!this.at.has(k)) this.at.set(k, id); }
+      this.seg.set(id, g); for (const [x, y] of path) { const k = this.key(x, y); if (this.cov.has(k)) continue; this.cen.add(k); if (!this.at.has(k)) this.at.set(k, id); }       // the tiles under a station footprint are not pipe tiles
       this.rev++; return g;
     }
     /* trim the pipe tiles that lie inside a station footprint (the pipe enters the station there) */
-    claimFootprint(stId, cells) { for (const [x, y] of cells) { const k = this.key(x, y); this.cen.delete(k); this.at.delete(k); for (const g of this.seg.values()) { /* the tile stays in g.path (geometry), only the occupancy goes */ } } const s = this.st.get(stId); if (s) s.cells = cells; this.rev++; }
+    claimFootprint(stId, cells) { for (const [x, y] of cells) { const k = this.key(x, y); this.cen.delete(k); this.at.delete(k); this.cov.add(k); }       // the tile stays in the segment path (geometry), only the occupancy goes
+      const s = this.st.get(stId); if (s) s.cells = cells; this.rev++; }
     addPump(o) {
       const id = o.id || ('P' + this.nextPump++); const st = this.st.get(o.st); const u = hash(st.x, st.y, 7 + CHANNELS.indexOf(o.ch));
       const p = { id, st: o.st, ch: o.ch, boost: o.boost != null ? o.boost : Math.round(lerp(PU.boost[0], PU.boost[1], u)), eff: o.eff != null ? o.eff : +lerp(PU.eff[0], PU.eff[1], hash(st.x, st.y, 8 + CHANNELS.indexOf(o.ch))).toFixed(3), fault: !!o.fault, flow: 0, pIn: 0, pOut: 0, lowIn: false };
@@ -97,6 +97,7 @@
     }
     /* rate, pressure at the far end: friction per segment (the same law as the old pipes), pump boosts at the stations passed, pump flow limit */
     plan(ch, from, to, r, p0, over) {
+      if (from === to) return r > EPS ? { hops: [], r, p: p0, stats: [], nodes: [from] } : null;                         // two branches on the SAME station: the product passes through the station itself (no trunk)
       const hops = this.path(ch, from, to, over); if (!hops) return null; let cap = Infinity; for (const h of hops) cap = Math.min(cap, CLASS.capacity - this.usedOf(over, h.g.id, ch));
       r = Math.min(r, cap); const nodes = [from].concat(hops.map(h => h.to)), pumps = [];
       for (let i = 0; i < nodes.length - 1; i++) { const pu = this.pumpAt(nodes[i], ch); if (pu && !pu.fault) { pumps.push([i, pu]); r = Math.min(r, Math.max(0, PU.maxFlow - this.pusedOf(over, pu.id))); } }
@@ -119,15 +120,15 @@
       this._chFlow[ch] += acc; this._chP[ch] += pl.p * acc; this._chPw[ch] += acc;
     }
     /* the stations that can receive on this channel: they must own a branch (an edge) on the channel port and be operational */
-    receivers(sim, ch, exceptId) {
-      const out = []; for (const s of this.st.values()) { if (s.b == null || s.id === exceptId) continue; const b = sim.store.get(s.b); if (!b || !sim.ok(b)) continue; if (!sim.edgeOf(b, PORT[ch])) continue; out.push({ s, b }); } return out;
+    receivers(sim, ch, exceptId, exceptPort) {
+      const out = []; for (const s of this.st.values()) { if (s.b == null) continue; const b = sim.store.get(s.b); if (!b || !sim.ok(b)) continue; for (const port of PORTS[ch]) { if (s.id === exceptId && port === exceptPort) continue; if (sim.edgeOf(b, port)) out.push({ s, b, port }); } } return out;
     }
     /* what the receiver at `d` can take of `want` (probe) or really takes (commit) */
     toStation(sim, ch, srcId, d, want, f, commit, vis, over) {
       let got = 0, remaining = want, guard = 0;
       while (remaining > EPS && guard++ < 6) {
         const pl = this.plan(ch, srcId, d.s.id, remaining, f.p, commit ? null : over); if (!pl) break;
-        const probeAcc = sim.offer(d.b, PORT[ch], Object.assign({}, f, { r: pl.r, p: pl.p }), commit, vis);
+        const probeAcc = sim.offer(d.b, d.port, Object.assign({}, f, { r: pl.r, p: pl.p }), commit, vis);
         if (probeAcc <= EPS) break;
         if (commit) this._apply(ch, pl, probeAcc);
         else { for (const h of pl.hops) { const k = h.g.id + '|' + ch; over.set(k, (over.get(k) || 0) + probeAcc); } for (const [pu, , , on] of pl.stats) if (on) over.set('P' + pu.id, (over.get('P' + pu.id) || 0) + probeAcc); }
@@ -136,8 +137,8 @@
       return got;
     }
     /* the entry point from the Sim: a flow f (rate r bbl/day, pressure p) arrives at station `src` on channel `ch` */
-    deliver(sim, src, ch, f, commit, vis) {
-      if (!this._used || !this.channelUp(ch)) return 0; const rcv = this.receivers(sim, ch, src.id); if (!rcv.length) return 0;
+    deliver(sim, src, ch, f, commit, vis, port) {
+      if (!this._used || !this.channelUp(ch)) return 0; const rcv = this.receivers(sim, ch, src.id, port); if (!rcv.length) return 0;
       const probe = rcv.map(d => ({ d, can: this.toStation(sim, ch, src.id, d, f.r, f, false, vis, new Map()) })).filter(o => o.can > EPS).sort((a, b) => a.can - b.can);
       if (!probe.length) return 0; let remain = f.r, left = probe.length, total = 0;
       for (const o of probe) { const take = Math.min(o.can, remain / left); remain -= take; left--; if (take > EPS) total += commit ? this.toStation(sim, ch, src.id, o.d, take, f, true, vis, null) : take; }
@@ -157,8 +158,8 @@
 
     /* ---------------------------------------------------------------- numbers for the panel / the books */
     trunkTiles() { let n = 0; for (const g of this.seg.values()) n += g.path.length; return n; }
-    cost() { const tiles = this.trunkTiles(); return { tiles, tileCost: TILE_COST, shell: tiles * TILE_COST, stations: this.st.size, pumps: this.pumps.size, pump: this.pumps.size * PU.cost }; }
-    dailyCosts() { let op = 0, maint = 0; for (const p of this.pumps.values()) { op += PU.op; maint += PU.maint; } const J = CFG.JUNCTION; for (const s of this.st.values()) { op += (J.op || 0); maint += (J.maint || 0); } return { op, maint }; }
+    cost() { const tiles = this.trunkTiles(); return { tiles, tileCost: TILE_COST, shell: tiles * TILE_COST, stations: this.st.size, stationsValue: this.st.size * TILE_COST, pumps: this.pumps.size, pump: this.pumps.size * PU.cost }; }
+    dailyCosts() { let op = 0, maint = 0; for (const p of this.pumps.values()) { op += PU.op; maint += PU.maint; } const J = CFG.JUNCTION; for (const s of this.st.values()) { op += (J.op || 0); maint += (J.maint || 0); } return { op, maint }; }       // pumps = the existing central pump station figures; stations = the existing junction figures (no new rate)
     channelInfo(c) { const ch = this.ch[c]; let flt = 0, segs = 0; for (const g of this.seg.values()) { segs++; if (g.fault[c]) flt++; } let pump = 0, pOk = 0; for (const p of this.pumps.values()) if (p.ch === c) { pump++; if (!p.fault) pOk++; } return Object.assign({ id: c, segs, faultySegs: flt, pumps: pump, pumpsOk: pOk, color: COLOR[c] }, ch); }
 
     /* ---------------------------------------------------------------- save / load */
@@ -171,9 +172,8 @@
     }
     static fromJSON(W, d) {
       const n = new CentralNet(W); if (!d || !Array.isArray(d.st)) return n; n.nextSt = d.ns || 1; n.nextSeg = d.ng || 1; n.nextPump = d.np || 1;
-      for (const s of d.st) { const o = n.addStation({ id: s.id, x: s.x, y: s.y, sec: s.sec, b: s.b, tapped: !!s.t, tile: s.tile }); if (s.cells) o.cells = s.cells; }
+      for (const s of d.st) { const o = n.addStation({ id: s.id, x: s.x, y: s.y, sec: s.sec, b: s.b, tapped: !!s.t, tile: s.tile }); if (s.cells) { o.cells = s.cells; for (const [x, y] of s.cells) n.cov.add(n.key(x, y)); } }
       for (const g of d.seg || []) { const o = { id: g.id, kind: g.k, a: g.a, b: g.b, path: unpack(g.p), fault: {} }; for (const c of g.f || []) o.fault[c] = true; n.addSeg(o); }
-      for (const s of n.st.values()) if (s.cells) for (const [x, y] of s.cells) { const k = n.key(x, y); n.cen.delete(k); n.at.delete(k); }
       for (const p of d.pu || []) n.addPump({ id: p.id, st: p.st, ch: p.ch, boost: p.boost, eff: p.eff, fault: !!p.fault });
       for (const c of CHANNELS) { const x = d.ch && d.ch[c]; if (x) { n.ch[c].state = x.s || 'OPEN'; n.ch[c].fault = !!x.f; n.ch[c].moved = x.m || 0; } }
       return n;
@@ -195,7 +195,7 @@
     for (const s of pl.stations) cn.addStation({ id: s.id, x: s.x, y: s.y, sec: s.sec });
     for (const r of pl.routes) cn.addSeg({ id: r.id, kind: r.kind, a: r.a, b: r.b, path: r.path });
     for (const s of pl.stations) {
-      const cells = (x, y) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]], saved = [];
+      const cells = (x, y) => { const o = []; for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) o.push([x + i, y + j]); return o; }, saved = [];
       const trial = (x, y) => { for (const [cx, cy] of cells(x, y)) { const k = cn.key(cx, cy); if (cn.cen.has(k)) { saved.push([k, cn.at.get(k)]); cn.cen.delete(k); cn.at.delete(k); } } let best = null; for (let r = 0; r < 4; r++) { const v = store.validate('central_station', x, y, r, { ignoreCash: true }); if (!v.ok) continue; const n = v.connections.filter(c => c.ok).length; if (!best || n > best.n) best = { r, n }; } for (const [k, id] of saved.splice(0)) { cn.cen.add(k); if (id) cn.at.set(k, id); } return best; };
       let spot = null, mv = null;
       for (let d = 0; d <= 4 && !spot; d++) for (let dy = -d; dy <= d && !spot; dy++) for (let dx = -d; dx <= d && !spot; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue; const b = trial(s.x + dx, s.y + dy); if (b) { spot = { x: s.x + dx, y: s.y + dy, r: b.r, ports: b.n }; mv = d ? [dx, dy] : null; } }
@@ -207,5 +207,25 @@
     cn.rev++; res.tiles = cn.cen.size; res.cn = cn; return res;
   }
 
-  return { install, CHANNELS, PORT, CH_OF_PORT, COLOR, CLASS, PUMP: PU, TILE_COST, BORE_BBL, CentralNet, expand, pack, unpack };
+
+  /* ---------------------------------------------------------------- FREE TAP: a branch from ANY tile of the trunk.  planTap() finds a 2x2 station spot touching the tile (normal building validation, best rotation = most usable ports);
+   * commitTap() buys the station (one tile of shell = one tile of each channel) and registers it in the graph (the segment is cut in two at that tile): that registration is the mechanical connection. */
+  function planTap(store, net, x, y, opts) {
+    opts = opts || {}; const cn = net.central; if (!cn) return { ok: false, reason: 'noNetwork' }; const tp = cn.tapPoint(x, y); if (!tp) return { ok: false, reason: 'notOnCentral' };
+    if (tp.atEnd) return { ok: false, reason: 'atStation', station: cn.st.get(tp.i <= 0 ? tp.seg.a : tp.seg.b) };
+    const cells = (fx, fy) => { const o = []; for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) o.push([fx + i, fy + j]); return o; }, near = c => Math.abs(c[0] - x) + Math.abs(c[1] - y) === 1; let best = null, why = 'noSpot'; const all = [];
+    for (let fy = y - 3; fy <= y + 1; fy++) for (let fx = x - 3; fx <= x + 1; fx++) { const cs = cells(fx, fy); if (!cs.some(near) || cs.some(c => c[0] === x && c[1] === y)) continue;
+      for (let r = 0; r < 4; r++) { const v = store.validate('central_station', fx, fy, r, { ignoreCash: true }); if (!v.ok) { why = v.reason || why; continue; } const n = v.connections.filter(q => q.ok).length; all.push({ x: fx, y: fy, r, ports: n, d: Math.abs(fx - x) + Math.abs(fy - y), cost: v.cost, tw: opts.toward ? Math.hypot(fx + 1 - opts.toward[0], fy + 1 - opts.toward[1]) : 0 }); } }
+    { const top = all.reduce((m, c) => Math.max(m, c.ports), 0); for (const c of all) if (c.ports >= top - 3 && (!best || (opts.toward ? c.tw < best.tw - 1e-9 || (Math.abs(c.tw - best.tw) < 1e-9 && c.ports > best.ports) : c.ports > best.ports || (c.ports === best.ports && c.d < best.d)))) best = c; }      // the station stands on the side the player taps from (toward = the facility), with almost the most usable ports
+    if (!best) return { ok: false, reason: why };
+    if (store.cash < best.cost && !opts.ignoreCash) return { ok: false, reason: 'cash', cost: best.cost };
+    return { ok: true, x: best.x, y: best.y, r: best.r, ports: best.ports, cost: best.cost, tile: [x, y], seg: tp.seg.id, sec: opts.sec || null };
+  }
+  function commitTap(store, net, plan, opts) {
+    opts = opts || {}; if (!plan || !plan.ok) return plan || { ok: false, reason: 'noPlan' }; const cn = net.central; const p = store.place('central_station', plan.x, plan.y, plan.r, { instant: opts.instant !== false, ignoreCash: !!opts.ignoreCash }); if (!p.ok) return p;
+    const t = cn.tap(plan.tile[0], plan.tile[1], { b: p.building.id, sec: plan.sec }); if (!t.ok) { store.demolish(p.building.id, { building: true, pipes: true, force: true }); return t; }
+    t.station.cells = null; t.building = p.building; t.cost = p.cost; cn.rev++; return Object.assign({ ok: true }, t);
+  }
+
+  return { planTap, commitTap, install, CHANNELS, PORT, PORTS, CH_OF_PORT, COLOR, CLASS, PUMP: PU, TILE_COST, BORE_BBL, CentralNet, expand, pack, unpack };
 });

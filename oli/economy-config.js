@@ -8,6 +8,7 @@
   'use strict';
   const PRODUCTS = ['CRUDE', 'GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'];            // the five things a company can hold and sell (OTHER is a by-product, never stored)
   return {
+    CENTRAL: { startCash: 500000000, rate: 0.06, months: 720, grace: 24 },          // the Central Hybrid Pipeline Network: bought at the start with a 100% bank loan (60 years at 6%, the first 2 years interest only); the company starts with $500M cash
     START_CASH: 10000000,                                                           // a small oil company: a first well, a pipeline and a tank; a refinery (25M..1B) has to be earned or financed
     PRODUCTS,
     LABEL: { CRUDE: 'نفط خام', GASOLINE: 'بنزين', DIESEL: 'ديزل', JET_FUEL: 'وقود طائرات', GAS: 'غاز' },
