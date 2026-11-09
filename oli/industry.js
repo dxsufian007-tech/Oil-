@@ -74,7 +74,7 @@
       { const ln = net.lineAt(x, y); if (ln && ln.id !== opts.ignoreLine) return false; } if (!end && acc.has(key(W, x, y))) return false; return true; };
     if (!okTile(from[0], from[1], true) || !okTile(to[0], to[1], true)) return null;
     const idx = (x, y) => (y - y0) * (x1 - x0 + 1) + (x - x0), prev = new Map(), q = [from], seen = new Set([idx(from[0], from[1])]); let head = 0, guard = 0;
-    while (head < q.length && guard++ < (opts.guard || 60000)) {
+    while (head < q.length && guard++ < (opts.guard || 400000)) {
       const [x, y] = q[head++]; if (x === to[0] && y === to[1]) { const out = [[x, y]]; let k = idx(x, y); while (prev.has(k)) { const p = prev.get(k); out.push(p); k = idx(p[0], p[1]); } return out.reverse(); }
       for (const [dx, dy] of B.SIDES) { const nx = x + dx, ny = y + dy; if (nx < x0 || ny < y0 || nx > x1 || ny > y1) continue; const k = idx(nx, ny); if (seen.has(k)) continue; if (!okTile(nx, ny, nx === to[0] && ny === to[1])) continue; seen.add(k); prev.set(k, [x, y]); q.push([nx, ny]); }
     }

@@ -122,6 +122,25 @@
   const refuses = (x, y) => !!(x.excl && y.product && x.excl.indexOf(y.product) >= 0);        // a port can refuse a product outright (oil pumps refuse WATER: water never enters an oil pump)
   const compatible = (a, b) => a.kind === b.kind && (a.role === 'both' || b.role === 'both' || a.role !== b.role) && productOk(a.product, b.product) && !refuses(a, b) && !refuses(b, a);
 
+  /* ---------------------------------------------------------------- SECTOR RULES: what may be built where (the 17 functional sectors of the world). ONE table, checked by validate() like terrain and zones.
+   * Every building id is allowed in some sector kinds only; the pipe / valve / junction family is shared. A refusal names the sector and where the building belongs. mult = a build-cost advantage of the sector. */
+  const IDS = Object.keys(DEFS), pick = re => IDS.filter(k => re.test(k)), SHARED = ['valve', 'junction'];
+  const SECTOR_RULES = {
+    A: { allow: SHARED.concat(['oil_well', 'pump_station_s', 'pump_station_l', 'pump_station_c', 'water_pump_s', 'water_pump_l', 'main_manifold', 'separator', 'crude_tank_s', 'crude_tank_m']), mult: {},
+      perks: ['حقول نفط كثيفة داخل القطاع فقط', 'مساحة للتوسع في الحفر ومحطات التجميع', 'احتياطي وعمق وضغط وجودة تختلف من قطاع لآخر'], needs: ['البئر داخل حقل نفط مكتشف وقابل للحفر', 'خزانات التجميع الصغيرة والمتوسطة فقط (الكبيرة في B)'] },
+    B: { allow: SHARED.concat(pick(/^crude_tank_/), pick(/^(gasoline|diesel|jet)_tank_/), pick(/^gas_sphere_/), pick(/^pump_station_/), ['main_manifold']), mult: Object.fromEntries(pick(/_tank_|^gas_sphere_/).filter(k => !/^water_/.test(k)).map(k => [k, .9])),
+      perks: ['مزارع خزانات بكل أنواعها ومحطات ضخ وتوزيع', 'خصم 10% على بناء الخزانات', 'استقبال النفط الخام والمنتجات'], needs: ['لا آبار ولا مصافٍ في هذا القطاع'] },
+    C: { allow: SHARED.concat(pick(/^pump_station_/), pick(/^crude_tank_/), pick(/^(gasoline|diesel|jet)_tank_/), pick(/^gas_sphere_/)), mult: {},
+      perks: ['خزانات استراتيجية مستقلة عن التخزين التجاري', 'لا بيع تلقائي: السحب والإيداع بقرارك', 'مخزونه منفصل محاسبياً'], needs: ['الخزانات داخل منطقة الاحتياطي المفتوحة فقط'] },
+    D: { allow: SHARED.concat(pick(/^refinery_/), ['separator', 'main_manifold'], pick(/^pump_station_/), pick(/^water_pump_/), pick(/^(gasoline|diesel|jet)_tank_[sm]$/), pick(/^gas_sphere_[sm]$/)), mult: Object.fromEntries(pick(/^refinery_/).map(k => [k, .9])),
+      perks: ['مصافٍ ووحدات فصل ومعالجة', 'خصم 10% على بناء المصافي', 'مساحة مسوّاة للمرافق الصناعية'], needs: ['المصفاة داخل منطقة المصافي المسوّاة (المستطيل البنفسجي)', 'تحتاج نفطاً خاماً وماءً ومواد تشغيل لتعمل', 'خزانات المنتجات الصغيرة والمتوسطة بجوار المصفاة (الكبيرة في B)'] },
+    E: { allow: SHARED.concat(pick(/^water_pump_/), pick(/^water_tank_/), pick(/^pump_station_/), ['separator']), mult: Object.fromEntries(pick(/^water_/).map(k => [k, .9])),
+      perks: ['محطات سحب وضخ وتخزين ومعالجة المياه', 'خصم 10% على منشآت المياه', 'تزويد القطاعات المحتاجة للمياه'], needs: ['مضخات الماء على مياه أو أرض مناسبة'] },
+    F: { allow: [], mult: {}, perks: ['منصات استخراج بحرية', 'أنابيب بحرية ومحطات ربط ساحلية', 'قواعد بناء بحرية منفصلة عن اليابسة'], needs: ['البناء البحري قيد التجهيز: لا مبنى بري هنا'] }
+  };
+  const SECTOR_HOME = k => { const o = []; for (const q in SECTOR_RULES) if (SECTOR_RULES[q].allow.indexOf(k) >= 0 && SHARED.indexOf(k) < 0) o.push(q); return o; };
+  const sectorsOfFootprint = (world, x, y, w, h) => { const set = new Set(); for (const [i, j] of [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1], [(w - 1) >> 1, (h - 1) >> 1]]) set.add(world.sectorAt(x + i, y + j)); return [...set]; };
+
   /* ---------------------------------------------------------------- terrain source (the interface to Phase 1) */
   // TerrainSource = { W, H, tile(x,y) -> {terrain, slope} | null (not loaded), terrain: { NAME: { buildable, buildCost, maxSlope } }, slopeK,
   //                   oilFieldAt(x,y) -> site | null, stateOf(siteId), zoneAt(kind,x,y,w,h) -> zone | null }
@@ -137,6 +156,15 @@
         if (def.product === P.WATER && def.type === 'tank') return { ok: false, reason: 'reserveOnly' };       // water tanks are commercial: outside the reserve land (water PUMPS may stand inside to draw the settled water of reserve tanks)
         if (def.type === 'tank' || def.type === 'gas') { if (!z) return { ok: false, reason: 'reserveBounds' }; const L = z.levels[Math.max(0, Math.min(z.levels.length - 1, this.reserveLevel() | 0))]; return x >= L.x && y >= L.y && x + w <= L.x + L.w && y + h <= L.y + L.h ? { ok: true } : { ok: false, reason: 'reserveBounds' }; }
         return def.type === 'pump' || def.type === 'valve' || def.type === 'junction' ? { ok: true, infra: true } : { ok: false, reason: 'reserveOnly' }; },
+      sectorInfo: (x, y) => { const c = world.sectorAt ? world.sectorAt(x, y) : null, z = c && world.sector(c); return z ? { code: c, kind: z.kind, name: z.name, desc: z.desc, perks: SECTOR_RULES[z.kind].perks, needs: SECTOR_RULES[z.kind].needs } : null; },
+      /* the sector rule: every sector the footprint touches must allow the building (the pipe / valve / junction family is shared). Inside the reserve region the reserve rule has the last word. */
+      sectorRule: world.sectors && world.sectors.length ? function (def, defId, x, y, w, h) {
+        const codes = sectorsOfFootprint(world, x, y, w, h), z0 = world.sector(codes[0]); if (!z0) return null; const info = this.sectorInfo(x, y);
+        for (const c of codes) { const z = world.sector(c); if (!z) return null; const rule = SECTOR_RULES[z.kind];
+          if (rule.allow.indexOf(defId) < 0) { const R = this.region && this.region(); if (z.kind === 'C' && R && x >= R.x && y >= R.y && x + w <= R.x + R.w && y + h <= R.y + R.h) continue; return { ok: false, reason: 'sectorForbidden', sector: Object.assign({}, info, { code: c, kind: z.kind, name: z.name }), allowedIn: SECTOR_HOME(defId) }; }
+          if (z.kind === 'C' && (def.type === 'tank' || def.type === 'gas')) { const R = this.region && this.region(); if (!(R && x >= R.x && y >= R.y && x + w <= R.x + R.w && y + h <= R.y + R.h)) return { ok: false, reason: 'sectorReserveOnly', sector: Object.assign({}, info, { code: c, kind: z.kind, name: z.name }), allowedIn: ['C'] }; } }
+        if (codes.length > 1 && new Set(codes.map(c => world.sector(c).kind)).size > 1 && SHARED.indexOf(defId) < 0) return { ok: false, reason: 'sectorStraddle', sector: info, allowedIn: SECTOR_HOME(defId) };
+        const m = SECTOR_RULES[z0.kind].mult[defId]; return { ok: true, sector: info, mult: m || 1 }; } : undefined,
       zoneAt: (kind, x, y, w, h) => { if (kind !== 'REFINERY') return null; for (const z of world.refineryZones(world.regionIdAt(x, y))) if (x >= z.x && y >= z.y && x + w <= z.x + z.w && y + h <= z.y + z.h) return z; return null; }, site: id => world.siteById(id), take: (id, bbl) => world.take(id, bbl), fieldState: id => world.stateOf(id), liftFactor: id => world.liftFactor(id), injectionCostDay: () => world.injectorsTotal() * CFG.PRODUCTION.INJ_OP_DAY };
   }
 
@@ -173,6 +201,7 @@
       const ts = this.ts, [w, h] = dimsOf(def, r), cells = cellsOf(def, x, y, r), conns = connectionsOf(def, r), res = { ok: false, state: 'INVALID', kind: null, reason: null, cells, cost: 0, w, h, r, def: defId, connections: [], termMult: 1 };
       const fail = (kind, reason, extra) => Object.assign(res, { kind, reason }, extra || {});
       for (const [cx, cy] of cells) if (!this.inb(cx, cy)) return fail('OUT_OF_BOUNDS', 'outside');
+      if (ts.sectorRule) { const sr = ts.sectorRule(def, defId, x, y, w, h); if (sr) { if (!sr.ok) return fail('SECTOR', sr.reason, { sector: sr.sector, allowedIn: sr.allowedIn }); res.sector = sr.sector; if (sr.mult && sr.mult !== 1) res.sectorMult = sr.mult; } }
       let mult = 0, worst = 0;
       for (const [cx, cy] of cells) {                                                // terrain, slope
         const t = ts.tile(cx, cy); if (!t) { res.state = 'LOADING'; return fail('LOADING', 'notLoaded'); }
@@ -220,7 +249,7 @@
       for (const [, g] of groups) if (!g.any) allOk = false;
       if (res.badProduct) return fail('PRODUCT', 'invalidProduct');
       if (!allOk) return fail('CONNECTION', 'connectionBlocked');
-      res.cost = Math.round((this.priceOf ? this.priceOf(def, x, y) : def.cost) * (res.termMult || 1)); if (def.zone === null && worst > 0) res.cost = Math.round(res.cost * (1 + worst / 40));
+      res.cost = Math.round((this.priceOf ? this.priceOf(def, x, y) : def.cost) * (res.termMult || 1) * (res.sectorMult || 1)); if (def.zone === null && worst > 0) res.cost = Math.round(res.cost * (1 + worst / 40));
       if (this.cash < res.cost && !opts.ignoreCash) { res.state = 'UNAFFORDABLE'; res.reason = 'cash'; res.ok = false; res.kind = null; return res; }
       res.ok = true; res.state = 'VALID'; return res;
     }
@@ -315,5 +344,5 @@
     }
   }
 
-  return { DEFS, ORDER, productOk, CFG, STATUS, SIDES, OPPOSITE, SIDE_NAME, define, dimsOf, rotCell, connectionsOf, cellsOf, worldPoints, compatible, refuses, fromWorld, BuildingStore, key };
+  return { DEFS, ORDER, productOk, CFG, STATUS, SIDES, OPPOSITE, SIDE_NAME, define, dimsOf, rotCell, connectionsOf, cellsOf, worldPoints, compatible, refuses, fromWorld, BuildingStore, key, SECTOR_RULES, SECTOR_HOME };
 });
