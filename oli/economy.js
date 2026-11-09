@@ -235,7 +235,7 @@
       if (this.central) return { ok: false, reason: 'already' }; this.sync(); const R = this.cfg.CENTRAL, value = Math.round(info.shell + info.stationsValue + info.pump), n = R.months - R.grace, pay = Company.payment(value, R.rate, n);
       const l = { id: this.nextLoan++, kind: 'CENTRAL', purpose: 'Central pipeline network', principal: value, rate: R.rate, months: R.months, grace: R.grace, payment: pay, remaining: value, paid: 0, taken: this.hours }; this.loans.push(l);
       this._post({ type: 'CENTRAL_ACQUIRED', flow: 'NONE', desc: 'Central pipeline network acquired · 100% bank financed (no cash moves)', noProj: true }, [['FIXED', value], ['LOANS', -value]], { cashApplied: true });
-      this.central = { value, shell: info.shell, stations: info.stationsValue, pumps: info.pump, loanId: l.id, at: this.hours }; this._event('info', 'Central pipeline network acquired: ' + fmtMoney(value) + ' · bank loan ' + R.months / 12 + ' years at ' + (R.rate * 100) + '%'); return { ok: true, value, loan: l };
+      this.central = { value, shell: info.shell, stations: info.stationsValue, pumps: info.pump, loanId: l.id, at: this.hours }; this._event('info', 'استُحوذ على الشبكة المركزية بقرض بنكي: ' + fmtMoney(value) + ' · ' + R.months / 12 + ' سنة بفائدة ' + (R.rate * 100) + '%'); return { ok: true, value, loan: l };
     }
     /* daily operation / maintenance of the network's pumps and stations: the EXISTING formulas (opDay / maintDay) on the existing central-pump and junction figures, loaded by what each pump really carries */
     centralDaily() {

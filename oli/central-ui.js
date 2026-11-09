@@ -29,6 +29,9 @@
       for (const g of segs) { const bad = g.fault[c]; ctx.globalAlpha = bad ? .35 : dim ? .4 : 1; stroke(g, col, lw, off); ctx.globalAlpha = 1;
         const f = g.f[c]; if (!bad && f && f.flow > 1 && shell > 5) { const fw = Math.max(.8, lw * .55), dir = f.net >= 0 ? 1 : -1; stroke(g, 'rgba(255,255,255,.85)', fw, off, [[3 * z + 1.5, 7 * z + 3], -dir * (performance.now() / 70 % 100)]); animCb && animCb(); }
         if (bad && shell > 5) stroke(g, '#ff4a3a', Math.max(.8, lw * .6), off, [[2 * z + 1, 3 * z + 2], 0]); } });
+    for (const p of cn.pumps.values()) { const g = cn.seg.get(p.seg); if (!g || !segs.includes(g) || shell < 6) continue; const P = g.path, n = P.length, k = Math.min(n - 2, 7), i = p.st === g.a ? k : n - 1 - k, a = P[Math.max(0, i - 1)], b = P[Math.min(n - 1, i + 1)]; let dx = b[0] - a[0], dy = b[1] - a[1]; const l = Math.hypot(dx, dy) || 1; dx = dx / l * p.dir; dy = dy / l * p.dir;
+      const c = CHANNELS.indexOf(p.ch), off = (c - 2.5) * step, q0 = pt(P[i]), q1 = pt([P[i][0] + dx, P[i][1] + dy]); let ux = q1[0] - q0[0], uy = q1[1] - q0[1]; const ul = Math.hypot(ux, uy) || 1; ux /= ul; uy /= ul; const cx = q0[0] - uy * off, cy = q0[1] + ux * off, r = Math.max(2.2, shell * .3);
+      ctx.beginPath(); ctx.moveTo(cx + ux * r, cy + uy * r); ctx.lineTo(cx - ux * r * .7 - uy * r * .8, cy - uy * r * .7 + ux * r * .8); ctx.lineTo(cx - ux * r * .7 + uy * r * .8, cy - uy * r * .7 - ux * r * .8); ctx.closePath(); ctx.fillStyle = p.fault ? '#ff4a3a' : '#ffffff'; ctx.fill(); ctx.lineWidth = Math.max(.8, z * .6); ctx.strokeStyle = COLOR[p.ch]; ctx.stroke(); }
     for (const s of cn.st.values()) { if (s.cells) continue; const p = pt([s.x, s.y]); if (p[0] < -30 || p[1] < -30 || p[0] > ctx.canvas.width + 30) continue; ctx.fillStyle = '#e8edf2'; ctx.strokeStyle = '#1e1a14'; ctx.lineWidth = Math.max(1, z * .8); const r = Math.max(2, shell * .45); ctx.beginPath(); ctx.rect(p[0] - r, p[1] - r, 2 * r, 2 * r); ctx.fill(); ctx.stroke(); }
   }
 
@@ -43,6 +46,11 @@
   function chInfo(c) { return env.cn().channelInfo(c); }
   function seg(c) { return { cls: c.status === 'FAULT' ? '#ff8a7a' : c.status === 'CLOSED' ? '#ffd27a' : '#8dffb0' }; }
 
+  function pumpRows(cn, ch, segId) {
+    const rows = []; for (const p of cn.pumps.values()) { if (p.ch !== ch || (segId && p.seg !== segId)) continue; const g = cn.seg.get(p.seg); if (!g) continue; const from = p.dir === 1 ? g.a : g.b, to = p.dir === 1 ? g.b : g.a;
+      rows.push('<tr><td>' + p.st + ' · ' + p.seg + '</td><td>' + (p.fault ? '<span style="color:#ff8a7a">معطّلة</span>' : p.flow > 0 ? 'تعمل ' + num(p.pIn, 0) + '→' + num(p.pOut, 0) + ' psi · ' + num(p.flow, 0) + ' bbl/يوم' : 'جاهزة') + '</td><td>' + (p.dir === 1 ? '⬆ أمامي' : '⬇ عكسي') + ': ' + from + ' ← ' + to + '</td><td><button class="act cn-pdir" data-p="' + p.id + '">↔ عكس</button><button class="act cn-pflt" data-p="' + p.id + '">' + (p.fault ? '🔧' : '⚠') + '</button></td></tr>'); }
+    return rows.length ? '<table>' + rows.join('') + '</table>' : '<div class="k">لا مضخات على هذا الجزء.</div>';
+  }
   function render() {
     const cn = env.cn(), el = document.getElementById('cn-body'); if (!cn || !el) return; const CLS = env.CEN.CLASS, rep = env.company.centralReport && env.company.centralReport(), c = chInfo(sel);
     let h = '<div id="cn-chips">' + env.CEN.CHANNELS.map(k => { const i = chInfo(k); return '<button data-ch="' + k + '" class="' + (k === sel ? 'on' : '') + '" style="--c:' + env.CEN.COLOR[k] + '"><span style="color:' + env.CEN.COLOR[k === 'CRUDE' ? 'CRUDE' : k] + ';text-shadow:0 0 2px #fff">●</span> ' + NAME[k] + ' · ' + (ST[i.status] || i.status) + '</button>'; }).join('') + '</div>';
@@ -52,6 +60,7 @@
       + '<tr><td>الاتجاه</td><td>' + (c.dir > 0 ? 'من الشمال/الغرب نحو الجنوب/الشرق (a→b)' : c.dir < 0 ? 'عكس اتجاه الرسم (b→a)' : c.flow > 0 ? 'متوازن' : 'لا حركة') + '</td></tr>'
       + '<tr><td>الكمية داخل الشبكة</td><td>' + num(c.qty, 0) + ' bbl</td></tr><tr><td>المضخات</td><td>' + c.pumpsOk + ' / ' + c.pumps + ' سليمة</td></tr><tr><td>إجمالي ما نُقل</td><td>' + num(c.moved, 0) + ' bbl</td></tr></table>'
       + '<div><button class="act" id="cn-open">' + (c.state === 'CLOSED' ? '▶ فتح القناة' : '⏸ إغلاق القناة') + '</button><button class="act" id="cn-flt">' + (c.fault ? '🔧 إصلاح عطل القناة' : '⚠ محاكاة عطل بالقناة') + '</button><button class="act" id="cn-pump">' + (c.pumpsOk < c.pumps ? '🔧 إصلاح المضخات' : '⚠ تعطيل مضخات القناة') + '</button></div>';
+    h += '<h5>مضخات القناة (ثنائية الاتجاه)</h5>' + pumpRows(cn, sel) + '<div class="k">المضخة تدفع المنتج في اتجاه واحد على مقطعها وتتجاوزها الحركة المعاكسة بلا دعم ضغط. «عكس» يبدّل السحب والطرد.</div>';
     h += '<h5>فرع جديد</h5><div class="k">اضغط الزر ثم المس أي نقطة على الأنبوب المركزي: يُبنى موقع ربط مسجَّل داخل المحرك ثم تصل منه بالأنبوب العادي إلى المنشأة.</div><button class="act" id="cn-tap">🔀 إنشاء فرع من نقطة على الخط</button>';
     if (rep) { h += '<h5>المال والقرض</h5><table><tr><td>قيمة الشبكة (أصل)</td><td>' + fmt(rep.asset) + '</td></tr><tr><td>رصيد أصل الدين</td><td>' + fmt(rep.loan) + (rep.open ? '' : ' (مُسدَّد)') + '</td></tr><tr><td>الفائدة المستحقة حتى الآن هذا الشهر</td><td>' + fmt(rep.accrued) + '</td></tr><tr><td>أصل الدين المسدَّد</td><td>' + fmt(rep.principalRepaid) + (rep.extraRepaid ? ' (منه إضافي ' + fmt(rep.extraRepaid) + ')' : '') + '</td></tr><tr><td>إجمالي الفوائد المدفوعة</td><td>' + fmt(rep.interestPaid) + '</td></tr><tr><td>الفوائد المستقبلية المتبقية</td><td>' + fmt(rep.futureInterest) + '</td></tr><tr><td>فوائد مستقبلية وُفّرت بالسداد المبكر</td><td style="color:#8dffb0">' + fmt(rep.interestSaved) + '</td></tr><tr><td>القسط الشهري' + (rep.inGrace ? ' (بعد السماح)' : '') + '</td><td>' + fmt(rep.instalment) + '</td></tr><tr><td>فائدة الشهر القادم</td><td>' + fmt(rep.nextInterest) + (rep.inGrace ? ' (فترة سماح: فوائد فقط)' : '') + '</td></tr><tr><td>تشغيل / يوم</td><td>' + fmt(rep.opPerDay) + '</td></tr><tr><td>صيانة / يوم</td><td>' + fmt(rep.maintPerDay) + '</td></tr></table>';
       if (rep.open) h += '<h5>سداد مبكر (بلا غرامة)</h5><div><input id="cn-amt" type="number" inputmode="numeric" placeholder="المبلغ بالدولار" style="width:150px;min-height:40px;border-radius:8px;border:1px solid #4b6a8a;background:#1b222c;color:#fff;padding:0 8px"> <button class="act" id="cn-pay">سداد المبلغ</button></div><div>' + [10, 25, 50].map(p => '<button class="act cn-pp" data-p="' + p + '">' + p + '%</button>').join('') + '<button class="act cn-pp" data-p="100">سداد الكل</button></div><div class="k" id="cn-pmsg"></div>';
@@ -65,6 +74,7 @@
     let h = '<h4>🛢️ الأنبوب المركزي · ' + (g.kind === 'loop' ? 'حلقة بديلة' : g.kind === 'coast' ? 'وصلة ساحلية' : 'خط رئيسي') + ' ' + g.id + '</h4><table class="kv">';
     for (const c of env.CEN.CHANNELS) { const f = g.f[c]; h += '<tr><td><span style="color:' + env.CEN.COLOR[c] + '">●</span> ' + NAME[c] + '</td><td>' + (g.fault[c] ? '<span style="color:#ff8a7a">مقطوعة</span>' : num(f.flow, 0) + ' bbl/يوم') + '</td></tr>'; }
     h += '</table><div class="row" style="flex-wrap:wrap">' + (tp.atEnd ? '<span class="k">هذه نقطة ربط قائمة (محطة).</span>' : '<button id="cn-here" style="min-height:44px">🔀 فرع هنا</button>') + env.CEN.CHANNELS.map(c => '<button class="cn-cut" data-ch="' + c + '" data-seg="' + g.id + '" style="min-height:36px;border:2px solid ' + env.CEN.COLOR[c] + '">' + (g.fault[c] ? '🔧 ' : '✂ ') + NAME[c] + '</button>').join('') + '</div>';
+    const pr = env.CEN.CHANNELS.map(c => pumpRows(cn, c, g.id)).filter(x => x.indexOf('<table>') === 0).join(''); if (pr) h += '<div class="k" style="margin-top:6px">مضخات هذا المقطع:</div>' + pr;
     const $i = document.getElementById('info'); $i.innerHTML = h; $i.dataset.cn = x + ',' + y; env.WP.markDirty(); return true;
   }
   function planAt(x, y, toward) {
@@ -84,11 +94,14 @@
       else if (t.id === 'cn-flt') { cn.setChannelFault(sel, !chInfo(sel).fault); env.save(); render(); }
       else if (t.id === 'cn-pump') { const bad = chInfo(sel).pumpsOk < chInfo(sel).pumps; for (const p of cn.pumps.values()) if (p.ch === sel) cn.setPumpFault(p.id, !bad); env.save(); render(); }
       else if (t.id === 'cn-pay' || t.classList.contains('cn-pp')) { const l = env.company.centralLoan(); if (!l) return; const amt = t.id === 'cn-pay' ? +document.getElementById('cn-amt').value : l.remaining * (+t.dataset.p) / 100, r = env.company.prepayLoan(l.id, t.dataset.p === '100' ? null : amt); env.updateCash(); env.save(); render(); const m = document.getElementById('cn-pmsg'); if (m) m.textContent = r.ok ? 'تم سداد ' + fmt(r.paid) + (r.accrued ? ' + فائدة مستحقة ' + fmt(r.accrued) : '') + ' · وُفّر ' + fmt(r.saved) + ' من الفوائد المستقبلية' : (r.reason === 'cash' ? 'الرصيد لا يكفي (' + fmt(r.need) + ')' : 'مبلغ غير صالح'); }
+      else if (t.classList.contains('cn-pdir')) { const p = cn.pumps.get(t.dataset.p); if (p) { cn.setPumpDir(p.id, -p.dir); env.save(); render(); } }
+      else if (t.classList.contains('cn-pflt')) { const p = cn.pumps.get(t.dataset.p); if (p) { cn.setPumpFault(p.id, !p.fault); env.save(); render(); } }
       else if (t.id === 'cn-tap') { s.classList.remove('open'); env.state.centralTap = true; env.toast('المس نقطة على الأنبوب المركزي لإنشاء فرع'); } });
     document.getElementById('info').addEventListener('click', ev => { const t = ev.target.closest('button'); if (!t) return; const cn = env.cn(); const $i = document.getElementById('info');
       if (t.id === 'cn-here') { const [x, y] = $i.dataset.cn.split(',').map(Number); planAt(x, y); }
       else if (t.id === 'cn-no') { branch = null; $i.innerHTML = ''; }
       else if (t.id === 'cn-ok' && branch) { const r = env.CEN.commitTap(env.store, env.pipes, branch, { instant: true }); branch = null; if (r.ok) { env.toast('تم تسجيل نقطة الربط · ' + fmt(r.cost)); env.updateCash(); env.save(); env.showBuilding(r.building.id); } else env.toast('تعذّر البناء: ' + (r.reason || '')); env.WP.markDirty(); }
+      else if (t.classList.contains('cn-pdir')) { const p = cn.pumps.get(t.dataset.p); if (p) { cn.setPumpDir(p.id, -p.dir); env.save(); const [x, y] = $i.dataset.cn.split(',').map(Number); segInfo(x, y); } }
       else if (t.classList.contains('cn-cut')) { const g = cn.seg.get(t.dataset.seg), c = t.dataset.ch; cn.setFault(g.id, c, !g.fault[c]); env.save(); const [x, y] = $i.dataset.cn.split(',').map(Number); segInfo(x, y); } });
     return { show, render };
   }
