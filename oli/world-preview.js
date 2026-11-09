@@ -138,21 +138,31 @@
   // ---- tracks / zones / sites overlay
   /* ---- the 17 sectors: real borders, the big code and the small job under it. The label sits in the part of the sector that is on screen, so it follows you and never needs to cover a building (it is drawn under them). */
   const SECCOL = { A: [255, 154, 46], B: [79, 155, 255], C: [255, 210, 74], D: [210, 91, 230], E: [95, 211, 107], F: [55, 227, 255] };
-  function sectorLayer(lv, b) {
+  const spotCache = new Map();
+  function labelSpot(q) {                                               // the point of an extraction sector with the greatest distance to every field / dry site (the pins), a little pulled to the middle; cached until the site list grows
+    if (q.kind !== 'A') return null; const pts = []; for (const r of world.regions) if (r.x0 < q.x + q.w && r.x0 + r.w > q.x && r.y0 < q.y + q.h && r.y0 + r.h > q.y) for (const s of world.regionSites(r.id)) if (s.x >= q.x && s.x < q.x + q.w && s.y >= q.y && s.y < q.y + q.h) pts.push(s);
+    const c = spotCache.get(q.code); if (c && c.n === pts.length) return c.p; let best = null, bs = -1e9; const mx = q.w * .14, my = q.h * .14, cx = q.x + q.w / 2, cy = q.y + q.h / 2;
+    for (let j = 0; j <= 14; j++) for (let i = 0; i <= 14; i++) { const x = q.x + mx + (q.w - 2 * mx) * i / 14, y = q.y + my + (q.h - 2 * my) * j / 14; let d = 1e9; for (const s of pts) d = Math.min(d, Math.hypot(s.x - x, s.y - y) - s.radius); const sc = Math.min(d, 60) - .04 * Math.hypot(x - cx, y - cy); if (sc > bs) { bs = sc; best = [x, y]; } }
+    spotCache.set(q.code, { n: pts.length, p: best }); return best;
+  }
+  function sectorLayer(lv, b, labelsPass) {
     const S = world.sectors; if (!S || !S.length) return; const far = lv === 'FAR', close = lv === 'CLOSE', z = cam.z; ctx.save(); ctx.lineJoin = 'round';
     for (const q of S) {
       const c = SECCOL[q.kind], rgb = c.join(','); let x0, y0, x1, y1;
       if (q.shape === 'sea') { x0 = 0; y0 = 0; x1 = 140; y1 = world.H; } else { x0 = q.x; y0 = q.y; x1 = q.x + q.w; y1 = q.y + q.h; }
       if (x0 > b.x1 + 30 || y0 > b.y1 + 30 || x1 < b.x0 - 30 || y1 < b.y0 - 30) continue;
+      if (!labelsPass) {
       ctx.beginPath();
       if (q.shape === 'sea') { ctx.moveTo(sx(0, 0), sy(0, 0)); for (let y = 0; y < world.H; y += 8) ctx.lineTo(sx(world.coastLine(y), y), sy(world.coastLine(y), y)); ctx.lineTo(sx(world.coastLine(world.H - 1), world.H - 1), sy(world.coastLine(world.H - 1), world.H - 1)); ctx.lineTo(sx(0, world.H), sy(0, world.H)); ctx.closePath(); }
       else { ctx.moveTo(sx(x0, y0), sy(x0, y0)); ctx.lineTo(sx(x1, y0), sy(x1, y0)); ctx.lineTo(sx(x1, y1), sy(x1, y1)); ctx.lineTo(sx(x0, y1), sy(x0, y1)); ctx.closePath(); }
       ctx.fillStyle = 'rgba(' + rgb + ',' + (far ? .10 : close ? .035 : .06) + ')'; ctx.fill(); ctx.strokeStyle = 'rgba(' + rgb + ',' + (close ? .75 : .95) + ')'; ctx.lineWidth = far ? 1.6 : 2.4; ctx.setLineDash(q.shape === 'sea' ? [10, 5] : []); ctx.stroke(); ctx.setLineDash([]);
-      if (q.shape === 'sea' && !far) { ctx.strokeStyle = 'rgba(55,227,255,.85)'; ctx.lineWidth = 1.5; for (const s of q.slots) { if (s[1] < b.y0 - 20 || s[1] > b.y1 + 20) continue; ctx.beginPath(); ctx.arc(sx(s[0], s[1]), sy(s[0], s[1]), Math.max(3, 5 * z), 0, 7); ctx.stroke(); } }   // the prepared platform places (data only)
+      if (q.shape === 'sea' && !far) { ctx.strokeStyle = 'rgba(55,227,255,.85)'; ctx.lineWidth = 1.5; for (const s of q.slots) { if (s[1] < b.y0 - 20 || s[1] > b.y1 + 20) continue; ctx.beginPath(); ctx.arc(sx(s[0], s[1]), sy(s[0], s[1]), Math.max(8, 24 * z), 0, 7); ctx.fillStyle = 'rgba(55,227,255,.14)'; ctx.fill(); ctx.stroke(); } }   // the prepared platform places (data only)
+      continue; }
       // label anchor: the middle of the part of the sector that is on screen
       let ax, ay;
       if (q.shape === 'sea') { const ya = Math.max(0, b.y0), yb = Math.min(world.H - 1, b.y1); if (yb < ya) continue; ay = (ya + yb) / 2; ax = Math.max(8, world.coastLine(ay) * .5); }
-      else { const ia = Math.max(x0, b.x0), ib = Math.min(x1, b.x1), ja = Math.max(y0, b.y0), jb = Math.min(y1, b.y1); if (ib < ia || jb < ja) continue; ax = (ia + ib) / 2; ay = (ja + jb) / 2; }
+      else { const ia = Math.max(x0, b.x0), ib = Math.min(x1, b.x1), ja = Math.max(y0, b.y0), jb = Math.min(y1, b.y1); if (ib < ia || jb < ja) continue; ax = (ia + ib) / 2; ay = (ja + jb) / 2;
+        const sp = labelSpot(q); if (sp && sp[0] >= ia && sp[0] <= ib && sp[1] >= ja && sp[1] <= jb) { ax = sp[0]; ay = sp[1]; } }                // an oil sector: the label sits in the emptiest part of it, away from the field pins
       const X = sx(ax, ay), Y = sy(ax, ay), span = q.shape === 'sea' ? 1e9 : Math.abs(sx(x1, y0) - sx(x0, y1)); if (X < -60 || X > VW + 60 || Y < -30 || Y > VH + 30) continue;
       const big = far ? (z < .05 ? 17 : 20) : close ? 17 : 22, small = Math.max(10, Math.round(big * .56)); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(0,0,0,.7)'; const al = close ? .62 : .96;
       ctx.font = '800 ' + big + 'px system-ui'; const wN = ctx.measureText(q.code).width; if (span < wN + 6) continue;
@@ -172,12 +182,12 @@
       for (const z of world.refineryZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(150,90,200,.16)', '#b27be0', 1.5, [7, 4]); diamond(z.x - 8, z.y - 8, z.w + 16, z.h + 16, null, 'rgba(178,123,224,.45)', 1, [2, 4]); ctx.fillStyle = '#e0c6f7'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); { const zc = (() => { const c = world.sectorAt(z.x + (z.w >> 1), z.y + (z.h >> 1)); return c && c[0] === 'D' ? c : null; })(), tl = zc && !DEVUI ? zc + ' · منطقة المصافي' : null; ctx.strokeText(tl || 'REFINERY ZONE', X, Y); ctx.fillText(DEVUI ? 'REFINERY ZONE' : (tl || 'منطقة المصافي'), X, Y); } }
       for (const z of world.tankZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(70,150,200,.15)', '#6ab6e6', 1.3, [5, 4]); ctx.fillStyle = '#cfeaff'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); if (lv === 'MEDIUM' || cam.z < 1.3) { { const zc = (() => { const c = world.sectorAt(z.x + (z.w >> 1), z.y + (z.h >> 1)); return c && c[0] === 'B' ? c : null; })(), tl = zc && !DEVUI ? zc + ' · منطقة الخزانات' : null; ctx.strokeText(tl || 'TANK FARM', X, Y); ctx.fillText(DEVUI ? 'TANK FARM' : (tl || 'منطقة الخزانات'), X, Y); } } }
       for (const p of world.strategicPoints(r.id)) { const X = sx(p.x, p.y), Y = sy(p.x, p.y); ctx.fillStyle = p.kind === 'EXPORT_COAST' ? '#ffd166' : '#ffffff'; ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X, Y - 9); ctx.lineTo(X + 7, Y); ctx.lineTo(X, Y + 9); ctx.lineTo(X - 7, Y); ctx.closePath(); ctx.fill(); ctx.stroke(); if (lv !== 'FAR' && cam.z < 1.3) { ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3; const t = DEVUI ? (p.kind === 'EXPORT_COAST' ? 'EXPORT SITE' : 'HUB') : (p.kind === 'EXPORT_COAST' ? 'موقع تصدير' : 'نقطة تجميع'); ctx.strokeText(t, X, Y - 13); ctx.fillText(t, X, Y - 13); } } }
-    sectorLayer(lv, b);
+    sectorLayer(lv, b, false);
     { const rz = world.reserveZoneOfWorld && world.reserveZoneOfWorld(); { const rr = world.reserveRegionOfWorld && world.reserveRegionOfWorld(); if (rr && lv !== 'FAR' && !(rr.x > b.x1 + 30 || rr.y > b.y1 + 30 || rr.x + rr.w < b.x0 - 30 || rr.y + rr.h < b.y0 - 30)) diamond(rr.x, rr.y, rr.w, rr.h, 'rgba(240,180,41,.035)', 'rgba(240,180,41,.40)', 1.4, [14, 8]); }   // the whole region C3 is reserve land: a faint amber wash and a dashed border                              // the Strategic Reserve: ONE fixed zone, always drawn (amber): the open area filled, the rest outlined as ground that can still be opened
       if (rz && lv === 'FAR' && !(skin.reserveFar && skin.reserveFar(rz))) { const X = sx(rz.x + rz.w / 2, rz.y + rz.h / 2), Y = sy(rz.x + rz.w / 2, rz.y + rz.h / 2); ctx.fillStyle = '#f0b429'; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X, Y - 11); ctx.lineTo(X + 11, Y); ctx.lineTo(X, Y + 11); ctx.lineTo(X - 11, Y); ctx.closePath(); ctx.stroke(); ctx.fill(); ctx.font = '800 15px system-ui'; ctx.textAlign = 'center'; { const rl = world.sector('C1') ? 'أرض الاحتياطي' : 'الاحتياطي الاستراتيجي'; ctx.strokeText(rl, X, Y - 17); ctx.fillStyle = '#ffe3a0'; ctx.fillText(rl, X, Y - 17); } }       // far out: one amber marker with the name, so the zone can always be found
       if (rz && lv !== 'FAR' && !(rz.x > b.x1 + 30 || rz.y > b.y1 + 30 || rz.x + rz.w < b.x0 - 30 || rz.y + rz.h < b.y0 - 30)) { const A = rz.levels[Math.max(0, Math.min(rz.levels.length - 1, ui.reserveLv | 0))];
         diamond(rz.x, rz.y, rz.w, rz.h, 'rgba(240,180,41,.07)', 'rgba(240,180,41,.55)', 1.2, [3, 4]); diamond(A.x, A.y, A.w, A.h, 'rgba(240,180,41,.20)', '#f0b429', 2, [8, 4]);
-        ctx.fillStyle = '#ffe3a0'; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 3; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; const X = sx(rz.x + rz.w / 2, rz.y + rz.h / 2), Y = sy(rz.x + rz.w / 2, rz.y + rz.h / 2); { const rl = (world.sector('C1') ? 'C1 · ' : '') + 'منطقة الاحتياطي الاستراتيجي'; ctx.strokeText(rl, X, Y - 6); ctx.fillText(rl, X, Y - 6); } if (skin.reserveEmblem) skin.reserveEmblem(rz, lv); } }
+        ctx.fillStyle = '#ffe3a0'; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 3; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; const X = sx(rz.x + rz.w / 2, rz.y + rz.h / 2), Y = sy(rz.x + rz.w / 2, rz.y + rz.h / 2); { const rl = world.sector('C1') ? 'أرض الاحتياطي' : 'منطقة الاحتياطي الاستراتيجي'; ctx.strokeText(rl, X, Y - 6); ctx.fillText(rl, X, Y - 6); } if (skin.reserveEmblem) skin.reserveEmblem(rz, lv); } }
     for (const r of world.regions) {
       if (!near(r)) continue;
       for (const s of world.regionSites(r.id)) {
@@ -220,13 +230,14 @@
     let t2 = pn(); T.decorate += t2 - t1;
     overlays(lv, b);
     if (skin.sectors) skin.sectors(lv, b);
+    sectorLayer(lv, b, true);                            // the sector names are written AFTER the field pins and the zones, so a pin never hides a name
     let t3 = pn(); T.overlays += t3 - t2;
     if (hooks.afterOverlays) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); hooks.afterOverlays(lv, b); }
     T.afterOv += pn() - t3;
     if (ui.scale) drawScaleChart();
     if (ui.probe && lv !== 'FAR') { const p = ui.probe, f = CFG.FACILITIES[ui.facility]; diamond(p.x, p.y, f.fp[0], f.fp[1], p.res.ok ? 'rgba(80,220,120,.45)' : 'rgba(240,70,60,.45)', p.res.ok ? '#6dff9a' : '#ff6b60', 2); if (!p.res.ok) { const cx = sx(p.x + f.fp[0] / 2, p.y + f.fp[1] / 2), cy = sy(p.x + f.fp[0] / 2, p.y + f.fp[1] / 2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(cx - 7, cy - 7); ctx.lineTo(cx + 7, cy + 7); ctx.moveTo(cx + 7, cy - 7); ctx.lineTo(cx - 7, cy + 7); ctx.stroke(); } }
     { const t4 = pn(); if (hooks.top) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); hooks.top(lv, b); } T.top += pn() - t4; }
-    const hudNow = lv + '  zoom ' + cam.z.toFixed(3) + '  view ' + Math.round(b.x1 - b.x0) + ' tiles  images ' + stats.imgs + ' · jobs ' + pendingJobs() + '  world ' + world.W + '×' + world.H + ' tiles = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' km (' + world.scale().toFixed(1) + '× the current map)';
+    const hudNow = { FAR: 'بعيد', MEDIUM: 'متوسط', CLOSE: 'قريب' }[lv] + '  التقريب ' + cam.z.toFixed(3) + '  المنظر ' + Math.round(b.x1 - b.x0) + ' مربعًا  صور ' + stats.imgs + ' · مهام ' + pendingJobs() + '  العالم ' + world.W + '×' + world.H + ' مربعًا = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' كم (' + world.scale().toFixed(1) + '× الخريطة السابقة)';
     if (hudNow !== hudText) { hudText = hudNow; hud.textContent = hudNow; }
     if (lv !== hudLv) { hudLv = lv; document.querySelectorAll('[data-z]').forEach(e => e.classList.toggle('on', e.dataset.z === lv)); }
     if (missingHi) { dirty = true; }
@@ -299,6 +310,6 @@
   const sp = qs.get('x'); if (sp) { cam.x = +qs.get('x'); cam.y = +qs.get('y'); cam.z = clampZ(+qs.get('z') || .9); }
   if (qs.get('dev')) { ui.dev = true; document.getElementById('tDev').classList.add('on'); }
   if (qs.get('scale')) { ui.scale = true; document.getElementById('tScale').classList.add('on'); }
-  if (DEVUI) { info.innerHTML = 'World <b>' + world.W + '×' + world.H + ' tiles</b> = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' km (1 tile = ' + CFG.SCALE.TILE_M + ' m), <b>' + world.scale().toFixed(1) + '×</b> the current 140×88 map · 24 regions · 600 chunks. Tap the map: a tile shows terrain and whether the selected facility fits. Tap an oil field to see what the player may know.'; } else info.textContent = 'اضغط على حقل نفط لتبدأ، أو على أي مبنى لترى تفاصيله.';
+  if (DEVUI) { info.innerHTML = 'العالم <b>' + world.W + '×' + world.H + ' مربعًا</b> = ' + (world.W * CFG.SCALE.TILE_M / 1000).toFixed(1) + '×' + (world.H * CFG.SCALE.TILE_M / 1000).toFixed(1) + ' كم (المربع = ' + CFG.SCALE.TILE_M + ' م)، <b>' + world.scale().toFixed(1) + '×</b> الخريطة السابقة 140×88 · 24 خلية · 600 قطعة. اضغط الخريطة: يظهر المربع بتضاريسه وهل يناسب المنشأة المختارة. اضغط حقل نفط لترى ما يعرفه اللاعب.'; } else info.textContent = 'اضغط على حقل نفط لتبدأ، أو على أي مبنى لترى تفاصيله.';
   requestAnimationFrame(schedule); requestAnimationFrame(loop);
 })();

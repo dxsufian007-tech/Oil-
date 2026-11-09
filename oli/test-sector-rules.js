@@ -49,4 +49,14 @@ console.log('6. F1 is prepared for the future sea buildings (no extraction exist
   } finally { delete B.DEFS[id]; }
   T('6e F1 stays a continuous strip: every row of the world has sea west of the coast line', (() => { for (let y = 0; y < 1280; y += 8) if (W.sectorAt(0, y) !== 'F1') return false; return true; })());
   T('6f no sea economy was added: the rule table has no multiplier anywhere', Object.keys(R).every(k => Object.keys(R[k].mult).length === 0)); }
+console.log('7. final confirmations: no discount in any price, the pipe search limit is the old one');
+{ const fs = require('fs'), path = require('path'), src = f => fs.readFileSync(path.join(__dirname, f), 'utf8');
+  const S0 = new B.BuildingStore(Object.assign({}, ts, { sectorRule: undefined }), { cash: 1e13 });
+  let pairs = 0, diff = [];
+  for (const z of W.sectors) { if (z.shape === 'sea') continue; for (const id of IDS) { if (R[z.kind].allow.indexOf(id) < 0) continue; const D = B.DEFS[id]; let hit = null; for (let k = 0; k < 400 && !hit; k++) { const x = z.x + 20 + ((k * 37) % Math.max(1, z.w - 60)), y = z.y + 20 + ((k * 53) % Math.max(1, z.h - 60)), v = S.validate(id, x, y, 0, {}); if (v.ok) hit = [x, y, v]; } if (!hit) continue; pairs++; const v0 = S0.validate(id, hit[0], hit[1], 0, {}); if (!v0.ok || v0.cost !== hit[2].cost || hit[2].sectorMult) diff.push([z.code, id, v0.cost, hit[2].cost]); } }
+  T('7a the price of every building in every sector (' + pairs + ' sector/building pairs checked) is IDENTICAL to the price with the sector rules switched off: no discount anywhere', pairs > 100 && diff.length === 0, diff.slice(0, 4));
+  T('7b the price formula has no sector term except the (empty) multiplier table: cost = base x terrain x (sectorMult || 1) and sectorMult is never set', /\*\s*\(res\.sectorMult \|\| 1\)/.test(src('buildings.js')) && Object.keys(R).every(k => Object.keys(R[k].mult).length === 0));
+  T('7c the DEFAULT pipe search limit is still 60000 (industry.js is unchanged)', /opts\.guard \|\| 60000\)/.test(src('industry.js')) && !/400000/.test(src('industry.js')));
+  const lab = src('building-lab.js'), uses = (lab.match(/guard:\s*400000/g) || []).length;
+  T('7d the 400000 limit appears exactly once outside the tests, in the automatic demo chain (connectDemo), and nowhere in the player\'s pipe tools', uses === 1 && /for \(const \{ p, q \} of c\) \{ const r = I\.layPipe\([^;]*guard: 400000/.test(lab) && !/400000/.test(src('world-preview.js')) && !/400000/.test(src('economy-ui.js'))); }
 console.log('\nSECTOR RULES TESTS: ' + pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);

@@ -24,6 +24,15 @@ srv.listen(0, async () => {
   const a3 = await bar('oil_well', 150, 150); ok(/غير مسموح/.test(a3) && /A1.*A7|A1–A7|استخراج/.test(a3), '2c an oil well in a storage sector is refused and points to the A sectors', a3); await p.evaluate(() => __lab.cancelAll());
   console.log('3. what the player cannot do is not saved as a building');
   ok(await p.evaluate(() => { const L = __lab, n = L.store.list().length; const v = L.store.place('refinery_s', 1200, 640, 0, { instant: true }); return !v.ok && v.reason === 'sectorForbidden' && L.store.list().length === n; }), '3a place() refuses the same way, nothing is built');
+  console.log('4. Arabic only: no Latin word is visible to the player (category tabs, zoom buttons, status lines, building panel)');
+  const latin = () => p.evaluate(() => { const out = [], w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let x; while ((x = w.nextNode())) { const v = x.nodeValue; if (/[A-Za-z]{2,}/.test(v) && !['SCRIPT', 'STYLE', 'TITLE'].includes(x.parentNode.tagName)) { const el = x.parentElement; let vis = el.getClientRects().length > 0; for (let e = el; e && vis; e = e.parentElement) if (getComputedStyle(e).display === 'none' || getComputedStyle(e).visibility === 'hidden') vis = false; if (vis && !/^Build Your Oil Empire$/.test(v.trim())) out.push(v.trim().slice(0, 50)); } } return [...new Set(out)]; });      // the brand slogan of the start menu is the game's logo, not interface text
+  await go(1200, 640, .5, 2500); await p.waitForTimeout(600);
+  const tabs = await p.evaluate(() => [...document.querySelectorAll('#tabs button')].map(b => b.textContent.trim()));
+  ok(tabs.length === 6 && tabs.every(x => /[\u0600-\u06FF]/.test(x) && !/[A-Za-z]{2,}/.test(x)), '4a the six category tabs are Arabic: ' + tabs.join(' | '), tabs);
+  ok((await latin()).length === 0, '4b no English on the map screen (zoom buttons, toggles, status line, info panel)', await latin());
+  await p.evaluate(() => { __lab.store.place('crude_tank_s', 1200, 640, 0, { instant: true }); __lab.showBuilding && __lab.store.list().length && __lab.showBuilding(__lab.store.list()[0].id); }); await p.waitForTimeout(600);
+  ok((await latin()).length === 0, '4c no English with a building selected (its panel)', await latin());
+  await p.evaluate(() => { for (const b of __lab.store.list()) __lab.store.demolish && __lab.store.demolish(b.id, {}); });
   ok(errs.length === 0, '3b no page error', errs.slice(0, 3));
   await b.close(); srv.close(); console.log('\nSECTORS UI TESTS: ' + pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);
 });

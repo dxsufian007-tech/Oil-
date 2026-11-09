@@ -5,6 +5,11 @@
   'use strict';
   const $ = '([+\\-−]?\\$[\\d.,]+[KMB]?)', N = '([\\d.,]+)', P = '([+\\-−]?[\\d.,]+%)';
   const EXACT = {
+    // developer bar / building categories (shown in the lab view; the player view hides them but they are Arabic anyway)
+    'Far': 'بعيد', 'Medium': 'متوسط', 'Close': 'قريب', 'Regions': 'الخلايا', 'Refinery zones': 'مناطق المصافي', 'Refinery zone': 'منطقة مصفاة', 'Geology (dev)': 'الجيولوجيا (مطوّر)', 'Oil odds (dev)': 'احتمال النفط (مطوّر)', 'Scale chart': 'مخطط المقياس',
+    'Field': 'حقل', 'Demo': 'تجربة', 'Save': 'حفظ', 'Load': 'تحميل', 'Reset': 'إعادة تعيين',
+    'EXTRACTION': 'الاستخراج', 'PIPELINE': 'الأنابيب', 'CRUDE STORAGE': 'تخزين النفط الخام', 'PROCESSING': 'المعالجة', 'PRODUCT STORAGE': 'تخزين المنتجات', 'WATER': 'المياه', 'STORAGE': 'التخزين',
+    'FAR': 'بعيد', 'MEDIUM': 'متوسط', 'CLOSE': 'قريب',
     'Oil Well': 'بئر نفط',
     'Central Pump Station': 'محطة الضخ المركزية',
     'Main Manifold': 'التفريعة الرئيسية',
