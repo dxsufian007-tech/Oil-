@@ -266,7 +266,7 @@
     }
 
     place(defId, x, y, r, opts) {
-      opts = opts || {}; const v = this.validate(defId, x, y, r, opts); if (!v.ok) return v;
+      opts = opts || {}; const v = opts.trust && opts.free && DEFS[defId] && DEFS[defId].type === 'central' ? { ok: true, r: DEFS[defId].rotatable ? (r | 0) & 3 : 0, cost: 0 } : this.validate(defId, x, y, r, opts); if (!v.ok) return v;      // trust: only the free, pre-validated start-of-game stations of the central network (their spots were checked offline)
       const def = DEFS[defId], b = { id: this.nextId++, d: defId, x, y, r: v.r, st: STATUS.UNDER_CONSTRUCTION, c: 1, t0: this.time };
       if (v.linkTo) b.link = v.linkTo; if (v.field) b.field = v.field; if (v.reserve) b.rs = 1;
       if (opts.instant) b.st = STATUS.OPERATIONAL;

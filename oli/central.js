@@ -184,7 +184,7 @@
   function unpack(c) { const o = [[c[0][0], c[0][1]]]; for (let i = 1; i < c.length; i++) { let [x, y] = o[o.length - 1]; const [X, Y] = c[i]; while (x !== X || y !== Y) { x += Math.sign(X - x); y += Math.sign(Y - y); o.push([x, y]); } } return o; }
 
   /* ---------------------------------------------------------------- the pre-built network from the plan: stations (+ their buildings), segments, pumps.  `place(x, y)` puts the station building and returns its id (or null for none). */
-  function expand(plan) { return { stations: plan.stations.map(s => ({ id: s[0], x: s[1], y: s[2], sec: s[3] })), routes: plan.routes.map(r => ({ id: r[0], kind: r[1], a: r[2], b: r[3], path: unpack(r[4]) })), pumps: plan.pumps || [] }; }
+  function expand(plan) { return { stations: plan.stations.map(s => ({ id: s[0], x: s[1], y: s[2], sec: s[3], r: s[4], px: s[5], py: s[6] })), routes: plan.routes.map(r => ({ id: r[0], kind: r[1], a: r[2], b: r[3], path: unpack(r[4]) })), pumps: plan.pumps || [] }; }
 
 
   /* ---------------------------------------------------------------- INSTALL the pre-built network into a store + PipeNet: segments, station buildings (free, operational), pumps.
@@ -198,9 +198,10 @@
       const cells = (x, y) => { const o = []; for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) o.push([x + i, y + j]); return o; }, saved = [];
       const trial = (x, y) => { for (const [cx, cy] of cells(x, y)) { const k = cn.key(cx, cy); if (cn.cen.has(k)) { saved.push([k, cn.at.get(k)]); cn.cen.delete(k); cn.at.delete(k); } } let best = null; for (let r = 0; r < 4; r++) { const v = store.validate('central_station', x, y, r, { ignoreCash: true }); if (!v.ok) continue; const n = v.connections.filter(c => c.ok).length; if (!best || n > best.n) best = { r, n }; } for (const [k, id] of saved.splice(0)) { cn.cen.add(k); if (id) cn.at.set(k, id); } return best; };
       let spot = null, mv = null;
-      for (let d = 0; d <= 4 && !spot; d++) for (let dy = -d; dy <= d && !spot; dy++) for (let dx = -d; dx <= d && !spot; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue; const b = trial(s.x + dx, s.y + dy); if (b) { spot = { x: s.x + dx, y: s.y + dy, r: b.r, ports: b.n }; mv = d ? [dx, dy] : null; } }
+      if (s.r != null && s.px != null && !opts.verify) spot = { x: s.px, y: s.py, r: s.r, ports: null, trust: true };      // a baked plan: the spot was chosen and fully validated against the real terrain offline (the browser only has the chunks near the camera)
+      if (!spot) for (let d = 0; d <= 4 && !spot; d++) for (let dy = -d; dy <= d && !spot; dy++) for (let dx = -d; dx <= d && !spot; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue; const b = trial(s.x + dx, s.y + dy); if (b) { spot = { x: s.x + dx, y: s.y + dy, r: b.r, ports: b.n }; mv = d ? [dx, dy] : null; } }
       if (!spot) { res.failed.push(s.id); continue; }
-      cn.claimFootprint(s.id, cells(spot.x, spot.y)); const p = store.place('central_station', spot.x, spot.y, spot.r, { instant: true, free: true, ignoreCash: true });
+      cn.claimFootprint(s.id, cells(spot.x, spot.y)); const p = store.place('central_station', spot.x, spot.y, spot.r, { instant: true, free: true, ignoreCash: true, trust: !!spot.trust });
       if (!p.ok) { res.failed.push(s.id + ':' + p.reason); continue; } const st = cn.st.get(s.id); st.b = p.building.id; st.x = spot.x; st.y = spot.y; st.ports = spot.ports; res.stations++; if (mv) res.moved.push([s.id, mv[0], mv[1]]);
     }
     for (const id of pl.pumps) for (const ch of CHANNELS) if (cn.st.has(id)) cn.addPump({ st: id, ch });
