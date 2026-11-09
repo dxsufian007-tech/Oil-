@@ -6,8 +6,8 @@
 (function () {
   'use strict';
   const OW = window.OliWorld, CFG = OW.CONFIG, qs = new URLSearchParams(location.search);
-  const seed = qs.get('seed') ? +qs.get('seed') : 20260101;
-  const world = OW.createWorld({ seed, external: true }), C = CFG.CHUNK, CX = CFG.CHUNKS_X, CY = CFG.CHUNKS_Y;
+  const seed = qs.get('seed') ? +qs.get('seed') : 20260101, SECT = qs.get('legacy') !== '1';      // ?legacy=1: the old geography (no sectors) for the engine tests
+  const world = OW.createWorld({ seed, external: true, sectors: SECT }), C = CFG.CHUNK, CX = CFG.CHUNKS_X, CY = CFG.CHUNKS_Y;
   const cv = document.getElementById('c'), ctx = cv.getContext('2d', { alpha: false }), info = document.getElementById('info'), hud = document.getElementById('hud');
   const SR = world.homeRegionOfWorld(), cam = { x: SR.x0 + 160, y: SR.y0 + 160, z: 0.9 };
   const DEVUI = /[?&]lab=1/.test(location.search) || (function () { try { return localStorage.getItem('oli-labui') === '1'; } catch (_) { return false; } })(), ST_AR = { DRILLABLE: 'جاهز للحفر', PRODUCING: 'ينتج', DISCOVERED: 'مكتشف', SURVEYED: 'تم مسحه', UNDISCOVERED: '' };
@@ -20,7 +20,7 @@
   const USE_WORKER = !!window.Worker && !qs.get('noworker');
   function makeEngine(onReply) {
     if (USE_WORKER) { const w = new Worker('world-worker.js'); w.onmessage = e => onReply(e.data); w.onerror = e => { stats.workerError = String(e.message || e); }; return { post: (m, tr) => w.postMessage(m, tr || []) }; }
-    const full = OW.createWorld({ seed }); let inited = true;
+    const full = OW.createWorld({ seed, sectors: SECT }); let inited = true;
     return { post: m => setTimeout(() => {
       if (m.t === 'init') return onReply({ t: 'ready' });
       if (m.t === 'overview') { const o = full.renderOverview(m.step); onReply({ t: 'overview', w: o.w, h: o.h, step: o.step, ids: o.ids, rgba: o.rgba }); }
@@ -35,7 +35,7 @@
   function toCanvas(rgba, w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0); return c; }
   const OV_Z = 0.025, OV_W = Math.round((CFG.CHUNKS_X + CFG.CHUNKS_Y) * C * 32 * OV_Z), OV_H = Math.round((CFG.CHUNKS_X + CFG.CHUNKS_Y) * C * 16 * OV_Z), OV_EX = CFG.CHUNKS_Y * C * 32 * OV_Z;
   const ov = document.createElement('canvas'); ov.width = OV_W; ov.height = OV_H; const ovg = ov.getContext('2d'); let ovStep = 99;
-  const need = new Map(), regNeed = new Set(), busy = { img: false, reg: false }, DEMO_REGIONS = [SR.id, SR.id - 6, SR.id - 1, SR.id + 1, SR.id + 6]; let demoDone = false, ready = { img: false, reg: false }, ovQueue = [16, 8, 4];
+  const need = new Map(), regNeed = new Set(), busy = { img: false, reg: false }, DEMO_REGIONS = [...new Set([SR.id, SR.id - 6, SR.id - 1, SR.id + 1, SR.id + 6].concat((world.sectors || []).filter(q => q.kind === 'D').flatMap(q => world.regions.filter(r => r.x0 < q.x + q.w && r.x0 + r.w > q.x && r.y0 < q.y + q.h && r.y0 + r.h > q.y).map(r => r.id))))]; let demoDone = false, ready = { img: false, reg: false }, ovQueue = [16, 8, 4];
   function onImg(m) {
     if (m.t === 'ready') { ready.img = true; return; }
     busy.img = false; dirty = true;
@@ -47,7 +47,7 @@
     if (m.t === 'ready') { ready.reg = true; return; }
     busy.reg = false; dirty = true; if (m.t === 'region') { world.injectRegion(m.d); regNeed.delete(m.d.rid); stats.regions++; if (!demoDone && DEMO_REGIONS.every(r => world.hasRegion(r))) { applyDemo(); } if (DEMOALL) openAll(m.d.rid); }
   }
-  const imgEng = makeEngine(onImg), regEng = makeEngine(onReg); imgEng.post({ t: 'init', seed }); regEng.post({ t: 'init', seed });
+  const imgEng = makeEngine(onImg), regEng = makeEngine(onReg); imgEng.post({ t: 'init', seed, sectors: SECT }); regEng.post({ t: 'init', seed, sectors: SECT });
   /* DEMO build: every oil field of every region is drillable, every region is unlocked, all regions load (flag from the demo APK, ?demo=1 or localStorage oli-demo=1) */
   const DEMOALL = !!(window.OLI_DEMO || /[?&]demo=1/.test(location.search) || (function () { try { return localStorage.getItem('oli-demo') === '1'; } catch (_) { return false; } })()); window.OLI_DEMO = DEMOALL;
   const openAll = rid => { const R = world.regions[rid]; if (R) R.unlocked = true; for (const q of world.regionSites(rid)) if (q.kind === 'FIELD') { let g = 0; while (['UNDISCOVERED', 'DISCOVERED', 'SURVEYED'].includes(world.stateOf(q.id)) && g++ < 4) { const st = world.stateOf(q.id); (st === 'UNDISCOVERED' ? world.discover : st === 'DISCOVERED' ? world.survey : world.makeDrillable)(q.id); } } };
@@ -136,6 +136,31 @@
   }
 
   // ---- tracks / zones / sites overlay
+  /* ---- the 17 sectors: real borders, the big code and the small job under it. The label sits in the part of the sector that is on screen, so it follows you and never needs to cover a building (it is drawn under them). */
+  const SECCOL = { A: [255, 154, 46], B: [79, 155, 255], C: [255, 210, 74], D: [210, 91, 230], E: [95, 211, 107], F: [55, 227, 255] };
+  function sectorLayer(lv, b) {
+    const S = world.sectors; if (!S || !S.length) return; const far = lv === 'FAR', close = lv === 'CLOSE', z = cam.z; ctx.save(); ctx.lineJoin = 'round';
+    for (const q of S) {
+      const c = SECCOL[q.kind], rgb = c.join(','); let x0, y0, x1, y1;
+      if (q.shape === 'sea') { x0 = 0; y0 = 0; x1 = 140; y1 = world.H; } else { x0 = q.x; y0 = q.y; x1 = q.x + q.w; y1 = q.y + q.h; }
+      if (x0 > b.x1 + 30 || y0 > b.y1 + 30 || x1 < b.x0 - 30 || y1 < b.y0 - 30) continue;
+      ctx.beginPath();
+      if (q.shape === 'sea') { ctx.moveTo(sx(0, 0), sy(0, 0)); for (let y = 0; y < world.H; y += 8) ctx.lineTo(sx(world.coastLine(y), y), sy(world.coastLine(y), y)); ctx.lineTo(sx(world.coastLine(world.H - 1), world.H - 1), sy(world.coastLine(world.H - 1), world.H - 1)); ctx.lineTo(sx(0, world.H), sy(0, world.H)); ctx.closePath(); }
+      else { ctx.moveTo(sx(x0, y0), sy(x0, y0)); ctx.lineTo(sx(x1, y0), sy(x1, y0)); ctx.lineTo(sx(x1, y1), sy(x1, y1)); ctx.lineTo(sx(x0, y1), sy(x0, y1)); ctx.closePath(); }
+      ctx.fillStyle = 'rgba(' + rgb + ',' + (far ? .10 : close ? .035 : .06) + ')'; ctx.fill(); ctx.strokeStyle = 'rgba(' + rgb + ',' + (close ? .75 : .95) + ')'; ctx.lineWidth = far ? 1.6 : 2.4; ctx.setLineDash(q.shape === 'sea' ? [10, 5] : []); ctx.stroke(); ctx.setLineDash([]);
+      if (q.shape === 'sea' && !far) { ctx.strokeStyle = 'rgba(55,227,255,.85)'; ctx.lineWidth = 1.5; for (const s of q.slots) { if (s[1] < b.y0 - 20 || s[1] > b.y1 + 20) continue; ctx.beginPath(); ctx.arc(sx(s[0], s[1]), sy(s[0], s[1]), Math.max(3, 5 * z), 0, 7); ctx.stroke(); } }   // the prepared platform places (data only)
+      // label anchor: the middle of the part of the sector that is on screen
+      let ax, ay;
+      if (q.shape === 'sea') { const ya = Math.max(0, b.y0), yb = Math.min(world.H - 1, b.y1); if (yb < ya) continue; ay = (ya + yb) / 2; ax = Math.max(8, world.coastLine(ay) * .5); }
+      else { const ia = Math.max(x0, b.x0), ib = Math.min(x1, b.x1), ja = Math.max(y0, b.y0), jb = Math.min(y1, b.y1); if (ib < ia || jb < ja) continue; ax = (ia + ib) / 2; ay = (ja + jb) / 2; }
+      const X = sx(ax, ay), Y = sy(ax, ay), span = q.shape === 'sea' ? 1e9 : Math.abs(sx(x1, y0) - sx(x0, y1)); if (X < -60 || X > VW + 60 || Y < -30 || Y > VH + 30) continue;
+      const big = far ? (z < .05 ? 17 : 20) : close ? 17 : 22, small = Math.max(10, Math.round(big * .56)); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(0,0,0,.7)'; const al = close ? .62 : .96;
+      ctx.font = '800 ' + big + 'px system-ui'; const wN = ctx.measureText(q.code).width; if (span < wN + 6) continue;
+      ctx.fillStyle = 'rgba(255,255,255,' + al + ')'; ctx.strokeText(q.code, X, Y); ctx.fillText(q.code, X, Y);
+      ctx.font = '600 ' + small + 'px system-ui'; const wD = ctx.measureText(q.name).width; if (span > wD + 10) { ctx.fillStyle = 'rgba(' + c.map(v => Math.min(255, v + 70)).join(',') + ',' + al + ')'; ctx.strokeText(q.name, X, Y + small + 3); ctx.fillText(q.name, X, Y + small + 3); }
+    }
+    ctx.restore();
+  }
   function overlays(lv, b) {
     if (ui.reg) {
       ctx.lineWidth = 1; ctx.font = '600 12px system-ui';
@@ -144,25 +169,15 @@
     const near = r => !(r.x0 > b.x1 + 30 || r.y0 > b.y1 + 30 || r.x0 + r.w < b.x0 - 30 || r.y0 + r.h < b.y0 - 30);
     if (lv !== 'FAR') for (const r of world.regions) if (near(r)) for (const t of world.tracks(r.id)) { ctx.strokeStyle = 'rgba(196,164,112,.75)'; ctx.lineWidth = Math.max(1.5, 3.2 * cam.z); ctx.setLineDash([]); ctx.beginPath(); t.pts.forEach((p, i) => i ? ctx.lineTo(sx(p[0], p[1]), sy(p[0], p[1])) : ctx.moveTo(sx(p[0], p[1]), sy(p[0], p[1]))); ctx.stroke(); }
     if (ui.zone && lv !== 'FAR') for (const r of world.regions) { if (!near(r)) continue;
-      for (const z of world.refineryZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(150,90,200,.16)', '#b27be0', 1.5, [7, 4]); diamond(z.x - 8, z.y - 8, z.w + 16, z.h + 16, null, 'rgba(178,123,224,.45)', 1, [2, 4]); ctx.fillStyle = '#e0c6f7'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); { const zc = world.funcZoneCodeAt('D', z.x, z.y), tl = zc && !DEVUI ? zc + ' · منطقة المصافي' : null; ctx.strokeText(tl || 'REFINERY ZONE', X, Y); ctx.fillText(DEVUI ? 'REFINERY ZONE' : (tl || 'منطقة المصافي'), X, Y); } }
-      for (const z of world.tankZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(70,150,200,.15)', '#6ab6e6', 1.3, [5, 4]); ctx.fillStyle = '#cfeaff'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); if (lv === 'MEDIUM' || cam.z < 1.3) { { const zc = world.funcZoneCodeAt('B', z.x, z.y), tl = zc && !DEVUI ? zc + ' · منطقة الخزانات' : null; ctx.strokeText(tl || 'TANK FARM', X, Y); ctx.fillText(DEVUI ? 'TANK FARM' : (tl || 'منطقة الخزانات'), X, Y); } } }
+      for (const z of world.refineryZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(150,90,200,.16)', '#b27be0', 1.5, [7, 4]); diamond(z.x - 8, z.y - 8, z.w + 16, z.h + 16, null, 'rgba(178,123,224,.45)', 1, [2, 4]); ctx.fillStyle = '#e0c6f7'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); { const zc = (() => { const c = world.sectorAt(z.x + (z.w >> 1), z.y + (z.h >> 1)); return c && c[0] === 'D' ? c : null; })(), tl = zc && !DEVUI ? zc + ' · منطقة المصافي' : null; ctx.strokeText(tl || 'REFINERY ZONE', X, Y); ctx.fillText(DEVUI ? 'REFINERY ZONE' : (tl || 'منطقة المصافي'), X, Y); } }
+      for (const z of world.tankZones(r.id)) { diamond(z.x, z.y, z.w, z.h, 'rgba(70,150,200,.15)', '#6ab6e6', 1.3, [5, 4]); ctx.fillStyle = '#cfeaff'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3; ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; const X = sx(z.x + z.w / 2, z.y + z.h / 2), Y = sy(z.x + z.w / 2, z.y + z.h / 2); if (lv === 'MEDIUM' || cam.z < 1.3) { { const zc = (() => { const c = world.sectorAt(z.x + (z.w >> 1), z.y + (z.h >> 1)); return c && c[0] === 'B' ? c : null; })(), tl = zc && !DEVUI ? zc + ' · منطقة الخزانات' : null; ctx.strokeText(tl || 'TANK FARM', X, Y); ctx.fillText(DEVUI ? 'TANK FARM' : (tl || 'منطقة الخزانات'), X, Y); } } }
       for (const p of world.strategicPoints(r.id)) { const X = sx(p.x, p.y), Y = sy(p.x, p.y); ctx.fillStyle = p.kind === 'EXPORT_COAST' ? '#ffd166' : '#ffffff'; ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X, Y - 9); ctx.lineTo(X + 7, Y); ctx.lineTo(X, Y + 9); ctx.lineTo(X - 7, Y); ctx.closePath(); ctx.fill(); ctx.stroke(); if (lv !== 'FAR' && cam.z < 1.3) { ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3; const t = DEVUI ? (p.kind === 'EXPORT_COAST' ? 'EXPORT SITE' : 'HUB') : (p.kind === 'EXPORT_COAST' ? 'موقع تصدير' : 'نقطة تجميع'); ctx.strokeText(t, X, Y - 13); ctx.fillText(t, X, Y - 13); } } }
-    if (ui.zone && lv !== 'FAR' && world.funcZones.length) {                      // functional zones E1 (water) and F1 (sea), same dashed style as the refinery / tank zones; A, B, C, D carry their code on the things that already exist
-      const inV = (x, y, w, h) => !(x > b.x1 + 30 || y > b.y1 + 30 || x + w < b.x0 - 30 || y + h < b.y0 - 30);
-      const zlab = (t, x, y, col, fs) => { ctx.font = '600 ' + fs + 'px system-ui'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.fillStyle = col; ctx.strokeText(t, x, y); ctx.fillText(t, x, y); };
-      const E = world.funcZone('E1'); if (E && inV(E.x, E.y, E.w, E.h)) { diamond(E.x, E.y, E.w, E.h, 'rgba(70,200,90,.16)', '#5fd36b', 1.5, [7, 4]); zlab('E1 · منطقة المياه', sx(E.x + E.w / 2, E.y + E.h / 2), sy(E.x + E.w / 2, E.y + E.h / 2), '#c8f7cc', 11); }
-      const F = world.funcZone('F1'); if (F && inV(0, F.y0, 160, F.y1 - F.y0)) {
-        ctx.beginPath(); ctx.moveTo(sx(0, F.y0), sy(0, F.y0)); for (let y = F.y0; y <= F.y1; y += 16) ctx.lineTo(sx(world.coastLine(y), y), sy(world.coastLine(y), y)); ctx.lineTo(sx(0, F.y1), sy(0, F.y1)); ctx.closePath();
-        ctx.fillStyle = 'rgba(55,227,255,.10)'; ctx.fill(); ctx.setLineDash([7, 4]); ctx.strokeStyle = '#37e3ff'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
-        const my = (F.y0 + F.y1) / 2; zlab('F1 · المنطقة البحرية', sx(world.coastLine(my) / 2, my), sy(world.coastLine(my) / 2, my), '#c9f6ff', 11);
-        ctx.strokeStyle = 'rgba(55,227,255,.85)'; ctx.lineWidth = 1.5; for (const s of F.slots) { ctx.beginPath(); ctx.arc(sx(s[0], s[1]), sy(s[0], s[1]), Math.max(3, 5 * cam.z), 0, 7); ctx.stroke(); }     // the prepared platform slots (data only: nothing can be built there yet)
-      }
-    }
+    sectorLayer(lv, b);
     { const rz = world.reserveZoneOfWorld && world.reserveZoneOfWorld(); { const rr = world.reserveRegionOfWorld && world.reserveRegionOfWorld(); if (rr && lv !== 'FAR' && !(rr.x > b.x1 + 30 || rr.y > b.y1 + 30 || rr.x + rr.w < b.x0 - 30 || rr.y + rr.h < b.y0 - 30)) diamond(rr.x, rr.y, rr.w, rr.h, 'rgba(240,180,41,.035)', 'rgba(240,180,41,.40)', 1.4, [14, 8]); }   // the whole region C3 is reserve land: a faint amber wash and a dashed border                              // the Strategic Reserve: ONE fixed zone, always drawn (amber): the open area filled, the rest outlined as ground that can still be opened
-      if (rz && lv === 'FAR' && !(skin.reserveFar && skin.reserveFar(rz))) { const X = sx(rz.x + rz.w / 2, rz.y + rz.h / 2), Y = sy(rz.x + rz.w / 2, rz.y + rz.h / 2); ctx.fillStyle = '#f0b429'; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X, Y - 11); ctx.lineTo(X + 11, Y); ctx.lineTo(X, Y + 11); ctx.lineTo(X - 11, Y); ctx.closePath(); ctx.stroke(); ctx.fill(); ctx.font = '800 15px system-ui'; ctx.textAlign = 'center'; { const rl = (world.funcZone('C1') ? 'C1 · ' : '') + 'الاحتياطي الاستراتيجي'; ctx.strokeText(rl, X, Y - 17); ctx.fillStyle = '#ffe3a0'; ctx.fillText(rl, X, Y - 17); } }       // far out: one amber marker with the name, so the zone can always be found
+      if (rz && lv === 'FAR' && !(skin.reserveFar && skin.reserveFar(rz))) { const X = sx(rz.x + rz.w / 2, rz.y + rz.h / 2), Y = sy(rz.x + rz.w / 2, rz.y + rz.h / 2); ctx.fillStyle = '#f0b429'; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X, Y - 11); ctx.lineTo(X + 11, Y); ctx.lineTo(X, Y + 11); ctx.lineTo(X - 11, Y); ctx.closePath(); ctx.stroke(); ctx.fill(); ctx.font = '800 15px system-ui'; ctx.textAlign = 'center'; { const rl = (world.sector('C1') ? 'C1 · ' : '') + 'الاحتياطي الاستراتيجي'; ctx.strokeText(rl, X, Y - 17); ctx.fillStyle = '#ffe3a0'; ctx.fillText(rl, X, Y - 17); } }       // far out: one amber marker with the name, so the zone can always be found
       if (rz && lv !== 'FAR' && !(rz.x > b.x1 + 30 || rz.y > b.y1 + 30 || rz.x + rz.w < b.x0 - 30 || rz.y + rz.h < b.y0 - 30)) { const A = rz.levels[Math.max(0, Math.min(rz.levels.length - 1, ui.reserveLv | 0))];
         diamond(rz.x, rz.y, rz.w, rz.h, 'rgba(240,180,41,.07)', 'rgba(240,180,41,.55)', 1.2, [3, 4]); diamond(A.x, A.y, A.w, A.h, 'rgba(240,180,41,.20)', '#f0b429', 2, [8, 4]);
-        ctx.fillStyle = '#ffe3a0'; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 3; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; const X = sx(rz.x + rz.w / 2, rz.y + rz.h / 2), Y = sy(rz.x + rz.w / 2, rz.y + rz.h / 2); { const rl = (world.funcZone('C1') ? 'C1 · ' : '') + 'منطقة الاحتياطي الاستراتيجي'; ctx.strokeText(rl, X, Y - 6); ctx.fillText(rl, X, Y - 6); } if (skin.reserveEmblem) skin.reserveEmblem(rz, lv); } }
+        ctx.fillStyle = '#ffe3a0'; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 3; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; const X = sx(rz.x + rz.w / 2, rz.y + rz.h / 2), Y = sy(rz.x + rz.w / 2, rz.y + rz.h / 2); { const rl = (world.sector('C1') ? 'C1 · ' : '') + 'منطقة الاحتياطي الاستراتيجي'; ctx.strokeText(rl, X, Y - 6); ctx.fillText(rl, X, Y - 6); } if (skin.reserveEmblem) skin.reserveEmblem(rz, lv); } }
     for (const r of world.regions) {
       if (!near(r)) continue;
       for (const s of world.regionSites(r.id)) {
@@ -173,7 +188,7 @@
         const col = s.kind === 'DRY' ? '#777' : SCOL[st];
         ellipseIso(s.x, s.y, s.radius, s.kind === 'DRY' ? 'rgba(90,90,90,.07)' : st === 'DEPLETED' ? 'rgba(60,60,60,.14)' : st === 'PRODUCING' ? 'rgba(255,170,60,.12)' : 'rgba(30,20,10,.10)', col, sel ? 3 : 1.6, st === 'SURVEYED' ? [6, 3] : st === 'DRILLABLE' || st === 'PRODUCING' ? null : [2, 3]);
         const sz = Math.max(CFG.SCALE.ICON_MIN_PX, Math.min(CFG.SCALE.ICON_MAX_PX, cam.z * 26)) * (lv === 'FAR' ? .75 : 1), px = sx(s.x, s.y), py = sy(s.x, s.y);
-        if (s.kind === 'FIELD') { const ph = skin.pin ? skin.pin(px, py, sz, st, sel, lv) : 0; if (!ph) derrick(px, py, sz, col); if (lv !== 'FAR') { ctx.fillStyle = '#fff'; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; const fzc = world.funcZoneOfSite(s.id), t = DEVUI ? s.type[0] + s.type.slice(1).toLowerCase() + ' · ' + st.toLowerCase() : (fzc ? fzc + ' · ' : '') + '⛰️ حقل نفط' + (ST_AR[st] ? ' · ' + ST_AR[st] : ''); ctx.strokeText(t, px, py - (ph || sz) - 4); ctx.fillText(t, px, py - (ph || sz) - 4); } }
+        if (s.kind === 'FIELD') { const ph = skin.pin ? skin.pin(px, py, sz, st, sel, lv) : 0; if (!ph) derrick(px, py, sz, col); if (lv !== 'FAR') { ctx.fillStyle = '#fff'; ctx.font = '600 11px system-ui'; ctx.textAlign = 'center'; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 3; const fzc = s.sector || null, t = DEVUI ? s.type[0] + s.type.slice(1).toLowerCase() + ' · ' + st.toLowerCase() : (fzc ? fzc + ' · ' : '') + '⛰️ حقل نفط' + (ST_AR[st] ? ' · ' + ST_AR[st] : ''); ctx.strokeText(t, px, py - (ph || sz) - 4); ctx.fillText(t, px, py - (ph || sz) - 4); } }
         else { ctx.strokeStyle = '#999'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px - 6, py - 6); ctx.lineTo(px + 6, py + 6); ctx.moveTo(px + 6, py - 6); ctx.lineTo(px - 6, py + 6); ctx.stroke(); if (lv !== 'FAR') { ctx.fillStyle = '#ccc'; ctx.font = '11px system-ui'; ctx.textAlign = 'center'; ctx.fillText('dry hole', px, py - 12); } }
       }
     }

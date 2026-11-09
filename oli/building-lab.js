@@ -86,10 +86,25 @@
     }
   }, true);
 
+  /* ------------------------------------------------------------ sectors: where the player stands, what is allowed there, what it gives (the rules themselves live in buildings.js SECTOR_RULES and are enforced by validate()) */
+  const SECK = {}; for (const z of world.sectors || []) { const k = z.kind, o = SECK[k] || (SECK[k] = { codes: [], name: z.name }); o.codes.push(z.code); }
+  const secKindText = k => { const o = SECK[k]; return o ? '\u2066' + (o.codes.length > 1 ? o.codes[0] + '–' + o.codes[o.codes.length - 1] : o.codes[0]) + '\u2069 ' + o.name : k; };
+  function why(v) {
+    if (!v) return ''; const s = v.sector || {}, home = (v.allowedIn || []).map(secKindText).join(' أو ');
+    if (v.reason === 'sectorForbidden') return 'غير مسموح في قطاع ' + s.code + ' (' + s.name + ')' + (home ? ' — يُبنى في: ' + home : s.kind === 'F' ? ' — البناء البحري قيد التجهيز' : '');
+    if (v.reason === 'sectorReserveOnly') return 'قطاع الاحتياطي الاستراتيجي: الخزانات داخل منطقة الاحتياطي المفتوحة فقط';
+    if (v.reason === 'sectorStraddle') return 'المبنى يعبر حدود قطاعين — ضعه كاملاً داخل قطاع واحد' + (home ? ' (' + home + ')' : '');
+    return REASON[v.reason] || REASON[v.kind] || v.reason;
+  }
+  function sectorLine(v) {
+    const s = v && v.sector; if (!s) return ''; const perk = (s.perks || []).slice(0, 2).join(' · '), need = (s.needs || [])[0];
+    return '<div class="msg" style="font-size:12px;opacity:.9;margin-top:3px">📍 قطاع <b>' + s.code + '</b> · ' + s.name + (v.sectorMult ? ' · خصم ' + Math.round((1 - v.sectorMult) * 100) + '%' : '') + (perk ? '<br>✦ ' + perk : '') + (need && v.ok === false && v.reason !== 'sectorForbidden' ? '<br>⚙ ' + need : '') + '</div>';
+  }
+
   /* ------------------------------------------------------------ confirm bar */
   const bar = $('buildbar');
   function showBar() { const p = state.pending; if (!p) return; const d = B.DEFS[p.def], v = p.verdict, ok = v.ok;
-    bar.innerHTML = '<div class="msg ' + (ok ? 'good' : 'bad') + '">' + (ok ? '🟢 مكان صالح للبناء' : '🔴 لا يمكن البناء هنا') + ' · ' + nameOf(p.def) + ' · ' + (ok ? fmt$(v.cost) + (p.aligned ? ' · الأنابيب متحاذية' : '') : (v.state === 'UNAFFORDABLE' ? 'الرصيد لا يكفي (' + fmt$(v.cost) + ')' : REASON[v.reason] || REASON[v.kind] || v.reason)) + '</div>'
+    bar.innerHTML = '<div class="msg ' + (ok ? 'good' : 'bad') + '">' + (ok ? '🟢 مكان صالح للبناء' : '🔴 لا يمكن البناء هنا') + ' · ' + nameOf(p.def) + ' · ' + (ok ? fmt$(v.cost) + (p.aligned ? ' · الأنابيب متحاذية' : '') : (v.state === 'UNAFFORDABLE' ? 'الرصيد لا يكفي (' + fmt$(v.cost) + ')' : why(v))) + '</div>' + sectorLine(v)
       + '<div class="btns"><button id="bBuild"' + (ok ? '' : ' disabled') + '>✓ بناء</button>' + (d.rotatable ? '<button id="bRot">⟳ تدوير</button>' : '') + '<button id="bNext">💡 مكان آخر</button><button id="bCancel">✕ إلغاء</button></div>'; bar.style.display = 'block'; }
   function hideBar() { bar.style.display = 'none'; bar.innerHTML = ''; }
   bar.addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; if (state.pipeEdit && editAct(b.id)) return; if (b.id === 'bPipeOne') { const pm = state.pipeMode; if (pm) { pm.oneWay = true; commitPlan(); } return; } if (b.id === 'bBuild') confirmBuild(); else if (b.id === 'bRot') rotatePending(); else if (b.id === 'bCancel') cancelAll(); else if (b.id === 'bNext') { state.spotIdx = (state.spotIdx || 0) + 1; const p = state.pending; if (p) startBuild(p.def, true); } else if (b.id === 'bPipeOk') commitPlan(); else if (b.id === 'bPipeBack') pipeMode(true); else if (b.id === 'bPipeEnd') pipeMode(false); });
@@ -103,7 +118,7 @@
   }
   function confirmBuild() {
     const p = state.pending; if (!p) return; const r = STORE.place(p.def, p.x, p.y, p.r, {});                       // place() validates again: the player can never build on a stale verdict
-    if (!r.ok) { p.verdict = r; showBar(); toast(REASON[r.reason] || r.reason); return; }
+    if (!r.ok) { p.verdict = r; showBar(); toast(why(r)); return; }
     state.pending = null; hideBar(); state.sel = r.building.id; if (B.DEFS[p.def].type === 'well') SIM.ensure(r.building).started = false; let msg = nameOf(p.def) + ' · جارٍ البناء · −' + fmt$(r.cost);
     msg += autoLinkNote(r.building);
     toast(msg); save(); showBuilding(r.building.id); WP.markDirty(); updateCash(); adviseUpgrade();
@@ -318,7 +333,11 @@
   }
   function startBuild(id, again) {
     if (!again) { cancelAll(true); state.spotIdx = 0; } const r = state.rot[id] || 0, list = spotsFor(id, r);
-    if (!list.length) { toast('لا يوجد مكان مناسب قريب. حرّك الخريطة ثم جرّب مرة أخرى.'); return false; }
+    if (!list.length) {
+      const [w0, h0] = dims(id, r), cx = Math.round(cam.x - w0 / 2), cy = Math.round(cam.y - h0 / 2), v = STORE.validate(id, cx, cy, r, {});
+      if (/^sector/.test(v.reason || '')) { state.pending = { def: id, x: cx, y: cy, r, verdict: v, snapped: false, aligned: false }; state.sel = null; $('info').innerHTML = '<h4>' + nameOf(id) + '</h4><span class="k">' + why(v) + '</span>'; showBar(); toast(why(v)); WP.markDirty(); return false; }      // the sector forbids it here: show the red verdict and WHY, so the player knows where it belongs
+      toast('لا يوجد مكان مناسب قريب. حرّك الخريطة ثم جرّب مرة أخرى.'); return false;
+    }
     const sp = list[(state.spotIdx || 0) % list.length], g = evaluate({ def: id, r, x: sp.x, y: sp.y }), [w, h] = dims(id, g.r); state.pending = { def: id, x: g.x, y: g.y, r: g.r, verdict: g.verdict, snapped: g.snapped, aligned: g.aligned }; state.sel = null;
     WP.goto(g.x + w / 2, g.y + h / 2, Math.max(cam.z, .55)); $('info').innerHTML = '<h4>' + nameOf(id) + '</h4><span class="k">اسحب المبنى على الخريطة لتغيير مكانه، ثم اضغط «بناء».</span>'; showBar(); WP.markDirty(); return true;
   }
@@ -399,7 +418,7 @@
   function fieldNear(t) { let best = null, bd = 4.5; for (const f of fieldSites()) { const d = Math.hypot(f.x - t.x, f.y - t.y); if (d < bd) { bd = d; best = f; } } return best; }
   function showField(f) {
     const n = STORE.list().filter(b => B.DEFS[b.d].type === 'well' && Math.hypot(b.x - f.x, b.y - f.y) < 14).length;
-    $('info').innerHTML = '<h4>⛰️ حقل نفط' + (world.funcZoneOfSite && world.funcZoneOfSite(f.id) ? ' · ' + world.funcZoneOfSite(f.id) : '') + '</h4><span class="k">يمكنك الحفر هنا. ' + (n ? 'لديك ' + n + ' بئر في هذا الحقل.' : 'لا توجد آبار في هذا الحقل بعد.') + ' تكلفة البئر من ' + fmt$(B.DEFS.oil_well.cost) + '.</span><div class="row"><button id="bDig" data-fx="' + f.x + '" data-fy="' + f.y + '" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800;min-height:46px">🛢️ حفر بئر</button></div>'; WP.markDirty();
+    $('info').innerHTML = '<h4>⛰️ حقل نفط' + (f.sector ? ' · ' + f.sector : '') + '</h4><span class="k">يمكنك الحفر هنا. ' + (n ? 'لديك ' + n + ' بئر في هذا الحقل.' : 'لا توجد آبار في هذا الحقل بعد.') + ' تكلفة البئر من ' + fmt$(B.DEFS.oil_well.cost) + '.</span><div class="row"><button id="bDig" data-fx="' + f.x + '" data-fy="' + f.y + '" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800;min-height:46px">🛢️ حفر بئر</button></div>'; WP.markDirty();
   }
 
   /* ------------------------------------------------------------ drawing */
@@ -504,7 +523,7 @@
     // direction arrow: from the footprint centre toward the rotated "east" face (the way a rotation turns)
     { const cx = g.x + w / 2, cy = g.y + h / 2, dv = [[1, 0], [0, 1], [-1, 0], [0, -1]][g.r & 3], x0 = sx(cx, cy), y0 = sy(cx, cy), x1 = sx(cx + dv[0] * Math.min(w, h) * .38, cy + dv[1] * Math.min(w, h) * .38), y1 = sy(cx + dv[0] * Math.min(w, h) * .38, cy + dv[1] * Math.min(w, h) * .38);
       if (d.rotatable) { ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); ctx.beginPath(); ctx.arc(x1, y1, 4.5, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); } }
-    const label = loading ? 'جارٍ التحميل…' : ok ? fmt$(v.cost) : state.drag && state.drag.over ? 'اترك للإلغاء' : (REASON[v.reason] || REASON[v.kind] || v.reason); ctx.font = '600 13px system-ui'; ctx.textAlign = 'center'; const X = sx(g.x + w / 2, g.y), Y = sy(g.x + w / 2, g.y) - 12 - (d.footprint[0] > 1 ? 40 * cam.z : 14 * cam.z);
+    const label = loading ? 'جارٍ التحميل…' : ok ? fmt$(v.cost) : state.drag && state.drag.over ? 'اترك للإلغاء' : (/^sector/.test(v.reason || '') ? why(v).split(' — ')[0] : (REASON[v.reason] || REASON[v.kind] || v.reason)); ctx.font = '600 13px system-ui'; ctx.textAlign = 'center'; const X = sx(g.x + w / 2, g.y), Y = sy(g.x + w / 2, g.y) - 12 - (d.footprint[0] > 1 ? 40 * cam.z : 14 * cam.z);
     const tw = ctx.measureText(label).width, Xc = Math.max(tw / 2 + 8, Math.min(WP.VW() - tw / 2 - 8, X)); ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,16,.85)'; ctx.strokeText(label, Xc, Y); ctx.fillStyle = ok ? '#8dffb0' : loading ? '#ddd' : '#ffb0a8'; ctx.fillText(label, Xc, Y);
   };
 
@@ -555,7 +574,7 @@
   $('tReset').onclick = () => { if (confirm('Remove every building?')) { reset(); toast('Cleared'); } };
   window.addEventListener('keydown', e => { if (e.key === 'Escape') cancelAll(); else if ((e.key === 'r' || e.key === 'R')) { if (state.drag) { const g = state.drag; g.r = (g.r + 1) & 3; state.rot[g.def] = g.r; evaluate(g); WP.markDirty(); } else rotatePending(); } else if (e.key === 'Enter' && state.pending && state.pending.verdict.ok) confirmBuild(); });
   $('tFields').onclick = () => { const sr = world.homeRegionOfWorld(), f = world.regionSites(sr.id).filter(s => s.kind === 'FIELD' && (world.stateOf(s.id) === 'DRILLABLE' || world.stateOf(s.id) === 'PRODUCING'))[0]; if (f) WP.goto(f.x, f.y, .75); };
-  $('tRef').onclick = () => { const sr = world.homeRegionOfWorld(), z = world.refineryZones(sr.id)[0]; if (z) WP.goto(z.x + z.w / 2, z.y + z.h / 2, .5); };
+  $('tRef').onclick = () => { const sr = world.homeRegionOfWorld(), z = refZonesForDemo(sr)[0]; if (z) WP.goto(z.x + z.w / 2, z.y + z.h / 2, .5); };
 
   /* the full Phase 2 chain for screenshots, tests and device checks:  OIL FIELD -> 3 WELLS -> JUNCTION -> PUMP -> PIPE -> SEPARATOR -> CRUDE STORAGE -> REFINERY -> GASOLINE / DIESEL / JET / GAS storage */
   const until = async fn => { for (let i = 0; i < 600; i++) { await new Promise(r => setTimeout(r, 100)); if (fn()) return true; } return false; };
@@ -582,12 +601,14 @@
     out.ok = !out.failed.length; GU.setLevel(6); save(); updateCash(); WP.markDirty(); return out;
   }
   /* the demo chain: the largest working field of the home region, trying the refinery zones nearest first, until the whole chain fits the ground (no part left out). The reserve region C3 never takes part. */
+  /* the refinery zones the demo may use: with sectors only those inside a D sector (refineries are refused anywhere else), else the home region's own */
+  function refZonesForDemo(sr) { if (!(world.sectors && world.sectors.length)) return world.refineryZones(sr.id); const o = []; for (const r of world.regions) for (const z of world.refineryZones(r.id)) { const c = world.sectorAt(z.x + (z.w >> 1), z.y + (z.h >> 1)); if (c && c[0] === 'D') o.push(z); } return o; }
   async function buildDemo() {
-    const sr = world.homeRegionOfWorld(), fs = world.regionSites(sr.id).filter(q => q.kind === 'FIELD' && (world.stateOf(q.id) === 'DRILLABLE' || world.stateOf(q.id) === 'PRODUCING')).sort((a, b) => b.radius - a.radius), zs = world.refineryZones(sr.id); if (!fs.length) return { ok: false, reason: 'noField' };
+    const sr = world.homeRegionOfWorld(), fs = world.regionSites(sr.id).filter(q => q.kind === 'FIELD' && (world.stateOf(q.id) === 'DRILLABLE' || world.stateOf(q.id) === 'PRODUCING')).sort((a, b) => b.radius - a.radius), zs = refZonesForDemo(sr); if (!fs.length) return { ok: false, reason: 'noField' };
     let best = null; for (const f of fs.slice(0, 6)) for (const z of zs.slice().sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))) { const r = await buildDemoAt(sr, f, z); if (r.ok) return r; if (!best || r.failed.length < best.failed.length) best = r; }
     return best;
   }
-  $('tDemo').onclick = async () => { toast('Building the full oil chain…'); const r = await buildDemo(); toast(r.ok ? 'Oil chain built: ' + r.total + ' buildings · ' + r.pipelines + ' pipelines' : 'Demo incomplete: ' + (r.failed || [r.reason]).join(', ')); };
+  $('tDemo').onclick = async () => { toast('Building the full oil chain…'); const r = await buildDemo(); window.__demoLast = r; toast(r.ok ? 'Oil chain built: ' + r.total + ' buildings · ' + r.pipelines + ' pipelines' : 'Demo incomplete: ' + (r.failed || [r.reason]).join(', ')); };
 
   /* simulation clock: Game Time.  1x = one game day per dayRealSeconds; the company advances in whole game hours (no dependence on FPS); nothing is simulated while paused or while a report is open */
   let lastT = performance.now(), lastDraw = 0, lastSig = '';
