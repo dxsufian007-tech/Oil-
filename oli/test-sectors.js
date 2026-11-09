@@ -39,8 +39,8 @@ const sites = allSites(), fields = sites.filter(s => s.kind === 'FIELD'), dry = 
 T('4a not one oil field outside A (B / C / D / E / F have none)', fields.every(s => W.sectorAt(s.x, s.y)[0] === 'A'), fields.filter(s => W.sectorAt(s.x, s.y)[0] !== 'A').length);
 T('4b the dry prospects are inside A too (they keep their rules, nothing becomes a field)', dry.every(s => W.sectorAt(s.x, s.y)[0] === 'A') && dry.every(s => s.initialReserve === 0 && s.props === null));
 const tgt = CONFIG.SECTOR_FIELDS, nF = {}, nD = {}; for (const s of fields) nF[s.sector] = (nF[s.sector] || 0) + 1; for (const s of dry) nD[s.sector] = (nD[s.sector] || 0) + 1;
-T('4c every A reaches its target of fields and dry sites (within 10%)', by('A').every(z => Math.abs(nF[z.code] - tgt[z.code][0]) <= tgt[z.code][0] * .1 && Math.abs(nD[z.code] - tgt[z.code][1]) <= tgt[z.code][1] * .1), { nF, nD });
-T('4d about 300 fields in total, high density', fields.length >= 270 && fields.length <= 340, fields.length);
+T('4c every A reaches its target of fields and dry sites EXACTLY (no margin; the written-out numbers are in test-sector-counts.js)', by('A').every(z => nF[z.code] === tgt[z.code][0] && nD[z.code] === tgt[z.code][1]), { nF, nD });
+T('4d exactly 454 fields and 36 dry sites in total (490 sites), high density', fields.length === 454 && dry.length === 36, [fields.length, dry.length]);
 T('4e the site stays in the sector it was made for (its own record agrees)', sites.every(s => s.sector === W.sectorAt(s.x, s.y)));
 let gapOk = true; for (let i = 0; i < sites.length && gapOk; i++) for (let j = i + 1; j < sites.length; j++) { const a = sites[i], b = sites[j]; if (Math.hypot(a.x - b.x, a.y - b.y) < a.radius + b.radius + CONFIG.MIN_GAP - 1e-6) { gapOk = false; break; } }
 T('4f fields keep the minimum gap (room for wells and collection stations)', gapOk);

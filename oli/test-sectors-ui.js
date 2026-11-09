@@ -13,10 +13,14 @@ srv.listen(0, async () => {
   await p.evaluate(() => { localStorage.clear(); __lab.reset(); __lab.company.speed = 0; __lab.store.cash = 1e10; });
   const shot = async n => { if (SH) { fs.mkdirSync(SH, { recursive: true }); await p.screenshot({ path: path.join(SH, n + '.png') }); } };
   const go = async (x, y, z, w) => { await p.evaluate(([x, y, z]) => __wp.goto(x, y, z), [x, y, z]); await p.waitForTimeout(w || 2500); };
+  await p.evaluate(() => { const c = __wp.ctx; window.__txt = []; for (const k of ['fillText', 'strokeText']) { const f = c[k].bind(c); c[k] = (s, ...a) => { window.__txt.push(String(s)); return f(s, ...a); }; } });
   console.log('1. the sectors are drawn at every zoom');
   ok(await p.evaluate(() => __wp.world.sectors.length === 17), '1a the game world has the 17 sectors');
   for (const [n, x, y, z] of [['far', 960, 640, .012], ['medium', 1100, 500, .25], ['close', 1200, 700, .6]]) { await go(x, y, z, n === 'far' ? 6000 : 3000); await shot('sector-' + n); }
   ok(errs.length === 0, '1b no page error while drawing the sector layer at far / medium / close zoom', errs.slice(0, 3));
+  { const txt = await p.evaluate(() => window.__txt), j = txt.join('|');
+    ok(!txt.some(s => /أرض الاحتياطي|منطقة الاحتياطي الاستراتيجي/.test(s)), '1c C1: the separate reserve-land pin and its tag «أرض الاحتياطي» are gone from the map at every zoom (the reserve system itself is untouched, see test-reserve*)', txt.filter(s => /الاحتياطي/.test(s)));
+    ok(txt.includes('C1') && txt.some(s => s === 'الاحتياطي الاستراتيجي'), '1d the sector C1 is still drawn with its name and its job line «الاحتياطي الاستراتيجي»'); }
   console.log('2. the build bar: sector, perks, rule and the reason');
   const bar = async (def, x, y) => { await go(x, y, .7, 2500); await p.evaluate(d => { __lab.startBuild(d); }, def); await p.waitForTimeout(700); return p.evaluate(() => { const e = document.getElementById('buildbar'); return e ? e.innerText.replace(/\s+/g, ' ') : ''; }); };
   const a1 = await bar('refinery_s', 1200, 640); ok(/A\d/.test(a1) && /D/.test(a1) && /غير مسموح/.test(a1), '2a a refinery in the extraction sector: refused, names the sector and says it belongs in D', a1); await shot('bar-refinery-in-A'); await p.evaluate(() => __lab.cancelAll());

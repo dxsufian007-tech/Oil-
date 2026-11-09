@@ -49,7 +49,7 @@
     SECTOR_KIND: {                                                                  // the name shown on the map (big) and the one-line job under it (small)
       A: { name: 'استخراج النفط', desc: 'حقول كثيفة · آبار ومضخات ومحطات تجميع' }, B: { name: 'تخزين وتوزيع', desc: 'خزانات ومحطات ضخ وتوزيع' }, C: { name: 'الاحتياطي الاستراتيجي', desc: 'مخزون مستقل · لا بيع تلقائي' },
       D: { name: 'التكرير والمعالجة', desc: 'مصافٍ ووحدات فصل ومعالجة' }, E: { name: 'المياه والمعالجة', desc: 'سحب وتخزين ومعالجة المياه' }, F: { name: 'المنشآت البحرية', desc: 'منصات وأنابيب بحرية وربط ساحلي' } },
-    SECTOR_FIELDS: { A1: [46, 28], A2: [52, 31], A3: [38, 23], A4: [32, 19], A5: [48, 29], A6: [44, 26], A7: [46, 28] },   // [oil fields, dry prospects] generated inside each extraction sector
+    SECTOR_FIELDS: { A1: [69, 5], A2: [77, 6], A3: [56, 5], A4: [47, 4], A5: [71, 6], A6: [65, 5], A7: [69, 5] },   // [oil fields, dry prospects] generated inside each extraction sector
     SECTOR_PROFILE: {                                                               // m = size-class richness, dp = deep-reservoir boost, lq / hq = share of heavy / light crude
       A1: { m: 1.6, dp: .45, lq: .25, hq: .20 }, A2: { m: 1.6, dp: .15, lq: .10, hq: .45 }, A3: { m: 1.0, dp: .05, lq: .20, hq: .20 }, A4: { m: .6, dp: .10, lq: .55, hq: .05 },
       A5: { m: 1.6, dp: .20, lq: .25, hq: .25 }, A6: { m: 1.0, dp: .40, lq: .30, hq: .15 }, A7: { m: 1.0, dp: .15, lq: .30, hq: .30 } },

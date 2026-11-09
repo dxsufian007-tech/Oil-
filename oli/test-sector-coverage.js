@@ -29,7 +29,7 @@ else {
   T('2f the oil probability map is identical', [[500, 500], [900, 400], [1200, 700], [1700, 300]].every(([x, y]) => W.oilProbability(x, y) === OLD.oilProbability(x, y)));
 }
 
-console.log('3. fields and their sectors (the old A1-A7 field checks, now for 306 fields)');
+console.log('3. fields and their sectors (the old A1-A7 field checks, now for 454 fields)');
 const fields = W.regions.flatMap(r => W.regionSites(r.id)).filter(s => s.kind === 'FIELD');
 T('3a every field belongs to one A sector and the lookup works both ways', fields.every(s => /^A[1-7]$/.test(W.sectorOfSite(s.id)) && W.sectorAt(s.x, s.y) === W.sectorOfSite(s.id)) && W.sectorOfSite('nope') === null);
 T('3b fields have their own reserve and capacity (not one shared number)', new Set(fields.map(s => s.props.capacity)).size > 20 && fields.every(s => s.initialReserve > 0));
