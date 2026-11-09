@@ -47,7 +47,8 @@
       const s = this.st.get(stId); if (s) s.cells = cells; this.rev++; }
     addPump(o) {
       const id = o.id || ('P' + this.nextPump++); const st = this.st.get(o.st); const u = hash(st.x, st.y, 7 + CHANNELS.indexOf(o.ch));
-      const p = { id, st: o.st, ch: o.ch, boost: o.boost != null ? o.boost : Math.round(lerp(PU.boost[0], PU.boost[1], u)), eff: o.eff != null ? o.eff : +lerp(PU.eff[0], PU.eff[1], hash(st.x, st.y, 8 + CHANNELS.indexOf(o.ch))).toFixed(3), fault: !!o.fault, flow: 0, pIn: 0, pOut: 0, lowIn: false };
+      let seg = o.seg; if (!seg || !this.seg.has(seg)) { const cand = this.segsOf(o.st).sort((a, b) => (a.kind === 'main' ? 0 : 1) - (b.kind === 'main' ? 0 : 1)); seg = cand.length ? cand[0].id : null; }      // a pump sits on ONE segment of its station (the pipe it pushes into / pulls from)
+      const p = { id, st: o.st, ch: o.ch, seg, dir: o.dir === -1 ? -1 : 1, boost: o.boost != null ? o.boost : Math.round(lerp(PU.boost[0], PU.boost[1], u)), eff: o.eff != null ? o.eff : +lerp(PU.eff[0], PU.eff[1], hash(st.x, st.y, 8 + CHANNELS.indexOf(o.ch))).toFixed(3), fault: !!o.fault, flow: 0, pIn: 0, pOut: 0, lowIn: false };
       this.pumps.set(id, p); this.rev++; return p;
     }
     stOf(buildingId) { if (!this._byB || this._byBRev !== this.rev) { this._byB = new Map(); for (const s of this.st.values()) if (s.b != null) this._byB.set(s.b, s); this._byBRev = this.rev; } return this._byB.get(buildingId) || null; }
@@ -63,12 +64,16 @@
       const p1 = g.path.slice(0, i + 1), p2 = g.path.slice(i), old = { a: g.a, b: g.b };
       for (const [px, py] of g.path) this.at.delete(this.key(px, py)); this.seg.delete(g.id);
       const A = this.addSeg({ id: g.id + 'a', kind: g.kind, a: old.a, b: st.id, path: p1, fault: g.fault }), Bs = this.addSeg({ id: g.id + 'b', kind: g.kind, a: st.id, b: old.b, path: p2, fault: g.fault });
-      // pumps do not move; flags of the old segment are inherited by both halves
+      for (const p of this.pumps.values()) if (p.seg === g.id) p.seg = p.st === old.a ? A.id : Bs.id;      // a pump stays on the half next to its own station (the orientation a→b of the halves is the old one, so its direction is unchanged)
+      // flags of the old segment are inherited by both halves
       return { ok: true, station: st, segs: [A, Bs] };
     }
 
     /* ---------------------------------------------------------------- faults and states (player / test controls) */
     setFault(segId, ch, on) { const g = this.seg.get(segId); if (!g) return false; if (ch == null) for (const c of CHANNELS) { if (on) g.fault[c] = true; else delete g.fault[c]; } else if (on) g.fault[ch] = true; else delete g.fault[ch]; this.rev++; return true; }
+    /* Forward (+1) pushes product along the pump's segment from its end a to its end b, Reverse (-1) from b to a: suction and discharge swap sides */
+    setPumpDir(id, dir) { const p = this.pumps.get(id); if (!p || (dir !== 1 && dir !== -1)) return false; const g = this.seg.get(p.seg); if (!g || (g.a !== p.st && g.b !== p.st)) return false; p.dir = dir; this.rev++; return true; }
+    pumpsOn(g, ch) { const o = []; for (const p of this.pumps.values()) if (p.seg === g.id && p.ch === ch) o.push(p); return o; }
     setPumpFault(id, on) { const p = this.pumps.get(id); if (!p) return false; p.fault = !!on; return true; }
     setChannel(ch, state) { const c = this.ch[ch]; if (!c || !['OPEN', 'CLOSED'].includes(state)) return false; c.state = state; return true; }
     setChannelFault(ch, on) { const c = this.ch[ch]; if (!c) return false; c.fault = !!on; return true; }
@@ -86,28 +91,42 @@
     channelUp(ch) { const c = this.ch[ch]; return !!c && c.state === 'OPEN' && !c.fault; }
     segUp(g, ch) { return !g.fault[ch]; }
     /* Dijkstra by tile length over the segments that are up and still have capacity left in this step */
-    path(ch, from, to, over) {
+    path(ch, from, to, over, ban, bias) {
       const adj = this._graph(); if (!adj.has(from) || !adj.has(to) || from === to) return null;
       const dist = new Map([[from, 0]]), prev = new Map(), done = new Set(); const q = [[0, from]];
       while (q.length) {
         let bi = 0; for (let i = 1; i < q.length; i++) if (q[i][0] < q[bi][0]) bi = i; const [d, n] = q.splice(bi, 1)[0]; if (done.has(n)) continue; done.add(n); if (n === to) break;
-        for (const e of adj.get(n) || []) { if (!this.segUp(e.g, ch)) continue; if (CLASS.capacity - this.usedOf(over, e.g.id, ch) <= EPS) continue; const nd = d + e.g.path.length; if (nd < (dist.has(e.to) ? dist.get(e.to) : Infinity)) { dist.set(e.to, nd); prev.set(e.to, { n, e }); q.push([nd, e.to]); } }
+        for (const e of adj.get(n) || []) { if (!this.segUp(e.g, ch) || (ban && ban.has(e.g.id))) continue; if (CLASS.capacity - this.usedOf(over, e.g.id, ch) <= EPS) continue; const nd = d + e.g.path.length * (bias && this._hopPump({ g: e.g, dir: e.dir }, ch) ? 0.25 : 1); if (nd < (dist.has(e.to) ? dist.get(e.to) : Infinity)) { dist.set(e.to, nd); prev.set(e.to, { n, e }); q.push([nd, e.to]); } }
       }
       if (!prev.has(to)) return null; const hops = []; let c = to; while (c !== from) { const p = prev.get(c); hops.unshift({ g: p.e.g, dir: p.e.dir, from: p.n, to: c }); c = p.n; } return hops;
     }
     /* rate, pressure at the far end: friction per segment (the same law as the old pipes), pump boosts at the stations passed, pump flow limit */
     plan(ch, from, to, r, p0, over) {
       if (from === to) return r > EPS ? { hops: [], r, p: p0, stats: [], nodes: [from] } : null;                         // two branches on the SAME station: the product passes through the station itself (no trunk)
-      const hops = this.path(ch, from, to, over); if (!hops) return null; let cap = Infinity; for (const h of hops) cap = Math.min(cap, CLASS.capacity - this.usedOf(over, h.g.id, ch));
-      r = Math.min(r, cap); const nodes = [from].concat(hops.map(h => h.to)), pumps = [];
-      for (let i = 0; i < nodes.length - 1; i++) { const pu = this.pumpAt(nodes[i], ch); if (pu && !pu.fault) { pumps.push([i, pu]); r = Math.min(r, Math.max(0, PU.maxFlow - this.pusedOf(over, pu.id))); } }
+      const first = this.path(ch, from, to, over); if (!first) return null; let best = this._planHops(ch, first, r, p0, over);
+      if (!best || best.r < r - 1e-6) {                                                                                  // the shortest path cannot carry it all (capacity, pressure, a pump pushing the other way): try the loop paths that avoid one of its segments
+        const seen = new Set([first.map(h => h.g.id).join()]);
+        const pb = this.path(ch, from, to, over, null, true); if (pb) { const key = pb.map(h => h.g.id).join(); if (!seen.has(key)) { seen.add(key); const c = this._planHops(ch, pb, r, p0, over); if (c && (!best || c.r > best.r + 1e-6)) best = c; } }          // the route that makes use of the pumps pushing the right way
+        for (const h0 of first) { const hops = this.path(ch, from, to, over, new Set([h0.g.id])); if (!hops) continue; const key = hops.map(h => h.g.id).join(); if (seen.has(key)) continue; seen.add(key); const c = this._planHops(ch, hops, r, p0, over); if (c && (!best || c.r > best.r + 1e-6)) best = c; }
+      }
+      return best;
+    }
+    /* the pump of a hop that really pushes THIS way (healthy and set to this direction); null = no boost (idle direction, or failed: the product passes the pump unboosted) */
+    _hopPump(h, ch) { for (const p of this.pumps.values()) if (p.seg === h.g.id && p.ch === ch && !p.fault && p.dir === h.dir) return p; return null; }
+    _planHops(ch, hops, r, p0, over) {
+      let cap = Infinity; for (const h of hops) cap = Math.min(cap, CLASS.capacity - this.usedOf(over, h.g.id, ch));
+      r = Math.min(r, cap); const nodes = [hops[0].from].concat(hops.map(h => h.to)), pumps = hops.map(h => this._hopPump(h, ch));
+      pumps.forEach(pu => { if (pu) r = Math.min(r, Math.max(0, PU.maxFlow - this.pusedOf(over, pu.id))); });
       if (r <= EPS) return null; let pEnd = 0, stats = null;
       for (let it = 0; it < 6; it++) {
-        let p = p0, ok = true; stats = []; const boosted = new Map();
+        let p = p0, ok = true; stats = [];
         for (let i = 0; i < hops.length; i++) {
-          const pu = pumps.find(q => q[0] === i); if (pu && p >= PU.minInletPsi) { const add = pu[1].boost * pu[1].eff; stats.push([pu[1], p, p + add, true]); p += add; } else if (pu) stats.push([pu[1], p, p, false]);
-          const h = hops[i], ratio = (this.usedOf(over, h.g.id, ch) + r) / CLASS.capacity, loss = h.g.path.length * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * CLASS.fric;
+          const h = hops[i], pu = pumps[i], atStart = pu && pu.st === h.from;                                              // mounted at the start of the hop: it pushes into the pipe (before the friction); at the end: it pulls from the pipe (after it)
+          const boost = () => { if (p >= PU.minInletPsi) { const add = pu.boost * pu.eff; stats.push([pu, p, p + add, true]); p += add; } else stats.push([pu, p, p, false]); };
+          if (atStart) boost();
+          const ratio = (this.usedOf(over, h.g.id, ch) + r) / CLASS.capacity, loss = h.g.path.length * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * CLASS.fric;
           if (p - loss < 0) { r *= Math.max(0, p / (loss || 1)); ok = false; break; } p -= loss;
+          if (pu && !atStart) boost();
         }
         pEnd = p; if (ok) break; if (r <= EPS) return null;
       }
@@ -167,14 +186,14 @@
       const ch = {}; for (const c of CHANNELS) { const x = this.ch[c]; ch[c] = { s: x.state, f: x.fault ? 1 : 0, m: Math.round(x.moved * 100) / 100 }; }
       const stt = [...this.st.values()].map(s => { const o = { id: s.id, x: s.x, y: s.y, sec: s.sec, b: s.b }; if (s.tapped) { o.t = 1; o.tile = s.tile; } if (s.cells) o.cells = s.cells; return o; });
       const seg = [...this.seg.values()].map(g => { const o = { id: g.id, k: g.kind, a: g.a, b: g.b, p: pack(g.path) }; const f = Object.keys(g.fault).filter(c => g.fault[c]); if (f.length) o.f = f; return o; });
-      const pu = [...this.pumps.values()].map(p => ({ id: p.id, st: p.st, ch: p.ch, boost: p.boost, eff: p.eff, fault: p.fault ? 1 : 0 }));
+      const pu = [...this.pumps.values()].map(p => ({ id: p.id, st: p.st, ch: p.ch, seg: p.seg, dir: p.dir, boost: p.boost, eff: p.eff, fault: p.fault ? 1 : 0 }));
       return { v: 1, ns: this.nextSt, ng: this.nextSeg, np: this.nextPump, ch, st: stt, seg, pu };
     }
     static fromJSON(W, d) {
       const n = new CentralNet(W); if (!d || !Array.isArray(d.st)) return n; n.nextSt = d.ns || 1; n.nextSeg = d.ng || 1; n.nextPump = d.np || 1;
       for (const s of d.st) { const o = n.addStation({ id: s.id, x: s.x, y: s.y, sec: s.sec, b: s.b, tapped: !!s.t, tile: s.tile }); if (s.cells) { o.cells = s.cells; for (const [x, y] of s.cells) n.cov.add(n.key(x, y)); } }
       for (const g of d.seg || []) { const o = { id: g.id, kind: g.k, a: g.a, b: g.b, path: unpack(g.p), fault: {} }; for (const c of g.f || []) o.fault[c] = true; n.addSeg(o); }
-      for (const p of d.pu || []) n.addPump({ id: p.id, st: p.st, ch: p.ch, boost: p.boost, eff: p.eff, fault: !!p.fault });
+      for (const p of d.pu || []) n.addPump({ id: p.id, st: p.st, ch: p.ch, seg: p.seg, dir: p.dir, boost: p.boost, eff: p.eff, fault: !!p.fault });
       for (const c of CHANNELS) { const x = d.ch && d.ch[c]; if (x) { n.ch[c].state = x.s || 'OPEN'; n.ch[c].fault = !!x.f; n.ch[c].moved = x.m || 0; } }
       return n;
     }
@@ -204,7 +223,7 @@
       cn.claimFootprint(s.id, cells(spot.x, spot.y)); const p = store.place('central_station', spot.x, spot.y, spot.r, { instant: true, free: true, ignoreCash: true, trust: !!spot.trust });
       if (!p.ok) { res.failed.push(s.id + ':' + p.reason); continue; } const st = cn.st.get(s.id); st.b = p.building.id; st.x = spot.x; st.y = spot.y; st.ports = spot.ports; res.stations++; if (mv) res.moved.push([s.id, mv[0], mv[1]]);
     }
-    for (const id of pl.pumps) for (const ch of CHANNELS) if (cn.st.has(id)) cn.addPump({ st: id, ch });
+    for (const [id, seg, dir] of pl.pumps) for (const ch of CHANNELS) if (cn.st.has(id)) cn.addPump({ st: id, ch, seg, dir });
     cn.rev++; res.tiles = cn.cen.size; res.cn = cn; return res;
   }
 
