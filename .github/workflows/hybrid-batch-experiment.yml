@@ -1,0 +1,28 @@
+name: Hybrid substep experiment
+on:
+  push:
+    branches: [experiment/hybrid-substep-batch]
+    paths:
+      - 'oli/test-hybrid-batch.js'
+      - 'oli/core.js'
+      - 'oli/package-lock.json'
+      - '.github/workflows/hybrid-batch-experiment.yml'
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        working-directory: oli
+        run: npm ci
+      - name: Run regression suite
+        working-directory: oli
+        run: npm test
+      - name: Run hybrid benchmark
+        working-directory: oli
+        run: node test-hybrid-batch.js
