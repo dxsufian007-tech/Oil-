@@ -7,6 +7,13 @@ on:
       - 'oli/core.js'
       - 'oli/package-lock.json'
       - '.github/workflows/speed-hybrid-experiment.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'oli/test-speed-hybrid.js'
+      - 'oli/core.js'
+      - 'oli/package-lock.json'
+      - '.github/workflows/speed-hybrid-experiment.yml'
 permissions:
   contents: read
 jobs:
