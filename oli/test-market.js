@@ -2,6 +2,7 @@
  * Run: NODE_PATH=/opt/npm-tools/node_modules node test-market.js
  */
 const { B, I, E, EC, game, put, pipe, chain } = require('./test-economy-helpers.js');
+EC.ENGINE.enabled = false;   // this file tests the synthetic random-walk market model (fixed base prices, bounded moves); the Oil Market Engine is tested in test-oil-engine.js: it runs on the legacy market (BRENT off). The historical market has its own tests.
 const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-6 : tol) * Math.max(1, Math.abs(a), Math.abs(b));
 let pass = 0, fail = 0; const T = (n, c, x) => { if (c) pass++; else { fail++; console.log('FAIL', n, x === undefined ? '' : JSON.stringify(x)); } };
 const quietCfg = () => { const c = JSON.parse(JSON.stringify(EC)); c.FIXED = { insurancePerMonth: 0, adminBase: 0, adminPerAsset: 0, infraPerYear: 0 }; c.POWER.tiers[0].monthly = 0; c.STORAGE_COST = { CRUDE: 0, GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 }; return c; };

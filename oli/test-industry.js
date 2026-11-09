@@ -12,7 +12,7 @@ const out = r => r;
 { const g = game(); let x = 10; const want = { oil_well: [250000, 1500000], pump_station_s: [500000, 1500000], pump_station_l: [2000000, 5000000], valve: [20000, 150000], junction: [50000, 250000], crude_tank_s: [500000, 2000000], crude_tank_m: [2000000, 8000000], crude_tank_l: [10000000, 40000000],
     separator: [1000000, 5000000], refinery_s: [25e6, 25e6], refinery_m: [100e6, 100e6], refinery_l: [400e6, 400e6], refinery_x: [1e9, 1e9], gasoline_tank_s: [1, 1e9], diesel_tank_m: [1, 1e9], jet_tank_l: [1, 1e9], gas_sphere_s: [1e6, 3e6], gas_sphere_m: [5e6, 15e6], gas_sphere_l: [2e7, 1e9] };
   for (const id of Object.keys(want)) { const def = B.DEFS[id], v = g.store.validate(id, x, 20, 0, {}); T('build ' + id, v.ok, v.reason); T('cost range ' + id + ' ' + v.cost, v.cost >= want[id][0] && v.cost <= want[id][1] * 1.05, v.cost); x += 14; }
-  T('25 definitions', B.ORDER.length === 25); }
+  T('37 definitions (25 + 3 water tanks + 2 water pumps + the Stage 5 central pump, central store and Main Manifold)', B.ORDER.length === 37); }
 
 /* ---- tank cost formula + capacity + footprint */
 for (const [id, cap, w] of [['crude_tank_s', 10000, 2], ['crude_tank_m', 50000, 3], ['crude_tank_l', 250000, 4]]) { const d = B.DEFS[id]; T('tank cap ' + id, d.capacity.value === cap && d.footprint[0] === w); T('tank cost formula ' + id, d.cost === d.baseCost + cap * d.costPerBarrel); }
@@ -81,7 +81,7 @@ T('status RUNNING chain', ['well', 'pump', 'sep', 'ref', 'ct', 'tg'].every(k => 
 { const g10 = game(), wl = put(g10, 'oil_well', 20, 40), ct = put(g10, 'crude_tank_s', 40, 40); const l = pipe(g10, wl, 'OIL_OUT_E', ct, 'INPUT_W'); T('line ok', l.ok); const mid = l.path[Math.floor(l.path.length / 2)];
   const v = g10.store.validate('gasoline_tank_s', mid[0] + 1, mid[1] - 0, 0, {}); T('placement beside foreign pipe not silently connected (INVALID PRODUCT or blocked)', true); }
 T('pipe cannot cross another pipe', (() => { const g = game(), a = put(g, 'oil_well', 20, 40), b = put(g, 'crude_tank_s', 60, 40), c = put(g, 'oil_well', 40, 20), d = put(g, 'crude_tank_s', 40, 60); const l1 = pipe(g, a, 'OIL_OUT_E', b, 'INPUT_W'); const l2 = pipe(g, c, 'OIL_OUT_S', d, 'INPUT_N'); return l1.ok && !l2.ok && l2.reason === 'noRoute'; })());
-T('pipeline stores product/diameter/length/capacity/maxPressure/flow', (() => { const g = chain(); g.sim.run(2); const L = g.L[2].line, i = g.sim.pipeInfo(L.path[1][0], L.path[1][1]); return i && i.product === 'CRUDE' && i.diameter === 16 && i.length > 0 && i.capacity === 30000 && i.maxPressure === 3000 && i.currentFlow > 0; })());
+T('pipeline stores product/diameter/length/capacity/maxPressure/flow', (() => { const g = chain(); g.sim.run(2); const L = g.L[2].line, i = g.sim.pipeInfo(L.path[1][0], L.path[1][1]); return i && i.product === 'CRUDE' && i.diameter === 16 && i.length > 0 && i.capacity === 100000 && i.maxPressure === 3000 && i.currentFlow > 0; })());
 T('pipe over capacity throttles + status', (() => { const g = game(), w = put(g, 'oil_well', 20, 40), t = put(g, 'crude_tank_l', 50, 38); g.sim.ensure(w).nominal = 2500; pipe(g, w, 'OIL_OUT_E', t, 'INPUT_W', 8); g.sim.run(.2); return g.sim.ensure(w)._out <= 6000.1; })());
 
 /* ---- separator specifics */

@@ -14,4 +14,6 @@ function chain(g, full, big) {
     L.push(pipe(g, c.ct, 'OUTPUT_E', c.ref, 'CRUDE_IN'), pipe(g, c.ref, 'GASOLINE_OUT', c.tg, 'INPUT_W'), pipe(g, c.ref, 'DIESEL_OUT', c.td, 'INPUT_W'), pipe(g, c.ref, 'JET_OUT', c.tj, 'INPUT_W'), pipe(g, c.ref, 'GAS_OUT', c.tl, 'INPUT_N')); }
   c.L = L; return c;
 }
-module.exports = { B, I, E, EC, game, put, pipe, chain };
+/* the calendar is the real one (months of 28 to 31 days, the books close on the 1st): move to the first hour of the next month */
+const nextMonth = co => { const CAL = require('./game-calendar.js'), d = CAL.fromHours(co.hours); co.advanceHours((d.daysInMonth - d.day + 1) * 24 - d.hour); };
+module.exports = { B, I, E, EC, game, put, pipe, chain, nextMonth };

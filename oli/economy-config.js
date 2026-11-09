@@ -12,7 +12,7 @@
     PRODUCTS,
     LABEL: { CRUDE: 'نفط خام', GASOLINE: 'بنزين', DIESEL: 'ديزل', JET_FUEL: 'وقود طائرات', GAS: 'غاز' },
     UNIT: { CRUDE: 'برميل', GASOLINE: 'برميل', DIESEL: 'برميل', JET_FUEL: 'برميل', GAS: 'برميل مكافئ' },
-    TIME: { hoursPerDay: 24, daysPerMonth: 30, monthsPerYear: 12, dayRealSeconds: 12, speeds: [0, 1, 2, 5, 10], tickMs: 250, maxCatchUpHours: 240, maxStepsPerTick: 60 },
+    TIME: { hoursPerDay: 24, daysPerMonth: 30, monthsPerYear: 12, dayRealSeconds: 12, speeds: [0, 0.5, 1, 2, 5, 10], tickMs: 250, maxCatchUpHours: 240, maxStepsPerTick: 60 },
 
     // ---- prices ($/bbl, gas $/boe).  Actual price = Base x Demand x Supply x Volatility, moved at most +-dailyChangeLimit per 24 h
     PRICE: { base: { CRUDE: 72, GASOLINE: 110, DIESEL: 104, JET_FUEL: 106, GAS: 48 },
@@ -36,20 +36,24 @@
         { id: 'OIL_CRISIS', label: 'أزمة نفطية', days: 20, demand: { CRUDE: 1.20, GASOLINE: 1.08, DIESEL: 1.08, JET_FUEL: 1.08, GAS: 1.04 }, supply: { CRUDE: 1.10 } },
         { id: 'TRANSPORT_UP', label: 'ارتفاع تكلفة النقل والطاقة', days: 15, cost: { freight: 1.30, energy: 1.20 } }   // purchases carry more freight, power costs more
       ] },   // selling a lot pushes the price down (Supply factor), then it recovers
+    // Oil Market Engine (oil-engine.js): no historical prices. The crude price comes from the engine's supply / demand / stock / news / market-state equations, each product has its own market.
+    // enabled=false keeps the old generic random-walk market (used only by the unit tests of the generic mechanics).
+    ENGINE: { enabled: true, params: {}, warmDays: 180, candleDays: 1000 },                       // Oil Market Engine (oil-engine.js): no historical prices, a per-game random seed
     FEES: { spot: 0.01, contract: 0.0025 },
     // by-products: sold at this share of the current crude price (PROVISIONAL: to be reviewed; no market history yet)
     BYPRODUCT: { priceRatioToCrude: 0.8 },
     QUALITY: { mult: { HIGH: 1.10, NORMAL: 1.00, LOW: 0.90 }, refinery: { HIGH: 1.03, NORMAL: 1.00, LOW: 0.95 }, share: { HIGH: 0.25, LOW: 0.25 }, highAt: 1.05, lowAt: 0.95 },
 
     // ---- costs
-    STORAGE_COST: { CRUDE: 0.015, GASOLINE: 0.025, DIESEL: 0.025, JET_FUEL: 0.03, GAS: 0.06 },   // $ per stored bbl per day
+    TRADE: { TRANSFER_COST: 0.6, LOG_MAX: 300 },                                   // $ per bbl for moving bought oil between tanks (capitalised into its cost); how many trade operations are kept
+    STORAGE_COST: { CRUDE: 0.015, GASOLINE: 0.025, DIESEL: 0.025, JET_FUEL: 0.03, GAS: 0.06, WATER: 0 },   // $ per stored bbl per day (water: only the tank's own operating cost)
     ENERGY: { pricePerKWh: 0.08 },
     POWER: { tiers: [{ name: 'شبكة 1', kw: 8000, monthly: 25000, connect: 0 }, { name: 'شبكة 2', kw: 25000, monthly: 90000, connect: 400000 }, { name: 'شبكة 3', kw: 80000, monthly: 260000, connect: 1500000 }, { name: 'شبكة 4', kw: 250000, monthly: 700000, connect: 5000000 }], startTier: 0, efficiencyFloor: 0.3 },
     // power (Phase 12): supply = grid capacity + bought power (if switched on); shortage stops the least important facilities first
     POWER_PRIORITY: { well: 1, separator: 2, pump: 3, refinery: 4, gas: 5, tank: 6, valve: 6, junction: 6 },   // 1 = most important, stopped last
     POWER_STOP: [{ below: 0.2, fromPriority: 6 }, { below: 0.1, fromPriority: 4 }, { below: 0.05, fromPriority: 2 }],   // normally efficiency falls gradually; only in severe shortage: below 20% supply tanks and valves stop, below 10% refineries and gas, below 5% separators too
     POWER_BUY: { maxKW: 5000, priceMult: 1.5 },                                      // bought power: at most 5,000 kW, at 1.5 x the grid price per kWh
-    POWER_KW: { well: 25, pump: { S: 120, L: 300 }, separator: 350, refinery: { S: 2500, M: 8000, L: 28000, X: 65000 }, gas: 40, idleShare: 0.35 },
+    POWER_KW: { well: 25, pump: { S: 120, L: 300, C: 2500 }, separator: 350, refinery: { S: 2500, M: 8000, L: 28000, X: 65000 }, gas: 40, idleShare: 0.35 },
     OPERATING: { fixedShare: 0.4, conditionPenalty: 0.5 },                           // DailyOperatingCost = Base x (fixed + (1-fixed) x Load) x (1 + penalty x (1-Condition))
     MAINTENANCE: { damage: 2.5, utilBase: 0.6, utilSlope: 0.8,                       // MaintenanceCost = Base x DamageFactor x UtilizationFactor
       decayPerDay: { well: 0.0012, pump: 0.003, valve: 0.0004, junction: 0.0004, tank: 0.0006, gas: 0.0008, separator: 0.002, refinery: 0.0016 }, utilWear: 0.5,
@@ -57,8 +61,8 @@
       labels: [[0.8, 'جيدة'], [0.6, 'مقبولة'], [0.4, 'تحتاج صيانة'], [0.2, 'خطرة'], [0.0001, 'على وشك التعطل']] },
     VARIABLE: { liftingPerBbl: 26, chemicalsPerBbl: 0.9 },                           // lifting cost per barrel produced at a well; refinery chemicals / catalyst per barrel processed
     LABOR: { salary: { operators: 3600, engineers: 8800, maintenance: 4400, managers: 13500 }, perManager: 60,   // per employee per month
-      staff: { well: { operators: 2, maintenance: 1 }, pump_S: { operators: 2, maintenance: 1 }, pump_L: { operators: 3, engineers: 1, maintenance: 2 }, valve: { operators: 0.25 }, junction: { operators: 0.25 },
-        tank_S: { operators: 1, maintenance: 1 }, tank_M: { operators: 2, maintenance: 1 }, tank_L: { operators: 4, maintenance: 2 }, gas_S: { operators: 1, engineers: 1, maintenance: 1 }, gas_M: { operators: 2, engineers: 1, maintenance: 1 }, gas_L: { operators: 4, engineers: 2, maintenance: 2 },
+      staff: { well: { operators: 2, maintenance: 1 }, pump_S: { operators: 2, maintenance: 1 }, pump_L: { operators: 3, engineers: 1, maintenance: 2 }, pump_C: { operators: 12, engineers: 4, maintenance: 6 }, valve: { operators: 0.25 }, junction: { operators: 0.25 }, manifold: { operators: 2, engineers: 1, maintenance: 1 },
+        tank_S: { operators: 1, maintenance: 1 }, tank_M: { operators: 2, maintenance: 1 }, tank_L: { operators: 4, maintenance: 2 }, tank_C: { operators: 14, engineers: 2, maintenance: 8 }, gas_S: { operators: 1, engineers: 1, maintenance: 1 }, gas_M: { operators: 2, engineers: 1, maintenance: 1 }, gas_L: { operators: 4, engineers: 2, maintenance: 2 },
         separator: { operators: 6, engineers: 2, maintenance: 3 }, refinery_S: { operators: 30, engineers: 8, maintenance: 12, managers: 2 }, refinery_M: { operators: 80, engineers: 20, maintenance: 30, managers: 4 }, refinery_L: { operators: 220, engineers: 55, maintenance: 80, managers: 8 }, refinery_X: { operators: 500, engineers: 120, maintenance: 180, managers: 16 } } },
     FIXED: { insurancePerMonth: 0.0015, adminBase: 12000, adminPerAsset: 0.0003, infraPerYear: 0.008 },   // monthly: insurance on asset value, administration, pipeline upkeep (share of pipe value per year)
     // ---- employees (Phase 9). Staff needed = what the buildings require (LABOR.staff). extra = hires beyond that (negative = missing staff).
@@ -69,9 +73,10 @@
       shortageFloor: 0.5,                                                                                             // staffing cannot cut output below half
       surplusShare: 0.25, surplusMin: 2,                                                                              // extra hires are capped (a facility has room for a limited crew)
       engineerDecay: 0.5, engineerSurplusCut: 0.3, decayBounds: [0.7, 1.5] },                                        // missing engineers raise the failure rate; extra engineers lower it (bounded)
-    // assets (Phase 14): straight line over the useful life, from the day the building goes into service, down to a residual value (not a fixed floor)
-    ASSET: { conditionWeight: 0.5, residualShare: 0.10,                                // a building keeps 10% of its cost as residual value
-      life: { well: 15, pump: 10, valve: 10, junction: 15, separator: 12, tank: 25, gas: 25, refinery: 20 } },                                            // useful life in years, per category
+    // assets: there is NO useful life, no wear and no time-based depreciation - equipment never expires, stops or breaks. conditionWeight is kept only for old saves.
+
+  ASSET: { conditionWeight: 0.5 },
+    RESERVE: { expand: [4e6, 9e6, 16e6, 26e6, 38e6, 52e6, 68e6, 90e6] },       // opening the next ring of the Strategic Reserve zone (dollars)
     TAX: { rate: 0.2, lossCarryForward: true },                                       // Tax = max(0, Revenue - AllowedExpenses - carried losses) x rate, settled monthly
 
     // ---- finance

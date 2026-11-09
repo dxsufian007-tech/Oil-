@@ -29,7 +29,7 @@ html[dir=rtl] body{direction:rtl}body{font-family:system-ui,'Noto Sans Arabic','
 #g-lvl{position:fixed;inset:0;z-index:45;background:rgba(5,8,12,.8);display:none;align-items:center;justify-content:center;padding:16px}#g-lvl.open{display:flex}
 #g-lvl .box{background:var(--panel);border:2px solid var(--acc);border-radius:16px;padding:18px;max-width:380px;width:100%;text-align:center}#g-lvl h3{margin:0 0 6px;font-size:20px}#g-lvl p{margin:6px 0}#g-lvl button{margin-top:10px;width:100%;min-height:48px;font-weight:800;background:#2f9e5a;border-color:#2f9e5a;color:#fff}
 #eco-hud{top:6px!important}body.dev #eco-hud{top:54px!important}#g-guide{top:52px}body.dev #g-guide{top:100px}
-body:not(.dev) .panel{bottom:72px!important}body:not(.dev) #buildbar{bottom:72px!important}#toast{top:104px!important}body:not(.dev) #g-nav{display:flex}body.dev #g-nav,body.dev #g-sheet,body.dev #g-guide{display:none!important}
+body:not(.dev) .panel{bottom:72px!important}body:not(.dev) #buildbar{bottom:72px!important}#toast{top:148px!important;z-index:30}body:not(.dev) #g-nav{display:flex}body.dev #g-nav,body.dev #g-sheet,body.dev #g-guide{display:none!important}
 @media (max-height:620px){#g-sheet{max-height:70%}}`;
 
   function cost(id) { const d = B.DEFS[id]; return d.type === 'well' ? 'يبدأ من ' + money(d.cost) : money(d.cost); }
@@ -44,7 +44,7 @@ body:not(.dev) .panel{bottom:72px!important}body:not(.dev) #buildbar{bottom:72px
     const isPipe = id === 'pipe', d = isPipe ? null : B.DEFS[id], size = isPipe ? 'من مبنى إلى مبنى' : d.footprint.join('×');
     const unl = GC.LEVELS.find(l => l.lv === info.lv), why = open ? '' : '🔒 يُفتح في المستوى ' + info.lv + ' «' + unl.name + '» — ' + unl.when;
     el.innerHTML = '<div class="top"><div class="ico">' + info.icon + '</div><div style="flex:1;min-width:0"><div class="nm">' + info.name + (open ? '' : ' 🔒') + '</div><div class="pr">' + (isPipe ? 'من $' + (BC.PIPES[BC.PIPE_DEFAULT].cost).toLocaleString('en-US') + ' للمربع' : cost(id)) + '</div><div class="meta">المساحة: ' + size + (open ? '' : '') + '</div><div class="meta">' + (open ? info.short : why) + '</div></div></div>'
-      + '<div class="more"><h6>ما وظيفته؟</h6><p>' + info.does + '</p><h6>متى أحتاجه؟</h6><p>' + info.when + '</p><h6>ما الذي يمكن توصيله به؟</h6><p>' + info.links + '</p>'
+      + '<div class="more"><h6>ما وظيفته؟</h6><p>' + info.does + '</p><h6>متى أحتاجه؟</h6><p>' + info.when + '</p><h6>ما الذي يمكن توصيله به؟</h6><p>' + info.links + '</p>' + (info.note ? '<h6>ملاحظة</h6><p>' + info.note + '</p>' : '')
       + (isPipe ? '' : '<h6>التكلفة</h6><p>البناء: ' + cost(id) + ' · التشغيل: ' + money(d.operatingCost) + ' في اليوم · الصيانة: ' + money(d.maintenanceCost) + ' في اليوم</p>') + '<h6>السعة أو الإنتاج</h6><p>' + info.prod + '</p><h6>كيف يعمل؟</h6>' + chainHtml(info.chain) + '</div>'
       + '<div class="row">' + (open ? '<button class="go" data-act="build" data-id="' + id + '">' + (isPipe ? '🔧 ارسم أنبوبًا' : 'بناء') + '</button>' : '') + '<button data-act="more" data-id="' + id + '">؟ كيف يعمل</button></div>';
     const ic = isPipe ? null : icon(id); if (ic) { const w = el.querySelector('.ico'); w.textContent = ''; w.appendChild(ic); } return el;

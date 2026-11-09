@@ -16,7 +16,9 @@
   const ACC = {
     CASH: ['asset', 'Cash'],
     AR: ['asset', 'Receivables (contracts not paid yet)'],
-    INV_CRUDE: ['asset', 'Inventory · crude'],
+    INV_CRUDE: ['asset', 'Inventory · crude (produced)'],
+    INV_CRUDE_BUY: ['asset', 'Inventory · crude (bought)'],
+    INV_RESERVE: ['asset', 'Inventory · Strategic Reserve'],
     INV_GASOLINE: ['asset', 'Inventory · gasoline'],
     INV_DIESEL: ['asset', 'Inventory · diesel'],
     INV_JET_FUEL: ['asset', 'Inventory · jet fuel'],
@@ -38,6 +40,7 @@
     EQUITY: ['equity', 'Paid-in capital'],
     REV_SPOT: ['rev', 'Sales · spot'],
     REV_BYPRODUCT: ['rev', 'Sales · by-products'],
+    REV_WATER: ['rev', 'Sales · water'],
     REV_CONTRACT: ['rev', 'Sales · contracts'],
     REV_OTHER: ['rev', 'Other income'],
     COGS: ['exp', 'Cost of goods sold'],
@@ -46,6 +49,8 @@
     EXP_MAINT: ['exp', 'Repairs'],
     EXP_ENERGY: ['exp', 'Power'],
     EXP_STORAGE: ['exp', 'Storage'],
+    EXP_RSTORAGE: ['exp', 'Strategic Reserve · storage'],
+    EXP_ROPS: ['exp', 'Strategic Reserve · operation'],
     EXP_INSURANCE: ['exp', 'Insurance'],
     EXP_ADMIN: ['exp', 'Administration'],
     EXP_INFRA: ['exp', 'Pipeline upkeep'],
@@ -53,6 +58,7 @@
     EXP_PENALTY: ['exp', 'Contract penalties'],
     EXP_INTEREST: ['exp', 'Interest'],
     EXP_TAX: ['exp', 'Income tax'],
+    EXP_EXPLORATION: ['exp', 'Exploration: geological evaluation and test wells'],
     EXP_DEP: ['exp', 'Depreciation'],
     EXP_DISPOSAL: ['exp', 'Loss on disposal of assets']
   };

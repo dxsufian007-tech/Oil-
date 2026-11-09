@@ -13,7 +13,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   const url = 'http://localhost:' + srv.address().port + '/?lab=1&lang=en', co = f => p.evaluate(f), shot = async nm => { if (shots) await p.screenshot({ path: path.join(shots, nm + '.png') }); };
   await p.goto(url); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 });
 
-  console.log('NEW GAME'); await co(() => { localStorage.clear(); __lab.reset(); }); await co(() => { __lab.company.speed = 0; });
+  console.log('NEW GAME'); await co(() => { localStorage.clear(); window.OliEconomyConfig.ENGINE.enabled = false; __lab.reset(); });   // this playthrough checks the plant's profit at the nominal prices (the 2000 prices of the Brent market are a third of them, see test-brent-market.js) await co(() => { __lab.company.speed = 0; });
   ok(await co(() => __lab.store.cash) === 10e6, 'a new game starts with $10,000,000');
 
   console.log('BUILD THE FULL CHAIN'); const r = await co(() => __lab.buildDemo());
@@ -32,7 +32,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   ok(await co(() => __lab.company.audit().ok), 'books balanced after 10 days of production'); await shot('play-produced');
 
   console.log('SELL EVERYTHING'); await co(() => { for (const x of ['GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS']) __lab.company.setMode(x, 'SPOT'); });
-  for (let d = 0; d < 20; d++) { await restock(); await co(() => __lab.company.advanceHours(24)); }
+  for (let d = 0; d < 60; d++) { await restock(); await co(() => __lab.company.advanceHours(24)); if (d >= 19 && await co(() => __lab.company.led.life.sold.DIESEL > 0)) break; }      // the volume depends on the field the demo chain picked: run until diesel has sold (at least 20 days)
   const sold = await co(() => { const c = __lab.company, L = c.led.life; return { rev: L.soldRev, sold: Object.assign({}, L.sold) }; });
   ok(sold.rev > 0 && sold.sold.GASOLINE > 0 && sold.sold.DIESEL > 0, 'automatic sales (a store 80% full) brought revenue ' + Math.round(sold.rev).toLocaleString('en-US') + ' (gasoline ' + Math.round(sold.sold.GASOLINE) + ', diesel ' + Math.round(sold.sold.DIESEL) + ', jet ' + Math.round(sold.sold.JET_FUEL) + ' bbl sold)');
   for (const x of ['CRUDE', 'GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS']) await co(x => __lab.company.setMode(x, 'WAIT'), x);

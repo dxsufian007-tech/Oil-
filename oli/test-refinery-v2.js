@@ -4,7 +4,7 @@
 const { B, I, E, EC, game, put, pipe } = require('./test-economy-helpers.js'), BC = require('./building-config.js');
 let pass = 0, fail = 0; const CHK = (n, c, x) => { if (c) pass++; else { fail++; console.log('FAIL', n, x === undefined ? '' : JSON.stringify(x)); } };
 const near = (a, b, t) => Math.abs(a - b) <= (t == null ? 1e-6 : t) * Math.max(1, Math.abs(a), Math.abs(b));
-const PRODS = ['GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'], TARGET = 30000, R0 = x => Math.round(x);
+const PRODS = ['GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'], TARGET = 3 * B.DEFS.pump_station_l.params.maxFlow, R0 = x => Math.round(x);
 
 /* layout: three crude tanks, three pumps (10,000 each), a junction, one pipe into the refinery, product tanks */
 function plant(size, cfg) {
@@ -29,19 +29,19 @@ function run(P, days, opts) {
   J.post = (meta, lines) => { const t = meta.type; (postsByType[t] = postsByType[t] || {}); for (const [a, v] of lines) postsByType[t][a] = (postsByType[t][a] || 0) + v; return orig(meta, lines); };
   for (const ct of P.cts) co.buy('CRUDE', opts.crudeEach || 250000, 'A', 'CASH'); co.sync();
   for (const p of ['CRUDE', ...PRODS]) co.setMode(p, 'WAIT'); co.speed = 0; co.sync();
-  const bal0 = Object.assign({}, J.bal), crude0 = co.qty.CRUDE, tank0 = tanksVol(P), phys0 = Object.fromEntries(PRODS.map(p => [p, co.physicalVol(p)])), qty0 = Object.assign({}, co.qty), qty20 = Object.assign({}, co.qty2);
+  const bal0 = Object.assign({}, J.bal), crude0 = (co.qty.CRUDE + co.bq), tank0 = tanksVol(P), phys0 = Object.fromEntries(PRODS.map(p => [p, co.physicalVol(p)])), qty0 = Object.assign({}, co.qty), qty20 = Object.assign({}, co.qty2);
   const rows = []; let effSum = 0, effN = 0; const tot = { processed: 0, products: { GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 }, byproduct: 0, residue: 0, fuel: 0, flared: 0, loss: 0 };
   for (let d = 1; d <= days; d++) {
     s.opLimit = (opts.stopDays || []).includes(d) ? 0 : 1;
-    const t0 = tanksVol(P), q0 = co.qty.CRUDE, row = { day: d, processed: 0, eff: 0 }; let eff = 0, en = 0;
+    const t0 = tanksVol(P), q0 = (co.qty.CRUDE + co.bq), row = { day: d, processed: 0, eff: 0 }; let eff = 0, en = 0;
     for (let h = 0; h < 24; h++) { restock(co); co.advanceHours(1); const L = co.refLast; if (!L) continue;
       row.processed += L.feed; tot.processed += L.feed; for (const k of PRODS) tot.products[k] += L.products[k]; for (const k of ['byproduct', 'residue', 'fuel', 'flared', 'loss']) tot[k] += L[k];
       if (s._eff) { eff += s._eff; en++; } }
-    row.eff = en ? eff / en : 0; effSum += row.eff; effN++; row.tankDrop = t0 - tanksVol(P); row.crudeDrop = q0 - co.qty.CRUDE; rows.push(row);
+    row.eff = en ? eff / en : 0; effSum += row.eff; effN++; row.tankDrop = t0 - tanksVol(P); row.crudeDrop = q0 - (co.qty.CRUDE + co.bq); rows.push(row);
   }
   J.post = orig;
   const bal = J.bal, delta = k => (bal[k] || 0) - (bal0[k] || 0);
-  return { P, co, rows, tot, bal, delta, bal0, postsByType, crude0, crudeNow: co.qty.CRUDE, tank0, tankNow: tanksVol(P), phys0, qty0, qty20, eff: effN ? effSum / effN : 0, target: TARGET * days, power: co.pw.factor };
+  return { P, co, rows, tot, bal, delta, bal0, postsByType, crude0, crudeNow: (co.qty.CRUDE + co.bq), tank0, tankNow: tanksVol(P), phys0, qty0, qty20, eff: effN ? effSum / effN : 0, target: TARGET * days, power: co.pw.factor };
 }
 function report(name, R) {
   console.log('\n== ' + name); console.table(R.rows.map(x => ({ day: x.day, processed: R0(x.processed), tankDrop: R0(x.tankDrop), crudeCounter: R0(x.crudeDrop), eff: +x.eff.toFixed(3) })));
@@ -55,8 +55,8 @@ function CHECKS(tag, R) {
   const t = R.tot, outs = PRODS.reduce((a, k) => a + t.products[k], 0) + t.byproduct + t.residue + t.fuel + t.flared + t.loss;
   CHK(tag + ' mass balance: outputs (products, by-product, residue, fuel, flare, loss) = crude processed', near(outs, t.processed, 1e-6), { outs, processed: t.processed });
   CHK(tag + ' tanks drop = processed = crude counter drop (no double deduction)', near(R.tank0 - R.tankNow, t.processed, 1e-6) && near(R.crude0 - R.crudeNow, t.processed, 1e-6), { tanks: R.tank0 - R.tankNow, counter: R.crude0 - R.crudeNow, processed: t.processed });
-  const debit = ['REFINE_IN', 'PROD_REFINERY'].reduce((a, k) => a + ((R.postsByType[k] || {}).INV_WIP || 0), 0);
-  const credit = Object.keys(R.postsByType).filter(k => k.startsWith('REFINE_') && k !== 'REFINE_IN').reduce((a, k) => a - ((R.postsByType[k] || {}).INV_WIP || 0), 0);
+  const debit = ['REFINE_IN', 'REFINE_IN_BUY', 'PROD_REFINERY'].reduce((a, k) => a + ((R.postsByType[k] || {}).INV_WIP || 0), 0);
+  const credit = Object.keys(R.postsByType).filter(k => k.startsWith('REFINE_') && k !== 'REFINE_IN' && k !== 'REFINE_IN_BUY').reduce((a, k) => a - ((R.postsByType[k] || {}).INV_WIP || 0), 0);
   CHK(tag + ' cost in (crude + refinery operating) = cost out (every barrel cost booked once)', near(debit, credit, 1e-6) || Math.abs(debit - credit) < 1e-3, { debit, credit });
   CHK(tag + ' WIP cleared at the end', Math.abs(R.bal.INV_WIP || 0) < 1e-3, R.bal.INV_WIP);
   CHK(tag + ' ledger audit ok', R.co.audit().ok === true, R.co.audit().errors);
@@ -65,7 +65,7 @@ function CHECKS(tag, R) {
 /* 1. full design load: 30,000 bbl/day, full power */
 let S1;
 { const P = plant('x', fullCfg()); const R = run(P, 5); S1 = R; report('1. الحمل التصميمي الكامل (30,000 برميل/يوم)', R); CHECKS('1', R);
-  CHK('1 processes the full 30,000 bbl/day', near(R.tot.processed, TARGET * 5, 1e-6), R.tot.processed);
+  CHK('1 processes the full feed (3 pumps, 30,000 before the pump upgrade)', near(R.tot.processed, TARGET * 5, 1e-6), R.tot.processed);
   CHK('1 full power: power factor 1', R.power >= 0.999, R.power);
   CHK('1 yields exact (gasoline 45%, diesel 30%)', near(R.tot.products.GASOLINE, R.tot.processed * .45, 1e-6) && near(R.tot.products.DIESEL, R.tot.processed * .30, 1e-6), R.tot.products);
   CHK('1 no physical loss at rate 0; efficiency not booked as loss', R.tot.loss === 0 && R.eff > 0 && R.eff < 1, { loss: R.tot.loss, eff: R.eff }); }
@@ -75,7 +75,7 @@ const P2 = {};
 for (const frac of [0.75, 0.5]) { const P = plant('x', cfgPower(frac)); const R = run(P, 5); P2[frac] = R; report('2. الطاقة المتاحة ' + Math.round(frac * 100) + '% من المطلوب (المصفاة الكبيرة)', R); CHECKS('2.' + frac, R);
   CHK('2.' + frac + ' power factor follows the available power', Math.abs(R.power - frac) < 0.05, R.power);
   CHK('2.' + frac + ' efficiency falls with the power (not a loss)', R.eff < S1.eff - 1e-9, { eff: R.eff, full: S1.eff });
-  CHK('2.' + frac + ' processing capacity is not limiting here: throughput stays 30,000 and yields are unchanged', near(R.tot.processed, TARGET * 5, 1e-6) && near(R.tot.products.GASOLINE, R.tot.processed * .45, 1e-6), R.tot.processed); }
+  CHK('2.' + frac + ' processing capacity is not limiting here: throughput stays at the feed rate and yields are unchanged', near(R.tot.processed, TARGET * 5, 1e-6) && near(R.tot.products.GASOLINE, R.tot.processed * .45, 1e-6), R.tot.processed); }
 
 /* 2b. the same power cut where capacity binds (refinery_s, 5,000 bbl/day nameplate): efficiency limits what is taken in, the rest stays in the tanks */
 const SMALL = {};
@@ -114,7 +114,7 @@ CHK('2b efficiency limits the crude taken in: less power, less processed', SMALL
 /* 8. physical balance = ledger balance: crude in = outputs; ledger cost moved out of WIP = cost booked in */
 { const R = S1; const costIn = (R.postsByType.REFINE_IN || {}).INV_WIP || 0, costOut = R.delta('INV_GASOLINE') + R.delta('INV_DIESEL') + R.delta('INV_JET_FUEL') + R.delta('INV_GAS') + R.delta('INV_BYPRODUCT') + R.delta('INV_RESIDUE') + R.delta('EXP_FUEL') + R.delta('EXP_LOSS') - ((R.postsByType.PROD_REFINERY || {}).INV_WIP || 0) * 0;
   CHK('8 physical crude in = products + by-product + residue + fuel + flare + loss', near(PRODS.reduce((a, k) => a + R.tot.products[k], 0) + R.tot.byproduct + R.tot.residue + R.tot.fuel + R.tot.flared + R.tot.loss, R.tot.processed, 1e-6));
-  const dbt = ['REFINE_IN', 'PROD_REFINERY'].reduce((a, k) => a + ((R.postsByType[k] || {}).INV_WIP || 0), 0); CHK('8 ledger cost in = ledger cost out (inventory + fuel + loss)', Math.abs(costOut - dbt) < 1e-3 * Math.max(1, dbt), { costOut, dbt }); }
+  const dbt = ['REFINE_IN', 'REFINE_IN_BUY', 'PROD_REFINERY'].reduce((a, k) => a + ((R.postsByType[k] || {}).INV_WIP || 0), 0); CHK('8 ledger cost in = ledger cost out (inventory + fuel + loss)', Math.abs(costOut - dbt) < 1e-3 * Math.max(1, dbt), { costOut, dbt }); }
 
 /* 9. physical loss is its own line: 2% of the crude processed, efficiency and yields unchanged */
 { const old = BC.REFINERY.physicalLoss; BC.REFINERY.physicalLoss = 0.02; try { const P = plant('x', fullCfg()); const R = run(P, 5); report('9. فاقد فيزيائي 2% (منفصل عن الكفاءة)', R); CHECKS('9', R);

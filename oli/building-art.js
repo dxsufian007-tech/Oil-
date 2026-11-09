@@ -93,6 +93,18 @@
       for (const [a, b] of [[.08, .5], [.92, .5], [.5, .08], [.5, .92]]) p.dot(a, b, .24, 5.4, C.yellow);
       p.cyl(.5, .5, .2, .14, .4, C.steel); p.cyl(.5, .5, .06, .4, .66, '#2f3942'); p.line(.34, .5, .68, .66, .5, .68, C.red, 3.4); p.line(.5, .34, .68, .5, .66, .68, C.red, 3.4);
     },
+    main_manifold(p, o) {                                                         // 3x9: concrete pad, a fat blue header pipe along the long side, NINE small inlet stubs (west, one per tile, yellow flanges + red wheels), THREE big outlet branches (east) each with a gate valve + wheel, control cabin and a gauge
+      const W = o.w, H = o.h; p.flat(.03, .03, W - .03, H - .03, 0, C.pad); p.flat(.2, .12, 1.7, H - .12, .02, '#8c8272');
+      for (let i = 0; i < H; i++) p.line(0, i + .5, .28, 1.05, i + .5, .28, C.pipe, 3.6);                                  // nine inlet stubs from the west edge to the header
+      for (let i = 0; i < H; i++) { p.dot(.04, i + .5, .28, 3.2, C.yellow); p.box(.36, i + .36, .56, i + .64, .1, .3, C.steel); p.cyl(.46, i + .5, .1, .3, .38, C.red); }
+      p.hcyl(1.12, .22, H - .44, 'v', .27, .5, '#5f86a8'); for (let v = 1; v < H; v += 2) p.box(1.0, v - .05, 1.24, v + .05, .2, .5, C.dark); p.dot(1.12, .22, .56, 2.6, '#a9c2d6'); p.dot(1.12, H - .22, .56, 2.6, '#a9c2d6');
+      for (const v of [1.5, 4.5, 7.5]) {                                                                                   // three outlet branches with a gate valve each
+        p.line(1.12, v, .4, W, v, .4, C.pipe, 6.4); p.box(1.8, v - .24, 2.2, v + .24, .12, .5, C.steel, { top: '#a9b4bf' }); p.box(1.9, v - .15, 2.1, v + .15, .5, .74, C.dark);
+        p.line(2.0, v, .74, 2.0, v, 1.02, '#2f3942', 2); p.cyl(2.0, v, .24, 1.0, 1.06, C.red); p.dot(W - .04, v, .4, 3.8, C.yellow); p.dot(2.5, v - .34, .4, 2.2, o.state === 'UNDER_CONSTRUCTION' ? C.yellow : C.green);
+      }
+      p.box(1.85, 2.6, 2.85, 3.4, 0, .78, C.cream, { top: C.roof }); p.box(1.95, 3.38, 2.15, 3.42, .22, .6, C.dark);                       // control cabin between outlets 1 and 2
+      p.box(1.85, 5.6, 2.85, 6.4, 0, .5, C.steel, { top: '#a9b4bf' }); p.cyl(2.35, 6.0, .14, .5, .95, '#2f3942'); p.dot(2.35, 6.0, 1.0, 4, '#f2f0e6');       // pressure gauge on a skid
+    },
     valve_station(p, o) {                                                         // 1x1: pipe run, big gate valve body, stem, red hand wheel, status lamp
       p.flat(.08, .2, .92, .8, 0, '#8c8272'); p.line(0, .5, .26, 1, .5, .26, C.pipe, 5.4);
       p.box(.32, .34, .68, .66, .06, .46, C.steel, { top: '#a9b4bf' }); p.box(.42, .42, .58, .58, .46, .72, C.dark);
@@ -108,6 +120,7 @@
       p.box(.4, 1.45, 3.3, 1.65, 1.0, 1.04, '#c4c9ce'); for (const u of [.5, 1.5, 2.5, 3.2]) p.line(u, 1.45, 1.0, u, 1.45, 1.35, C.yellow, 1.2);
       p.dot(.5, .5, .5, 2.5, C.green);
     },
+    water_pump(p, o) { ART.pump_station(p, o); const W = o.w, H = o.h; p.box(W * .1, H * .1, W * .34, H * .34, .02, .22, '#3f8fb8', { top: '#7fcdee' }); },      // the oil pump with a blue water cap
     pump_station(p, o) {                                                          // 2x2 / 3x2: pad, pump house, one motor+pump set per footprint column, suction/discharge stubs on the W and E ports
       const W = o.w, H = o.h, big = W > 2; p.flat(.03, .03, W - .03, H - .03, 0, C.pad); p.box(.45, .08, W - .45, .7, 0, .62, C.cream, { top: C.roof });
       for (let i = 0; i < W - 1; i++) { const u = .75 + i * (W - 1.5) / Math.max(1, W - 2) * (W > 2 ? 1 : 0) + (W > 2 ? 0 : .25); p.box(u - .3, H - .75, u + .3, H - .2, 0, .34, C.dark); p.hcyl(u - .45, H - .48, .9, 'u', .14, .12, i % 2 ? C.steel : C.blue); p.dot(u, H - .48, .5, 2.2, C.green); }
@@ -122,6 +135,14 @@
       p.cyl(cx, cy, R, .14, hh, '#6f7a84', { top: '#4a545d', band: '#262b31', bandAt: .72 }); p.cyl(cx, cy, R * .95, hh - .04 - (1 - f) * .22, hh - .0, '#555f69'); p.cyl(cx, cy, R * 1.03, hh * .62, hh * .66, '#4a545d');
       const n = 8 + W * 3; for (let k = 0; k < n; k++) { const a0 = k / n * 5.2 - 1.2, a1 = (k + 1) / n * 5.2 - 1.2; p.line(cx + Math.cos(a0) * R * 1.02, cy + Math.sin(a0) * R * 1.02, .14 + k / n * (hh - .14), cx + Math.cos(a1) * R * 1.02, cy + Math.sin(a1) * R * 1.02, .14 + (k + 1) / n * (hh - .14), '#37424d', 1.1); }
       p.line(.35, H - .2, .1, .35, H - .2, hh, 'rgba(25,30,35,.65)', 4); p.line(.35, H - .2, .1, .35, H - .2, .1 + (hh - .1) * f, '#d8962a', 4, { bias: .3 });
+      p.line(W - .05, cy, .24, W + 0, cy, .24, C.pipe, 4.4); p.line(cx, H - .05, .24, cx, H, .24, C.pipe, 4.4); p.dot(cx, cy, hh + .02, 2.4, C.yellow);
+    },
+    water_tank(p, o) {                                                            // NxN: BLUE water tank (steel, light-blue band and water gauge), wind girder, spiral stair, foam dam, gauge strip
+      const W = o.w, H = o.h, cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2 * .92, hh = .62 + .2 * W, f = Math.max(0, Math.min(1, o.fill == null ? .5 : o.fill));
+      p.flat(.03, .03, W - .03, H - .03, 0, '#a59c8a'); p.cyl(cx, cy, R * 1.06, 0, .14, '#b9ae9a');
+      p.cyl(cx, cy, R, .14, hh, '#3f8fb8', { top: '#2c6f94', band: '#1d5273', bandAt: .72 }); p.cyl(cx, cy, R * .95, hh - .04 - (1 - f) * .22, hh - .0, '#7fcdee'); p.cyl(cx, cy, R * 1.03, hh * .62, hh * .66, '#2c6f94');
+      const n = 8 + W * 3; for (let k = 0; k < n; k++) { const a0 = k / n * 5.2 - 1.2, a1 = (k + 1) / n * 5.2 - 1.2; p.line(cx + Math.cos(a0) * R * 1.02, cy + Math.sin(a0) * R * 1.02, .14 + k / n * (hh - .14), cx + Math.cos(a1) * R * 1.02, cy + Math.sin(a1) * R * 1.02, .14 + (k + 1) / n * (hh - .14), '#37424d', 1.1); }
+      p.line(.35, H - .2, .1, .35, H - .2, hh, 'rgba(25,30,35,.65)', 4); p.line(.35, H - .2, .1, .35, H - .2, .1 + (hh - .1) * f, '#bfeaff', 4, { bias: .3 });
       p.line(W - .05, cy, .24, W + 0, cy, .24, C.pipe, 4.4); p.line(cx, H - .05, .24, cx, H, .24, C.pipe, 4.4); p.dot(cx, cy, hh + .02, 2.4, C.yellow);
     },
     gasoline_tank(p, o) {                                                         // NxN: white cylindrical tank, red product band, domed (geodesic-style) fixed roof, rooftop vent, stairs

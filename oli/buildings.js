@@ -56,26 +56,36 @@
   define({ id: 'oil_well', name: 'Oil Well', category: 'EXTRACTION', section: 'EXTRACTION', family: 'WELL', type: 'well', footprint: [1, 1], cost: CFG.WELL.cost[0], costRange: CFG.WELL.cost, maintenanceCost: CFG.WELL.maint, operatingCost: CFG.WELL.op, buildTime: 20, visual: 'oil_well',
     allowedTerrain: SOLID.concat(['VALLEY']), maxSlope: 8, capacity: { value: CFG.WELL.production[1], unit: 'bbl/day' }, requires: { oilField: true }, rotatable: false,
     connections: anySide('pipe', 'out', 'OIL_OUT', 1, 1).map(c => Object.assign(c, { product: P.CRUDE })) });
-  for (const k of ['S', 'L']) {
+  for (const k of ['S', 'L', 'C']) {
     const c = CFG.PUMP[k]; define({ id: c.id, name: c.name, category: 'EXTRACTION', section: 'EXTRACTION', family: 'PUMP', type: 'pump', size: k, footprint: [c.w, c.h], cost: c.cost, maintenanceCost: c.maint, operatingCost: c.op, buildTime: k === 'S' ? 30 : 60, visual: 'pump_station',
       allowedTerrain: SOLID, maxSlope: 5, capacity: { value: c.maxFlow, unit: 'bbl/day' }, params: c,
-      connections: [pt('INPUT', 'pipe', 'in', [0, 0], 1, { product: '*' }), pt('OUTPUT', 'pipe', 'out', [c.w - 1, 0], 0, { product: '*' })] });
+      connections: c.inputs ? [].concat(Array.from({ length: c.inputs }, (_, i) => pt('INPUT_' + (i + 1), 'pipe', 'in', [0, i], 1, { group: 'INPUT', product: '*', excl: [P.WATER] })), Array.from({ length: c.outputs }, (_, i) => pt('OUTPUT_' + (i + 1), 'pipe', 'out', [c.w - 1, i], 0, { group: 'OUTPUT', required: false, product: '*', excl: [P.WATER] }))) : [pt('INPUT', 'pipe', 'in', [0, 0], 1, { product: '*', excl: [P.WATER] }), pt('OUTPUT', 'pipe', 'out', [c.w - 1, 0], 0, { product: '*', excl: [P.WATER] })] });
   }
+  for (const k of ['S', 'L']) {                                       // water pumps: one in, one out, WATER only (product-specific ports keep water and oil networks apart)
+    const c = CFG.WATER_PUMP[k]; define({ id: c.id, name: c.name, category: 'WATER', section: 'WATER', family: 'WATER_PUMP', type: 'pump', size: k, footprint: [c.w, c.h], cost: c.cost, maintenanceCost: c.maint, operatingCost: c.op, buildTime: k === 'S' ? 25 : 50, visual: 'water_pump', product: P.WATER,
+      allowedTerrain: SOLID, maxSlope: 5, capacity: { value: c.maxFlow, unit: 'bbl/day' }, params: c, connections: [pt('INPUT', 'pipe', 'in', [0, 0], 1, { product: P.WATER }), pt('OUTPUT', 'pipe', 'out', [c.w - 1, 0], 0, { required: false, product: P.WATER })] }); }
   define({ id: 'valve', name: 'Valve', category: 'PIPELINE', section: 'PIPELINE', family: 'VALVE', type: 'valve', footprint: [1, 1], cost: CFG.VALVE.cost, maintenanceCost: CFG.VALVE.maint, operatingCost: CFG.VALVE.op, buildTime: 10, visual: 'valve_station',
     allowedTerrain: SOLID.concat(['VALLEY']), maxSlope: 6, capacity: { value: CFG.VALVE.maxFlow, unit: 'bbl/day' }, params: CFG.VALVE,
     connections: [pt('IN', 'pipe', 'in', [0, 0], 1, { product: '*' }), pt('OUT', 'pipe', 'out', [0, 0], 0, { product: '*' })] });
   define({ id: 'junction', name: 'Junction', category: 'PIPELINE', section: 'PIPELINE', family: 'JUNCTION', type: 'junction', footprint: [1, 1], cost: CFG.JUNCTION.cost, maintenanceCost: CFG.JUNCTION.maint, operatingCost: CFG.JUNCTION.op, buildTime: 8, visual: 'junction',
     allowedTerrain: SOLID.concat(['VALLEY']), maxSlope: 8, capacity: { value: CFG.JUNCTION.maxTotalFlow, unit: 'bbl/day' }, rotatable: false, params: CFG.JUNCTION,
     connections: [0, 1, 2, 3].map(s => pt('PORT_' + SIDE_NAME[s], 'pipe', 'both', [0, 0], s, { group: 'JUNCTION', required: false, product: '*' })) });
-  // tanks (crude + three products + gas): ports INPUT on west / north, OUTPUT on east / south
+  { const M = CFG.MANIFOLD, rows = [1, 4, 7]; define({ id: M.id, name: M.name, category: 'PIPELINE', section: 'PIPELINE', family: 'MANIFOLD', type: 'junction', footprint: [M.w, M.h], cost: M.cost, maintenanceCost: M.maint, operatingCost: M.op, buildTime: 40, visual: 'main_manifold',
+    allowedTerrain: SOLID, maxSlope: 5, capacity: { value: M.maxTotalFlow, unit: 'bbl/day' }, params: M,
+    connections: [].concat(Array.from({ length: M.inputs }, (_, i) => pt('INPUT_' + (i + 1), 'pipe', 'in', [0, i], 1, { group: 'INPUT', product: '*' })), Array.from({ length: M.outputs }, (_, i) => pt('OUTPUT_' + (i + 1), 'pipe', 'out', [M.w - 1, rows[i]], 0, { group: 'OUTPUT', required: false, product: '*' }))) }); }   // Stage 5: nine inputs on the west side, three independent outputs on the east side; the junction simulation (capacity-aware split) is reused
+  // tanks (crude + three products + gas): every side (north, south, east, west) has an INPUT and an OUTPUT.  The four original ports keep their ids and cells
+  // (INPUT_W, INPUT_N, OUTPUT_E, OUTPUT_S), so every saved pipeline still ends where it did; the four new ones (INPUT_E, INPUT_S, OUTPUT_W, OUTPUT_N) use the other cell of the same side.
+  const other = n => { const m = mid(n); return m > 0 ? m - 1 : Math.min(1, n - 1); };
   const tankPorts = (w, h, prod, gas) => [pt('INPUT_W', 'pipe', 'in', [0, mid(h)], 1, { group: 'INPUT', product: prod }), pt('INPUT_N', 'pipe', 'in', [mid(w), 0], 3, { group: 'INPUT', product: prod }),
-    pt('OUTPUT_E', 'pipe', 'out', [w - 1, mid(h)], 0, { group: 'OUTPUT', required: false, product: prod }), pt('OUTPUT_S', 'pipe', 'out', [mid(w), h - 1], 2, { group: 'OUTPUT', required: false, product: prod })];
-  const VIS = { CRUDE: 'crude_tank', GASOLINE: 'gasoline_tank', DIESEL: 'diesel_tank', JET_FUEL: 'jet_tank', GAS: 'gas_sphere' };
+    pt('OUTPUT_E', 'pipe', 'out', [w - 1, mid(h)], 0, { group: 'OUTPUT', required: false, product: prod }), pt('OUTPUT_S', 'pipe', 'out', [mid(w), h - 1], 2, { group: 'OUTPUT', required: false, product: prod }),
+    pt('INPUT_E', 'pipe', 'in', [w - 1, other(h)], 0, { group: 'INPUT', product: prod }), pt('INPUT_S', 'pipe', 'in', [other(w), h - 1], 2, { group: 'INPUT', product: prod }),
+    pt('OUTPUT_W', 'pipe', 'out', [0, other(h)], 1, { group: 'OUTPUT', required: false, product: prod }), pt('OUTPUT_N', 'pipe', 'out', [other(w), 0], 3, { group: 'OUTPUT', required: false, product: prod })];
+  const VIS = { WATER: 'water_tank', CRUDE: 'crude_tank', GASOLINE: 'gasoline_tank', DIESEL: 'diesel_tank', JET_FUEL: 'jet_tank', GAS: 'gas_sphere' };
   for (const fam of Object.keys(CFG.TANK)) { const F = CFG.TANK[fam];
-    for (const k of ['S', 'M', 'L']) { const z = F.sizes[k], gas = fam === 'GAS';
-      define({ id: F.prefix + '_' + k.toLowerCase(), name: F.name + ' (' + { S: 'small', M: 'medium', L: 'large' }[k] + ')', category: gas ? 'PRODUCT_STORAGE' : fam === 'CRUDE' ? 'CRUDE_STORAGE' : 'PRODUCT_STORAGE', section: fam === 'CRUDE' ? 'CRUDE STORAGE' : 'PRODUCT STORAGE', family: gas ? 'GAS_STORAGE' : 'TANK', type: gas ? 'gas' : 'tank', product: P[fam], size: k,
-        footprint: [z.w, z.h], cost: z.base + z.cap * F.perBbl, baseCost: z.base, costPerBarrel: F.perBbl, maintenanceCost: z.maint, operatingCost: z.op, buildTime: 25 + z.w * 8, visual: VIS[fam], clearance: gas || k === 'L' ? 1 : 0,
-        allowedTerrain: STABLE, maxSlope: gas ? 3 : 4, capacity: { value: z.cap, unit: gas ? 'boe' : 'bbl' }, params: Object.assign({ maxPressure: gas ? F.maxPressure[k] : 0 }, z), connections: tankPorts(z.w, z.h, P[fam]) }); } }
+    for (const k of ['S', 'M', 'L', 'C']) { const z = F.sizes[k], gas = fam === 'GAS'; if (!z) continue;
+      define({ id: F.prefix + '_' + k.toLowerCase(), name: F.name + ' (' + { S: 'small', M: 'medium', L: 'large', C: 'central' }[k] + ')', category: gas ? 'PRODUCT_STORAGE' : fam === 'CRUDE' ? 'CRUDE_STORAGE' : fam === 'WATER' ? 'WATER' : 'PRODUCT_STORAGE', section: fam === 'CRUDE' ? 'CRUDE STORAGE' : fam === 'WATER' ? 'WATER' : 'PRODUCT STORAGE', family: gas ? 'GAS_STORAGE' : 'TANK', type: gas ? 'gas' : 'tank', product: P[fam], size: k,
+        footprint: [z.w, z.h], cost: z.base + z.cap * (z.perBbl || F.perBbl), baseCost: z.base, costPerBarrel: z.perBbl || F.perBbl, maintenanceCost: z.maint, operatingCost: z.op, buildTime: 25 + z.w * 8, visual: VIS[fam], clearance: gas || k === 'L' || k === 'C' ? 1 : 0,
+        allowedTerrain: STABLE, maxSlope: gas ? 3 : 4, capacity: { value: z.cap, unit: gas ? 'boe' : 'bbl' }, params: Object.assign({ maxPressure: gas ? F.maxPressure[k] : 0 }, z), connections: tankPorts(z.w, z.h, P[fam]).concat(fam === 'CRUDE' && k !== 'S' ? [pt('WATER_OUT', 'pipe', 'out', [z.w - 1, z.h - 1], 0, { group: 'WATER', required: false, product: P.WATER })] : []) }); } }   // the bottom outlet of an oil tank (M / L / C): only the water that settled at the bottom can leave through it
   define({ id: 'separator', name: 'Separator', category: 'PROCESSING', section: 'PROCESSING', family: 'SEPARATOR', type: 'separator', footprint: [CFG.SEPARATOR.w, CFG.SEPARATOR.h], cost: CFG.SEPARATOR.cost, maintenanceCost: CFG.SEPARATOR.maint, operatingCost: CFG.SEPARATOR.op, buildTime: 60, visual: 'separator',
     allowedTerrain: SOLID, maxSlope: 3, capacity: { value: CFG.SEPARATOR.cap, unit: 'bbl/day' }, params: CFG.SEPARATOR,
     connections: [pt('MIXTURE_IN', 'pipe', 'in', [0, 1], 1, { product: P.CRUDE }), pt('OIL_OUT', 'pipe', 'out', [CFG.SEPARATOR.w - 1, 1], 0, { product: P.CRUDE }), pt('GAS_OUT', 'pipe', 'out', [2, 0], 3, { required: false, product: P.GAS }), pt('WATER_OUT', 'pipe', 'out', [2, CFG.SEPARATOR.h - 1], 2, { required: false, product: P.WATER })] });
@@ -105,19 +115,59 @@
   function cellsOf(def, x, y, r) { const [w, h] = dimsOf(def, r), o = []; for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) o.push([x + i, y + j]); return o; }
   // world coordinates of the connection points of an instance (the point = the footprint cell + side; access = the tile outside)
   function worldPoints(b) {
-    const def = DEFS[b.d]; return connectionsOf(def, b.r).map(c => ({ buildingId: b.id, def: b.d, id: c.id, kind: c.kind, role: c.role, side: c.side, group: c.group || null, required: c.required, reserved: !!c.reserved, product: c.product || null,
+    const def = DEFS[b.d]; return connectionsOf(def, b.r).map(c => ({ buildingId: b.id, def: b.d, id: c.id, kind: c.kind, role: c.role, side: c.side, group: c.group || null, required: c.required, reserved: !!c.reserved, product: c.product || null, excl: c.excl || null,
       x: b.x + c.cell[0], y: b.y + c.cell[1], ax: b.x + c.ax, ay: b.y + c.ay }));
   }
   const productOk = (a, b) => !a || !b || a === '*' || b === '*' || a === b;
-  const compatible = (a, b) => a.kind === b.kind && (a.role === 'both' || b.role === 'both' || a.role !== b.role) && productOk(a.product, b.product);
+  const refuses = (x, y) => !!(x.excl && y.product && x.excl.indexOf(y.product) >= 0);        // a port can refuse a product outright (oil pumps refuse WATER: water never enters an oil pump)
+  const compatible = (a, b) => a.kind === b.kind && (a.role === 'both' || b.role === 'both' || a.role !== b.role) && productOk(a.product, b.product) && !refuses(a, b) && !refuses(b, a);
+
+  /* ---------------------------------------------------------------- SECTOR RULES: what may be built where (the 17 functional sectors of the world). ONE table, checked by validate() like terrain and zones.
+   * Every building id is allowed in some sector kinds only; the pipe / valve / junction family is shared. A refusal names the sector and where the building belongs. mult = a build-cost advantage of the sector (NOT enabled: every table is empty until the owner approves any figure). */
+  const IDS = Object.keys(DEFS), pick = re => IDS.filter(k => re.test(k)), SHARED = ['valve', 'junction'];
+  const OFFSHORE_FAMILY = ['offshore_platform', 'offshore_support', 'subsea_pipe', 'coastal_link'];   // reserved ids for the future sea buildings
+  const SECTOR_RULES = {
+    A: { allow: SHARED.concat(['oil_well', 'pump_station_s', 'pump_station_l', 'pump_station_c', 'water_pump_s', 'water_pump_l', 'main_manifold', 'separator', 'crude_tank_s', 'crude_tank_m']), mult: {},
+      perks: ['حقول نفط كثيفة داخل القطاع فقط', 'مساحة للتوسع في الحفر ومحطات التجميع', 'احتياطي وعمق وضغط وجودة تختلف من قطاع لآخر'], needs: ['البئر داخل حقل نفط مكتشف وقابل للحفر', 'خزانات التجميع الصغيرة والمتوسطة فقط (الكبيرة في B)'] },
+    B: { allow: SHARED.concat(pick(/^crude_tank_/), pick(/^(gasoline|diesel|jet)_tank_/), pick(/^gas_sphere_/), pick(/^pump_station_/), ['main_manifold']), mult: {},
+      perks: ['مزارع خزانات بكل أنواعها ومحطات ضخ وتوزيع', 'استقبال النفط الخام والمنتجات', 'مساحة مناسبة للتوسع'], needs: ['لا آبار ولا مصافٍ في هذا القطاع'] },
+    C: { allow: SHARED.concat(pick(/^pump_station_/), pick(/^crude_tank_/), pick(/^(gasoline|diesel|jet)_tank_/), pick(/^gas_sphere_/)), mult: {},
+      perks: ['خزانات استراتيجية مستقلة عن التخزين التجاري', 'لا بيع تلقائي: السحب والإيداع بقرارك', 'مخزونه منفصل محاسبياً'], needs: ['الخزانات داخل منطقة الاحتياطي المفتوحة فقط'] },
+    D: { allow: SHARED.concat(pick(/^refinery_/), ['separator', 'main_manifold'], pick(/^pump_station_/), pick(/^water_pump_/), pick(/^(gasoline|diesel|jet)_tank_[sm]$/), pick(/^gas_sphere_[sm]$/)), mult: {},
+      perks: ['مصافٍ ووحدات فصل ومعالجة', 'مساحة مسوّاة للمرافق الصناعية', 'موقع مخصص للصناعة والتكرير'], needs: ['المصفاة داخل منطقة المصافي المسوّاة (المستطيل البنفسجي)', 'تحتاج نفطاً خاماً وماءً ومواد تشغيل لتعمل', 'خزانات المنتجات الصغيرة والمتوسطة بجوار المصفاة (الكبيرة في B)'] },
+    E: { allow: SHARED.concat(pick(/^water_pump_/), pick(/^water_tank_/), pick(/^pump_station_/), ['separator']), mult: {},
+      perks: ['محطات سحب وضخ وتخزين ومعالجة المياه', 'تزويد القطاعات المحتاجة للمياه', 'معالجة المياه المصاحبة وإعادة تدوير مياه الصناعة'], needs: ['مضخات الماء على مياه أو أرض مناسبة'] },
+    /* F1 is prepared, not filled: the OFFSHORE family below is reserved for the sea buildings of a later phase (none exists yet, so nothing can be built here today). A def with domain:'sea' is built on sea tiles ONLY and the sector F alone lists it; land buildings are refused here. No extraction or sea economy is implemented. */
+    F: { allow: OFFSHORE_FAMILY, mult: {}, perks: ['منصات استخراج بحرية', 'منشآت مساندة بحرية', 'أنابيب بحرية ومحطات ربط ساحلية', 'قواعد بناء بحرية منفصلة عن اليابسة'], needs: ['للمنشآت البحرية فقط (على الماء)', 'المباني البرية غير مسموحة هنا', 'تصميم المنشآت البحرية في مرحلة لاحقة'] }
+  };
+  const SECTOR_HOME = k => { const o = []; for (const q in SECTOR_RULES) if (SECTOR_RULES[q].allow.indexOf(k) >= 0 && SHARED.indexOf(k) < 0) o.push(q); return o; };
+  const sectorsOfFootprint = (world, x, y, w, h) => { const set = new Set(); for (const [i, j] of [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1], [(w - 1) >> 1, (h - 1) >> 1]]) set.add(world.sectorAt(x + i, y + j)); return [...set]; };
 
   /* ---------------------------------------------------------------- terrain source (the interface to Phase 1) */
   // TerrainSource = { W, H, tile(x,y) -> {terrain, slope} | null (not loaded), terrain: { NAME: { buildable, buildCost, maxSlope } }, slopeK,
   //                   oilFieldAt(x,y) -> site | null, stateOf(siteId), zoneAt(kind,x,y,w,h) -> zone | null }
   function fromWorld(world, CFG) {
     CFG = CFG || (typeof OliWorld !== 'undefined' ? OliWorld.CONFIG : require('./worldmap.js').CONFIG);
-    return { W: world.W, H: world.H, tile: (x, y) => world.tile(x, y), terrain: CFG.TERRAIN, slopeK: CFG.SLOPE_K, oilFieldAt: (x, y) => world.oilFieldAt(x, y), stateOf: id => world.stateOf(id),
-      zoneAt: (kind, x, y, w, h) => { if (kind !== 'REFINERY') return null; for (const z of world.refineryZones(world.regionIdAt(x, y))) if (x >= z.x && y >= z.y && x + w <= z.x + z.w && y + h <= z.y + z.h) return z; return null; }, site: id => world.siteById(id) };
+    return { W: world.W, H: world.H, tile: (x, y) => { const t = world.tile(x, y); if (!t || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU' || !world.reserveZoneOfWorld) return t; const z = world.reserveZoneOfWorld();
+        return z && x >= z.x && y >= z.y && x < z.x + z.w && y < z.y + z.h && (t.slope > 0 || t.terrain === 'VALLEY' || t.terrain === 'SAND_DUNES') ? Object.assign({}, t, { terrain: 'FLAT_DESERT', slope: 0 }) : t; },   // the reserve land is graded level: slopes, valley floor and dunes inside it count as flat desert for building
+      terrain: CFG.TERRAIN, slopeK: CFG.SLOPE_K, oilFieldAt: (x, y) => world.oilFieldAt(x, y), stateOf: id => world.stateOf(id),
+      /* the Strategic Reserve zone: a storage-only place. Tanks fully inside the AREA OPEN SO FAR become reserve tanks (b.rs = 1); other plant is refused inside it; ground outside it is untouched */
+      reserve: () => (world.reserveZoneOfWorld ? world.reserveZoneOfWorld() : null), reserveLevel: () => 0, region: () => (world.reserveRegionOfWorld ? world.reserveRegionOfWorld() : null),
+      /* the reserve LAND is the whole reserve region when the world has one (C3), else the fixed zone. Inside it only reserve tanks (in the OPEN area of the zone), pumps, valves and junctions may be built; wells, refineries and every commercial building are refused. Checked at placement only: what is already built stays. */
+      reserveRule: function (def, x, y, w, h) { const z = this.reserve(), R = this.region && this.region(), land = R || z; if (!land || !(x < land.x + land.w && x + w > land.x && y < land.y + land.h && y + h > land.y)) return null;
+        if (def.product === P.WATER && def.type === 'tank') return { ok: false, reason: 'reserveOnly' };       // water tanks are commercial: outside the reserve land (water PUMPS may stand inside to draw the settled water of reserve tanks)
+        if (def.type === 'tank' || def.type === 'gas') { if (!z) return { ok: false, reason: 'reserveBounds' }; const L = z.levels[Math.max(0, Math.min(z.levels.length - 1, this.reserveLevel() | 0))]; return x >= L.x && y >= L.y && x + w <= L.x + L.w && y + h <= L.y + L.h ? { ok: true } : { ok: false, reason: 'reserveBounds' }; }
+        return def.type === 'pump' || def.type === 'valve' || def.type === 'junction' ? { ok: true, infra: true } : { ok: false, reason: 'reserveOnly' }; },
+      sectorInfo: (x, y) => { const c = world.sectorAt ? world.sectorAt(x, y) : null, z = c && world.sector(c); return z ? { code: c, kind: z.kind, name: z.name, desc: z.desc, perks: SECTOR_RULES[z.kind].perks, needs: SECTOR_RULES[z.kind].needs } : null; },
+      /* the sector rule: every sector the footprint touches must allow the building (the pipe / valve / junction family is shared). Inside the reserve region the reserve rule has the last word. */
+      sectorRule: world.sectors && world.sectors.length ? function (def, defId, x, y, w, h) {
+        const codes = sectorsOfFootprint(world, x, y, w, h), z0 = world.sector(codes[0]); if (!z0) return null; const info = this.sectorInfo(x, y);
+        for (const c of codes) { const z = world.sector(c); if (!z) return null; const rule = SECTOR_RULES[z.kind];
+          if (rule.allow.indexOf(defId) < 0) { const R = this.region && this.region(); if (z.kind === 'C' && R && x >= R.x && y >= R.y && x + w <= R.x + R.w && y + h <= R.y + R.h) continue; return { ok: false, reason: 'sectorForbidden', sector: Object.assign({}, info, { code: c, kind: z.kind, name: z.name }), allowedIn: SECTOR_HOME(defId) }; }
+          if (z.kind === 'C' && (def.type === 'tank' || def.type === 'gas')) { const R = this.region && this.region(); if (!(R && x >= R.x && y >= R.y && x + w <= R.x + R.w && y + h <= R.y + R.h)) return { ok: false, reason: 'sectorReserveOnly', sector: Object.assign({}, info, { code: c, kind: z.kind, name: z.name }), allowedIn: ['C'] }; } }
+        if (codes.length > 1 && new Set(codes.map(c => world.sector(c).kind)).size > 1 && SHARED.indexOf(defId) < 0) return { ok: false, reason: 'sectorStraddle', sector: info, allowedIn: SECTOR_HOME(defId) };
+        const m = SECTOR_RULES[z0.kind].mult[defId]; return { ok: true, sector: info, mult: m || 1 }; } : undefined,
+      zoneAt: (kind, x, y, w, h) => { if (kind !== 'REFINERY') return null; for (const z of world.refineryZones(world.regionIdAt(x, y))) if (x >= z.x && y >= z.y && x + w <= z.x + z.w && y + h <= z.y + z.h) return z; return null; }, site: id => world.siteById(id), take: (id, bbl) => world.take(id, bbl), fieldState: id => world.stateOf(id), liftFactor: id => world.liftFactor(id), injectionCostDay: () => world.injectorsTotal() * CFG.PRODUCTION.INJ_OP_DAY };
   }
 
   /* ---------------------------------------------------------------- the store (instances + occupancy) */
@@ -153,12 +203,13 @@
       const ts = this.ts, [w, h] = dimsOf(def, r), cells = cellsOf(def, x, y, r), conns = connectionsOf(def, r), res = { ok: false, state: 'INVALID', kind: null, reason: null, cells, cost: 0, w, h, r, def: defId, connections: [], termMult: 1 };
       const fail = (kind, reason, extra) => Object.assign(res, { kind, reason }, extra || {});
       for (const [cx, cy] of cells) if (!this.inb(cx, cy)) return fail('OUT_OF_BOUNDS', 'outside');
+      if (ts.sectorRule) { const sr = ts.sectorRule(def, defId, x, y, w, h); if (sr) { if (!sr.ok) return fail('SECTOR', sr.reason, { sector: sr.sector, allowedIn: sr.allowedIn }); res.sector = sr.sector; if (sr.mult && sr.mult !== 1) res.sectorMult = sr.mult; } }
       let mult = 0, worst = 0;
       for (const [cx, cy] of cells) {                                                // terrain, slope
         const t = ts.tile(cx, cy); if (!t) { res.state = 'LOADING'; return fail('LOADING', 'notLoaded'); }
-        const td = ts.terrain[t.terrain]; if (!td.buildable) return fail('TERRAIN', 'water', { at: [cx, cy] });
-        if (!def.allowedTerrain.includes(t.terrain)) return fail('TERRAIN', 'terrain', { at: [cx, cy], terrain: t.terrain });
-        if (t.slope > Math.min(def.maxSlope, td.maxSlope) * ts.slopeK) return fail('TERRAIN', 'slope', { at: [cx, cy] });
+        const td = ts.terrain[t.terrain], sea = def.domain === 'sea'; if (sea ? td.buildable : !td.buildable) return fail('TERRAIN', sea ? 'landForSea' : 'water', { at: [cx, cy] });      // a sea building stands on water only (the sea is the WATER_WADI terrain of this world), every land building on land only
+        if (!sea && !def.allowedTerrain.includes(t.terrain)) return fail('TERRAIN', 'terrain', { at: [cx, cy], terrain: t.terrain });
+        if (!sea && t.slope > Math.min(def.maxSlope, td.maxSlope) * ts.slopeK) return fail('TERRAIN', 'slope', { at: [cx, cy] });
         mult += td.buildCost; worst = Math.max(worst, t.slope);
       }
       res.termMult = mult / cells.length;
@@ -170,6 +221,7 @@
         if (o.id === opts.ignoreId) continue; const od = DEFS[o.d]; if (!od.clearance) continue; const [ow, oh] = dimsOf(od, o.r), c = od.clearance;
         if (x < o.x + ow + c && x + w > o.x - c && y < o.y + oh + c && y + h > o.y - c) return fail('CLEARANCE', 'tooClose', { with: o.id });
       }
+      if (ts.reserveRule) { const rr = ts.reserveRule(def, x, y, w, h); if (rr) { if (!rr.ok) return fail('ZONE', rr.reason, { zone: 'RESERVE' }); if (!rr.infra) res.reserve = true; } }
       if (def.zone) { const z = ts.zoneAt(def.zone, x, y, w, h); if (!z) return fail('ZONE', 'needsZone', { zone: def.zone }); res.zoneId = z.id || null; }
       if (def.requires.oilField) {
         const s = ts.oilFieldAt(x, y); if (!s || s.kind !== 'FIELD') return fail('OIL', 'noOilField');
@@ -188,7 +240,7 @@
       for (const c of conns) {
         const ax = x + c.ax, ay = y + c.ay, st = { id: c.id, kind: c.kind, role: c.role, side: c.side, x: x + c.cell[0], y: y + c.cell[1], ax, ay, ok: true, reason: null, required: c.required && !c.reserved, group: c.group || null, reserved: !!c.reserved };
         if (c.kind === 'link') { st.ok = !!res.linkTo; } else if (!this.inb(ax, ay)) { st.ok = false; st.reason = 'outside'; }
-        else { const t = ts.tile(ax, ay); if (!t) { st.ok = true; st.reason = 'notLoaded'; } else if (!ts.terrain[t.terrain].buildable) { st.ok = false; st.reason = 'water'; }
+        else { const t = ts.tile(ax, ay); if (!t) { st.ok = true; st.reason = 'notLoaded'; } else if (def.domain === 'sea' ? ts.terrain[t.terrain].buildable : !ts.terrain[t.terrain].buildable) { st.ok = false; st.reason = def.domain === 'sea' ? 'landForSea' : 'water'; }
           else { const o = this.at(ax, ay);
             if (o && o.id !== opts.ignoreId) { const facing = worldPoints(o).filter(p => p.x === ax && p.y === ay && p.side === OPPOSITE[c.side]); const ok2 = facing.some(p => compatible({ kind: c.kind, role: c.role, product: c.product }, p)); st.ok = ok2; st.reason = ok2 ? 'docked' : 'blocked';
               if (!ok2 && !c.reserved && facing.some(p => compatible({ kind: c.kind, role: c.role }, p))) { st.reason = 'product'; res.badProduct = { port: c.id, wants: c.product, has: facing[0].product }; } }
@@ -199,7 +251,7 @@
       for (const [, g] of groups) if (!g.any) allOk = false;
       if (res.badProduct) return fail('PRODUCT', 'invalidProduct');
       if (!allOk) return fail('CONNECTION', 'connectionBlocked');
-      res.cost = Math.round((this.priceOf ? this.priceOf(def, x, y) : def.cost) * (res.termMult || 1)); if (def.zone === null && worst > 0) res.cost = Math.round(res.cost * (1 + worst / 40));
+      res.cost = Math.round((this.priceOf ? this.priceOf(def, x, y) : def.cost) * (res.termMult || 1) * (res.sectorMult || 1)); if (def.zone === null && worst > 0) res.cost = Math.round(res.cost * (1 + worst / 40));
       if (this.cash < res.cost && !opts.ignoreCash) { res.state = 'UNAFFORDABLE'; res.reason = 'cash'; res.ok = false; res.kind = null; return res; }
       res.ok = true; res.state = 'VALID'; return res;
     }
@@ -207,7 +259,7 @@
     place(defId, x, y, r, opts) {
       opts = opts || {}; const v = this.validate(defId, x, y, r, opts); if (!v.ok) return v;
       const def = DEFS[defId], b = { id: this.nextId++, d: defId, x, y, r: v.r, st: STATUS.UNDER_CONSTRUCTION, c: 1, t0: this.time };
-      if (v.linkTo) b.link = v.linkTo; if (v.field) b.field = v.field;
+      if (v.linkTo) b.link = v.linkTo; if (v.field) b.field = v.field; if (v.reserve) b.rs = 1;
       if (opts.instant) b.st = STATUS.OPERATIONAL;
       this.items.set(b.id, b); this._index(b, true); if (this.cash !== Infinity) this.cash -= v.cost; return { ok: true, building: b, cost: v.cost, verdict: v };
     }
@@ -216,6 +268,7 @@
     }
     move(id, x, y, r) {                                                              // drag an existing building: validated against everything except itself
       const b = this.items.get(id); if (!b) return { ok: false, reason: 'nothing' }; const v = this.validate(b.d, x, y, r == null ? b.r : r, { ignoreId: id, ignoreCash: true }); if (!v.ok) return v;
+      if (!!v.reserve !== !!b.rs) return { ok: false, state: 'INVALID', kind: 'ZONE', reason: 'reserveMove' };      // a tank never changes system by being dragged: its stock would silently change owner
       this._index(b, false); b.x = x; b.y = y; b.r = v.r; this._index(b, true); return { ok: true, building: b };
     }
 
@@ -228,6 +281,7 @@
     }
     demolish(id, confirm) {                                                         // confirm = { building: true, pipes: true } ; a missing flag refuses, nothing changes
       const plan = this.demolishPlan(id, confirm && confirm.pipeSet); if (!plan) return { ok: false, reason: 'nothing' };
+      { const t = this.items.get(id); if (t && t.rs && t.s && t.s.vol > 1) return { ok: false, reason: 'reserveNotEmpty', plan }; }      // a reserve tank holding oil is never demolished (its stock and its book value would vanish)
       if (!confirm || !confirm.building) return { ok: false, reason: 'needsConfirm', plan };
       if (plan.needsPipeConfirm && !confirm.pipes) return { ok: false, reason: 'needsPipeConfirm', plan };
       const b = this.items.get(id); this._index(b, false); this.items.delete(id);
@@ -279,18 +333,18 @@
     }
 
     /* ---- save / load: compact, versioned, validated on load (nothing is trusted) */
-    toJSON() { return { v: 2, next: this.nextId, time: this.time, b: this.list().map(b => [b.id, b.d, b.x, b.y, b.r, b.st, +b.c.toFixed(4), b.t0, b.link || 0, b.field || 0, b.s ? JSON.parse(JSON.stringify(b.s)) : null, b.lv || 1]) }; }
+    toJSON() { return { v: 2, next: this.nextId, time: this.time, b: this.list().map(b => [b.id, b.d, b.x, b.y, b.r, b.st, b.c, b.t0, b.link || 0, b.field || 0, b.s ? JSON.parse(JSON.stringify(b.s)) : null, b.lv || 1].concat(b.rs ? [1] : [])) }; }   // rows stay 12 long; only a reserve tank carries a 13th field
     static fromJSON(ts, data, opts) {
       const s = new BuildingStore(ts, opts), rep = { loaded: 0, dropped: [] }; if (!data || (data.v !== 1 && data.v !== 2) || !Array.isArray(data.b)) return { store: s, report: { loaded: 0, dropped: ['badFormat'] } };
       s.time = data.time || 0; let maxId = 0;
-      for (const a of data.b) { const [id, d, x, y, r, st, c, t0, link, field, dyn, lv] = a; const def = DEFS[d];
+      for (const a of data.b) { const [id, d, x, y, r, st, c, t0, link, field, dyn, lv, rs] = a; const def = DEFS[d];
         if (!def || !s.inb(x, y) || s.at(x, y)) { rep.dropped.push(id + ':' + (def ? 'overlap' : 'unknownType')); continue; }
-        const b = { id, d, x, y, r: def.rotatable ? r & 3 : 0, st: STATUS[st] ? st : STATUS.OPERATIONAL, c: Math.min(1, Math.max(0, c)), t0: t0 || 0 }; if (link) b.link = link; if (field) b.field = field; if (dyn && typeof dyn === 'object') b.s = dyn; b.lv = lv || 1;
+        const b = { id, d, x, y, r: def.rotatable ? r & 3 : 0, st: STATUS[st] ? st : STATUS.OPERATIONAL, c: Math.min(1, Math.max(0, c)), t0: t0 || 0 }; if (link) b.link = link; if (field) b.field = field; if (dyn && typeof dyn === 'object') b.s = dyn; b.lv = lv || 1; if (rs) b.rs = 1;
         const cells = cellsOf(def, x, y, b.r); if (cells.some(([cx, cy]) => !s.inb(cx, cy) || s.occ.has(key(s.W, cx, cy)))) { rep.dropped.push(id + ':overlap'); continue; }
         s.items.set(id, b); s._index(b, true); maxId = Math.max(maxId, id); rep.loaded++; }
       s.nextId = Math.max(data.next || 1, maxId + 1); return { store: s, report: rep };
     }
   }
 
-  return { DEFS, ORDER, productOk, CFG, STATUS, SIDES, OPPOSITE, SIDE_NAME, define, dimsOf, rotCell, connectionsOf, cellsOf, worldPoints, compatible, fromWorld, BuildingStore, key };
+  return { DEFS, ORDER, productOk, CFG, STATUS, SIDES, OPPOSITE, SIDE_NAME, define, dimsOf, rotCell, connectionsOf, cellsOf, worldPoints, compatible, refuses, fromWorld, BuildingStore, key, SECTOR_RULES, SECTOR_HOME };
 });

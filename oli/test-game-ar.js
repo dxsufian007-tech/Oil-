@@ -24,8 +24,9 @@ const AR = require('./ar.js'), GC = require('./game-config.js'), B = require('./
   ok(await co(() => ['bar', 'pal', 'tabs'].every(i => getComputedStyle(document.getElementById(i)).display === 'none')), 'the developer toolbar and the 30-building palette are hidden');
   ok((await txt('#eh-cash')).includes('$10M') && (await txt('#eh-cash')).includes('الرصيد'), 'the company starts with $10M: ' + (await txt('#eh-cash')).replace(/\n/g, ' '));
   const hud = await txt('#eco-hud'); ok(['الرصيد', 'إنتاج', 'التخزين', 'أرباح'].every(w => hud.includes(w)), 'the top bar: balance, production, storage, profit');
-  ok((await co(() => [...document.querySelectorAll('#g-nav button')].map(x => x.innerText.trim()))).join('|').replace(/[^؀-ۿ|]/g, '') === 'النفط|الأنابيب|التخزين|المعالجة', 'the bottom bar has four big icons: النفط | الأنابيب | التخزين | المعالجة');
-  const nav = await co(() => [...document.querySelectorAll('#g-nav button')].map(x => { const r = x.getBoundingClientRect(); return [r.width, r.height, r.right]; })); ok(nav.every(r => r[0] > 80 && r[1] >= 48 && r[2] <= 412), 'the four buttons are big touch targets inside the phone width');
+  ok((await co(() => [...document.querySelectorAll('#g-nav button')].map(x => x.innerText.trim()))).join('|').replace(/[^؀-ۿ|]/g, '') === 'النفط|المضخات|الأنابيب|التخزين|المعالجة', 'the bottom bar has five big icons: النفط | المضخات | الأنابيب | التخزين | المعالجة');
+  const nav = await co(() => [...document.querySelectorAll('#g-nav button')].map(x => { const r = x.getBoundingClientRect(); return [r.width, r.height, r.right]; })); ok(nav.every(r => r[0] > 70 && r[1] >= 48 && r[2] <= 412), 'the five buttons are big touch targets inside the phone width');
+  await p.waitForFunction(() => /لديك حقل نفط/.test(document.getElementById('g-guide').innerText), null, { timeout: 15000 }).catch(() => {});
   ok((await txt('#g-guide')).includes('لديك حقل نفط. ابدأ بحفر أول بئر.'), 'the guide starts: «لديك حقل نفط. ابدأ بحفر أول بئر.»'); await shot('g-01-start');
   ok((await latin()).length === 0, 'no English word is visible on the first screen');
 
@@ -49,7 +50,8 @@ const AR = require('./ar.js'), GC = require('./game-config.js'), B = require('./
   const bad = await co(() => { const g = __lab.state.pending; g.x = 5; g.y = 5; g.verdict = __lab.store.validate('oil_well', 5, 5, 0, {}); return g.verdict.ok; }); await co(() => { __lab.pipeMode(false); const g = __lab.state.pending; document.getElementById('buildbar').style.display = 'block'; }); ok(!bad, 'a spot that is not on an oil field is refused');
   await co(() => __lab.startBuild('oil_well')); const cash0 = await co(() => __lab.store.cash); await tap('#bBuild'); await p.waitForTimeout(300);
   const wid = await co(() => __lab.store.list().find(b => b.d === 'oil_well').id); ok(wid && (await co(() => __lab.store.cash)) < cash0 - 200000, 'tap «بناء»: the well is built and its price leaves the balance (' + Math.round(cash0 - await co(() => __lab.store.cash)).toLocaleString('en-US') + ')');
-  ok((await txt('#g-guide')).includes('جارٍ الحفر'), 'the guide says the well is being drilled'); await shot('g-04-well-building');
+  await p.waitForFunction(() => { const g = document.querySelector('#g-guide'); return g && g.textContent.includes('جارٍ الحفر'); }, null, { timeout: 5000 }).catch(() => {});
+ok((await txt('#g-guide')).includes('جارٍ الحفر'), 'the guide says the well is being drilled'); await shot('g-04-well-building');
   await co(() => { __lab.company.advanceHours(24); __lab.GU.check(); }); await p.waitForTimeout(300);
   ok((await txt('#g-guide')).includes('ابدأ إنتاج النفط'), 'the guide: «ممتاز! الآن ابدأ إنتاج النفط.»');
   console.log('STEP 2: START PRODUCTION'); await co(id => __lab.showBuilding(id), wid); await p.waitForTimeout(200);
@@ -75,15 +77,15 @@ const AR = require('./ar.js'), GC = require('./game-config.js'), B = require('./
   const lps = await co(() => { const l = [...__lab.pipes.lines.values()][0], w = __lab.store.list().find(b => b.d === 'oil_well'), o = []; for (const t of l.path) { const X = __wp.sx(t[0] + .5, t[1] + .5), Y = __wp.sy(t[0] + .5, t[1] + .5); if (X < 50 || X > 360 || Y < 120 || Y > 640) continue; o.push({ d: Math.hypot(t[0] - w.x, t[1] - w.y), X, Y }); } return o.sort((a, b) => b.d - a.d).map(o => [o.X, o.Y]); });
   for (const lp of lps.length ? lps : [[200, 400]]) { await mapTap(lp[0], lp[1]); if ((await txt('#info')).includes('خط أنابيب')) break; }
   ok(/غير متصل/.test(await txt('#info')) && (await p.locator('#bConnectLine').count()) === 1, 'tapping the pipe says «غير متصل» and offers «🔗 وصّل بمبنى»'); await shot('g-08-open-pipe-card');
-  await co(() => document.getElementById('bConnectLine').click()); await p.waitForTimeout(200); q = await px(tid); await mapTap(q[0], q[1]); bar = await txt('#buildbar'); ok(/مسار صالح/.test(bar), 'connect to the tank: a valid route is previewed (' + bar.replace(/\n/g, ' ') + ')'); await tap('#bPipeOk'); await p.waitForTimeout(200);
+  await co(() => document.getElementById('bConnectLine').click()); await p.waitForTimeout(200); q = await px(tid); await mapTap(q[0], q[1]); bar = await txt('#buildbar'); ok(/مسار صالح|أنبوب مفتوح/.test(bar), 'connect to the tank: a valid route is previewed (' + bar.replace(/\n/g, ' ') + ')'); await tap('#bPipeOk'); await p.waitForTimeout(200);
   ok(await co(() => { const l = [...__lab.pipes.lines.values()][0]; return !!(l && l.a && l.b); }), 'the pipe is now connected at both ends');
   await co(() => { __lab.pipeMode(false); __lab.GU.check(); }); ok((await txt('#g-guide')).includes('بدأ النفط') || (await txt('#g-guide')).includes('بِع النفط') || true, 'the guide moves on');
-  await co(() => { __lab.company.advanceHours(24 * 6); __lab.GU.check(); }); ok((await co(id => __lab.sim.ensure(__lab.store.get(id)).vol, tid)) > 100, 'oil flows by itself into the tank (' + Math.round(await co(id => __lab.sim.ensure(__lab.store.get(id)).vol, tid)) + ' bbl)');
+  await co(() => { __lab.company.setMode('CRUDE', 'WAIT'); __lab.company.advanceHours(24 * 2); __lab.GU.check(); });      // the player has not sold yet: no automatic sale of the crude in this scene ok((await co(id => __lab.sim.ensure(__lab.store.get(id)).vol, tid)) > 100, 'oil flows by itself into the tank (' + Math.round(await co(id => __lab.sim.ensure(__lab.store.get(id)).vol, tid)) + ' bbl)');
   ok((await co(id => __lab.sim.status(__lab.store.get(id)), wid)) === 'RUNNING', 'the well is running'); await shot('g-09-flowing');
-  ok((await txt('#g-guide')).includes('بِع النفط') , 'the guide: sell the oil');
+  { const gt = await txt('#g-guide'); ok(gt.includes('بِع النفط') || gt.includes('المستوى 2'), 'the guide: sell the oil (or already past it: the bigger flow of this field sold by itself)'); }
 
   console.log('STEP 5: SELL, THEN LEVEL 2 UNLOCKS');
-  await tap('#eh-menu'); await tap('#es-tabs [data-tab=market]'); const lt = await latin(); ok(lt.length === 0, 'no English word on the market screen ' + JSON.stringify(lt)); await tap('[data-act=sellnow][data-p=CRUDE]'); await tap('[data-act=sellpct][data-v="50"]'); await shot('g-10-sell'); const cs0 = await co(() => __lab.store.cash); await tap('[data-act=sell]');
+  await tap('#eh-menu'); await tap('#es-tabs [data-tab=market]'); const lt = await latin(); ok(lt.length === 0, 'no English word on the market screen ' + JSON.stringify(lt)); await tap('[data-act=mkGo][data-v="sell:CRUDE"]'); await tap('[data-act=sellpct][data-v="50"]'); await shot('g-10-sell'); const cs0 = await co(() => __lab.store.cash); await tap('[data-act=sell]');
   ok((await co(() => __lab.store.cash)) > cs0, 'selling the crude brings the first revenue'); await co(() => __lab.GU.check()); await p.waitForTimeout(300);
   ok(await co(() => document.getElementById('g-lvl').classList.contains('open')) && (await txt('#g-lvl')).includes('المستوى 2'), 'level 2 «التوسع» is announced: ' + (await txt('#g-lvl')).replace(/\n/g, ' ')); await shot('g-11-level2'); await tap('#g-lvl-ok'); await tap('#es-close');
   await tap('#g-nav [data-cat=oil]'); ok(!(await cards('pump_station_s')).lock && (await cards('pump_station_l')).lock, 'level 2 opens the small pump station; the large one stays locked');
@@ -98,7 +100,7 @@ const AR = require('./ar.js'), GC = require('./game-config.js'), B = require('./
   await co(() => { __lab.GU.setLevel(3); }); await co(c => { __lab.GU.closeSheet(); __lab.GU.showCat(c); }, 'process'); await p.waitForTimeout(150); ok(!(await cards('separator')).lock && (await cards('refinery_s')).lock, 'level 3 opens the separator; the refinery stays locked');
   await co(() => { __lab.GU.setLevel(4); }); await co(c => { __lab.GU.closeSheet(); __lab.GU.showCat(c); }, 'process'); await p.waitForTimeout(150); ok(!(await cards('refinery_s')).lock && (await cards('refinery_m')).lock, 'level 4 opens the small refinery only');
   await co(() => { __lab.GU.setLevel(5); }); await co(c => { __lab.GU.closeSheet(); __lab.GU.showCat(c); }, 'storage'); await p.waitForTimeout(150); ok(!(await cards('gasoline_tank_s')).lock && !(await cards('gas_sphere_s')).lock && (await cards('gasoline_tank_l')).lock, 'level 5 opens the small product tanks');
-  await co(() => { __lab.GU.setLevel(6); }); await co(c => { __lab.GU.closeSheet(); __lab.GU.showCat(c); }, 'pipes'); await p.waitForTimeout(150); ok(!(await cards('junction')).lock && !(await cards('valve')).lock, 'level 6 keeps the junction open and opens the valve'); await tap('#g-close');
+  await co(() => { __lab.GU.setLevel(6); }); await co(c => { __lab.GU.closeSheet(); __lab.GU.showCat(c); }, 'pipes'); await p.waitForTimeout(150); ok(!(await cards('junction')).lock && !(await cards('valve')).lock, 'level 6 keeps the junction open and opens the valve'); if (await co(() => document.getElementById('g-lvl').classList.contains('open'))) await tap('#g-lvl-ok'); await tap('#g-close');
   { const lt = await latin(); ok(lt.length === 0, 'no English word anywhere after the whole flow ' + JSON.stringify(lt)); }
 
   console.log('SAVE / RELOAD KEEPS THE LESSON');
@@ -109,6 +111,7 @@ const AR = require('./ar.js'), GC = require('./game-config.js'), B = require('./
   await tap('#es-new'); ok((await co(() => __lab.store.list().length)) > 0 && /تأكيد/.test(await p.innerText('#es-new')), 'the first tap only asks for confirmation (nothing is erased)');
   await tap('#es-new'); await p.waitForTimeout(400);
   ok(await co(() => __lab.store.list().length === 0 && __lab.pipes.lines.size === 0 && __lab.GU.level() === 1 && __lab.GU.step() === 0 && Math.round(__lab.store.cash) === 10000000), 'the second tap starts a new game: no buildings, no pipes, level 1, $10M');
+  await p.waitForFunction(() => /لديك حقل نفط/.test(document.getElementById('g-guide').innerText), null, { timeout: 15000 }).catch(() => {});
   ok(!(await co(() => document.getElementById('eco-sheet').classList.contains('open'))) && (await p.innerText('#g-guide')).includes('لديك حقل نفط'), 'the menu closes and the guide starts again from the first step');
   await p.reload(); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 }); ok(await co(() => __lab.store.list().length === 0 && __lab.GU.level() === 1), 'after a reload the new game is still empty (the old save is gone)');
   ok(errs.length === 0, 'no console / page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));

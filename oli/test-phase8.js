@@ -28,12 +28,12 @@ const lastTypes = (co, from) => co.journal.log.filter(e => e.id > from).map(e =>
   audit(co, 'A2'); }
 
 /* B. where things go: crude and products into tanks, materials into warehouses; a purchase is not production */
-{ const g = game(500e6, quietCfg()), co = g.co; chain(g, true, false); for (const p of EC.PRODUCTS) co.setMode(p, 'WAIT');
-  const prod0 = { ...co.led.life.produced }, v0 = tanksVol(co), c0 = cashOf(g), inv0 = bal(co, 'INV_CRUDE');
+{ const g = game(500e6, quietCfg()), co = g.co; chain(g, true, false); put(g, 'crude_tank_m', 60, 70);   /* a commercial tank: bought crude is never put into the tank the wells feed */ for (const p of EC.PRODUCTS) co.setMode(p, 'WAIT');
+  const prod0 = { ...co.led.life.produced }, v0 = tanksVol(co), c0 = cashOf(g), inv0 = bal(co, 'INV_CRUDE_BUY');
   const r = co.buy('CRUDE', 1000, 'A', 'CASH'); T('B1 crude bought', r.ok, r);
   T('B1a the crude enters the crude tanks (tank volume +1,000 bbl)', near(tanksVol(co) - v0, 1000, 1e-6), tanksVol(co) - v0);
   T('B1b the purchase is not production (produced crude unchanged)', co.led.life.produced.CRUDE === prod0.CRUDE, co.led.life.produced);
-  T('B1c the cash goes down by the purchase total and the inventory goes up by the same', near(c0 - cashOf(g), r.cost, 1e-9) && near(bal(co, 'INV_CRUDE') - inv0, r.cost, 1e-9));
+  T('B1c the cash goes down by the purchase total and the inventory goes up by the same', near(c0 - cashOf(g), r.cost, 1e-9) && near(bal(co, 'INV_CRUDE_BUY') - inv0, r.cost, 1e-9));
   const pg = co.buy('GASOLINE', 500, 'A', 'CASH'); T('B2 gasoline bought', pg.ok, pg);
   T('B2a the gasoline enters the gasoline tank, not a warehouse (quantity +500, produced gasoline unchanged)', co.qty.GASOLINE === 500 && co.led.life.produced.GASOLINE === prod0.GASOLINE, [co.qty.GASOLINE, co.led.life.produced.GASOLINE]);
   const v1 = tanksVol(co), cm = co.buy('CHEM', 300, 'A', 'CASH'); T('B3 chemicals bought', cm.ok, cm);
@@ -83,23 +83,16 @@ const lastTypes = (co, from) => co.journal.log.filter(e => e.id > from).map(e =>
   T('E2b with no chemicals the refinery produces nothing and buys nothing', co.led.life.produced.THRU === t1 && co.matLimit === 0 && !lastTypes(co, n1).some(t => /PURCHASE/.test(t)), [co.matLimit, co.led.life.produced.THRU - t1]);
   audit(co, 'E2'); }
 
-/* F. repairs: take the spare part and operating materials they really use, once; refused when there is none */
+/* F. (changed) there is no manual repair any more: maintenance is an automatic running cost. The repair call is a free no-op: it takes no spare part, no operating material and no cash, and posts nothing. */
 { const g = game(500e6, quietCfg()), co = g.co; const w = put(g, 'oil_well', 20, 36); co.sync();
   co.buy('PARTS', 5, 'A', 'CASH'); co.buy('OPS', 50, 'A', 'CASH'); w.c = 0.5;
-  const cost = co.repairCost(w), p0 = mat(co, 'PARTS').qty, o0 = mat(co, 'OPS').qty, ip0 = bal(co, 'INV_PARTS'), io0 = bal(co, 'INV_OPS'), em0 = bal(co, 'EXP_MAINT'), c0 = cashOf(g);
-  const r = co.repair(w.id); T('F1 repair done', r.ok && w.c === 1, r);
-  T('F1a one spare part and two operating units leave stock', mat(co, 'PARTS').qty === p0 - 1 && mat(co, 'OPS').qty === o0 - 2, [mat(co, 'PARTS').qty, mat(co, 'OPS').qty]);
-  const partOut = ip0 - bal(co, 'INV_PARTS'), opsOut = io0 - bal(co, 'INV_OPS');
-  T('F1b the materials used are inside the repair cost (maintenance rises by the full repair cost)', near(bal(co, 'EXP_MAINT') - em0, cost, 1e-6), [bal(co, 'EXP_MAINT') - em0, cost]);
-  T('F1c cash pays only the part of the repair that was not taken from stock', near(c0 - cashOf(g), cost - partOut - opsOut, 1e-6), [c0 - cashOf(g), cost - partOut - opsOut]);
-  const again = co.repair(w.id); T('F2 a second repair of the same building takes nothing more from stock', again.ok && again.cost === 0 && mat(co, 'PARTS').qty === p0 - 1 && mat(co, 'OPS').qty === o0 - 2);
+  const p0 = mat(co, 'PARTS').qty, o0 = mat(co, 'OPS').qty, n0 = co.journal.n, c0 = cashOf(g);
+  const r = co.repair(w.id); T('F1 repair call is accepted and free; a leftover low condition is cleared', r.ok && r.cost === 0 && w.c === 1, r);
+  T('F1a it takes nothing from stock, no cash, and posts no entry', mat(co, 'PARTS').qty === p0 && mat(co, 'OPS').qty === o0 && co.journal.n === n0 && cashOf(g) === c0);
+  const again = co.repair(w.id); T('F2 a second call changes nothing', again.ok && again.cost === 0 && co.journal.n === n0);
   audit(co, 'F1');
-  const g2 = game(500e6, quietCfg()), co2 = g2.co; const w2 = put(g2, 'oil_well', 20, 36); co2.sync(); co2.buy('OPS', 50, 'A', 'CASH'); w2.c = 0.5;
-  const n2 = co2.journal.n, c2 = cashOf(g2), rn = co2.repair(w2.id);
-  T('F3 no spare part in stock: the repair is refused, nothing is posted, the building stays damaged', !rn.ok && rn.reason === 'noPart' && co2.journal.n === n2 && cashOf(g2) === c2 && w2.c === 0.5, rn.reason);
-  co2.buy('PARTS', 2, 'A', 'CASH'); const n3 = co2.journal.n, ro = (co2.materialStatus(), co2.mats.OPS); co2._drawMaterial('OPS', ro); const rnn = co2.repair(w2.id);
-  T('F4 no operating materials in stock: the repair is refused', !rnn.ok && rnn.reason === 'noOps', rnn.reason); }
-
+  T('F3 unknown building: nothing to repair', co.repair('no-such-id').ok === false);
+  co.advanceHours(24 * 3); T('F4 maintenance is still charged automatically by the day', co.audit().ok && co.led.life.maintenance > 0); }
 /* G. save and load keep the stock, the receipts and the payables; the books still balance */
 { const g = game(500e6, quietCfg()), co = g.co; co.buy('CHEM', 1000, 'A', 'CREDIT'); co.buy('PARTS', 3, 'B', 'CASH');
   const sd = JSON.parse(JSON.stringify(co.toJSON())); const co2 = game(500e6, quietCfg()).co; co2.fromJSON(sd);

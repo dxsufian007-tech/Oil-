@@ -6,14 +6,14 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
 (async () => {
   const b = await chromium.launch(), ctx = await b.newContext({ viewport: { width: 412, height: 866 }, deviceScaleFactor: 1 }), p = await ctx.newPage(), errs = [];
   p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-  const url = 'http://localhost:' + srv.address().port + '/?lab=1&lang=en', idle = async () => { await p.waitForTimeout(350); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 }); await p.waitForTimeout(150); };
+  const url = 'http://localhost:' + srv.address().port + '/?lab=1&legacy=1&lang=en', idle = async () => { await p.waitForTimeout(350); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 }); await p.waitForTimeout(150); };
   const shot = async nm => { if (shots) { await idle(); await p.screenshot({ path: path.join(shots, nm + '.png') }); } };
   await p.goto(url); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 });
   await p.evaluate(() => { localStorage.clear(); __lab.reset(); __lab.store.cash = 5e9; __lab.updateCash(); });
 
   // ---- helpers that run IN the page: a spiral search for a legal spot around the screen centre, then a REAL mouse drag from the palette chip
   await p.evaluate(() => {
-    const FULL = new OliBuildings.BuildingStore(OliBuildings.fromWorld(OliWorld.createWorld()), { cash: 1e12 });       // a full-terrain twin that shares the lab's occupancy: finds legal spots even where chunks are not loaded yet
+    const FULL = new OliBuildings.BuildingStore(OliBuildings.fromWorld(OliWorld.createWorld({ sectors: false })), { cash: 1e12 });       // a full-terrain twin that shares the lab's occupancy: finds legal spots even where chunks are not loaded yet
     window.__full = FULL; window.findFar = (def, r, from, maxD) => { const S = __lab.store; FULL.items = S.items; FULL.occ = S.occ; FULL.bucket = S.bucket; const c = from || __wp.cam; for (let d = 0; d < (maxD || 160); d += 1) for (let dy = -d; dy <= d; dy += 1) for (let dx = -d; dx <= d; dx += 1) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue; const x = Math.round(c.x) + dx, y = Math.round(c.y) + dy; if (FULL.validate(def, x, y, r || 0, { ignoreCash: true }).ok) return { x, y }; } return null; };
     window.findSpot = (def, r) => { const S = __lab.store, c = __wp.cam; for (let d = 0; d < 40; d++) for (let dy = -d; dy <= d; dy++) for (let dx = -d; dx <= d; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue; const x = Math.round(c.x) + dx, y = Math.round(c.y) + dy; const v = S.validate(def, x, y, r || 0, { ignoreCash: true }); if (v.ok) return { x, y, w: v.w, h: v.h }; } return null; };
   });
@@ -28,11 +28,11 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   const camNow = () => p.evaluate(() => [__wp.cam.x, __wp.cam.y, __wp.cam.z]);
 
   const tab = async sec => { await p.click('#tabs button[data-sec="' + sec + '"]'); await p.waitForTimeout(80); };
-  const SEC = { oil_well: 'EXTRACTION', pump_station_s: 'EXTRACTION', pump_station_l: 'EXTRACTION', valve: 'PIPELINE', junction: 'PIPELINE', crude_tank_s: 'CRUDE STORAGE', crude_tank_m: 'CRUDE STORAGE', crude_tank_l: 'CRUDE STORAGE', separator: 'PROCESSING', refinery_s: 'PROCESSING', refinery_m: 'PROCESSING', refinery_l: 'PROCESSING', refinery_x: 'PROCESSING',
+  const SEC = { oil_well: 'EXTRACTION', pump_station_s: 'EXTRACTION', pump_station_l: 'EXTRACTION', pump_station_c: 'EXTRACTION', valve: 'PIPELINE', junction: 'PIPELINE', main_manifold: 'PIPELINE', crude_tank_s: 'CRUDE STORAGE', crude_tank_m: 'CRUDE STORAGE', crude_tank_l: 'CRUDE STORAGE', crude_tank_c: 'CRUDE STORAGE', separator: 'PROCESSING', refinery_s: 'PROCESSING', refinery_m: 'PROCESSING', refinery_l: 'PROCESSING', refinery_x: 'PROCESSING',
     gasoline_tank_s: 'PRODUCT STORAGE', gasoline_tank_m: 'PRODUCT STORAGE', gasoline_tank_l: 'PRODUCT STORAGE', diesel_tank_s: 'PRODUCT STORAGE', diesel_tank_m: 'PRODUCT STORAGE', diesel_tank_l: 'PRODUCT STORAGE', jet_tank_s: 'PRODUCT STORAGE', jet_tank_m: 'PRODUCT STORAGE', jet_tank_l: 'PRODUCT STORAGE', gas_sphere_s: 'PRODUCT STORAGE', gas_sphere_m: 'PRODUCT STORAGE', gas_sphere_l: 'PRODUCT STORAGE' };
-  console.log('BUILD MENU (5 sections)');
-  ok((await p.$$eval('#tabs button', bs => bs.map(x => x.textContent))).join('|') === 'EXTRACTION|PIPELINE|CRUDE STORAGE|PROCESSING|PRODUCT STORAGE', 'the menu has the 5 sections: EXTRACTION / PIPELINE / CRUDE STORAGE / PROCESSING / PRODUCT STORAGE');
-  for (const [sec, n2] of [['EXTRACTION', 3], ['PIPELINE', 2], ['CRUDE STORAGE', 3], ['PROCESSING', 5], ['PRODUCT STORAGE', 12]]) { await tab(sec); ok((await p.$$('#pal .chip')).length === n2, sec + ' lists ' + n2 + ' buildings'); }
+  console.log('BUILD MENU (6 sections)');
+  ok((await p.$$eval('#tabs button', bs => bs.map(x => x.textContent))).join('|') === 'EXTRACTION|PIPELINE|CRUDE STORAGE|PROCESSING|PRODUCT STORAGE|WATER', 'the menu has the 6 sections (+ WATER): EXTRACTION / PIPELINE / CRUDE STORAGE / PROCESSING / PRODUCT STORAGE');
+  for (const [sec, n2] of [['EXTRACTION', 4], ['PIPELINE', 3], ['CRUDE STORAGE', 4], ['PROCESSING', 5], ['PRODUCT STORAGE', 15]]) { await tab(sec); ok((await p.$$('#pal .chip')).length === n2, sec + ' lists ' + n2 + ' buildings'); }
   { await tab('EXTRACTION'); const bb = await (await p.$('#pal .chip')).boundingBox(); ok(bb.height >= 60 && bb.width >= 70, 'palette chips are big enough for a finger (' + Math.round(bb.width) + 'x' + Math.round(bb.height) + ' px)'); }
 
   console.log('PLACE EVERY BUILDING (real mouse drag from the palette + Build button)');
@@ -41,7 +41,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   const cam0 = await camNow(); await dragBuild('oil_well', spot); let v = await verdict(); ok(v && v.ok && v.def === 'oil_well', 'drag Oil Well: the ghost is VALID on the field and waits for Build');
   ok((await camNow()).join() === cam0.join(), 'camera isolation: the camera did not move during the well drag');
   await shot('01-ghost-valid-well'); await p.click('#bBuild'); ok(await count('oil_well') === 1, '1. Oil Well placed');
-  await p.evaluate(() => { const sr = __wp.world.regions.find(r => r.starter); __wp.goto(sr.x0 + 200, sr.y0 + 230, .55); }); await idle();
+  await p.evaluate(() => { const sr = __wp.world.homeRegionOfWorld(); __wp.goto(sr.x0 + 200, sr.y0 + 230, .55); }); await idle();
   const rest = ['pump_station_s', 'pump_station_l', 'valve', 'junction', 'crude_tank_s', 'crude_tank_m', 'crude_tank_l', 'separator', 'gasoline_tank_s', 'diesel_tank_m', 'jet_tank_s', 'gas_sphere_s', 'gas_sphere_m'];
   let idx = 2;
   for (const def of rest) { const far = await p.evaluate(d => findFar(d), def); ok(far, 'a legal spot exists for ' + def); await p.evaluate(f => __wp.goto(f.x + 1, f.y + 1, .55), far); await idle(); await tab(SEC[def]);
@@ -58,12 +58,12 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   ok(await p.evaluate(() => document.getElementById('bBuild').disabled), 'the Build button is disabled while the ghost is invalid'); const before = await p.evaluate(() => __lab.store.list().length); await shot('04-ghost-invalid-overlap');
   await p.evaluate(() => document.getElementById('bBuild').disabled = false); await p.click('#bBuild', { force: true }); ok(await p.evaluate(() => __lab.store.list().length) === before, 'pressing Build on an invalid ghost builds nothing');
   await p.click('#bCancel'); ok(!(await verdict()), 'Cancel removes the ghost');
-  const water = await p.evaluate(() => { const w = OliWorld.createWorld(), sr = w.regions.find(r => r.starter); for (let y = sr.y0; y < sr.y0 + 320; y++) for (let x = sr.x0; x < sr.x0 + 320; x++) { const t = w.tile(x, y); if (t.terrain === 'WATER_WADI' && w.tile(x + 1, y).terrain === 'WATER_WADI') return { x, y }; } return null; });
+  const water = await p.evaluate(() => { const w = OliWorld.createWorld({ sectors: false }), sr = w.homeRegionOfWorld(); for (let y = sr.y0; y < sr.y0 + 320; y++) for (let x = sr.x0; x < sr.x0 + 320; x++) { const t = w.tile(x, y); if (t.terrain === 'WATER_WADI' && w.tile(x + 1, y).terrain === 'WATER_WADI') return { x, y }; } return null; });
   await p.evaluate(wt => __wp.goto(wt.x, wt.y, .6), water); await idle(); await dragBuild('crude_tank_s', { x: water.x, y: water.y, w: 2, h: 2 }); v = await verdict(); ok(v && !v.ok && v.kind === 'TERRAIN', 'invalid terrain: a tank on water is refused (' + (v && v.reason) + ')'); await p.click('#bCancel');
   await p.evaluate(() => __wp.goto(3, 3, .8)); await idle(); const pt0 = await p.evaluate(() => ({ x: __wp.sx(-3, -3), y: __wp.sy(-3, -3) }));
   { const chip = await p.$('.chip[data-def="crude_tank_s"]'); const bb = await chip.boundingBox(); await p.mouse.move(bb.x + 20, bb.y + 20); await p.mouse.down(); await p.mouse.move(bb.x + 30, bb.y - 40, { steps: 4 }); await p.mouse.move(pt0.x, pt0.y, { steps: 6 }); await p.mouse.up(); }
   v = await verdict(); ok(v && !v.ok && v.kind === 'OUT_OF_BOUNDS', 'map bounds: dropping outside the world is refused (' + (v && v.kind) + ')'); await p.click('#bCancel');
-  { const far = await p.evaluate(() => findFar('pump_station_s')); const nf = far; const nf0 = await p.evaluate(() => { const sr = __wp.world.regions.find(r => r.starter); return { x: sr.x0 + 200, y: sr.y0 + 230 }; }); await p.evaluate(f => __wp.goto(f.x + 1, f.y + 1, .6), nf); await idle(); await tab('EXTRACTION'); const s2 = await p.evaluate(() => findSpot('pump_station_s'));
+  { const far = await p.evaluate(() => findFar('pump_station_s')); const nf = far; const nf0 = await p.evaluate(() => { const sr = __wp.world.homeRegionOfWorld(); return { x: sr.x0 + 200, y: sr.y0 + 230 }; }); await p.evaluate(f => __wp.goto(f.x + 1, f.y + 1, .6), nf); await idle(); await tab('EXTRACTION'); const s2 = await p.evaluate(() => findSpot('pump_station_s'));
     const chip = await p.$('.chip[data-def="oil_well"]'); const bb = await chip.boundingBox(); const pt = await p.evaluate(s => ({ x: __wp.sx(s.x + .5, s.y + .5), y: __wp.sy(s.x + .5, s.y + .5) }), s2 || { x: nf.x, y: nf.y });
     await p.mouse.move(bb.x + 20, bb.y + 20); await p.mouse.down(); await p.mouse.move(bb.x + 30, bb.y - 40, { steps: 4 }); await p.mouse.move(pt.x, pt.y, { steps: 6 }); await p.mouse.up(); v = await verdict(); ok(v && !v.ok && v.kind === 'OIL', 'a well outside any oil field is refused (' + (v && v.reason) + ')'); await p.click('#bCancel'); }
 
@@ -72,12 +72,12 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
     await p.mouse.move(bb.x + 20, bb.y + 20); await p.mouse.down(); await p.mouse.move(bb.x + 30, bb.y - 60, { steps: 3 }); await p.mouse.move(200, 400, { steps: 4 }); ok(await p.evaluate(() => !!__lab.state.drag), 'a drag is running'); await p.mouse.move(bb.x + 20, bb.y + 30, { steps: 4 }); await p.mouse.up();
     ok(await p.evaluate(() => !__lab.state.drag && !__lab.state.pending) && await p.evaluate(() => __lab.store.list().length) === n0, 'releasing over the palette cancels: nothing pending, nothing built');
     await p.mouse.move(bb.x + 20, bb.y + 20); await p.mouse.down(); await p.mouse.move(bb.x + 30, bb.y - 60, { steps: 3 }); await p.mouse.move(210, 420, { steps: 4 }); await p.keyboard.press('Escape'); await p.mouse.up(); ok(await p.evaluate(() => !__lab.state.drag && !__lab.state.pending), 'Escape cancels a running drag'); }
-  { await p.evaluate(() => { const sr = __wp.world.regions.find(r => r.starter); __wp.goto(sr.x0 + 215, sr.y0 + 245, .6); }); await idle(); await tab('EXTRACTION'); const fs0 = await p.evaluate(() => findFar('pump_station_s')); await p.evaluate(f => __wp.goto(f.x + 1, f.y + 1, .6), fs0); await idle(); const s = await p.evaluate(() => findSpot('pump_station_s')); await dragBuild('pump_station_s', s);
+  { await p.evaluate(() => { const sr = __wp.world.homeRegionOfWorld(); __wp.goto(sr.x0 + 215, sr.y0 + 245, .6); }); await idle(); await tab('EXTRACTION'); const fs0 = await p.evaluate(() => findFar('pump_station_s')); await p.evaluate(f => __wp.goto(f.x + 1, f.y + 1, .6), fs0); await idle(); const s = await p.evaluate(() => findSpot('pump_station_s')); await dragBuild('pump_station_s', s);
     const a = await p.evaluate(() => { const g = __lab.state.pending; return { r: g.r, c: g.verdict.connections.map(c => [c.id, c.side, c.ax - g.x, c.ay - g.y]) }; }); await p.click('#bRot'); const b2 = await p.evaluate(() => { const g = __lab.state.pending; return { r: g.r, c: g.verdict.connections.map(c => [c.id, c.side, c.ax - g.x, c.ay - g.y]) }; });
     ok(b2.r === (a.r + 1) % 4 && JSON.stringify(a.c) !== JSON.stringify(b2.c), 'Rotate turns the ghost 90 degrees and its connection points move with it'); for (let i = 0; i < 3; i++) await p.click('#bRot'); ok((await p.evaluate(() => __lab.state.pending.r)) === a.r, 'four rotations return to the start'); await p.click('#bCancel'); }
 
   console.log('PIPES: PRODUCT CONNECTIONS THROUGH THE UI');
-  await p.evaluate(() => { __lab.reset(); __lab.store.cash = 5e9; __lab.state.rot = {}; }); await p.evaluate(() => { const sr = __wp.world.regions.find(r => r.starter); __wp.goto(sr.x0 + 205, sr.y0 + 235, .7); }); await idle();
+  await p.evaluate(() => { __lab.reset(); __lab.store.cash = 5e9; __lab.state.rot = {}; }); await p.evaluate(() => { const sr = __wp.world.homeRegionOfWorld(); __wp.goto(sr.x0 + 205, sr.y0 + 235, .7); }); await idle();
   const sp0 = await p.evaluate(() => { const S = __lab.store, c = __wp.cam; for (let d = 0; d < 120; d++) for (let dy = -d; dy <= d; dy++) for (let dx = -d; dx <= d; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue; const x = Math.round(c.x) + dx, y = Math.round(c.y) + dy; if (S.validate('refinery_s', x, y, 0).ok === false && S.validate('gasoline_tank_s', x, y, 0).ok && S.validate('gasoline_tank_s', x + 12, y, 0).ok && S.validate('crude_tank_s', x + 12, y + 8, 0).ok && S.validate('pump_station_s', x, y + 8, 0).ok && S.validate('crude_tank_s', x + 8, y + 8, 0).ok) return { x, y }; } return null; });
   ok(sp0, 'found open ground for the pipe tests'); await p.evaluate(q => __wp.goto(q.x + 6, q.y + 4, .7), sp0); await idle();
   const mk = (def, x, y) => p.evaluate(([d, x, y]) => { const S = __lab.store, sn = S.snap(d, x, y, 0, { radius: 4, ignoreCash: true }); return sn ? S.place(d, sn.x, sn.y, sn.r, { instant: true }).ok : false; }, [def, x, y]);
@@ -112,7 +112,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
     const st2 = await p.evaluate(c => { __lab.sim.run(2); return Object.values(c).map(id => __lab.sim.status(__lab.store.get(id))); }, ch); ok(st2.every(s => s === 'RUNNING'), 'after the reload the chain keeps running (' + st2.join(',') + ')'); }
 
   console.log('RAPID TOUCH + STUCK STATES');
-  { await p.evaluate(() => { __lab.reset(); __lab.store.cash = 5e9; const sr = __wp.world.regions.find(r => r.starter); __wp.goto(sr.x0 + 205, sr.y0 + 235, .6); }); await idle(); await tab('PRODUCT STORAGE');
+  { await p.evaluate(() => { __lab.reset(); __lab.store.cash = 5e9; const sr = __wp.world.homeRegionOfWorld(); __wp.goto(sr.x0 + 205, sr.y0 + 235, .6); }); await idle(); await tab('PRODUCT STORAGE');
     const errs0 = errs.length, cam2 = await camNow(); const chip = await p.$('.chip[data-def="gasoline_tank_s"]'); const bb = await chip.boundingBox();
     for (let i = 0; i < 25; i++) { await p.mouse.move(bb.x + 20, bb.y + 20); await p.mouse.down(); await p.mouse.move(bb.x + 25 + i, bb.y - 30 - i, { steps: 2 }); await p.mouse.move(150 + i * 5, 300 + i * 4, { steps: 2 }); await p.mouse.move(bb.x + 20, bb.y + 20, { steps: 2 }); await p.mouse.up(); }
     ok(await p.evaluate(() => !__lab.state.drag) && errs.length === errs0, '25 rapid drags + cancels: no stuck drag, no errors'); ok(await p.evaluate(() => __lab.store.list().length) === 0, 'rapid dragging built nothing without a Build press'); await p.evaluate(() => __lab.cancelAll(true));

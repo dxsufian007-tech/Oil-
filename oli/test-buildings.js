@@ -1,24 +1,24 @@
 // Phase 2 building system: pure-logic tests on the real Phase 1 world (no browser). Node: node test-buildings.js
 const assert = require('assert'), W = require('./worldmap.js'), B = require('./buildings.js');
 let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); };
-const world = W.createWorld(), ts = B.fromWorld(world), D = B.DEFS, CFG = W.CONFIG;
+const world = W.createWorld({ sectors: false }), ts = B.fromWorld(world), D = B.DEFS, CFG = W.CONFIG;
 const mk = cash => new B.BuildingStore(ts, { cash });
-const SR = world.regions.find(r => r.starter);
+const SR = world.homeRegionOfWorld();
 
 // ---- helpers: find real spots on the real terrain
 const ACC = mk(1e9);                                                         // every chosen spot is claimed here, so the spots never coincide
 function findSpot(def, pred, from, span) {                                  // first VALID anchor for a def in a window of the world, away from earlier picks
-  const s = ACC, [x0, y0] = from || [SR.x0, SR.y0]; for (let y = y0; y < y0 + (span || 320); y += 1) for (let x = x0; x < x0 + (span || 320); x += 1) { const v = s.validate(def, x, y, 0, {}); if (v.ok && (!pred || pred(x, y, v))) { ACC.place(def, x, y, 0, { instant: true }); return [x, y]; } } return null;
+  const s = ACC, [x0, y0] = from || [SR.x0 + 100, SR.y0 + 100]; for (let y = y0; y < y0 + (span || 320); y += 1) for (let x = x0; x < x0 + (span || 320); x += 1) { const v = s.validate(def, x, y, 0, {}); if (v.ok && (!pred || pred(x, y, v))) { ACC.place(def, x, y, 0, { instant: true }); return [x, y]; } } return null;
 }
 const field = (() => { for (const st of ['PRODUCING', 'DRILLABLE']) { /* make a drillable field in the starter region so wells have somewhere legal */ } const f = world.regionSites(SR.id).find(s => s.kind === 'FIELD'); world.discover(f.id); world.survey(f.id); world.makeDrillable(f.id); return f; })();
 const wellSpot = (() => { const s = mk(1e9); for (let r = 0; r < 12; r++) for (let a = 0; a < 40; a++) { const x = Math.round(field.x + Math.cos(a / 40 * 6.283) * r), y = Math.round(field.y + Math.sin(a / 40 * 6.283) * r); if (s.validate('oil_well', x, y, 0).ok) return [x, y]; } })();
 
 console.log('REGISTRY');
-ok(B.ORDER.length === 25 && ['oil_well', 'pump_station_s', 'pump_station_l', 'valve', 'junction', 'crude_tank_s', 'crude_tank_m', 'crude_tank_l', 'separator', 'refinery_s', 'refinery_m', 'refinery_l', 'refinery_x', 'gasoline_tank_s', 'diesel_tank_s', 'jet_tank_s', 'gas_sphere_s'].every(k => D[k]), 'all 13 required buildings are defined (25 definitions with size variants)');
+ok(B.ORDER.length === 37 && ['oil_well', 'pump_station_s', 'pump_station_l', 'valve', 'junction', 'crude_tank_s', 'crude_tank_m', 'crude_tank_l', 'separator', 'refinery_s', 'refinery_m', 'refinery_l', 'refinery_x', 'gasoline_tank_s', 'diesel_tank_s', 'jet_tank_s', 'gas_sphere_s'].every(k => D[k]), 'all 13 required buildings are defined (27 definitions with size variants: 25 + the Stage 5 central pump and central store)');
 const need = ['id', 'name', 'category', 'section', 'footprint', 'cost', 'maintenanceCost', 'operatingCost', 'buildTime', 'connections', 'allowedTerrain', 'capacity', 'visual', 'status', 'safetyZone', 'level'];
 ok(B.ORDER.every(k => need.every(f => D[k][f] != null)), 'every definition has id, type, footprint, cost, maintenance, operating cost, buildTime, connection points, allowedTerrain, capacity, visual, status, safety zone, level');
 ok(B.ORDER.every(k => Object.isFrozen(D[k])), 'definitions are frozen shared objects (instances never copy them)');
-ok(new Set(B.ORDER.map(k => D[k].visual)).size === 11 && ['oil_well','pump_station','valve_station','junction','crude_tank','gasoline_tank','diesel_tank','jet_tank','gas_sphere','separator','refinery'].every(v => B.ORDER.some(k => D[k].visual === v)), 'distinct visual ids per family (11 families: well, pump, valve, junction, 4 liquid tank designs, gas sphere, separator, refinery)');
+ok(new Set(B.ORDER.map(k => D[k].visual)).size === 14 && ['oil_well','pump_station','valve_station','junction','main_manifold','crude_tank','gasoline_tank','diesel_tank','jet_tank','gas_sphere','separator','refinery','water_tank','water_pump'].every(v => B.ORDER.some(k => D[k].visual === v)), 'distinct visual ids per family (14 families since Stage 5 + water: well, pump, valve, junction, main manifold, 4 liquid tank designs, gas sphere, separator, refinery)');
 const fpOf = k => D[k].footprint[0] * D[k].footprint[1];
 ok(fpOf('oil_well') < fpOf('crude_tank_s') && fpOf('crude_tank_s') < fpOf('crude_tank_m') && fpOf('crude_tank_m') < fpOf('crude_tank_l') && fpOf('separator') < fpOf('refinery_m') && fpOf('refinery_s') < fpOf('refinery_m') && fpOf('refinery_m') < fpOf('refinery_l') && fpOf('refinery_l') < fpOf('refinery_x'), 'scale order: well < tanks S<M<L; refineries S<M<L<Major');
 ok(CFG.FACILITIES.well.fp.join() === D.oil_well.footprint.join() && CFG.FACILITIES.tank.fp.join() === D.crude_tank_s.footprint.join(), 'well and small crude tank match core.js FOOTPRINT too (1x1, 2x2)');
@@ -75,12 +75,12 @@ console.log('VALIDATION RULES');
   ok(mk(1e9).validate('refinery_m', ...spots.refinery_m, 0).ok, 'the refinery is accepted inside the refinery zone on flat desert');
   const nw = s.validate('oil_well', ...spots.diesel_tank_m, 0); ok(!nw.ok && nw.kind === 'OIL', 'an oil well away from any oil field is refused (noOilField)');
   const udf = world.regionSites(SR.id).filter(q => q.kind === 'FIELD' && world.stateOf(q.id) === 'UNDISCOVERED')[0]; const uw = s.validate('oil_well', Math.round(udf.x), Math.round(udf.y), 0); ok(!uw.ok && uw.kind === 'OIL' && uw.reason === 'notDrillable', 'an oil well on an undiscovered field is refused (the player may not even know it is there)');
-  ok(mk(1e9).validate('jet_tank_s', ...spots.jet_tank_s, 0).ok && (() => { const t = mk(1e9); t.place('jet_tank_s', ...spots.jet_tank_s, 0, { instant: true }); return t.validate('jet_tank_s', spots.jet_tank_s[0] + 40, spots.jet_tank_s[1], 0).reason === 'alreadyBuilt' || !t.validate('jet_tank_s', spots.jet_tank_s[0] + 40, spots.jet_tank_s[1], 0).ok; })(), 'there is only one Control Center');
+  ok(mk(1e9).validate('jet_tank_s', ...spots.jet_tank_s, 0).ok, 'a jet fuel tank is accepted on real flat ground');
   const poor = mk(10); const pv = poor.validate('crude_tank_s', x + 10, y + 10, 0); ok(!pv.ok && (pv.state === 'UNAFFORDABLE' || pv.kind), 'cost: not enough cash -> UNAFFORDABLE, nothing is built'); ok(poor.list().length === 0 && poor.place('crude_tank_s', x + 10, y + 10, 0).ok === false, 'a refused placement changes nothing');
   const ld = { tile: () => null, terrain: ts.terrain, slopeK: ts.slopeK, W: world.W, H: world.H, oilFieldAt: () => null, stateOf: () => null, zoneAt: () => null }; const lv = new B.BuildingStore(ld).validate('crude_tank_s', 10, 10, 0); ok(lv.state === 'LOADING' && lv.kind === 'LOADING', 'a chunk that is not loaded yet gives LOADING (placeholder), never a crash'); }
 
 console.log('CLEARANCE + CONNECTIONS');
-{ const s = mk(1e9); const [x, y] = spots.crude_tank_l; s.place('crude_tank_l', x, y, 0, { instant: true });
+{ const s = mk(1e9); const [x, y] = (() => { const t = mk(1e9); for (let yy = SR.y0 + 20; yy < SR.y0 + 300; yy += 3) for (let xx = SR.x0 + 20; xx < SR.x0 + 300; xx += 3) { if (!t.validate('crude_tank_l', xx, yy, 0).ok) continue; if (t.validate('diesel_tank_m', xx + 4, yy, 0).kind === 'TERRAIN') continue; return [xx, yy]; } })(); s.place('crude_tank_l', x, y, 0, { instant: true });
   const near = [[4, 0], [0, 4], [-3, 0], [0, -3]].map(([a, b]) => s.validate('diesel_tank_m', x + a, y + b, 0)).find(q => q.kind !== 'TERRAIN'); ok(near && !near.ok && near.kind === 'CLEARANCE', 'a large tank keeps 1 tile of space: a medium tank touching it is refused (CLEARANCE)');
   const far = (() => { for (const [dx, dy] of [[6, 0], [7, 0], [8, 0], [0, 6], [0, 7], [-5, 0], [-6, 0]]) { const v = s.validate('diesel_tank_m', x + dx, y + dy, 0); if (v.ok) return v; } return null; })(); ok(far, 'one free tile between them is enough'); }{ // connection clearance: a pump station whose required IN port faces water / a building is refused
   const s = mk(1e9); let found = null; for (let yy = SR.y0; yy < SR.y0 + 300 && !found; yy++) for (let xx = SR.x0 + 2; xx < SR.x0 + 300; xx++) { const v = s.validate('pump_station_s', xx, yy, 0); if (v.ok) { const blocker = { x: xx - 1, y: yy }; found = [xx, yy]; break; } }

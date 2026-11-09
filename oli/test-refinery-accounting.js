@@ -23,8 +23,8 @@ function runHours(x, hours, keepStock) {
 console.log('REFINERY ACCOUNTING TESTS');
 // 1. the 30,000 bbl/day run: crude leaves the tanks exactly as it is booked, and every barrel is explained
 { const x = build(); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); for (const p of ['CRUDE', 'GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS']) x.co.setMode(p, 'WAIT'); x.co.sync(); restock(x.co);
-  x.co.advanceHours(1); const warm = x.co.refLast; T('1 the refinery takes 30,000 bbl/day from three pumps', warm && near(warm.feed * 24, 30000, 1e-3), warm && warm.feed * 24);
-  const tank0 = tankSum(x.cts), qty0 = x.co.qty.CRUDE, a = runHours(x, 24 * 3, true), tankDrop = tank0 - tankSum(x.cts), qtyDrop = qty0 - x.co.qty.CRUDE;
+  x.co.advanceHours(1); const warm = x.co.refLast; T('1 the refinery takes the full rating of three pumps (3 x 20,000 = 60,000 bbl/day since Stage 5; was 3 x 10,000)', warm && near(warm.feed * 24, 3 * require('./building-config.js').PUMP.L.maxFlow, 1e-3), warm && warm.feed * 24);
+  const tank0 = tankSum(x.cts), qty0 = (x.co.qty.CRUDE + x.co.bq), a = runHours(x, 24 * 3, true), tankDrop = tank0 - tankSum(x.cts), qtyDrop = qty0 - (x.co.qty.CRUDE + x.co.bq);
   T('2 crude leaves the tanks exactly as much as the refinery books (tank drop = crude counter drop = feed)', near(tankDrop, a.feed, 1e-6) && near(qtyDrop, a.feed, 1e-6), { tankDrop, qtyDrop, feed: a.feed });
   const outs = a.GASOLINE + a.DIESEL + a.JET_FUEL + a.GAS + a.byproduct + a.residue + a.fuel + a.flared + a.loss;
   T('3 mass balance: feed = products + by-product + residue + fuel + flared gas + recorded loss', near(outs, a.feed, 1e-9), { outs, feed: a.feed });
@@ -47,7 +47,7 @@ console.log('REFINERY ACCOUNTING TESTS');
   const json = JSON.parse(JSON.stringify(x.co.toJSON())); T('12 by-product and residue quantities are saved', json.qty2 && json.qty2.BYPRODUCT > 0 && json.qty2.RESIDUE > 0, json.qty2);
 }
 // 13. no chemicals: the refinery does not run and draws no crude
-{ const x = build(); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const t0 = tankSum(x.cts), q0 = x.co.qty.CRUDE;
+{ const x = build(); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const t0 = tankSum(x.cts), q0 = (x.co.qty.CRUDE + x.co.bq);
   const a = runHours(x, 24, false); T('13 without chemicals and operating materials the refinery draws no crude and books no output', near(tankSum(x.cts), t0, 1e-9) && a.feed === 0 && a.GASOLINE === 0 && a.loss === 0 && x.co.matLimit === 0, { t0, now: tankSum(x.cts), feed: a.feed }); }
 // 14. partial chemicals: throughput is capped by the stock before any crude is drawn
 { const x = build(); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const ch = x.co.buy('CHEM', 2000, 'A', 'CASH'); if (!ch.ok) throw new Error('chem ' + ch.reason); x.co.buy('OPS', 500, 'A', 'CASH'); x.co.sync();

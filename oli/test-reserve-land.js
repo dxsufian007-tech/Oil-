@@ -1,0 +1,13 @@
+'use strict';
+const WM = require('./worldmap.js'), B = require('./buildings.js'); let f = 0; const ok = (c, m) => { if (!c) { f++; console.log('FAIL', m); } else console.log('ok  ', m); };
+const w = WM.createWorld({ sectors: false, seed: 20260101 }), z = w.reserveZoneOfWorld();
+ok(z.w * z.h >= 4 * 1560, 'reserve land >= 4x the old 60x26 (' + z.w * z.h + ' tiles)');
+const L = z.levels; ok(L[0].x === 736 && L[0].y === 834 && L[4].x === 728 && L[4].w === 36 && L[4].h === 26, 'levels 0-4 unchanged (saves keep their tanks)');
+ok(L.every((l, i) => !i || (l.x <= L[i - 1].x && l.y <= L[i - 1].y && l.x + l.w >= L[i - 1].x + L[i - 1].w && l.y + l.h >= L[i - 1].y + L[i - 1].h)), 'each level contains the previous one');
+const rz = w.refineryZones(z.regionId), fs = w.regionSites(z.regionId);
+ok(rz.every(r => z.x >= r.x + r.w + 2 || z.x + z.w <= r.x - 2 || z.y >= r.y + r.h + 2 || z.y + z.h <= r.y - 2), 'no overlap with refinery zones');
+ok(fs.every(q => !(q.x > z.x - 6 && q.x < z.x + z.w + 6 && q.y > z.y - 6 && q.y < z.y + z.h + 6)), 'no oil field inside');
+let bad = 0; for (let j = 0; j < z.h; j += 2) for (let i = 0; i < z.w; i += 2) { const t = w.tile(z.x + i, z.y + j); if (t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU') bad++; } ok(bad === 0, 'no water / plateau inside');
+const ts = B.fromWorld(w); let nf = 0, tot = 0; for (let j = 0; j < z.h; j++) for (let i = 0; i < z.w; i++) { const t = ts.tile(z.x + i, z.y + j); tot++; if (!['FLAT_DESERT', 'ROCKY_GROUND'].includes(t.terrain) || t.slope !== 0) nf++; } ok(nf === 0, 'every tile counts as graded flat and tank-buildable (' + tot + ')');
+ok(ts.tile(z.x - 3, z.y).slope === w.tile(z.x - 3, z.y).slope, 'ground outside the zone is untouched');
+process.exit(f ? 1 : 0);
