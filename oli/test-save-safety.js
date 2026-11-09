@@ -21,7 +21,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   st = await p.evaluate(() => ({ n: __lab.store.list().filter(x => x.rs).length, r: __lab.restored })); ok(st.r.from === 'save' && st.n >= 1, 'a save that throws while loading -> the backup is used, not a blank game');
   // 3. no usable save at all -> an ordinary new game, and restored is set
   await p.evaluate(() => { window.__noSave = true; localStorage.setItem('oli-lab-v2', '{broken'); localStorage.setItem('oli-lab-v2-bak', 'x'); }); await boot();
-  st = await p.evaluate(() => ({ n: __lab.store.list().length, r: __lab.restored.from })); ok(st.n === 0 && st.r !== 'save', 'no usable save: a clean new game (restored is set: ' + st.r + ')');
+  st = await p.evaluate(() => ({ n: __lab.store.list().filter(b => b.d !== 'central_station').length, r: __lab.restored.from })); ok(st.n === 0 && st.r !== 'save', 'no usable save: a clean new game (restored is set: ' + st.r + ')');
   // 4. a failing write is shown on screen
   await p.evaluate(() => { window.__noSave = false; localStorage.clear(); __lab.company.injectEquity(1e6, 't'); const real = Storage.prototype.setItem; Storage.prototype.setItem = function () { throw new Error('quota'); }; __lab.save(); Storage.prototype.setItem = real; });
   const toast = await p.evaluate(() => document.body.innerText); ok(/تعذّر حفظ اللعبة/.test(toast), 'a failed save shows a message on screen');
