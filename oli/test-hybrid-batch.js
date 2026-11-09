@@ -74,3 +74,5 @@ for(const speed of [1,5,10]){
  // Both modes should advance the same game time.
  assert(Math.abs(a.state.time-b.state.time)<1e-6,'game time diverged at '+speed+'x');
 }
+
+// CI trigger: rerun the isolated experiment after workflow registration.
