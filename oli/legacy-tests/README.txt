@@ -1,0 +1,1 @@
+Phase 2 test (display-only zones over the OLD world). Kept for the record, NOT run: the approved sector world intentionally changes the geography it asserted (fields, tank farms, refinery zones). Its still-valid checks live on in test-sectors.js.

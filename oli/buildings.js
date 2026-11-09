@@ -123,20 +123,22 @@
   const compatible = (a, b) => a.kind === b.kind && (a.role === 'both' || b.role === 'both' || a.role !== b.role) && productOk(a.product, b.product) && !refuses(a, b) && !refuses(b, a);
 
   /* ---------------------------------------------------------------- SECTOR RULES: what may be built where (the 17 functional sectors of the world). ONE table, checked by validate() like terrain and zones.
-   * Every building id is allowed in some sector kinds only; the pipe / valve / junction family is shared. A refusal names the sector and where the building belongs. mult = a build-cost advantage of the sector. */
+   * Every building id is allowed in some sector kinds only; the pipe / valve / junction family is shared. A refusal names the sector and where the building belongs. mult = a build-cost advantage of the sector (NOT enabled: every table is empty until the owner approves any figure). */
   const IDS = Object.keys(DEFS), pick = re => IDS.filter(k => re.test(k)), SHARED = ['valve', 'junction'];
+  const OFFSHORE_FAMILY = ['offshore_platform', 'offshore_support', 'subsea_pipe', 'coastal_link'];   // reserved ids for the future sea buildings
   const SECTOR_RULES = {
     A: { allow: SHARED.concat(['oil_well', 'pump_station_s', 'pump_station_l', 'pump_station_c', 'water_pump_s', 'water_pump_l', 'main_manifold', 'separator', 'crude_tank_s', 'crude_tank_m']), mult: {},
       perks: ['حقول نفط كثيفة داخل القطاع فقط', 'مساحة للتوسع في الحفر ومحطات التجميع', 'احتياطي وعمق وضغط وجودة تختلف من قطاع لآخر'], needs: ['البئر داخل حقل نفط مكتشف وقابل للحفر', 'خزانات التجميع الصغيرة والمتوسطة فقط (الكبيرة في B)'] },
-    B: { allow: SHARED.concat(pick(/^crude_tank_/), pick(/^(gasoline|diesel|jet)_tank_/), pick(/^gas_sphere_/), pick(/^pump_station_/), ['main_manifold']), mult: Object.fromEntries(pick(/_tank_|^gas_sphere_/).filter(k => !/^water_/.test(k)).map(k => [k, .9])),
-      perks: ['مزارع خزانات بكل أنواعها ومحطات ضخ وتوزيع', 'خصم 10% على بناء الخزانات', 'استقبال النفط الخام والمنتجات'], needs: ['لا آبار ولا مصافٍ في هذا القطاع'] },
+    B: { allow: SHARED.concat(pick(/^crude_tank_/), pick(/^(gasoline|diesel|jet)_tank_/), pick(/^gas_sphere_/), pick(/^pump_station_/), ['main_manifold']), mult: {},
+      perks: ['مزارع خزانات بكل أنواعها ومحطات ضخ وتوزيع', 'استقبال النفط الخام والمنتجات', 'مساحة مناسبة للتوسع'], needs: ['لا آبار ولا مصافٍ في هذا القطاع'] },
     C: { allow: SHARED.concat(pick(/^pump_station_/), pick(/^crude_tank_/), pick(/^(gasoline|diesel|jet)_tank_/), pick(/^gas_sphere_/)), mult: {},
       perks: ['خزانات استراتيجية مستقلة عن التخزين التجاري', 'لا بيع تلقائي: السحب والإيداع بقرارك', 'مخزونه منفصل محاسبياً'], needs: ['الخزانات داخل منطقة الاحتياطي المفتوحة فقط'] },
-    D: { allow: SHARED.concat(pick(/^refinery_/), ['separator', 'main_manifold'], pick(/^pump_station_/), pick(/^water_pump_/), pick(/^(gasoline|diesel|jet)_tank_[sm]$/), pick(/^gas_sphere_[sm]$/)), mult: Object.fromEntries(pick(/^refinery_/).map(k => [k, .9])),
-      perks: ['مصافٍ ووحدات فصل ومعالجة', 'خصم 10% على بناء المصافي', 'مساحة مسوّاة للمرافق الصناعية'], needs: ['المصفاة داخل منطقة المصافي المسوّاة (المستطيل البنفسجي)', 'تحتاج نفطاً خاماً وماءً ومواد تشغيل لتعمل', 'خزانات المنتجات الصغيرة والمتوسطة بجوار المصفاة (الكبيرة في B)'] },
-    E: { allow: SHARED.concat(pick(/^water_pump_/), pick(/^water_tank_/), pick(/^pump_station_/), ['separator']), mult: Object.fromEntries(pick(/^water_/).map(k => [k, .9])),
-      perks: ['محطات سحب وضخ وتخزين ومعالجة المياه', 'خصم 10% على منشآت المياه', 'تزويد القطاعات المحتاجة للمياه'], needs: ['مضخات الماء على مياه أو أرض مناسبة'] },
-    F: { allow: [], mult: {}, perks: ['منصات استخراج بحرية', 'أنابيب بحرية ومحطات ربط ساحلية', 'قواعد بناء بحرية منفصلة عن اليابسة'], needs: ['البناء البحري قيد التجهيز: لا مبنى بري هنا'] }
+    D: { allow: SHARED.concat(pick(/^refinery_/), ['separator', 'main_manifold'], pick(/^pump_station_/), pick(/^water_pump_/), pick(/^(gasoline|diesel|jet)_tank_[sm]$/), pick(/^gas_sphere_[sm]$/)), mult: {},
+      perks: ['مصافٍ ووحدات فصل ومعالجة', 'مساحة مسوّاة للمرافق الصناعية', 'موقع مخصص للصناعة والتكرير'], needs: ['المصفاة داخل منطقة المصافي المسوّاة (المستطيل البنفسجي)', 'تحتاج نفطاً خاماً وماءً ومواد تشغيل لتعمل', 'خزانات المنتجات الصغيرة والمتوسطة بجوار المصفاة (الكبيرة في B)'] },
+    E: { allow: SHARED.concat(pick(/^water_pump_/), pick(/^water_tank_/), pick(/^pump_station_/), ['separator']), mult: {},
+      perks: ['محطات سحب وضخ وتخزين ومعالجة المياه', 'تزويد القطاعات المحتاجة للمياه', 'معالجة المياه المصاحبة وإعادة تدوير مياه الصناعة'], needs: ['مضخات الماء على مياه أو أرض مناسبة'] },
+    /* F1 is prepared, not filled: the OFFSHORE family below is reserved for the sea buildings of a later phase (none exists yet, so nothing can be built here today). A def with domain:'sea' is built on sea tiles ONLY and the sector F alone lists it; land buildings are refused here. No extraction or sea economy is implemented. */
+    F: { allow: OFFSHORE_FAMILY, mult: {}, perks: ['منصات استخراج بحرية', 'منشآت مساندة بحرية', 'أنابيب بحرية ومحطات ربط ساحلية', 'قواعد بناء بحرية منفصلة عن اليابسة'], needs: ['للمنشآت البحرية فقط (على الماء)', 'المباني البرية غير مسموحة هنا', 'تصميم المنشآت البحرية في مرحلة لاحقة'] }
   };
   const SECTOR_HOME = k => { const o = []; for (const q in SECTOR_RULES) if (SECTOR_RULES[q].allow.indexOf(k) >= 0 && SHARED.indexOf(k) < 0) o.push(q); return o; };
   const sectorsOfFootprint = (world, x, y, w, h) => { const set = new Set(); for (const [i, j] of [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1], [(w - 1) >> 1, (h - 1) >> 1]]) set.add(world.sectorAt(x + i, y + j)); return [...set]; };
@@ -205,9 +207,9 @@
       let mult = 0, worst = 0;
       for (const [cx, cy] of cells) {                                                // terrain, slope
         const t = ts.tile(cx, cy); if (!t) { res.state = 'LOADING'; return fail('LOADING', 'notLoaded'); }
-        const td = ts.terrain[t.terrain]; if (!td.buildable) return fail('TERRAIN', 'water', { at: [cx, cy] });
-        if (!def.allowedTerrain.includes(t.terrain)) return fail('TERRAIN', 'terrain', { at: [cx, cy], terrain: t.terrain });
-        if (t.slope > Math.min(def.maxSlope, td.maxSlope) * ts.slopeK) return fail('TERRAIN', 'slope', { at: [cx, cy] });
+        const td = ts.terrain[t.terrain], sea = def.domain === 'sea'; if (sea ? td.buildable : !td.buildable) return fail('TERRAIN', sea ? 'landForSea' : 'water', { at: [cx, cy] });      // a sea building stands on water only (the sea is the WATER_WADI terrain of this world), every land building on land only
+        if (!sea && !def.allowedTerrain.includes(t.terrain)) return fail('TERRAIN', 'terrain', { at: [cx, cy], terrain: t.terrain });
+        if (!sea && t.slope > Math.min(def.maxSlope, td.maxSlope) * ts.slopeK) return fail('TERRAIN', 'slope', { at: [cx, cy] });
         mult += td.buildCost; worst = Math.max(worst, t.slope);
       }
       res.termMult = mult / cells.length;
@@ -238,7 +240,7 @@
       for (const c of conns) {
         const ax = x + c.ax, ay = y + c.ay, st = { id: c.id, kind: c.kind, role: c.role, side: c.side, x: x + c.cell[0], y: y + c.cell[1], ax, ay, ok: true, reason: null, required: c.required && !c.reserved, group: c.group || null, reserved: !!c.reserved };
         if (c.kind === 'link') { st.ok = !!res.linkTo; } else if (!this.inb(ax, ay)) { st.ok = false; st.reason = 'outside'; }
-        else { const t = ts.tile(ax, ay); if (!t) { st.ok = true; st.reason = 'notLoaded'; } else if (!ts.terrain[t.terrain].buildable) { st.ok = false; st.reason = 'water'; }
+        else { const t = ts.tile(ax, ay); if (!t) { st.ok = true; st.reason = 'notLoaded'; } else if (def.domain === 'sea' ? ts.terrain[t.terrain].buildable : !ts.terrain[t.terrain].buildable) { st.ok = false; st.reason = def.domain === 'sea' ? 'landForSea' : 'water'; }
           else { const o = this.at(ax, ay);
             if (o && o.id !== opts.ignoreId) { const facing = worldPoints(o).filter(p => p.x === ax && p.y === ay && p.side === OPPOSITE[c.side]); const ok2 = facing.some(p => compatible({ kind: c.kind, role: c.role, product: c.product }, p)); st.ok = ok2; st.reason = ok2 ? 'docked' : 'blocked';
               if (!ok2 && !c.reserved && facing.some(p => compatible({ kind: c.kind, role: c.role }, p))) { st.reason = 'product'; res.badProduct = { port: c.id, wants: c.product, has: facing[0].product }; } }

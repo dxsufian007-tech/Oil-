@@ -21,15 +21,15 @@ T('2a wells only in A', IDS.filter(i => R.A.allow.includes(i) && /well/.test(i))
 T('2b refineries only in D; separators in A, D, E', IDS.filter(i => /^refinery_/.test(i)).every(i => B.SECTOR_HOME(i).join() === 'D') && ['A', 'D', 'E'].every(k => R[k].allow.includes('separator')) && !R.B.allow.includes('separator'));
 T('2c big crude tanks (large, central) only in B (and C for the reserve); small and medium also in A', B.SECTOR_HOME('crude_tank_l').join() === 'B,C' && B.SECTOR_HOME('crude_tank_s').join() === 'A,B,C' && B.SECTOR_HOME('crude_tank_m').join() === 'A,B,C');
 T('2d water tanks only in E; water pumps in A, D, E', B.SECTOR_HOME('water_tank_m').join() === 'E' && ['A', 'D', 'E'].every(k => R[k].allow.includes('water_pump_s')));
-T('2e F1 allows no land building (offshore buildings come later)', R.F.allow.length === 0);
+T('2e F1 allows no land building: only the reserved offshore family (the sea buildings come later)', R.F.allow.every(k => !B.DEFS[k]) && R.F.allow.length === 4);
 T('2f every sector kind has perks and needs to show the player', ['A', 'B', 'C', 'D', 'E', 'F'].every(k => R[k].perks.length >= 3 && R[k].needs.length >= 1));
 console.log('3. a legal building is allowed, carries the sector info, and the sector discount shows in the price');
 const find = (id, z) => { for (let r = 0; r < 80; r++) for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const [cx, cy] = centre(z), v = S.validate(id, cx + dx * 3, cy + dy * 3, 0, {}); if (v.ok) return [cx + dx * 3, cy + dy * 3, v]; } return null; };
 const bt = find('crude_tank_s', W.sector('B4')), at = find('crude_tank_s', W.sector('A2'));
 T('3a a small crude tank can be built in B4 and in A2', !!bt && !!at, [!!bt, !!at]);
 if (bt && at) { const vb = bt[2], va = at[2]; T('3b the verdict names the sector and carries its perks', vb.sector.code === 'B4' && vb.sector.perks.length >= 3 && va.sector.code === 'A2');
-  T('3c B gives a 10% discount on tanks, A none: cost = base x terrain x 0.9 in B', vb.sectorMult === .9 && !va.sectorMult && (() => { const S0 = new B.BuildingStore(Object.assign({}, ts, { sectorRule: undefined }), { cash: 1e13 }), v0 = S0.validate('crude_tank_s', bt[0], bt[1], 0, {}); return v0.ok && vb.cost === Math.round(v0.cost * .9) || Math.abs(vb.cost - v0.cost * .9) <= 1; })(), [vb.cost]); }
-const rf = find('refinery_s', W.sector('D2')); T('3d a refinery can be built in a D sector (inside the refinery zone) and costs 10% less', (() => { for (const r of W.regions) for (const z of W.refineryZones(r.id)) { const c = W.sectorAt(z.x + 14, z.y + 9); if (c && c[0] === 'D') { for (let j = 0; j < 12; j++) for (let i = 0; i < 20; i++) { const v = S.validate('refinery_s', z.x + i, z.y + j, 0, {}); if (v.ok) return v.sectorMult === .9 && v.sector.kind === 'D'; } } } return false; })());
+  T('3c NO sector gives any discount (none approved): the cost in B is exactly base x terrain, and no sectorMult is set', !vb.sectorMult && !va.sectorMult && (() => { const S0 = new B.BuildingStore(Object.assign({}, ts, { sectorRule: undefined }), { cash: 1e13 }), v0 = S0.validate('crude_tank_s', bt[0], bt[1], 0, {}); return v0.ok && vb.cost === v0.cost; })(), [vb.cost]); }
+const rf = find('refinery_s', W.sector('D2')); T('3d a refinery can be built in a D sector (inside the refinery zone) at the normal price, no discount', (() => { for (const r of W.regions) for (const z of W.refineryZones(r.id)) { const c = W.sectorAt(z.x + 14, z.y + 9); if (c && c[0] === 'D') { for (let j = 0; j < 12; j++) for (let i = 0; i < 20; i++) { const v = S.validate('refinery_s', z.x + i, z.y + j, 0, {}); if (v.ok) return !v.sectorMult && v.sector.kind === 'D'; } } } return false; })());
 console.log('4. crossing a border, and the reserve');
 T('4a a big building across the A / B border is refused (it must stand in one sector)', (() => { const v = S.validate('crude_tank_s', 984, 150, 0, {}); return v.reason === 'sectorStraddle' && S.validate('crude_tank_s', 960, 150, 0, {}).reason !== 'sectorStraddle'; })());
 T('4b in C1 outside the reserve region a tank is refused: the strategic tanks belong in the reserve land', (() => { const v = S.validate('crude_tank_s', 975, 990, 0, {}); return v.reason === 'sectorReserveOnly' || v.reason === 'sectorForbidden'; })());
@@ -37,4 +37,16 @@ T('4c inside the reserve region the old reserve rule still has the last word (we
 console.log('5. another world (no sectors) is not affected');
 const W7 = createWorld({ seed: 7 }), S7 = new B.BuildingStore(B.fromWorld(W7, CONFIG), { cash: 1e13 });
 T('5a no sectors: no sector verdict at all', !ts.sectorRule === false && !B.fromWorld(W7, CONFIG).sectorRule && !/^sector/.test(S7.validate('refinery_s', 700, 700, 0, {}).reason || ''));
+console.log('6. F1 is prepared for the future sea buildings (no extraction exists yet)');
+{ const D = B.DEFS.crude_tank_s, id = 'offshore_platform';
+  T('6a the sector rule lists the whole offshore family and nothing from land', ['offshore_platform', 'offshore_support', 'subsea_pipe', 'coastal_link'].every(k => R.F.allow.includes(k)) && R.F.allow.length === 4);
+  T('6b today no real building is an offshore one, so nothing can be built in F1 yet (a land building is refused by the sector)', IDS.every(k => B.DEFS[k].domain !== 'sea') && S.validate('crude_tank_s', 48, 570, 0, {}).reason === 'sectorForbidden');
+  B.DEFS[id] = Object.assign({}, D, { id, domain: 'sea' });                       // a throw-away stand-in for a future platform, removed right after
+  try {
+    const sea = ts.tile(48, 570), vs = S.validate(id, 48, 570, 0, {}), va = S.validate(id, 1200, 640, 0, {}), vl = S.validate(id, 400, 160, 0, {});
+    T('6c a sea-domain building is NOT blocked by the sector rules in F1: it is accepted on sea tiles', !!sea && ts.terrain[sea.terrain].buildable === false && vs.ok === true && vs.sector.code === 'F1', [sea && sea.terrain, vs.reason, vs.sector && vs.sector.code]);
+    T('6d the same building is refused on land sectors (A, B): offshore belongs to F1 only', va.reason === 'sectorForbidden' && vl.reason === 'sectorForbidden', [va.reason, vl.reason]);
+  } finally { delete B.DEFS[id]; }
+  T('6e F1 stays a continuous strip: every row of the world has sea west of the coast line', (() => { for (let y = 0; y < 1280; y += 8) if (W.sectorAt(0, y) !== 'F1') return false; return true; })());
+  T('6f no sea economy was added: the rule table has no multiplier anywhere', Object.keys(R).every(k => Object.keys(R[k].mult).length === 0)); }
 console.log('\nSECTOR RULES TESTS: ' + pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);

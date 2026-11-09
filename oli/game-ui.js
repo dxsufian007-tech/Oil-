@@ -29,7 +29,7 @@ html[dir=rtl] body{direction:rtl}body{font-family:system-ui,'Noto Sans Arabic','
 #g-lvl{position:fixed;inset:0;z-index:45;background:rgba(5,8,12,.8);display:none;align-items:center;justify-content:center;padding:16px}#g-lvl.open{display:flex}
 #g-lvl .box{background:var(--panel);border:2px solid var(--acc);border-radius:16px;padding:18px;max-width:380px;width:100%;text-align:center}#g-lvl h3{margin:0 0 6px;font-size:20px}#g-lvl p{margin:6px 0}#g-lvl button{margin-top:10px;width:100%;min-height:48px;font-weight:800;background:#2f9e5a;border-color:#2f9e5a;color:#fff}
 #eco-hud{top:6px!important}body.dev #eco-hud{top:54px!important}#g-guide{top:52px}body.dev #g-guide{top:100px}
-body:not(.dev) .panel{bottom:72px!important}body:not(.dev) #buildbar{bottom:72px!important}#toast{top:104px!important}body:not(.dev) #g-nav{display:flex}body.dev #g-nav,body.dev #g-sheet,body.dev #g-guide{display:none!important}
+body:not(.dev) .panel{bottom:72px!important}body:not(.dev) #buildbar{bottom:72px!important}#toast{top:148px!important;z-index:30}body:not(.dev) #g-nav{display:flex}body.dev #g-nav,body.dev #g-sheet,body.dev #g-guide{display:none!important}
 @media (max-height:620px){#g-sheet{max-height:70%}}`;
 
   function cost(id) { const d = B.DEFS[id]; return d.type === 'well' ? 'يبدأ من ' + money(d.cost) : money(d.cost); }
