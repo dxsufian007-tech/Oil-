@@ -6,7 +6,7 @@ const srv = http.createServer((q, r) => { const u = q.url.split('?')[0], f = pat
 let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); };
 (async () => {
   const b = await chromium.launch(), ctx = await b.newContext({ viewport: { width: 412, height: 866 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }), p = await ctx.newPage(), errs = []; p.on('pageerror', e => errs.push(e.message));
-  await p.goto('http://localhost:' + srv.address().port + '/?unlock=all'); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 });
+  await p.goto('http://localhost:' + srv.address().port + '/?unlock=all&legacy=1'); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 });
   await p.evaluate(() => { localStorage.clear(); __lab.reset(); __lab.company.speed = 0; __lab.store.cash = 5e8; const h = __wp.world.homeRegionOfWorld(), z = { x: h.x0 + 150, y: h.y0 + 150 }; __wp.goto(z.x - 10, z.y + 10, .7); window.__z = z; }); await p.waitForTimeout(3000);
   const r = await p.evaluate(() => {
     const L = __lab, z = window.__z; let o = null; const flat = (x0, y0, w, h) => { for (let j = 0; j < h; j += 2) for (let i = 0; i < w; i += 2) { const t = L.ts.tile(x0 + i, y0 + j); if (!t || t.slope > 3 || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU') return false; } return true; };

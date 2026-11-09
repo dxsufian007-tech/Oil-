@@ -4,7 +4,7 @@ const W = require('./worldmap.js'), B = require('./buildings.js'), I = require('
 let pass = 0, fail = 0; const T = (n, c, x) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail++; console.log('FAIL ' + n + (x === undefined ? '' : ' ' + JSON.stringify(x))); } };
 const nf = n => Math.round(n).toLocaleString('en-US');
 
-function newGame(seed) { const world = W.createWorld({ seed: seed || 20260101 }), ts = B.fromWorld(world), store = new B.BuildingStore(ts, { cash: 1e11 }), pipes = new I.PipeNet(ts.W), sim = new I.Sim(store, pipes), layers = ML.create({ world, store, pipes, sim, ts }); return { world, ts, store, pipes, sim, layers }; }
+function newGame(seed) { const world = W.createWorld({ sectors: false, seed: seed || 20260101 }), ts = B.fromWorld(world), store = new B.BuildingStore(ts, { cash: 1e11 }), pipes = new I.PipeNet(ts.W), sim = new I.Sim(store, pipes), layers = ML.create({ world, store, pipes, sim, ts }); return { world, ts, store, pipes, sim, layers }; }
 const starter = g => g.world.homeRegionOfWorld();
 const fieldsOf = g => g.world.regionSites(starter(g).id).filter(s => s.kind === 'FIELD').sort((a, b) => b.radius - a.radius);
 const open = (g, f) => { g.world.discover(f.id); g.world.survey(f.id); g.world.makeDrillable(f.id); return f; };

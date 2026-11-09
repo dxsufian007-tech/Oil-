@@ -2,8 +2,8 @@
  *   node oli/test-zones.js */
 const { createWorld, CONFIG } = require('./worldmap.js');
 let pass = 0, fail = 0; const T = (n, c, x) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail++; console.log('FAIL ' + n + (x === undefined ? '' : ' ' + JSON.stringify(x))); } };
-const W = createWorld({ seed: 20260101 }), Z = W.regions.map(r => W.zoneInfo(r.id)), trueOf = r => W.regionSites(r.id).filter(s => s.kind === 'FIELD').reduce((a, s) => a + s.initialReserve, 0);
-const E = createWorld({ seed: 20260101 }); E.regions.forEach(r => E.evaluateZone(r.id)); const EV = E.regions.map(r => E.zoneInfo(r.id));
+const W = createWorld({ sectors: false, seed: 20260101 }), Z = W.regions.map(r => W.zoneInfo(r.id)), trueOf = r => W.regionSites(r.id).filter(s => s.kind === 'FIELD').reduce((a, s) => a + s.initialReserve, 0);
+const E = createWorld({ sectors: false, seed: 20260101 }); E.regions.forEach(r => E.evaluateZone(r.id)); const EV = E.regions.map(r => E.zoneInfo(r.id));
 
 console.log('1. every zone has the required properties');
 T('1a the map is divided into ' + Z.length + ' zones', Z.length === 24 && Z.every(z => z));
@@ -43,12 +43,12 @@ T('5e but the evaluation is not exact (the estimate is never the real number)', 
 T('5f the evaluated depth range and discovery probability come from the real sites', EV.filter(z => z.commercial).every(z => z.depthRange[0] > 0 && z.discoveryProbability > 0 && z.discoveryProbability < 1));
 
 console.log('6. save and restore, determinism');
-const snap = E.zoneSnapshot(), F = createWorld({ seed: 20260101 }); F.restoreZones(snap);
+const snap = E.zoneSnapshot(), F = createWorld({ sectors: false, seed: 20260101 }); F.restoreZones(snap);
 T('6a the evaluated zones are saved and come back', snap.length === 24 && F.regions.every(r => F.zoneInfo(r.id).evaluated) && JSON.stringify(F.zoneInfo(3)) === JSON.stringify(E.zoneInfo(3)));
-const G = createWorld({ seed: 20260101 }), H = createWorld({ seed: 99 });
+const G = createWorld({ sectors: false, seed: 20260101 }), H = createWorld({ sectors: false, seed: 99 });
 T('6b the same seed gives the same zones', JSON.stringify(G.regions.map(r => G.zoneInfo(r.id))) === JSON.stringify(Z));
 H.regions.forEach(r => H.evaluateZone(r.id));
 T('6c another seed gives another map', JSON.stringify(H.regions.map(r => H.zoneInfo(r.id).potentialClass)) !== JSON.stringify(EV.map(z => z.potentialClass)));
-T('6d other seeds also contain every class on the whole (checked on 5 seeds, at least 4 classes each)', [1, 2, 3, 4, 5].every(sd => { const w = createWorld({ seed: sd }); w.regions.forEach(r => w.evaluateZone(r.id)); return new Set(w.regions.map(r => w.zoneInfo(r.id).potentialClass)).size >= 4; }));
+T('6d other seeds also contain every class on the whole (checked on 5 seeds, at least 4 classes each)', [1, 2, 3, 4, 5].every(sd => { const w = createWorld({ sectors: false, seed: sd }); w.regions.forEach(r => w.evaluateZone(r.id)); return new Set(w.regions.map(r => w.zoneInfo(r.id).potentialClass)).size >= 4; }));
 
 console.log('\nEXPLORATION ZONE TESTS: ' + pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);

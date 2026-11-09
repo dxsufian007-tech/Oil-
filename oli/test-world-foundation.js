@@ -3,7 +3,7 @@
 const W = require('./worldmap.js'), B = require('./buildings.js'), I = require('./industry.js'), E = require('./economy.js'), assert = require('assert'), BC = require('./building-config.js');
 let n = 0; const ok = (c, m, x) => { if (!c) console.log('  FAIL ' + m + (x ? ' ' + JSON.stringify(x) : '')); assert(c, m); n++; console.log('  ok  ' + m); };
 const ms = f => { const t = process.hrtime.bigint(); const r = f(); return [r, Number(process.hrtime.bigint() - t) / 1e6]; };
-const world = W.createWorld({ seed: 20260101 }), ts = B.fromWorld(world);
+const world = W.createWorld({ sectors: false, seed: 20260101 }), ts = B.fromWorld(world);
 { // 1. reserved ids: the coast and the sea cannot collide with a saved terrain id
   const used = Object.values(W.CONFIG.TERRAIN).map(t => t.id), fut = Object.values(W.CONFIG.FUTURE_TERRAIN).map(t => t.id);
   ok(used.length === 6 && Math.max(...used) === 5 && fut.every(i => i > 5) && new Set(used.concat(fut)).size === used.length + fut.length, 'saved terrain ids 0..5 are unchanged; beach / shallow sea / deep sea reserve ids ' + fut.join(',') + ' (no collision)');
@@ -38,7 +38,7 @@ const world = W.createWorld({ seed: 20260101 }), ts = B.fromWorld(world);
   const [yes, t1] = ms(() => I.route(s2, n2, t2, [pa.ax, pa.ay], [pb.ax, pb.ay], { margin: 6, allowSea: true, guard: 400000 })); ok(Array.isArray(yes) && yes.length >= 1080 && yes.some(p => p[0] >= 500 && p[0] < 560), 'with allowSea the line crosses the sea strip: ' + (yes && yes.length) + ' tiles in ' + t1.toFixed(0) + ' ms');
   ok(yes.every((p, i) => i === 0 || Math.abs(p[0] - yes[i - 1][0]) + Math.abs(p[1] - yes[i - 1][1]) === 1), 'the long route is a clean contiguous path'); console.log('  (measured in Node, not on a phone: ~1,090-tile route ' + t1.toFixed(0) + ' ms)'); }
 { // 6. world performance numbers (simulation)
-  const w = W.createWorld({ seed: 4242 }); let [, tc] = ms(() => { for (let cy = 0; cy < 5; cy++) for (let cx = 0; cx < 5; cx++) w.chunk(cx + 10, cy + 5); }); const [, tt] = ms(() => { let k = 0; for (let i = 0; i < 100000; i++) k += w.tile(640 + (i % 300), 640 + ((i / 300) | 0))?.slope || 0; return k; });
+  const w = W.createWorld({ sectors: false, seed: 4242 }); let [, tc] = ms(() => { for (let cy = 0; cy < 5; cy++) for (let cx = 0; cx < 5; cx++) w.chunk(cx + 10, cy + 5); }); const [, tt] = ms(() => { let k = 0; for (let i = 0; i < 100000; i++) k += w.tile(640 + (i % 300), 640 + ((i / 300) | 0))?.slope || 0; return k; });
   const [z, tz] = ms(() => w.zones()); console.log('  (measured in Node: 25 chunks of 64x64 in ' + tc.toFixed(0) + ' ms = ' + (tc / 25).toFixed(1) + ' ms/chunk · 100k tile() lookups ' + tt.toFixed(0) + ' ms · all ' + z.length + ' zones ' + tz.toFixed(0) + ' ms)');
   ok(tc / 25 < 80 && tt < 800, 'chunk generation and tile lookups are cheap enough to stream on demand (simulation numbers, not a device)'); ok(w.W * w.H === 1920 * 1280, 'the world is generated per chunk on demand: its size costs memory only for the chunks in view (1920 x 1280 tiles today)'); }
 console.log(n + ' checks passed');

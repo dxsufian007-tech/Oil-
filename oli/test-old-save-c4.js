@@ -7,7 +7,7 @@ const SEED = 20260101;
 const saveOf = g => JSON.parse(JSON.stringify({ v: 2, store: g.store.toJSON(), net: g.net.toJSON(), cash: g.store.cash, eco: g.co.toJSON(), wd: { r: g.world.reserveSnapshot(), p: g.world.progressSnapshot(), z: g.world.zoneSnapshot() } }));
 /* load a save into a brand-new world with the CURRENT defaults (exactly what the app does on start-up) */
 function loadInto(o, save) {
-  const world = W.createWorld({ seed: SEED, reserveWholeRegion: o.whole }), ts = B.fromWorld(world);
+  const world = W.createWorld({ sectors: false, seed: SEED, reserveWholeRegion: o.whole }), ts = B.fromWorld(world);
   world.restoreZones(save.wd.z); world.restoreProgress(save.wd.p); world.restoreReserve(save.wd.r);
   const r = B.BuildingStore.fromJSON(ts, save.store, { cash: save.cash }), store = r.store; store.cash = save.cash;
   const net0 = I.PipeNet.fromJSON(ts.W, save.net), net = new I.PipeNet(ts.W); for (const L of net0.lines.values()) net.lay({ a: L.a, b: L.b, path: L.path, product: L.product, dia: L.dia }); net.nextId = save.net.next || net.nextId;
@@ -56,5 +56,5 @@ const again = runChild(file + '.2', 'new'); ok(again.dropped === 0 && again.sig0
 const nw = loadInto({}, save), lg = loadInto({ whole: false }, save), c3 = nw.world.regions.find(r => r.name === 'C3'); let refused = 0, tried = 0;
 for (let y = c3.y0 + 8; y < c3.y0 + 312 && tried < 20; y += 20) for (let x = c3.x0 + 8; x < c3.x0 + 312 && tried < 20; x += 20) { if (lg.store.validate('crude_tank_m', x, y, 0, {}).ok) { tried++; const v = nw.store.validate('crude_tank_m', x, y, 0, {}); if (!v.ok && v.kind === 'ZONE') refused++; } }
 ok(tried > 0 && refused === tried, 'NEW commercial buildings in C3 are refused (' + refused + '/' + tried + '), the old ones still stand');
-const fresh = W.createWorld({ seed: SEED }), fts = B.fromWorld(fresh), fst = new B.BuildingStore(fts, { cash: 1e9 }); ok(fst.list().length === 0 && fresh.homeRegionOfWorld().name === neu.home, 'a new game starts empty in ' + fresh.homeRegionOfWorld().name);
+const fresh = W.createWorld({ sectors: false, seed: SEED }), fts = B.fromWorld(fresh), fst = new B.BuildingStore(fts, { cash: 1e9 }); ok(fst.list().length === 0 && fresh.homeRegionOfWorld().name === neu.home, 'a new game starts empty in ' + fresh.homeRegionOfWorld().name);
 console.log(n + ' checks passed');

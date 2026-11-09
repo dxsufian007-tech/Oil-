@@ -6,14 +6,14 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
 (async () => {
   const b = await chromium.launch(), ctx = await b.newContext({ viewport: { width: 412, height: 866 }, deviceScaleFactor: 1 }), p = await ctx.newPage(), errs = [];
   p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-  const url = 'http://localhost:' + srv.address().port + '/?lab=1&lang=en', idle = async () => { await p.waitForTimeout(350); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 }); await p.waitForTimeout(150); };
+  const url = 'http://localhost:' + srv.address().port + '/?lab=1&legacy=1&lang=en', idle = async () => { await p.waitForTimeout(350); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 }); await p.waitForTimeout(150); };
   const shot = async nm => { if (shots) { await idle(); await p.screenshot({ path: path.join(shots, nm + '.png') }); } };
   await p.goto(url); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 });
   await p.evaluate(() => { localStorage.clear(); __lab.reset(); __lab.store.cash = 5e9; __lab.updateCash(); });
 
   // ---- helpers that run IN the page: a spiral search for a legal spot around the screen centre, then a REAL mouse drag from the palette chip
   await p.evaluate(() => {
-    const FULL = new OliBuildings.BuildingStore(OliBuildings.fromWorld(OliWorld.createWorld()), { cash: 1e12 });       // a full-terrain twin that shares the lab's occupancy: finds legal spots even where chunks are not loaded yet
+    const FULL = new OliBuildings.BuildingStore(OliBuildings.fromWorld(OliWorld.createWorld({ sectors: false })), { cash: 1e12 });       // a full-terrain twin that shares the lab's occupancy: finds legal spots even where chunks are not loaded yet
     window.__full = FULL; window.findFar = (def, r, from, maxD) => { const S = __lab.store; FULL.items = S.items; FULL.occ = S.occ; FULL.bucket = S.bucket; const c = from || __wp.cam; for (let d = 0; d < (maxD || 160); d += 1) for (let dy = -d; dy <= d; dy += 1) for (let dx = -d; dx <= d; dx += 1) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue; const x = Math.round(c.x) + dx, y = Math.round(c.y) + dy; if (FULL.validate(def, x, y, r || 0, { ignoreCash: true }).ok) return { x, y }; } return null; };
     window.findSpot = (def, r) => { const S = __lab.store, c = __wp.cam; for (let d = 0; d < 40; d++) for (let dy = -d; dy <= d; dy++) for (let dx = -d; dx <= d; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue; const x = Math.round(c.x) + dx, y = Math.round(c.y) + dy; const v = S.validate(def, x, y, r || 0, { ignoreCash: true }); if (v.ok) return { x, y, w: v.w, h: v.h }; } return null; };
   });
@@ -58,7 +58,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   ok(await p.evaluate(() => document.getElementById('bBuild').disabled), 'the Build button is disabled while the ghost is invalid'); const before = await p.evaluate(() => __lab.store.list().length); await shot('04-ghost-invalid-overlap');
   await p.evaluate(() => document.getElementById('bBuild').disabled = false); await p.click('#bBuild', { force: true }); ok(await p.evaluate(() => __lab.store.list().length) === before, 'pressing Build on an invalid ghost builds nothing');
   await p.click('#bCancel'); ok(!(await verdict()), 'Cancel removes the ghost');
-  const water = await p.evaluate(() => { const w = OliWorld.createWorld(), sr = w.homeRegionOfWorld(); for (let y = sr.y0; y < sr.y0 + 320; y++) for (let x = sr.x0; x < sr.x0 + 320; x++) { const t = w.tile(x, y); if (t.terrain === 'WATER_WADI' && w.tile(x + 1, y).terrain === 'WATER_WADI') return { x, y }; } return null; });
+  const water = await p.evaluate(() => { const w = OliWorld.createWorld({ sectors: false }), sr = w.homeRegionOfWorld(); for (let y = sr.y0; y < sr.y0 + 320; y++) for (let x = sr.x0; x < sr.x0 + 320; x++) { const t = w.tile(x, y); if (t.terrain === 'WATER_WADI' && w.tile(x + 1, y).terrain === 'WATER_WADI') return { x, y }; } return null; });
   await p.evaluate(wt => __wp.goto(wt.x, wt.y, .6), water); await idle(); await dragBuild('crude_tank_s', { x: water.x, y: water.y, w: 2, h: 2 }); v = await verdict(); ok(v && !v.ok && v.kind === 'TERRAIN', 'invalid terrain: a tank on water is refused (' + (v && v.reason) + ')'); await p.click('#bCancel');
   await p.evaluate(() => __wp.goto(3, 3, .8)); await idle(); const pt0 = await p.evaluate(() => ({ x: __wp.sx(-3, -3), y: __wp.sy(-3, -3) }));
   { const chip = await p.$('.chip[data-def="crude_tank_s"]'); const bb = await chip.boundingBox(); await p.mouse.move(bb.x + 20, bb.y + 20); await p.mouse.down(); await p.mouse.move(bb.x + 30, bb.y - 40, { steps: 4 }); await p.mouse.move(pt0.x, pt0.y, { steps: 6 }); await p.mouse.up(); }

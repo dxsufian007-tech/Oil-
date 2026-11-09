@@ -1,7 +1,7 @@
 // Phase 2 building system: pure-logic tests on the real Phase 1 world (no browser). Node: node test-buildings.js
 const assert = require('assert'), W = require('./worldmap.js'), B = require('./buildings.js');
 let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); };
-const world = W.createWorld(), ts = B.fromWorld(world), D = B.DEFS, CFG = W.CONFIG;
+const world = W.createWorld({ sectors: false }), ts = B.fromWorld(world), D = B.DEFS, CFG = W.CONFIG;
 const mk = cash => new B.BuildingStore(ts, { cash });
 const SR = world.homeRegionOfWorld();
 

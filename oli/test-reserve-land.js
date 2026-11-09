@@ -1,6 +1,6 @@
 'use strict';
 const WM = require('./worldmap.js'), B = require('./buildings.js'); let f = 0; const ok = (c, m) => { if (!c) { f++; console.log('FAIL', m); } else console.log('ok  ', m); };
-const w = WM.createWorld({ seed: 20260101 }), z = w.reserveZoneOfWorld();
+const w = WM.createWorld({ sectors: false, seed: 20260101 }), z = w.reserveZoneOfWorld();
 ok(z.w * z.h >= 4 * 1560, 'reserve land >= 4x the old 60x26 (' + z.w * z.h + ' tiles)');
 const L = z.levels; ok(L[0].x === 736 && L[0].y === 834 && L[4].x === 728 && L[4].w === 36 && L[4].h === 26, 'levels 0-4 unchanged (saves keep their tanks)');
 ok(L.every((l, i) => !i || (l.x <= L[i - 1].x && l.y <= L[i - 1].y && l.x + l.w >= L[i - 1].x + L[i - 1].w && l.y + l.h >= L[i - 1].y + L[i - 1].h)), 'each level contains the previous one');

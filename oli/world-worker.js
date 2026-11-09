@@ -3,7 +3,7 @@ importScripts('worldmap.js');
 let world = null;
 onmessage = e => {
   const m = e.data;
-  if (m.t === 'init') { world = self.OliWorld.createWorld({ seed: m.seed }); postMessage({ t: 'ready' }); return; }
+  if (m.t === 'init') { world = self.OliWorld.createWorld({ seed: m.seed, sectors: m.sectors !== false }); postMessage({ t: 'ready' }); return; }
   if (!world) return;
   if (m.t === 'overview') { const o = world.renderOverview(m.step); postMessage({ t: 'overview', w: o.w, h: o.h, step: o.step, ids: o.ids, rgba: o.rgba }, [o.rgba.buffer]); }
   else if (m.t === 'img') { const rgba = world.renderChunkRGBA(m.cx, m.cy, m.k), ch = world.exportChunk(m.cx, m.cy); postMessage({ t: 'img', cx: m.cx, cy: m.cy, k: m.k, rgba, chunk: ch }, [rgba.buffer, ch.terrain.buffer, ch.elev.buffer, ch.slope.buffer]); }

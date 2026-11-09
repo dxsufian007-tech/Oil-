@@ -9,7 +9,7 @@ srv.listen(0, async () => {
     t('normal player: no PERF button', await p.evaluate(() => !document.getElementById('pf-btn'))); t('normal player: no perf hooks', await p.evaluate(() => !window.__perfT && !window.__perf)); await ctx.close(); }
   // 2) the test build: a short scenario
   const ctx = await b.newContext({ viewport: { width: 412, height: 866 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }); await ctx.addInitScript(() => { window.OLI_DEMO = true; window.OLI_PERF = true; });
-  const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message)); await p.goto(url); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 120000 }); await p.addScriptTag({ path: path.join(__dirname, 'perf-panel.js') });
+  const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message)); await p.goto(url + '?legacy=1'); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 120000 }); await p.addScriptTag({ path: path.join(__dirname, 'perf-panel.js') });
   await p.waitForFunction(() => document.getElementById('pf-btn'), null, { timeout: 30000 }); t('test build: PERF button', true);
   // a real save exists before the test
   const before = await p.evaluate(() => { __lab.reset && 0; localStorage.setItem('oli-lab-v2', 'SENTINEL-SAVE'); return localStorage.getItem('oli-lab-v2'); });

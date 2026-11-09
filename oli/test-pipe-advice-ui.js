@@ -5,7 +5,7 @@ const srv = http.createServer((q, r) => { const u = q.url.split('?')[0], f = pat
 let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); };
 (async () => {
   const b = await chromium.launch(), ctx = await b.newContext({ viewport: { width: 412, height: 866 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }), p = await ctx.newPage(), errs = []; p.on('pageerror', e => errs.push(e.message));
-  await p.goto('http://localhost:' + srv.address().port + '/?unlock=all'); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 });
+  await p.goto('http://localhost:' + srv.address().port + '/?unlock=all&legacy=1'); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 });
   await p.evaluate(() => { localStorage.clear(); __lab.reset(); __lab.company.speed = 0; __lab.store.cash = 1e9; const z = __wp.world.reserveZoneOfWorld(); __wp.goto(z.x - 10, z.y + 10, .6); window.__z = z; }); await p.waitForTimeout(2500);
   const r = await p.evaluate(() => { const L = __lab, z = window.__z; let o = null;
     for (let dx = -90; dx <= 90 && !o; dx += 2) for (let dy = -40; dy <= 70 && !o; dy += 2) { const x = z.x + dx, y = z.y + dy; if ([['crude_tank_c', 0, 0], ['pump_station_c', 14, 2]].every(a => L.store.validate(a[0], x + a[1], y + a[2], 0, {}).ok)) o = { x, y }; }

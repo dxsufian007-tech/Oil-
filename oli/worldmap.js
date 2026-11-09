@@ -36,17 +36,25 @@
     /* the kinds of ground a zone can lie on. Every region has one (all LAND or COAST today); the sea is a domain of its own so ports, platforms and offshore plants can get their own rules later. The sea side of the world is the WEST (the coastal shelf column rx = 0). */
     DOMAINS: { LAND: { buildable: true }, COAST: { buildable: true, ports: true }, SEA: { buildable: false, offshore: true } }, SEA_SIDE: 'W',
 
-    /* ---- FUNCTIONAL ZONES (Phase 2 of the central-pipeline work): a DISPLAY layer over the existing world. 17 zones: A1-A7 extraction, B1-B5 storage, C1 strategic reserve, D1-D2 refining, E1 water, F1 sea.
-     * Nothing in the world data changes: every A zone IS an existing oil field (same id, place, radius, reserve, capacity), every B / D zone IS an existing tank-farm / refinery zone of the generator,
-     * C1 is the starter region (still 'C3' inside: ids, saves and the reserve data are untouched), E1 is free flat ground, F1 is the existing western sea strip.
-     * The plan is fixed for the default world seed (the one every save uses); another seed has no functional zones and everything is drawn exactly as before. */
-    FUNC_PLAN: { 20260101: {
-      A: [['A1', 'F8-10', 833, 380, 14], ['A2', 'F8-5', 702, 513, 9], ['A3', 'F13-15', 413, 795, 7], ['A4', 'F13-4', 551, 850, 8], ['A5', 'F15-8', 1143, 667, 8], ['A6', 'F15-9', 1235, 675, 9], ['A7', 'F20-2', 931, 1192, 6]],   // [code, field id, x, y, radius]
-      B: [['B1', 834, 436], ['B2', 592, 792], ['B3', 1202, 702], ['B4', 1160, 720], ['B5', 768, 1160]],      // tank-farm zones (18 x 12), [code, x, y]
-      D: [['D1', 552, 800], ['D2', 1032, 808]],                                                          // refinery zones (28 x 18)
-      E: ['E1', 810, 1066, 36, 24],                                                                      // water zone: free flat ground
-      F: ['F1', 640, 960, [[30, 700], [40, 800], [30, 900]]]                                             // the western sea strip between these rows + the prepared platform slots (data only)
-    } },    SLOPE_K: 3,                                                                     // slope units per "maxSlope" step (slope values are 0..~45, 90% below 20)
+    /* ---- SECTORS: the 17 functional sectors of the world (the approved layout). A1-A7 oil extraction, B1-B5 storage and distribution, C1 strategic reserve, D1-D2 refining and processing,
+     * E1 water, F1 offshore (the whole western sea strip, west of the coast line). Rectangles are [code, x0, y0, x1, y1] in tiles (x1 / y1 exclusive); land tiles west of coastLine(y) belong to F1.
+     * The plan is fixed for the default world seed (the one every save uses); any other seed has no sectors and behaves exactly as the old world. */
+    SECTOR_PLAN: { 20260101: [
+      ['B1', 0, 0, 330, 330], ['B2', 330, 0, 560, 330], ['B3', 560, 0, 780, 330], ['B4', 780, 0, 985, 330],
+      ['D1', 0, 330, 500, 640], ['D2', 500, 330, 985, 640],
+      ['A7', 0, 640, 630, 1000], ['C1', 630, 640, 985, 1000],
+      ['B5', 0, 1000, 330, 1280], ['E1', 330, 1000, 985, 1280],
+      ['A1', 985, 0, 1450, 426], ['A2', 1450, 0, 1920, 426], ['A3', 985, 426, 1450, 853], ['A4', 1450, 426, 1920, 853], ['A5', 985, 853, 1450, 1280], ['A6', 1450, 853, 1920, 1280]
+    ] },
+    SECTOR_KIND: {                                                                  // the name shown on the map (big) and the one-line job under it (small)
+      A: { name: 'استخراج النفط', desc: 'حقول كثيفة · آبار ومضخات ومحطات تجميع' }, B: { name: 'تخزين وتوزيع', desc: 'خزانات ومحطات ضخ وتوزيع' }, C: { name: 'الاحتياطي الاستراتيجي', desc: 'مخزون مستقل · لا بيع تلقائي' },
+      D: { name: 'التكرير والمعالجة', desc: 'مصافٍ ووحدات فصل ومعالجة' }, E: { name: 'المياه والمعالجة', desc: 'سحب وتخزين ومعالجة المياه' }, F: { name: 'المنشآت البحرية', desc: 'منصات وأنابيب بحرية وربط ساحلي' } },
+    SECTOR_FIELDS: { A1: [46, 28], A2: [52, 31], A3: [38, 23], A4: [32, 19], A5: [48, 29], A6: [44, 26], A7: [46, 28] },   // [oil fields, dry prospects] generated inside each extraction sector
+    SECTOR_PROFILE: {                                                               // m = size-class richness, dp = deep-reservoir boost, lq / hq = share of heavy / light crude
+      A1: { m: 1.6, dp: .45, lq: .25, hq: .20 }, A2: { m: 1.6, dp: .15, lq: .10, hq: .45 }, A3: { m: 1.0, dp: .05, lq: .20, hq: .20 }, A4: { m: .6, dp: .10, lq: .55, hq: .05 },
+      A5: { m: 1.6, dp: .20, lq: .25, hq: .25 }, A6: { m: 1.0, dp: .40, lq: .30, hq: .15 }, A7: { m: 1.0, dp: .15, lq: .30, hq: .30 } },
+    F1_SLOTS: [[48, 90], [44, 250], [73, 410], [48, 570], [44, 730], [61, 890], [60, 1050], [81, 1200]],   // prepared offshore-platform places (data only: sea tiles, >= 44 tiles from the shore)
+    SLOPE_K: 3,                                                                     // slope units per "maxSlope" step (slope values are 0..~45, 90% below 20)
     ELEV_LEVELS: 8,                                                             // elevation is also reported as a coarse level 0..7 (the "height" concept)
     /* ---- oil fields (Phase 3): five size classes, the design ranges of the oil-system spec x RESERVE_SCALE (0.25 = the middle option between the nominal ranges and a heavily shrunk world;
        at 1 the ranges are the nominal ones). Keys are kept (MAJOR = giant) so saves and tests keep working; MARGINAL is new. Every number is meant to be tuned. */
@@ -209,7 +217,19 @@
     // ---- sites (oil fields + dry prospects), per region, deterministic from the region seed only
     const siteCache = new Map();
     function pickType(rng, p, rich) { const W_ = CONFIG.OILFIELD; let w = {}; let tot = 0; for (const k in W_) { let v = W_[k].weight; if (k === 'MAJOR') v *= p > .62 ? 2.2 * rich : .15; if (k === 'LARGE') v *= .5 + p; w[k] = v; tot += v; } let r = rng() * tot; for (const k in w) { r -= w[k]; if (r <= 0) return k; } return 'SMALL'; }
-    function regionSites(rid) {
+    const PLAN = opts && opts.sectors === false ? null : CONFIG.SECTOR_PLAN[seed];       // sectors:false = the old (pre-sector) world, kept for the engine tests of the old geography
+    /* ---- sectors: pure data derived from CONFIG.SECTOR_PLAN (works in external mode too: nothing is read from chunks or sites) */
+    const sectors = (() => {
+      const P = PLAN; if (!P) return []; const out = [], K = CONFIG.SECTOR_KIND;
+      P.forEach(([code, x0, y0, x1, y1], idx) => out.push({ code, idx, kind: code[0], name: K[code[0]].name, desc: K[code[0]].desc, shape: 'rect', x: x0, y: y0, w: x1 - x0, h: y1 - y0 }));
+      out.push({ code: 'F1', idx: out.length, kind: 'F', name: K.F.name, desc: K.F.desc, shape: 'sea', x: 0, y: 0, w: 0, h: H, slots: CONFIG.F1_SLOTS.map(s => s.slice()) });
+      return out;
+    })();
+    const sector = code => sectors.find(z => z.code === code) || null;
+    /* the sector code of a tile: west of the coast line = F1 (sea), else the rectangle that holds it */
+    const sectorAt = (x, y) => { if (!sectors.length || x < 0 || y < 0 || x >= W || y >= H) return null; if (x < coastLine(y)) return 'F1'; for (const z of sectors) if (z.shape === 'rect' && x >= z.x && y >= z.y && x < z.x + z.w && y < z.y + z.h) return z.code; return null; };
+    const sectorOfSite = id => { const s = siteById(id); return s ? sectorAt(s.x, s.y) : null; };
+    function regionSitesLegacy(rid) {
       if (siteCache.has(rid)) return siteCache.get(rid); if (external) return []; const reg = regions[rid], rng = mulberry32((seed ^ 0x5eed) + rid * 7919), R = CONFIG.RICHNESS[reg.richness], out = [];
       const nReal = reg.nonCommercial ? 0 : R.fields[0] + Math.floor(rng() * (R.fields[1] - R.fields[0] + 1)), nDry = reg.nonCommercial ? 3 : Math.round(nReal * CONFIG.DRY_RATIO), want = nReal + nDry, margin = 22;
       const spaced = (x, y, r) => out.every(s => Math.hypot(s.x - x, s.y - y) >= s.radius + r + CONFIG.MIN_GAP);
@@ -233,6 +253,41 @@
         if (isDry) dry++; else real++;
       }
       siteCache.set(rid, out); return out;
+    }
+    /* ---- SECTORS (the 17 functional sectors, the approved layout). With a sector plan for this world seed ALL oil fields and dry prospects are generated INSIDE the seven extraction sectors A1-A7 only,
+     * densely, each sector with its own reserve / depth / quality profile. Site ids keep the old shape 'F<regionCell>-<n>' (the cell is only the lookup key), so every API that takes a region keeps working.
+     * Without a plan (any other seed) the old per-region generator below is used unchanged. */
+    let sectorSiteCache = null;
+    function sectorSites() {
+      if (sectorSiteCache) return sectorSiteCache; const byRegion = new Map(), all = [];
+      for (const sc of sectors) {
+        if (sc.kind !== 'A') continue; const T = CONFIG.SECTOR_FIELDS[sc.code], PR = CONFIG.SECTOR_PROFILE[sc.code], rng = mulberry32((seed ^ 0x5ec7) + sc.idx * 7919), nReal = T[0], nDry = T[1], margin = 14;
+        const spaced = (x, y, r) => { for (const s of all) if (Math.hypot(s.x - x, s.y - y) < s.radius + r + CONFIG.MIN_GAP) return false; return true; };
+        let tries = 0, real = 0, dry = 0;
+        while ((real < nReal || dry < nDry) && tries++ < 60000) {
+          const x = sc.x + margin + Math.floor(rng() * (sc.w - 2 * margin)), y = sc.y + margin + Math.floor(rng() * (sc.h - 2 * margin)), p = oilProbability(x, y), isDry = real >= nReal || (dry < nDry && rng() < .3);
+          if (rng() > Math.pow(p, isDry ? .8 : 1.15) * 1.6) continue;
+          const typeKey = isDry ? 'SMALL' : pickType(rng, p, PR.m), spec = CONFIG.OILFIELD[typeKey], radius = Math.round(spec.radius[0] + rng() * (spec.radius[1] - spec.radius[0])), rid = regionIdAt(x, y);
+          const t0 = tile(x, y); if (!t0 || t0.terrain === 'WATER_WADI' || !spaced(x, y, radius)) continue; if (plainsOf(rid).some(q => Math.hypot(q.x - x, q.y - y) < q.r + 14 + radius)) continue;
+          const u = rng(), reserve = isDry ? 0 : Math.round(spec.reserve[0] * Math.pow(spec.reserve[1] / spec.reserve[0], u));
+          const big = typeKey === 'LARGE' || typeKey === 'MAJOR', deep = rng() < Math.min(.9, (big ? .5 : .15) + PR.dp * .5), depth = Math.round(spec.depth[0] + (spec.depth[1] - spec.depth[0]) * clamp01((deep ? .55 : .0) + rng() * (deep ? .45 : .5)));
+          const q = rng(), quality = q < PR.lq ? 'LOW' : q < 1 - PR.hq ? 'MEDIUM' : 'HIGH', pr = Math.round(spec.pressure[0] + (spec.pressure[1] - spec.pressure[0]) * clamp01(.35 * u + .65 * rng()));
+          const n = byRegion.has(rid) ? byRegion.get(rid).length : 0, id = 'F' + rid + '-' + n, err = .15 + rng() * .25, bias = (rng() * 2 - 1) * err;
+          const pr2 = mulberry32((seed ^ 0x0f1e1d) + rid * 7919 + n * 131), FP = CONFIG.FIELD_PROPS, pn = isDry ? 0 : clamp01((pr - spec.pressure[0]) / Math.max(1, spec.pressure[1] - spec.pressure[0]));
+          const props = isDry ? null : { api: +(FP.api[quality][0] + pr2() * (FP.api[quality][1] - FP.api[quality][0])).toFixed(1), waterCut: +Math.min(FP.waterCut[1], FP.waterCut[0] + Math.pow(pr2(), 1.6) * (FP.waterCut[1] - FP.waterCut[0]) + (typeKey === 'MARGINAL' ? .08 : 0)).toFixed(3),
+            extractCost: +((FP.extractBase + depth / 1000 * FP.extractPerKm + (quality === 'LOW' ? 2.5 : quality === 'HIGH' ? -1 : 0)) * (.85 + pr2() * .35)).toFixed(2),
+            capacity: Math.round(reserve / (365 * (FP.life[0] + (FP.life[1] - FP.life[0]) * (.6 * (1 - pn) + .4 * pr2())))), decline: +Math.min(FP.decline[1], FP.decline[0] + (1 - pn) * .14 + pr2() * .07 + (typeKey === 'MARGINAL' ? .04 : 0)).toFixed(3) };
+          const site = { id, kind: isDry ? 'DRY' : 'FIELD', regionId: rid, sector: sc.code, x, y, radius, type: isDry ? 'PROSPECT' : typeKey, initialReserve: reserve, remainingReserve: reserve, estimatedReserve: Math.round(reserve * (1 + bias)), estimateError: err,
+            pressurePotential: isDry ? 0 : pr, quality: isDry ? null : quality, props, depth: isDry ? Math.round(300 + rng() * 1800) : depth, terrainType: t0.terrain, geologyScore: +p.toFixed(3),
+            indicator: { dx: Math.round((rng() * 2 - 1) * radius * .5), dy: Math.round((rng() * 2 - 1) * radius * .5), r: Math.round(radius * 1.6 + 2) } };
+          if (!byRegion.has(rid)) byRegion.set(rid, []); byRegion.get(rid).push(site); all.push(site); if (isDry) dry++; else real++;
+        }
+      }
+      return (sectorSiteCache = byRegion);
+    }
+    function regionSites(rid) {
+      if (!PLAN) return regionSitesLegacy(rid); if (siteCache.has(rid)) return siteCache.get(rid); if (external) return [];
+      const out = sectorSites().get(rid) || []; siteCache.set(rid, out); return out;
     }
     const allSites = () => { const o = []; for (const r of regions) for (const s of regionSites(r.id)) o.push(s); return o; };
     const siteById = id => { const m = /^F(\d+)-/.exec(id); return m ? regionSites(+m[1]).find(s => s.id === id) || null : null; };
@@ -454,6 +509,8 @@
     const reserveZoneOfWorld = () => { const sr = regions.find(r => r.starter); return sr ? reserveZone(sr.id) : null; };
     /* The WHOLE starter region (C3) is Strategic Reserve land: only reserve tanks, pumps, valves and junctions may be built there from now on (buildings.js reserveRule). Buildings and saves already in it stay exactly as they are (the rule is checked only when something is placed).
      * reserveRegionOfWorld() = that region's rectangle; homeRegionOfWorld() = where the player's oil business starts (the richest unlocked neighbour, so the game stays playable). Both are data: CONFIG.RESERVE_WHOLE_REGION turns it off. */
+    /* the name a REGION CELL (the 6x4 exploration grid) is shown with. With sectors the cell grid keeps its names behind 'خلية' so they never read like sector codes; the reserve cell (C3 inside) is the core of sector C1. No sectors -> the old name. */
+    const regionLabel = rid => { const r = regions[rid]; if (!r) return ''; if (!sectors.length) return r.name; return r.starter ? 'C1' : 'خلية ' + r.name; };
     const reserveRegionOfWorld = () => { if (!wholeReserve) return null; const sr = regions.find(r => r.starter); return sr ? { id: sr.id, name: sr.name, label: regionLabel(sr.id), x: sr.x0, y: sr.y0, w: sr.w, h: sr.h } : null; };
     /* the domain of a point (LAND / COAST / SEA): from its region today; a sea region or sea terrain will answer SEA without any caller changing */
     const domainAt = (x, y) => { const r = regions[regionIdAt(x, y)]; return r ? (r.domain || 'LAND') : 'LAND'; };
@@ -505,24 +562,7 @@
     };
     const oilFieldAt = (x, y) => { for (const s of sitesNear(x, y, 2)) if (s.kind === 'FIELD' && Math.hypot(s.x - x, s.y - y) <= s.radius) return s; return null; };
 
-    /* ---- functional zones: pure data derived from CONFIG.FUNC_PLAN (works in external mode too: nothing is read from chunks or sites) */
-    const funcZones = (() => {
-      const P = CONFIG.FUNC_PLAN[seed]; if (!P) return []; const out = [], sr = regions.find(r => r.starter);
-      for (const [code, fid, x, y, r] of P.A) out.push({ code, kind: 'A', name: 'منطقة استخراج', shape: 'ell', x, y, r, fieldId: fid });
-      for (const [code, x, y] of P.B) out.push({ code, kind: 'B', name: 'منطقة التخزين', shape: 'rect', x, y, w: 18, h: 12 });
-      if (sr) out.push({ code: 'C1', kind: 'C', name: 'الاحتياطي الاستراتيجي', shape: 'rect', x: sr.x0, y: sr.y0, w: sr.w, h: sr.h, regionId: sr.id, internalName: sr.name });
-      for (const [code, x, y] of P.D) out.push({ code, kind: 'D', name: 'منطقة التكرير', shape: 'rect', x, y, w: 28, h: 18 });
-      out.push({ code: P.E[0], kind: 'E', name: 'منطقة المياه', shape: 'rect', x: P.E[1], y: P.E[2], w: P.E[3], h: P.E[4] });
-      out.push({ code: P.F[0], kind: 'F', name: 'المنطقة البحرية', shape: 'sea', y0: P.F[1], y1: P.F[2], slots: P.F[3].map(s => s.slice()) });
-      return out;
-    })();
-    const funcZone = code => funcZones.find(z => z.code === code) || null;
-    const funcZoneOfSite = id => { const z = funcZones.find(q => q.fieldId === id); return z ? z.code : null; };
-    /* the code of a generator zone (kind 'B' = tank farm, 'D' = refinery zone) at that top-left corner, or null */
-    const funcZoneCodeAt = (kind, x, y) => { const z = funcZones.find(q => q.kind === kind && q.x === x && q.y === y); return z ? z.code : null; };
-    /* the name a REGION CELL is shown with. The reserve cell (C3 inside) is shown as C1; the other cells keep their grid name behind 'قطاع' so it never reads like a zone code. No plan -> the old name. */
-    const regionLabel = rid => { const r = regions[rid]; if (!r) return ''; if (!funcZones.length) return r.name; return r.starter ? 'C1' : 'قطاع ' + r.name; };
-    return { seed, W, H, CHUNK: C, regions, coastLine, funcZones, funcZone, funcZoneOfSite, funcZoneCodeAt, regionLabel, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, reserveZone, reserveZoneOfWorld, reserveRegionOfWorld, homeRegionOfWorld, domainAt, zones, registerZoneKind, extent, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
+    return { seed, W, H, CHUNK: C, regions, coastLine, sectors, sector, sectorAt, sectorOfSite, regionLabel, regionIdAt, chunk, tile, inb, elevAt, oilProbability, regionSites, allSites, siteById, sitesNear, oilFieldAt, resourceZone, refineryZones, tankZones, strategicPoints, reserveZone, reserveZoneOfWorld, reserveRegionOfWorld, homeRegionOfWorld, domainAt, zones, registerZoneKind, extent, tracks, renderChunkRGBA, exportChunk, injectChunk, regionData, injectRegion, hasRegion, renderOverview, external, canBuildAt,
       zoneInfo, evaluateZone, zoneSnapshot, restoreZones, pressureOf, injectionSupport, injectorsTotal, liftFactor, take, drillWell, drillCost, wellsOf, reserveSnapshot, restoreReserve, discover, survey, makeDrillable, startProducing, deplete, stateOf, visibleInfo, progressSnapshot, restoreProgress, drillEstimate, toLegacyWindow, WellLink, levelForZoom, iso, chunksGenerated: () => chunkGen, cachedChunks: () => chunks.size,
       scale: () => (W * H) / (CONFIG.LEGACY.W * CONFIG.LEGACY.H) };
   }

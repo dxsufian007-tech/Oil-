@@ -2,7 +2,7 @@
  *   wells -> junction -> pump -> separator -> PRODUCTION tank -> junction -> refinery -> 4 product stores ; a TRADE tank (+ pump) feeding the same junction ; a COMMERCIAL tank on its own. */
 const B = require('./buildings.js'), I = require('./industry.js'), E = require('./economy.js'), EC = require('./economy-config.js'), W = require('./worldmap.js');
 function newGame(opts) {
-  opts = opts || {}; const world = W.createWorld({ seed: opts.seed || 20260101, reserveWholeRegion: false }), ts = B.fromWorld(world), store = new B.BuildingStore(ts, { cash: opts.cash == null ? 2e9 : opts.cash }), net = new I.PipeNet(ts.W), sim = new I.Sim(store, net);
+  opts = opts || {}; const world = W.createWorld({ sectors: false, seed: opts.seed || 20260101, reserveWholeRegion: false }), ts = B.fromWorld(world), store = new B.BuildingStore(ts, { cash: opts.cash == null ? 2e9 : opts.cash }), net = new I.PipeNet(ts.W), sim = new I.Sim(store, net);
   const co = new E.Company(store, net, sim, { now: () => 1e12, config: opts.config });
   return { world, ts, store, net, sim, co, sr: world.homeRegionOfWorld() };
 }

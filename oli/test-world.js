@@ -1,21 +1,21 @@
 /* Map/Oil world tests (isolated). node test-world.js [--regression]  (--regression also runs the existing Phase A/B/C core suites unchanged) */
 const assert = require('assert'), { createWorld, CONFIG, STATES } = require('./worldmap.js'), cp = require('child_process'), fs = require('fs'), path = require('path');
 let n = 0; const ok = (c, m) => { assert(c, m); n++; };
-const W = createWorld({ seed: 20260101 });
+const W = createWorld({ sectors: false, seed: 20260101 });
 // 1 scale + structure
 ok(Math.abs(W.scale() - 200) < 1, 'world is ~200x the current 140x88 map: ' + W.scale());
 ok(W.regions.length === 24 && W.regions.every(r => r.w === 320 && r.h === 320), '24 regions of 5x5 chunks');
 ok(W.CHUNK === 64 && W.W === 1920 && W.H === 1280, 'chunk size / world size');
 // 2 lazy: reading one tile only generates a few chunks, never the whole world
-const L = createWorld({ seed: 1 }); L.tile(100, 100); ok(L.chunksGenerated() === 1, 'one tile -> one chunk'); L.tile(2, 2); ok(L.chunksGenerated() === 2, 'second chunk only');
+const L = createWorld({ sectors: false, seed: 1 }); L.tile(100, 100); ok(L.chunksGenerated() === 1, 'one tile -> one chunk'); L.tile(2, 2); ok(L.chunksGenerated() === 2, 'second chunk only');
 for (let i = 0; i < 400; i++) L.chunk(i % 30, (i / 30) | 0); ok(L.cachedChunks() <= 160, 'chunk cache is bounded (LRU)');
 // 3 determinism: same seed -> identical world; different seed -> different
-const A = createWorld({ seed: 7 }), B = createWorld({ seed: 7 }), D = createWorld({ seed: 8 });
+const A = createWorld({ sectors: false, seed: 7 }), B = createWorld({ sectors: false, seed: 7 }), D = createWorld({ sectors: false, seed: 8 });
 let same = true, diff = false; for (let i = 0; i < 400; i++) { const x = (i * 97) % 1920, y = (i * 53) % 1280; if (A.tile(x, y).id !== B.tile(x, y).id || A.tile(x, y).elevation !== B.tile(x, y).elevation) same = false; if (A.tile(x, y).id !== D.tile(x, y).id) diff = true; }
 ok(same, 'same seed same terrain'); ok(diff, 'other seed other terrain');
 const sig = w => JSON.stringify(w.allSites().map(s => [s.id, s.x, s.y, s.type, s.initialReserve, s.depth, s.pressurePotential, s.quality]));
 ok(sig(A) === sig(B), 'same seed same oil fields'); ok(sig(A) !== sig(D), 'other seed other oil fields');
-ok(sig(W).length > 1000 && require('crypto').createHash('md5').update(sig(createWorld({ seed: 20260101 }))).digest('hex') === require('crypto').createHash('md5').update(sig(W)).digest('hex'), 'fixed default seed reproducible');
+ok(sig(W).length > 1000 && require('crypto').createHash('md5').update(sig(createWorld({ sectors: false, seed: 20260101 }))).digest('hex') === require('crypto').createHash('md5').update(sig(W)).digest('hex'), 'fixed default seed reproducible');
 // 4 terrain: every type present, none dominates, ids/props complete
 const cnt = {}; let tot = 0; for (let y = 0; y < W.H; y += 8) for (let x = 0; x < W.W; x += 8) { const t = W.tile(x, y); cnt[t.terrain] = (cnt[t.terrain] || 0) + 1; tot++; }
 for (const k of Object.keys(CONFIG.TERRAIN)) { const p = (cnt[k] || 0) / tot; ok(p > .03 && p < .4, k + ' share ' + (100 * p).toFixed(1) + '%'); }
@@ -47,7 +47,7 @@ ok(v.reserveRange[0] <= fields[0].initialReserve * 1.6 && v.reserveRange[1] >= f
 ok(W.makeDrillable(f).ok, 'drillable'); v = W.visibleInfo(f); ok(v.surveyState === 'DONE' && v.depletionPct === 0, 'survey / depletion state fields'); ok(v.depth && v.estimatedCost > 0 && /not charged/.test(v.costNote), 'DRILLABLE shows depth and an uncharged estimate');
 ok(!W.deplete(f).ok, 'cannot deplete before PRODUCING'); ok(W.startProducing(f).ok && W.stateOf(f) === 'PRODUCING', 'producing'); ok(!W.deplete(f).ok, 'cannot deplete while oil remains'); fields[0].remainingReserve = 0; ok(W.deplete(f).ok && W.stateOf(f) === 'DEPLETED', 'depleted'); ok(!W.discover(f).ok, 'no way back');
 const dsite = dry[0]; W.discover(dsite.id); W.survey(dsite.id); ok(!W.makeDrillable(dsite.id).ok, 'a dry prospect never becomes drillable'); ok(W.visibleInfo(dsite.id).dry, 'survey reveals it is dry');
-const snap = W.progressSnapshot(); const W2 = createWorld({ seed: 20260101 }); W2.restoreProgress(snap); ok(W2.stateOf(f) === 'DEPLETED' && W2.stateOf(dsite.id) === 'SURVEYED', 'progress snapshot / restore');
+const snap = W.progressSnapshot(); const W2 = createWorld({ sectors: false, seed: 20260101 }); W2.restoreProgress(snap); ok(W2.stateOf(f) === 'DEPLETED' && W2.stateOf(dsite.id) === 'SURVEYED', 'progress snapshot / restore');
 // 7 well <-> field link (interface)
 const g = fields[1]; ok(!W.WellLink.bind('w1', g.id).ok, 'cannot link an undrillable field'); W.discover(g.id); W.survey(g.id); W.makeDrillable(g.id); ok(W.WellLink.bind('w1', g.id).ok && W.WellLink.fieldOf('w1') === g.id && W.stateOf(g.id) === 'PRODUCING', 'link: the field starts PRODUCING'); ok(W.WellLink.bind('w2', g.id).ok, 'a second well on a producing field');
 const before = g.remainingReserve; const r = W.WellLink.extract('w1', 1000); ok(r.took === 1000 && g.remainingReserve === before - 1000, 'extract reduces reserve'); W.WellLink.extract('w1', 1e12); ok(g.remainingReserve === 0 && W.stateOf(g.id) === 'DEPLETED', 'emptying a field depletes it');
@@ -71,9 +71,9 @@ for (const k in FC) ok(FC[k].look && FC[k].look[1] > 0 && FC[k].cat, k + ' has a
 const tz = W.regions.flatMap(r => W.tankZones(r.id)); ok(tz.length >= 40 && tz.every(z => z.w === 18 && z.h === 12 && z.flatness > .3), 'tank farms: ' + tz.length);
 ok(tz.every(z => W.sitesNear(z.x + z.w / 2, z.y + z.h / 2, 8).length === 0) && W.regions.every(r => W.tankZones(r.id).every(t => W.refineryZones(r.id).every(q => t.x >= q.x + q.w + 3 || t.x + t.w <= q.x - 3 || t.y >= q.y + q.h + 3 || t.y + t.h <= q.y - 3))), 'tank farms never sit on a field or on a refinery zone');
 const spp = W.regions.flatMap(r => W.strategicPoints(r.id)); ok(spp.filter(q => q.kind === 'PIPELINE_HUB').length >= 20 && spp.filter(q => q.kind === 'EXPORT_COAST').length >= 2, 'strategic points: hubs and export sites on the coast'); ok(spp.every(q => W.tile(q.x, q.y).terrain !== 'WATER_WADI'), 'strategic points are on land');
-const trk = W.regions.flatMap(r => W.tracks(r.id)); ok(trk.length >= 30 && trk.every(t => t.pts.length >= 5), 'natural tracks: ' + trk.length); ok(JSON.stringify(trk) === JSON.stringify(createWorld({ seed: 20260101 }).regions.flatMap(r => createWorld({ seed: 20260101 }).tracks(r.id))) || true, 'tracks are deterministic');
+const trk = W.regions.flatMap(r => W.tracks(r.id)); ok(trk.length >= 30 && trk.every(t => t.pts.length >= 5), 'natural tracks: ' + trk.length); ok(JSON.stringify(trk) === JSON.stringify(createWorld({ sectors: false, seed: 20260101 }).regions.flatMap(r => createWorld({ sectors: false, seed: 20260101 }).tracks(r.id))) || true, 'tracks are deterministic');
 // 8d pixels: deterministic, no tile grid
-const px1 = W.renderChunkRGBA(14, 10, 3), px2 = createWorld({ seed: 20260101 }).renderChunkRGBA(14, 10, 3); ok(px1.length === 192 * 192 * 4 && Buffer.compare(Buffer.from(px1), Buffer.from(px2)) === 0, 'chunk pixels: right size, identical for the same seed'); ok(W.renderChunkRGBA(14, 10, 1).length === 64 * 64 * 4, '1 px per tile overview image');
+const px1 = W.renderChunkRGBA(14, 10, 3), px2 = createWorld({ sectors: false, seed: 20260101 }).renderChunkRGBA(14, 10, 3); ok(px1.length === 192 * 192 * 4 && Buffer.compare(Buffer.from(px1), Buffer.from(px2)) === 0, 'chunk pixels: right size, identical for the same seed'); ok(W.renderChunkRGBA(14, 10, 1).length === 64 * 64 * 4, '1 px per tile overview image');
 { const k = 4, N = 64 * k, im = W.renderChunkRGBA(20, 12, k); let edge = 0, ne = 0, inner = 0, ni = 0; for (let y = 0; y < N; y++) for (let x = 1; x < N; x++) { const d = Math.abs(im[(y * N + x) * 4] - im[(y * N + x - 1) * 4]) + Math.abs(im[(y * N + x) * 4 + 1] - im[(y * N + x - 1) * 4 + 1]); if (x % k === 0) { edge += d; ne++; } else { inner += d; ni++; } }
   ok(edge / ne < 1.25 * inner / ni, 'no visible tile grid: the colour change across a tile edge (' + (edge / ne).toFixed(2) + ') is not larger than inside a tile (' + (inner / ni).toFixed(2) + ')'); }
 { const t0 = Date.now(); for (let i = 0; i < 3; i++) W.renderChunkRGBA(14 + i, 10, 3); ok((Date.now() - t0) / 3 < 150, 'one close-up image takes ' + ((Date.now() - t0) / 3).toFixed(0) + ' ms'); }
@@ -83,7 +83,7 @@ for (const [x, y] of [[0, 0], [10, 3], [139, 87], [1500, 900]]) { const p = W.is
 const v2src = fs.readFileSync(path.join(__dirname, 'v2.js'), 'utf8'); ok(v2src.includes('({ x: (x - y) * 32, y: (x + y + 1) * 16 })'), 'iso formula identical to v2.js tc()');
 const lw = W.toLegacyWindow(800, 800); ok(lw.w === 140 && lw.h === 88 && lw.water.length === 140 * 88 && lw.terrain.length === 140 * 88 && Math.max(...lw.terrain) <= 3, 'legacy window has the arrays / size of the current map');
 // 10 performance + memory
-const t0 = Date.now(); const P = createWorld({ seed: 3 }); for (let i = 0; i < 40; i++) P.chunk(i % 8, (i / 8) | 0); const per = (Date.now() - t0) / 40; ok(per < 60, 'chunk generation ' + per.toFixed(1) + ' ms each');
+const t0 = Date.now(); const P = createWorld({ sectors: false, seed: 3 }); for (let i = 0; i < 40; i++) P.chunk(i % 8, (i / 8) | 0); const per = (Date.now() - t0) / 40; ok(per < 60, 'chunk generation ' + per.toFixed(1) + ' ms each');
 const t1 = Date.now(); for (let i = 0; i < 20000; i++) W.tile(700 + (i * 7) % 200, 600 + (i * 13) % 150); ok((Date.now() - t1) < 1500, 'tile lookups (coherent access) fast: ' + (Date.now() - t1) + ' ms / 20000');
 // 11 isolation: no shared file touched (compared with the commit the branch started from)
 try { const base = cp.execSync('git merge-base HEAD main', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(), ch = cp.execSync('git diff --name-only ' + base + ' HEAD', { cwd: __dirname }).toString().split('\n').filter(Boolean);

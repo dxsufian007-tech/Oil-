@@ -10,7 +10,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   const ev = (f, a) => p.evaluate(f, a), shot = async nm => { if (shots) await p.screenshot({ path: path.join(shots, nm + '.png') }); };
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 }); await cdp.send('Performance.enable');
   const heap = async () => { await cdp.send('HeapProfiler.collectGarbage'); const m = (await cdp.send('Performance.getMetrics')).metrics; return m.find(x => x.name === 'JSHeapUsedSize').value / 1048576; };
-  await p.goto('http://localhost:' + srv.address().port + '/?lab=1&lang=en'); await p.waitForFunction(() => window.__lab && __lab.restored && window.__layers, null, { timeout: 120000 });
+  await p.goto('http://localhost:' + srv.address().port + '/?lab=1&legacy=1&lang=en'); await p.waitForFunction(() => window.__lab && __lab.restored && window.__layers, null, { timeout: 120000 });
   await ev(() => { localStorage.clear(); __lab.reset(); __lab.store.cash = 5e10; __lab.updateCash(); __lab.company.setSpeed(0); }); await p.waitForTimeout(400); await p.waitForFunction(() => __wp.idle(), null, { timeout: 120000 });
   const demo = await ev(async () => await __lab.buildDemo()); ok(demo.ok, 'the demo oil chain is built on the real page (' + demo.total + ' buildings)');
   await ev(() => { __lab.store.cash = 5e10; __lab.company.sync(); __lab.updateCash(); });

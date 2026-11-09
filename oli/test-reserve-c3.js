@@ -2,7 +2,7 @@
 /* The whole of region C3 is Strategic Reserve land: reserve tanks (in the open area), pumps, valves, junctions only; old buildings and saves stay.   node test-reserve-c3.js */
 const W = require('./worldmap.js'), B = require('./buildings.js'), I = require('./industry.js'), E = require('./economy.js'), assert = require('assert');
 let n = 0; const ok = (c, m, x) => { if (!c) console.log('  FAIL ' + m + (x ? ' ' + JSON.stringify(x) : '')); assert(c, m); n++; console.log('  ok  ' + m); };
-const mk = (flag, cash) => { const world = W.createWorld({ seed: 20260101, reserveWholeRegion: flag }), ts = B.fromWorld(world), store = new B.BuildingStore(ts, { cash: cash == null ? 1e10 : cash }), net = new I.PipeNet(ts.W), sim = new I.Sim(store, net), co = new E.Company(store, net, sim, { now: () => 1e12 }); return { world, ts, store, net, sim, co }; };
+const mk = (flag, cash) => { const world = W.createWorld({ sectors: false, seed: 20260101, reserveWholeRegion: flag }), ts = B.fromWorld(world), store = new B.BuildingStore(ts, { cash: cash == null ? 1e10 : cash }), net = new I.PipeNet(ts.W), sim = new I.Sim(store, net), co = new E.Company(store, net, sim, { now: () => 1e12 }); return { world, ts, store, net, sim, co }; };
 const G = mk(true), O = mk(false);                                   // G: C3 is all reserve · O: the old world (only the small zone)
 const c3 = G.world.regions.find(r => r.name === 'C3'), RR = G.world.reserveRegionOfWorld(), Z = G.world.reserveZoneOfWorld();
 ok(RR && RR.x === c3.x0 && RR.y === c3.y0 && RR.w === 320 && RR.h === 320 && RR.name === 'C3', 'the reserve land is the whole of region C3 (' + RR.x + ',' + RR.y + ' ' + RR.w + 'x' + RR.h + ')');
