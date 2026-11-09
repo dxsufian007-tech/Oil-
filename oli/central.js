@@ -228,7 +228,7 @@
   }
 
 
-  /* ---------------------------------------------------------------- FREE TAP: a branch from ANY tile of the trunk.  planTap() finds a 2x2 station spot touching the tile (normal building validation, best rotation = most usable ports);
+  /* ---------------------------------------------------------------- FREE TAP: a branch from ANY tile of the trunk.  planTap() finds a 3x3 station spot touching the tile (normal building validation, best rotation = most usable ports);
    * commitTap() buys the station (one tile of shell = one tile of each channel) and registers it in the graph (the segment is cut in two at that tile): that registration is the mechanical connection. */
   function planTap(store, net, x, y, opts) {
     opts = opts || {}; const cn = net.central; if (!cn) return { ok: false, reason: 'noNetwork' }; const tp = cn.tapPoint(x, y); if (!tp) return { ok: false, reason: 'notOnCentral' };

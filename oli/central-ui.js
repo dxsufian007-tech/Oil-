@@ -48,7 +48,7 @@
 
   function pumpRows(cn, ch, segId) {
     const rows = []; for (const p of cn.pumps.values()) { if (p.ch !== ch || (segId && p.seg !== segId)) continue; const g = cn.seg.get(p.seg); if (!g) continue; const from = p.dir === 1 ? g.a : g.b, to = p.dir === 1 ? g.b : g.a;
-      rows.push('<tr><td>' + p.st + ' · ' + p.seg + '</td><td>' + (p.fault ? '<span style="color:#ff8a7a">معطّلة</span>' : p.flow > 0 ? 'تعمل ' + num(p.pIn, 0) + '→' + num(p.pOut, 0) + ' psi · ' + num(p.flow, 0) + ' bbl/يوم' : 'جاهزة') + '</td><td>' + (p.dir === 1 ? '⬆ أمامي' : '⬇ عكسي') + ': ' + from + ' ← ' + to + '</td><td><button class="act cn-pdir" data-p="' + p.id + '">↔ عكس</button><button class="act cn-pflt" data-p="' + p.id + '">' + (p.fault ? '🔧' : '⚠') + '</button></td></tr>'); }
+      rows.push('<tr><td>' + p.st + ' · ' + p.seg + '</td><td>' + (p.fault ? '<span style="color:#ff8a7a">معطّلة</span>' : p.flow > 0 ? 'تعمل ' + num(p.pIn, 0) + '→' + num(p.pOut, 0) + ' psi · ' + num(p.flow, 0) + ' bbl/يوم' : 'جاهزة') + '</td><td>' + (p.dir === 1 ? 'أمامي' : 'عكسي') + ' · يدفع من ' + from + ' إلى ' + to + '</td><td><button class="act cn-pdir" data-p="' + p.id + '">↔ عكس</button><button class="act cn-pflt" data-p="' + p.id + '">' + (p.fault ? '🔧' : '⚠') + '</button></td></tr>'); }
     return rows.length ? '<table>' + rows.join('') + '</table>' : '<div class="k">لا مضخات على هذا الجزء.</div>';
   }
   function render() {
@@ -79,7 +79,7 @@
   }
   function planAt(x, y, toward) {
     const r = env.CEN.planTap(env.store, env.pipes, x, y, { toward: toward || null }); const $i = document.getElementById('info');
-    if (!r.ok) { env.toast(r.reason === 'cash' ? 'الرصيد لا يكفي لنقطة الربط' : r.reason === 'atStation' ? 'هنا محطة ربط قائمة' : 'لا يوجد مكان صالح لنقطة ربط هنا'); return false; }
+    if (!r.ok) { env.toast(({ cash: 'الرصيد لا يكفي لنقطة الربط (' + fmt(r.cost || 0) + ')', atStation: 'هنا محطة ربط قائمة: اربط منها مباشرة', slope: 'الأرض هنا شديدة الانحدار لبناء محطة ربط', water: 'لا يُبنى على الماء أو الوادي', centralPipe: 'المكان مزدحم بخطوط الأنبوب المركزي: جرّب نقطة أبعد قليلاً', sectorForbidden: 'قطاع هذه النقطة لا يسمح ببناء محطة ربط', notOnCentral: 'هذه النقطة ليست على الأنبوب المركزي', noSpot: 'لا يوجد مكان صالح لمحطة ربط بجانب هذه النقطة' })[r.reason] || 'لا يمكن إنشاء فرع من هذه النقطة'); return false; }
     branch = r; $i.innerHTML = '<h4>🔀 نقطة ربط جديدة</h4><div class="k">ستُبنى محطة ربط 3×3 ملاصقة للخط بـ ' + r.ports + ' منافذ صالحة (قناتان لكل منتج). تُسجَّل كاتصال ميكانيكي بالقنوات الست، ثم تصل منها بأنبوب عادي إلى المنشأة.<br>التكلفة ' + fmt(r.cost) + '</div><div class="row"><button id="cn-ok" style="min-height:46px">✔ بناء</button><button id="cn-no" style="min-height:46px">إلغاء</button></div>'; return true;
   }
 
