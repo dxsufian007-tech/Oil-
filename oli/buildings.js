@@ -94,6 +94,13 @@
       allowedTerrain: FLAT, maxSlope: 2, capacity: { value: z.cap, unit: 'bbl/day' }, zone: 'REFINERY', clearance: 1, params: z,
       connections: [pt('CRUDE_IN', 'pipe', 'in', [0, mid(z.h)], 1, { product: P.CRUDE }), pt('GASOLINE_OUT', 'pipe', 'out', [z.w - 1, 1], 0, { required: false, product: P.GASOLINE }), pt('DIESEL_OUT', 'pipe', 'out', [z.w - 1, 2], 0, { required: false, product: P.DIESEL }),
         pt('JET_OUT', 'pipe', 'out', [z.w - 1, 3], 0, { required: false, product: P.JET_FUEL }), pt('GAS_OUT', 'pipe', 'out', [z.w - 2, 0], 3, { required: false, product: P.GAS })] }); }
+  /* Central Hybrid Network station (central.js): one 2x2 node of the grey trunk with SIX product-locked ports (one per channel, role 'both': a branch carries product into the trunk or out of it).
+   * Pre-built stations cost nothing; a station the player taps in on the trunk costs one tile of shell = one tile of each 36" channel. */
+  { const CN = (typeof OliCentral !== 'undefined') ? OliCentral : require('./central.js');
+    const cp = (ch, cell, side) => pt(ch + '_PORT', 'pipe', 'both', cell, side, { required: false, product: P[ch] });
+    define({ id: 'central_station', name: 'Central Network Station', category: 'PIPELINE', section: 'PIPELINE', family: 'CENTRAL', type: 'central', footprint: [2, 2], cost: CN.TILE_COST, maintenanceCost: CFG.JUNCTION.maint, operatingCost: CFG.JUNCTION.op, buildTime: CFG.JUNCTION.buildTime || 8, visual: 'junction',
+      allowedTerrain: ALL_LAND, maxSlope: 12, capacity: { value: CFG.PIPES[36].capacity, unit: 'bbl/day' }, rotatable: true, params: { channels: CN.CHANNELS },
+      connections: [cp('CRUDE', [0, 0], 1), cp('WATER', [0, 1], 1), cp('GASOLINE', [0, 0], 3), cp('DIESEL', [1, 0], 3), cp('JET_FUEL', [1, 0], 0), cp('GAS', [1, 1], 0)] }); }
   const ORDER = Object.keys(DEFS);
 
   /* ---------------------------------------------------------------- rotation (footprint + connections together) */
@@ -124,7 +131,7 @@
 
   /* ---------------------------------------------------------------- SECTOR RULES: what may be built where (the 17 functional sectors of the world). ONE table, checked by validate() like terrain and zones.
    * Every building id is allowed in some sector kinds only; the pipe / valve / junction family is shared. A refusal names the sector and where the building belongs. mult = a build-cost advantage of the sector (NOT enabled: every table is empty until the owner approves any figure). */
-  const IDS = Object.keys(DEFS), pick = re => IDS.filter(k => re.test(k)), SHARED = ['valve', 'junction'];
+  const IDS = Object.keys(DEFS), pick = re => IDS.filter(k => re.test(k)), SHARED = ['valve', 'junction', 'central_station'];
   const OFFSHORE_FAMILY = ['offshore_platform', 'offshore_support', 'subsea_pipe', 'coastal_link'];   // reserved ids for the future sea buildings
   const SECTOR_RULES = {
     A: { allow: SHARED.concat(['oil_well', 'pump_station_s', 'pump_station_l', 'pump_station_c', 'water_pump_s', 'water_pump_l', 'main_manifold', 'separator', 'crude_tank_s', 'crude_tank_m']), mult: {},
@@ -157,7 +164,7 @@
       reserveRule: function (def, x, y, w, h) { const z = this.reserve(), R = this.region && this.region(), land = R || z; if (!land || !(x < land.x + land.w && x + w > land.x && y < land.y + land.h && y + h > land.y)) return null;
         if (def.product === P.WATER && def.type === 'tank') return { ok: false, reason: 'reserveOnly' };       // water tanks are commercial: outside the reserve land (water PUMPS may stand inside to draw the settled water of reserve tanks)
         if (def.type === 'tank' || def.type === 'gas') { if (!z) return { ok: false, reason: 'reserveBounds' }; const L = z.levels[Math.max(0, Math.min(z.levels.length - 1, this.reserveLevel() | 0))]; return x >= L.x && y >= L.y && x + w <= L.x + L.w && y + h <= L.y + L.h ? { ok: true } : { ok: false, reason: 'reserveBounds' }; }
-        return def.type === 'pump' || def.type === 'valve' || def.type === 'junction' ? { ok: true, infra: true } : { ok: false, reason: 'reserveOnly' }; },
+        return def.type === 'pump' || def.type === 'valve' || def.type === 'junction' || def.type === 'central' ? { ok: true, infra: true } : { ok: false, reason: 'reserveOnly' }; },
       sectorInfo: (x, y) => { const c = world.sectorAt ? world.sectorAt(x, y) : null, z = c && world.sector(c); return z ? { code: c, kind: z.kind, name: z.name, desc: z.desc, perks: SECTOR_RULES[z.kind].perks, needs: SECTOR_RULES[z.kind].needs } : null; },
       /* the sector rule: every sector the footprint touches must allow the building (the pipe / valve / junction family is shared). Inside the reserve region the reserve rule has the last word. */
       sectorRule: world.sectors && world.sectors.length ? function (def, defId, x, y, w, h) {
@@ -213,7 +220,7 @@
         mult += td.buildCost; worst = Math.max(worst, t.slope);
       }
       res.termMult = mult / cells.length;
-      for (const [cx, cy] of cells) { const o = this.occ.get(key(this.W, cx, cy)); if (o && o !== opts.ignoreId) return fail('OVERLAP', 'overlap', { at: [cx, cy], with: o }); }
+      for (const [cx, cy] of cells) { const o = this.occ.get(key(this.W, cx, cy)); if (o && o !== opts.ignoreId) return fail('OVERLAP', 'overlap', { at: [cx, cy], with: o }); if (this.cenAt && !opts.ignoreCentral && this.cenAt(cx, cy)) return fail('OVERLAP', 'centralPipe', { at: [cx, cy] }); }
       if (def.clearance) {                                                           // breathing room around big / dangerous plant: no other FOOTPRINT within `clearance` tiles
         const c = def.clearance; for (let j = -c; j < h + c; j++) for (let i = -c; i < w + c; i++) { if (i >= 0 && j >= 0 && i < w && j < h) continue; const o = this.occ.get(key(this.W, x + i, y + j)); if (o && o !== opts.ignoreId) return fail('CLEARANCE', 'tooClose', { at: [x + i, y + j], with: o }); }
       }
@@ -244,7 +251,7 @@
           else { const o = this.at(ax, ay);
             if (o && o.id !== opts.ignoreId) { const facing = worldPoints(o).filter(p => p.x === ax && p.y === ay && p.side === OPPOSITE[c.side]); const ok2 = facing.some(p => compatible({ kind: c.kind, role: c.role, product: c.product }, p)); st.ok = ok2; st.reason = ok2 ? 'docked' : 'blocked';
               if (!ok2 && !c.reserved && facing.some(p => compatible({ kind: c.kind, role: c.role }, p))) { st.reason = 'product'; res.badProduct = { port: c.id, wants: c.product, has: facing[0].product }; } }
-            else if (this.pipeAt && !c.reserved && c.kind === 'pipe') { const pp = this.pipeAt(ax, ay); if (pp && !productOk(c.product, pp)) { st.ok = false; st.reason = 'product'; res.badProduct = { port: c.id, wants: c.product, has: pp }; } } } }
+            else if (this.pipeAt && !c.reserved && c.kind === 'pipe') { const pp = this.pipeAt(ax, ay); if (pp === 'CENTRAL') { st.ok = false; st.reason = 'centralPipe'; } else if (pp && !productOk(c.product, pp)) { st.ok = false; st.reason = 'product'; res.badProduct = { port: c.id, wants: c.product, has: pp }; } } } }
         res.connections.push(st);
         if (st.required) { if (c.group) { const g = groups.get(c.group) || { any: false, n: 0 }; g.n++; g.any = g.any || st.ok; groups.set(c.group, g); } else if (!st.ok) allOk = false; }
       }
@@ -261,7 +268,7 @@
       const def = DEFS[defId], b = { id: this.nextId++, d: defId, x, y, r: v.r, st: STATUS.UNDER_CONSTRUCTION, c: 1, t0: this.time };
       if (v.linkTo) b.link = v.linkTo; if (v.field) b.field = v.field; if (v.reserve) b.rs = 1;
       if (opts.instant) b.st = STATUS.OPERATIONAL;
-      this.items.set(b.id, b); this._index(b, true); if (this.cash !== Infinity) this.cash -= v.cost; return { ok: true, building: b, cost: v.cost, verdict: v };
+      this.items.set(b.id, b); this._index(b, true); if (this.cash !== Infinity && !opts.free) this.cash -= v.cost; return { ok: true, building: b, cost: opts.free ? 0 : v.cost, verdict: v };
     }
     tick(dt) {                                                                       // construction finishes by game time; nothing else changes (operation belongs to Phase 3/4)
       this.time += dt; for (const b of this.items.values()) if (b.st === STATUS.UNDER_CONSTRUCTION && this.time - b.t0 >= DEFS[b.d].buildTime) b.st = STATUS.OPERATIONAL;

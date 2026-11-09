@@ -12,6 +12,7 @@
   else root.OliIndustry = factory(root.OliBuildings, root.OliBuildingConfig);
 })(typeof self !== 'undefined' ? self : this, function (B, CFG) {
   'use strict';
+  const CEN = typeof OliCentral !== 'undefined' ? OliCentral : (typeof require === 'function' ? require('./central.js') : null);           // the Central Hybrid Network (central.js)
   const { DEFS, key } = B, P = CFG.PRODUCTS, SAFE = CFG.SAFETY, SIM = CFG.SIM, ANY = '*';
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const hash = (a, b, c) => { let h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
@@ -37,17 +38,18 @@
   /* ------------------------------------------------------------ pipelines */
   const pk = (b, port) => b + ':' + port;
   class PipeNet extends Set {                                       // a Set of tile keys (so the Phase 2 link helpers keep working) + the explicit lines
-    constructor(W) { super(); this.W = W; this.lines = new Map(); this.at = new Map(); this.nextId = 1; this.nextConn = 1; this.rev = 0; }
+    constructor(W) { super(); this.W = W; this.lines = new Map(); this.at = new Map(); this.nextId = 1; this.nextConn = 1; this.rev = 0; this.central = null; }
     lay(line) { const id = line.id != null && !this.lines.has(line.id) ? line.id : this.nextId++; if (id >= this.nextId) this.nextId = id + 1; const L = Object.assign({ flow: 0 }, line, { id }); this.lines.set(id, L); for (const [x, y] of L.path) { const k = key(this.W, x, y); this.add(k); this.at.set(k, id); } this.rev++; return L; }
     remove(id) { const L = this.lines.get(id); if (!L) return false; for (const [x, y] of L.path) { const k = key(this.W, x, y); this.delete(k); this.at.delete(k); } this.lines.delete(id); this.rev++; return true; }
     /* change the tiles of an existing line IN PLACE (same id, ports, product, diameter, open flag, flow): the tiles it leaves are freed, the new ones taken */
     setPath(id, path) { const L = this.lines.get(id); if (!L) return false; for (const [x, y] of L.path) { const k = key(this.W, x, y); if (this.at.get(k) === id) { this.delete(k); this.at.delete(k); } } L.path = path; for (const [x, y] of path) { const k = key(this.W, x, y); this.add(k); this.at.set(k, id); } this.rev++; return true; }
     lineAt(x, y) { const id = this.at.get(key(this.W, x, y)); return id ? this.lines.get(id) : null; }
-    productAt(x, y) { const L = this.lineAt(x, y); return L ? L.product : null; }
+    productAt(x, y) { const L = this.lineAt(x, y); if (L) return L.product; return this.centralAt(x, y) ? 'CENTRAL' : null; }
+    centralAt(x, y) { const c = this.central; return !!c && c.cen.has(c.key(x, y)); }                  // a tile of the Central Hybrid Network (central.js): never an old pipe, never free ground
     /* backward compatible view: Phase C pipes carry no product, so every legacy tile is CRUDE with the default diameter */
     static legacyView(tiles, W) { const n = new PipeNet(W); for (const k of tiles) { n.add(k); } n.legacy = true; n.legacyProduct = P.CRUDE; return n; }
-    toJSON() { return { v: 1, next: this.nextId, nc: this.nextConn, lines: [...this.lines.values()].map(L => { const o = { id: L.id, a: L.a, b: L.b, path: L.path, product: L.product, dia: L.dia }; if (L.conn) o.conn = L.conn; if (L.open === false) o.open = false; return o; }) }; }
-    static fromJSON(W, d) { const n = new PipeNet(W); if (!d || !Array.isArray(d.lines)) return n; for (const L of d.lines) { if (!Array.isArray(L.path) || !L.path.length) continue; { const X = { a: L.a, b: L.b, path: L.path, product: L.product || ANY, dia: CFG.PIPES[L.dia] ? L.dia : (L.dia === 24 ? 36 : CFG.PIPE_DEFAULT) }; if (L.conn) X.conn = L.conn; if (L.open === false) X.open = false; n.lay(X); } } n.nextConn = Math.max(d.nc | 0, 1, ...[...n.lines.values()].map(L => (L.conn | 0) + 1)); return n; }
+    toJSON() { const o = { v: 1, next: this.nextId, nc: this.nextConn, lines: [...this.lines.values()].map(L => { const o = { id: L.id, a: L.a, b: L.b, path: L.path, product: L.product, dia: L.dia }; if (L.conn) o.conn = L.conn; if (L.open === false) o.open = false; return o; }) }; if (this.central) o.central = this.central.toJSON(); return o; }
+    static fromJSON(W, d) { const n = new PipeNet(W); if (d && d.central && CEN) n.central = CEN.CentralNet.fromJSON(W, d.central); if (!d || !Array.isArray(d.lines)) return n; for (const L of d.lines) { if (!Array.isArray(L.path) || !L.path.length) continue; { const X = { a: L.a, b: L.b, path: L.path, product: L.product || ANY, dia: CFG.PIPES[L.dia] ? L.dia : (L.dia === 24 ? 36 : CFG.PIPE_DEFAULT) }; if (L.conn) X.conn = L.conn; if (L.open === false) X.open = false; n.lay(X); } } n.nextConn = Math.max(d.nc | 0, 1, ...[...n.lines.values()].map(L => (L.conn | 0) + 1)); return n; }
   }
   const lineSpec = L => { const s = CFG.PIPES[L.dia] || CFG.PIPES[CFG.PIPE_DEFAULT]; return { length: L.path.length * CFG.TILE_METERS, capacity: s.capacity, maxPressure: s.maxPressure }; };
 
@@ -71,7 +73,7 @@
     opts = opts || {}; const W = store.W, margin = opts.margin || 14, x0 = Math.min(from[0], to[0]) - margin, x1 = Math.max(from[0], to[0]) + margin, y0 = Math.min(from[1], to[1]) - margin, y1 = Math.max(from[1], to[1]) + margin;
     const own = opts.own || new Set(), acc = new Set(); for (const o of store.query(x0, y0, x1, y1)) for (const p of B.worldPoints(o)) if (p.kind === 'pipe' && !p.reserved) acc.add(key(W, p.ax, p.ay)); const okTile = (x, y, end) => {
       if (x < 0 || y < 0 || x >= W || y >= store.H) return false; if (opts.block && opts.block.has(key(W, x, y))) return false; const t = ts.tile(x, y); if (!t) return false; { const td = ts.terrain[t.terrain]; if (!td || !(td.buildable || (opts.allowSea && td.offshore))) return false; } if (store.at(x, y)) return false;
-      { const ln = net.lineAt(x, y); if (ln && ln.id !== opts.ignoreLine) return false; } if (!end && acc.has(key(W, x, y))) return false; return true; };
+      { const ln = net.lineAt(x, y); if (ln && ln.id !== opts.ignoreLine) return false; } if (net.centralAt(x, y)) return false; if (!end && acc.has(key(W, x, y))) return false; return true; };
     if (!okTile(from[0], from[1], true) || !okTile(to[0], to[1], true)) return null;
     const idx = (x, y) => (y - y0) * (x1 - x0 + 1) + (x - x0), prev = new Map(), q = [from], seen = new Set([idx(from[0], from[1])]); let head = 0, guard = 0;
     while (head < q.length && guard++ < (opts.guard || 60000)) {
@@ -321,7 +323,7 @@
 
   /* ------------------------------------------------------------ the simulator */
   class Sim {
-    constructor(store, net) { this.store = store; this.net = net; this.edges = new Map(); this._el = []; this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => net.productAt(x, y); }
+    constructor(store, net) { this.store = store; this.net = net; this.edges = new Map(); this._el = []; this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => this.net.productAt(x, y); store.cenAt = (x, y) => this.net.centralAt(x, y); }
 
     /* ---- state per building (kept in b.s, saved with the game) ---- */
     ensure(b) {
@@ -329,6 +331,7 @@
       if (t === 'well') { const fp = fieldProfile(this.store, b), pr = fp ? null : wellProfile(b.x, b.y); b.s = fp ? { reserve: fp.site.remainingReserve, reserve0: fp.site.initialReserve, p0: fp.p0, nominal: fp.nominal, total: 0, shared: 1 } : { reserve: pr.reserve, reserve0: pr.reserve, p0: pr.pressure, nominal: pr.production, total: 0 }; }
       else if (t === 'pump') { const c = def.params, u = hash(b.x, b.y, 7); b.s = { boost: Math.round(lerp(c.boost[0], c.boost[1], u)), eff: +lerp(c.eff[0], c.eff[1], hash(b.x, b.y, 8)).toFixed(3), total: 0 }; }
       else if (t === 'valve') b.s = { mode: 'OPEN', opening: 1 };
+      else if (t === 'central') b.s = {};
       else if (t === 'tank') b.s = { vol: 0, wat: 0, temp: SAFE.ambientC, total: 0 };
       else if (t === 'gas') b.s = { vol: 0, temp: SAFE.ambientC, total: 0 };
       else if (t === 'separator') b.s = { total: 0, slop: 0, flared: 0 };
@@ -449,6 +452,7 @@
             acc = this.split(b, outs, Object.assign({}, f, { r: Math.min(f.r, room), p: f.p - 1 }), commit, vis); if (commit && acc > 0) { s._in = (s._in || 0) + acc; if (f.p > def.params.pressureLimit) s._hiP = true; }
             break;
           }
+          case 'central': { const cn = this.net.central, st = cn && cn.stOf(b.id); if (!st) break; s._off = Math.max(s._off || 0, f.r); acc = cn.deliver(this, st, CEN.CH_OF_PORT[port], f, commit, vis); if (commit && acc > 0) { s._in = (s._in || 0) + acc; (s._ch = s._ch || {})[CEN.CH_OF_PORT[port]] = ((s._ch || {})[CEN.CH_OF_PORT[port]] || 0) + acc; } break; }
           case 'separator': acc = this.separate(b, s, def, f, commit, vis); break;
           case 'refinery': acc = this.refine(b, s, def, f, commit, vis); break;
         }
@@ -502,6 +506,7 @@
       if (this.dirty()) this.build(); this.dt = dt = Math.max(1e-6, dt); const store = this.store; this.time += dt;
       for (const e of this._el) { e.flow = 0; e.over = false; e.lowP = false; e.hiP = false; }
       const items = store.list(); for (const b of items) { const s = this.ensure(b); for (const k in s) if (k.charCodeAt(0) === 95) delete s[k]; const ty = DEFS[b.d].type; if (ty === 'pump' || ty === 'separator' || ty === 'refinery') { s.pIn = 0; if (ty === 'pump') s.pOut = 0; } }
+      const cn = this.net.central; if (cn) cn.begin(dt);
       const fieldGroups = new Map(), sharedWells = [];
       for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
         if (def.type === 'well') {
@@ -538,6 +543,7 @@
           if (b.rs) { s.rel = Math.max(0, s.rel - removed); if (s.rel < 1e-6) s.rel = 0; s.dep = (s.dep || 0) + removed; s.depBv = (s.depBv || 0) + removed * bf; s.depW = (s.depW || 0) + removed * wf; }       // what really left a reserve tank is recorded for the books (settled once per hour by the company)
         }
       }
+      if (cn) cn.end();
       for (const [ws, st] of sharedWells) ws.reserve = st.remainingReserve;   // every well of a field shows the reserve that is left after ALL of them have produced
       for (const b of items) { const def = DEFS[b.d], s = b.s;                                         // apply deliveries, derive display values
         if (def.type === 'tank' || def.type === 'gas') { if (s._pend) { s.vol += s._pend; s.total += s._pend; if (def.type === 'tank') s.wat += s._pw || 0; if (s._pbv) s.bv = (s.bv || 0) + s._pbv; if (b.rs) { s.arr = (s.arr || 0) + s._pend; s.arrBv = (s.arrBv || 0) + (s._pbv || 0); s.arrW = (s.arrW || 0) + (def.type === 'tank' ? s._pw || 0 : 0); } } const cap = def.capacity.value; s.vol = Math.min(s.vol, cap); if (s.bv) s.bv = Math.min(s.bv, s.vol); const fill = s.vol / cap;
