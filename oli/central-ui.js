@@ -78,7 +78,7 @@
     const b = document.createElement('button'); b.id = 'cn-btn'; b.textContent = '🛢️ الشبكة المركزية'; document.body.appendChild(b);
     const s = document.createElement('div'); s.id = 'cn-sheet'; s.innerHTML = '<div class="top"><b>🛢️ الأنبوب المركزي · 6 قنوات</b><button class="act" id="cn-x" style="min-height:40px">إغلاق</button></div><div class="body" id="cn-body"></div>'; document.body.appendChild(s);
     const show = () => { render(); s.classList.add('open'); }; b.onclick = show; s.querySelector('#cn-x').onclick = () => s.classList.remove('open');
-    const refresh = () => { if (s.classList.contains('open')) render(); }; setInterval(refresh, 700);
+    const refresh = () => { if (!s.classList.contains('open')) return; const i = document.getElementById('cn-amt'); if (i && (i.value || document.activeElement === i)) return; render(); };   // never wipe what the player is typing setInterval(refresh, 700);
     s.addEventListener('click', ev => { const t = ev.target.closest('button'); if (!t) return; const cn = env.cn(); if (t.dataset.ch) { sel = t.dataset.ch; render(); return; }
       if (t.id === 'cn-open') { const c = chInfo(sel); cn.setChannel(sel, c.state === 'CLOSED' ? 'OPEN' : 'CLOSED'); env.save(); render(); }
       else if (t.id === 'cn-flt') { cn.setChannelFault(sel, !chInfo(sel).fault); env.save(); render(); }
