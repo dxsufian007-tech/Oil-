@@ -1,0 +1,28 @@
+name: Hybrid speed experiment
+on:
+  push:
+    branches: [experiment/hybrid-batch-substeps]
+    paths:
+      - 'oli/test-speed-hybrid.js'
+      - 'oli/core.js'
+      - 'oli/package-lock.json'
+      - '.github/workflows/speed-hybrid-experiment.yml'
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        working-directory: oli
+        run: npm ci
+      - name: Run regression suite
+        working-directory: oli
+        run: npm test
+      - name: Run hybrid benchmark
+        working-directory: oli
+        run: node test-speed-hybrid.js
