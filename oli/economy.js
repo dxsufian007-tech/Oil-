@@ -219,6 +219,13 @@
     pipeValue() { let v = 0; for (const L of this.net.lines.values()) v += L.path.length * (BC.PIPES[L.dia] || BC.PIPES[BC.PIPE_DEFAULT]).cost; return v; }
     /* ---- the Central Hybrid Pipeline Network (central.js): bought at the start with a 100% bank loan; the asset is in FIXED, the loan in LOANS, no cash moves ---- */
     centralValue() { return this.central ? this.central.value : 0; }
+    /* the schedule still ahead of a loan: interest on the REMAINING balance only (month by month), interest-only while grace lasts, then an annuity re-based on that balance over the months left.
+       start = the number of months already paid (so the rows are numbered from the current month) */
+    static schedule(bal, rate, monthsLeft, graceLeft, start) {
+      const r = rate / 12, n = monthsLeft - graceLeft, pay = n > 0 ? Company.payment(bal, rate, n) : bal, rows = []; let b = bal; start = start | 0;
+      for (let m = 1; m <= monthsLeft; m++) { const intr = b * r, inGrace = m <= graceLeft, prin = inGrace ? 0 : (m === monthsLeft ? b : Math.min(b, pay - intr)); b -= prin; rows.push({ m: start + m, year: Math.ceil((start + m) / 12), interest: intr, principal: prin, payment: intr + prin, balance: Math.max(0, b), grace: inGrace }); }
+      return { payment: pay, rows, totalInterest: rows.reduce((a, x) => a + x.interest, 0) };
+    }
     static loanTable(principal, rate, months, grace) {                                    // the full schedule: month, interest, principal, instalment, balance (interest only during the grace months, then an annuity)
       const r = rate / 12, n = months - grace, pay = Company.payment(principal, rate, n), rows = []; let bal = principal;
       for (let m = 1; m <= months; m++) { const intr = bal * r, inGrace = m <= grace, prin = inGrace ? 0 : (m === months ? bal : Math.min(bal, pay - intr)); bal -= prin; rows.push({ m, year: Math.ceil(m / 12), interest: intr, principal: prin, payment: intr + prin, balance: Math.max(0, bal), grace: inGrace }); }
@@ -236,10 +243,14 @@
       for (const p of cn.pumps.values()) { const load = Math.min(1, (p.flow || 0) / PU.maxFlow); op += PU.op * (O.fixedShare + (1 - O.fixedShare) * load); maint += PU.maint * (M.utilBase + M.utilSlope * load); }
       for (const s of cn.st.values()) { op += J.op * O.fixedShare; maint += J.maint * M.utilBase; } return { op, maint };
     }
-    centralLoan() { return this.central ? this.loans.find(l => l.id === this.central.loanId) || null : null; }
+    centralLoan() { return this.central ? this.loans.find(l => l.id === this.central.loanId) || this.closed.find(l => l.id === this.central.loanId && l.kind === 'CENTRAL') || null : null; }
     centralReport() {
-      if (!this.central) return null; const R = this.cfg.CENTRAL, tab = Company.loanTable(this.central.value, R.rate, R.months, R.grace), l = this.centralLoan(), cc = this.centralDaily();
-      return { asset: this.central.value, shell: this.central.shell, stations: this.central.stations, pumps: this.central.pumps, loan: l ? l.remaining : 0, paidMonths: l ? l.paid : R.months, inGrace: l ? l.paid < R.grace : false, nextInterest: l ? l.remaining * l.rate / 12 : 0, instalment: tab.payment, table: tab, opPerDay: cc.op, maintPerDay: cc.maint, upkeepPerMonth: this.central.shell * this.cfg.FIXED.infraPerYear / this.cfg.TIME.monthsPerYear };
+      if (!this.central) return null; const R = this.cfg.CENTRAL, l = this.centralLoan(), cc = this.centralDaily(), open = !!l && this.loans.includes(l), paid = l ? l.paid : R.months, bal = open ? l.remaining : 0;
+      const tab = open ? Company.schedule(bal, R.rate, R.months - paid, Math.max(0, R.grace - paid), paid) : { payment: 0, rows: [], totalInterest: 0 }, orig = Company.loanTable(this.central.value, R.rate, R.months, R.grace);
+      const d = CAL.fromHours(this.hours), frac = Math.min(1, ((d.day - 1) * this.cfg.TIME.hoursPerDay + d.hour) / (d.daysInMonth * this.cfg.TIME.hoursPerDay));
+      return { asset: this.central.value, shell: this.central.shell, stations: this.central.stations, pumps: this.central.pumps, loan: bal, open, paidMonths: paid, inGrace: open ? l.paid < R.grace : false, nextInterest: bal * R.rate / 12, instalment: tab.payment, table: tab, original: orig,
+        accrued: open ? Math.max(0, bal * R.rate / 12 * (frac - (l.accrFrac || 0))) : 0, principalRepaid: this.central.value - bal, extraRepaid: l ? l.extra || 0 : 0, interestPaid: l ? l.intPaid || 0 : 0, interestSaved: l ? l.saved || 0 : 0, futureInterest: tab.totalInterest,
+        opPerDay: cc.op, maintPerDay: cc.maint, upkeepPerMonth: this.central.shell * this.cfg.FIXED.infraPerYear / this.cfg.TIME.monthsPerYear };
     }
     assetsTotal() { let v = this.pipeValue() + this.centralValue(); for (const b of this.store.list()) v += this.assetValue(b); return v; }
     assetList() { return this.store.list().map(b => { const a = this.assetRec(b); return { id: b.id, name: DEFS[b.d].name, purchase: a.cost, value: this.assetValue(b), book: this.bookValue(b), depreciated: a.dep, maintenance: this.maintDay(b, this.loadOf(b)), ageDays: Math.floor((this.hours - a.t) / 24), condition: b.c, label: this.conditionLabel(b.c) }; }); }
@@ -748,9 +759,25 @@
       this.loans.push(l); this._cashIn('LOAN_IN', principal, purpose || 'Loan received', 'LOANS', 'FIN'); return { ok: true, loan: l };
     }
     repayLoan(id) {
-      const l = this.loans.find(x => x.id === id); if (!l) return { ok: false, reason: 'noLoan' }; this.sync(); const fee = l.remaining * this.cfg.LOANS.prepayFee, tot = l.remaining + fee; if (this.store.cash < tot) return { ok: false, reason: 'cash', need: tot };
+      const l = this.loans.find(x => x.id === id); if (!l) return { ok: false, reason: 'noLoan' }; if (l.kind === 'CENTRAL') { const r = this.prepayLoan(id, null); return r.ok ? { ok: true, paid: r.paid + r.accrued } : r; } this.sync(); const fee = l.remaining * this.cfg.LOANS.prepayFee, tot = l.remaining + fee; if (this.store.cash < tot) return { ok: false, reason: 'cash', need: tot };
       this._post({ type: 'LOAN_REPAY', flow: 'FIN', desc: 'Loan repaid early' }, [['LOANS', l.remaining], ['CASH', -l.remaining]]); this._expense('interest', fee, 'Early repayment fee');
       this.loans = this.loans.filter(x => x !== l); this.closed.unshift(l); return { ok: true, paid: tot };
+    }
+    /* early repayment (partial or full). Interest accrued so far this month on the balance is settled first (expense), then the principal is reduced (liability, never an expense): from then on interest runs on the new, smaller balance.
+       The term and the rate do not change; the instalment is re-based on the new balance over the months left. No early-repayment penalty on the central loan (the ordinary loans keep the existing LOANS.prepayFee). */
+    prepayLoan(id, amount) {
+      const l = this.loans.find(x => x.id === id); if (!l) return { ok: false, reason: 'noLoan' }; this.sync();
+      const full = amount == null || amount >= l.remaining - 0.005, a = full ? l.remaining : Math.round(+amount * 100) / 100; if (!(a > 0)) return { ok: false, reason: 'amount' };
+      const d = CAL.fromHours(this.hours), frac = Math.min(1, ((d.day - 1) * this.cfg.TIME.hoursPerDay + d.hour) / (d.daysInMonth * this.cfg.TIME.hoursPerDay)), accr = Math.max(0, l.remaining * l.rate / 12 * (frac - (l.accrFrac || 0)));
+      const fee = l.kind === 'CENTRAL' ? 0 : a * this.cfg.LOANS.prepayFee, need = a + accr + fee; if (this.store.cash < need - 1e-6) return { ok: false, reason: 'cash', need };
+      const left = l.months - l.paid, gl = Math.max(0, (l.grace | 0) - l.paid), before = Company.schedule(l.remaining, l.rate, left, gl, l.paid);
+      if (accr > 0.005) { this._expense('interest', accr, 'Loan interest accrued to the repayment date · ' + (l.purpose || '')); l.intPaid = (l.intPaid || 0) + accr; }
+      if (fee > 0) this._expense('interest', fee, 'Early repayment fee');
+      this._post({ type: 'LOAN_REPAY', flow: 'FIN', desc: full ? 'Loan repaid in full early' : 'Early partial repayment of principal' }, [['LOANS', a], ['CASH', -a]]);
+      l.prinPaid = (l.prinPaid || 0) + a; l.extra = (l.extra || 0) + a; l.remaining -= a; l.accrFrac = frac;
+      if (full) { l.saved = (l.saved || 0) + before.totalInterest; l.remaining = 0; this.loans = this.loans.filter(x => x !== l); this.closed.unshift(l); }
+      else { const after = Company.schedule(l.remaining, l.rate, left, gl, l.paid); l.saved = (l.saved || 0) + (before.totalInterest - after.totalInterest); l.payment = after.payment; }
+      return { ok: true, paid: a, accrued: accr, fee, full, saved: l.saved || 0, remaining: l.remaining };
     }
     nextPaymentInDays() { return CAL.daysToMonthEnd(this.hours); }
 
@@ -946,9 +973,10 @@
       // 3. (no depreciation: equipment has no useful life; it wears only with use and is repaired / replaced by the player)
       // 4. loans: interest is an expense, the principal is not
       for (const l of this.loans.slice()) {
-        const intr = l.remaining * l.rate / 12, last = l.paid + 1 >= l.months, prin = (l.grace | 0) > l.paid ? 0 : last ? l.remaining : Math.min(l.remaining, l.payment - intr);       // the grace months (central loan): interest only
+        const full = l.remaining * l.rate / 12, af = Math.min(1, l.accrFrac || 0), intr = full * (1 - af), last = l.paid + 1 >= l.months, prin = (l.grace | 0) > l.paid ? 0 : last ? l.remaining : Math.min(l.remaining, l.payment - full);       // interest only on the REMAINING balance (the part of the month already settled by an early repayment is not charged twice); the grace months (central loan): interest only
         if (this.store.cash < intr + prin) this.fin.missed++;
         this._expense('interest', intr, 'Loan interest · ' + (l.purpose || '')); if (prin > 0) this._post({ type: 'LOAN_PRINCIPAL', flow: 'FIN', desc: 'Loan principal' }, [['LOANS', prin], ['CASH', -prin]]);
+        l.intPaid = (l.intPaid || 0) + intr; l.prinPaid = (l.prinPaid || 0) + prin; l.accrFrac = 0;
         l.remaining -= prin; l.paid++; if (l.remaining < 0.5 || last) { this.loans = this.loans.filter(x => x !== l); this.closed.unshift(l); }
       }
       // 5. income tax: accrued on taxable profit, paid from the tax payable (losses carry forward)

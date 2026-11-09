@@ -16,6 +16,8 @@ srv.listen(0, async () => {
   // panel
   await p.click('#cn-btn'); await p.waitForTimeout(400); const txt = await p.innerText('#cn-body'); t('panel lists channels, finance and the loan table', /نفط خام/.test(txt) && /وقود طائرات/.test(txt) && /جدول القرض/.test(txt) && /سماح/.test(txt), txt.slice(0, 200)); await p.screenshot({ path: '/tmp/pt/cen-panel.png' });
   await p.click('#cn-chips button[data-ch="JET_FUEL"]'); await p.click('#cn-open'); t('closing a channel from the panel reaches the engine', await p.evaluate(() => __lab.pipes.central.ch.JET_FUEL.state) === 'CLOSED'); await p.click('#cn-open'); t('and reopening', await p.evaluate(() => __lab.pipes.central.ch.JET_FUEL.state) === 'OPEN');
+  await p.fill('#cn-amt', '100000000'); await p.click('#cn-pay'); await p.waitForTimeout(300); const lr = await p.evaluate(() => { const r = __lab.company.centralReport(); return [r.loan, r.extraRepaid, r.interestSaved, __lab.store.cash]; });
+  t('early repayment from the panel: $100M principal off the loan, savings shown, cash paid', lr[1] === 1e8 && lr[0] < S.loan - 99e6 && lr[2] > 0 && lr[3] < 4.1e8, lr); t('the panel shows interest saved and the accrued interest', /وُفّرت|فوائد مستقبلية وُفّرت/.test(await p.innerText('#cn-body')) && /الفائدة المستحقة/.test(await p.innerText('#cn-body')));
   await p.click('#cn-x');
   // tap any trunk tile -> segment info, tap-branch
   const r = await p.evaluate(q => { const L = __lab; const cn = L.pipes.central; L.__x = q; return { on: cn.cen.has(cn.key(q[0], q[1])) }; }, pt); t('the chosen tile is on the trunk', r.on);
