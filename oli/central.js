@@ -122,7 +122,7 @@
         let p = p0, ok = true; stats = [];
         for (let i = 0; i < hops.length; i++) {
           const h = hops[i], pu = pumps[i], atStart = pu && pu.st === h.from;                                              // mounted at the start of the hop: it pushes into the pipe (before the friction); at the end: it pulls from the pipe (after it)
-          const boost = () => { if (p >= PU.minInletPsi) { const add = pu.boost * pu.eff; stats.push([pu, p, p + add, true]); p += add; } else stats.push([pu, p, p, false]); };
+          const boost = () => {      /* never above the pipe class's maximum pressure */  if (p >= PU.minInletPsi) { const add = Math.min(pu.boost * pu.eff, Math.max(0, CLASS.maxPressure - p)); stats.push([pu, p, p + add, true]); p += add; } else stats.push([pu, p, p, false]); };
           if (atStart) boost();
           const ratio = (this.usedOf(over, h.g.id, ch) + r) / CLASS.capacity, loss = h.g.path.length * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * CLASS.fric;
           if (p - loss < 0) { r *= Math.max(0, p / (loss || 1)); ok = false; break; } p -= loss;

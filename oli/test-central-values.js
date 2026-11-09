@@ -1,0 +1,22 @@
+/* Every value of the central network is either read from the existing engine configuration or derived from it: this test pins each one to its source, and checks the engine never exceeds them */
+const K = require('./test-central-kit.js'), { C, mk, near, attach, run } = K, BC = require('./building-config.js'), EC = require('./economy-config.js'), B = K.B; let pass = 0, fail = 0;
+const ok = (c, n, x) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail++; console.log('FAIL ' + n + (x === undefined ? '' : ' -> ' + JSON.stringify(x))); } };
+const g = mk(), cn = g.cn;
+ok(C.CLASS === BC.PIPES[36] && C.CLASS.capacity === 300000 && C.CLASS.maxPressure === 3000 && C.CLASS.fric === 0.6, 'V1 channel capacity 300,000 bbl/d, max pressure 3,000 psi, friction 0.6 = the existing 36" pipe class (CFG.PIPES[36])');
+ok(C.CHANNELS.every(c => cn.ch[c].cap === BC.PIPES[36].capacity && cn.ch[c].maxP === BC.PIPES[36].maxPressure), 'V2 every channel carries exactly those figures');
+ok(C.PUMP === BC.PUMP.C && C.PUMP.maxFlow === 200000 && C.PUMP.minInletPsi === 15 && C.PUMP.boost[0] === 300 && C.PUMP.boost[1] === 600 && C.PUMP.cost === 45e6, 'V3 pump = the existing Central Pump Station (CFG.PUMP.C): max flow 200,000, inlet ≥ 15 psi, boost 300–600 psi, price $45M');
+ok([...cn.pumps.values()].every(p => p.boost >= 300 && p.boost <= 600 && p.eff >= .88 && p.eff <= .94), 'V4 every pump\'s boost and efficiency lie inside the configured ranges (a deterministic pick per hub and channel, nothing outside them)');
+ok(C.TILE_COST === BC.PIPES[36].cost * 6 && C.TILE_COST === 720000, 'V5 shell price per tile = six 36" channels × $120,000 (the existing 36" price) = $720,000');
+ok(C.COLOR.CRUDE === '#4a3a2c' && C.COLOR.JET_FUEL === '#4aa3ff' && ['WATER', 'GASOLINE', 'DIESEL', 'GAS'].every(c => C.COLOR[c] === BC.PRODUCT_COLOR[c]), 'V6 channel colours = the game\'s product colours');
+ok(Math.abs(C.BORE_BBL - Math.PI * Math.pow(36 * .0254 / 2, 2) * BC.TILE_METERS * 6.28981) < 1e-9, 'V7 line-pack per tile derives from the real bore geometry (36", tile length from the config)');
+ok(EC.CENTRAL.startCash === 500e6 && EC.CENTRAL.rate === .06 && EC.CENTRAL.months === 720 && EC.CENTRAL.grace === 24, 'V8 finance terms exactly as ordered: $500M, 6%, 720 months, 24 grace');
+{ const co = g.co; co.acquireCentral(cn.cost()); const d = co.centralDaily(), O = EC.OPERATING, M = EC.MAINTENANCE, PU = BC.PUMP.C, J = BC.JUNCTION; const op0 = cn.pumps.size * PU.op * O.fixedShare + cn.st.size * J.op * O.fixedShare, mt0 = cn.pumps.size * PU.maint * M.utilBase + cn.st.size * J.maint * M.utilBase;
+  ok(near(d.op, op0, 1e-9) && near(d.maint, mt0, 1e-9), 'V9 idle running cost = the existing operating / maintenance formulas on the existing pump and junction figures ($' + Math.round(d.op) + ' + $' + Math.round(d.maint) + ' per day)', [d, op0, mt0]);
+  ok(near(co.centralReport().upkeepPerMonth, cn.cost().shell * EC.FIXED.infraPerYear / 12, 1e-9), 'V10 pipeline upkeep = the existing infraPerYear rate (0.8%) on the shell, per month'); }
+// the engine never exceeds them: pressures, pump flow, segment flow, under load
+{ let maxP = 0, maxSeg = 0, maxPump = 0; const A = attach(g, 'crude_tank_m', ['N6'], 'CRUDE', 'out', 40000, 36), D = A && attach(g, 'crude_tank_m', ['FS'], 'CRUDE', 'in', 0, 36); const probe = (a, b) => { cn.begin(.05); const pl = cn.plan('CRUDE', a, b, 1e6, 3000, null); cn.end(); return pl; };
+  for (const a of cn.st.keys()) for (const b of cn.st.keys()) { if (a === b) continue; const pl = probe(a, b); if (!pl) continue; for (const [pu, pin, pout] of pl.stats) { maxP = Math.max(maxP, pout); } maxSeg = Math.max(maxSeg, pl.r); }
+  ok(maxP <= 3000 + 1e-9 && maxSeg <= 300000 + 1e-9, 'V11 over every pair of stations: no delivered pressure above 3,000 psi and no rate above 300,000 bbl/d (max seen ' + Math.round(maxP) + ' psi / ' + Math.round(maxSeg) + ' bbl/d)', [maxP, maxSeg]);
+  if (A && D) { run(g, 30); for (const p of cn.pumps.values()) maxPump = Math.max(maxPump, p.flow); ok(maxPump <= 200000 + 1e-6 && [...cn.seg.values()].every(s => C.CHANNELS.every(c => s.f[c].flow <= 300000 + 1e-6)), 'V12 in the live simulation: no pump above 200,000 bbl/d, no segment above 300,000 bbl/d'); } }
+ok(BC.JUNCTION.maxTotalFlow === 60000, 'V13 (documented assumption) the old 1×1 junction manifold limit of 60,000 bbl/d is NOT applied to the 3×3 stations: a station is a 36" hub bounded by its pipes (300,000 per channel)');
+console.log('\n' + pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);
