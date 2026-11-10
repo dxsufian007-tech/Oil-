@@ -1,4 +1,4 @@
-name: Build Oli APK
+name: Build OLI Map APK
 
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ jobs:
       - name: Copy the web game into the Android project
         working-directory: oli
         run: |
-          node build-www.js
+          node build-www-map.js
           npx cap sync android
 
       - name: Use the same signing key every time and raise the version number (so each APK installs as an update)
@@ -60,17 +60,17 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Oli-apk
+          name: Oli-map-apk
           path: Oli.apk
 
-      - name: Also publish the APK on a branch called apk-build
+      - name: Also publish the APK on a branch called map-apk-build
         run: |
           mkdir -p /tmp/out && cp Oli.apk /tmp/out/Oli.apk
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git checkout --orphan apk-build
+          git checkout --orphan map-apk-build
           git rm -rf --quiet .
           cp /tmp/out/Oli.apk .
           git add Oli.apk
           git commit -q -m "Oli APK build"
-          git push -f origin apk-build
+          git push -f origin map-apk-build
