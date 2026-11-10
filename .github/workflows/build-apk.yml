@@ -32,7 +32,7 @@ jobs:
       - name: Copy the web game into the Android project
         working-directory: oli
         run: |
-          node build-www-map.js
+          OLI_DEMO=1 OLI_BUILD=${GITHUB_SHA::7} node build-www-map.js
           npx cap sync android
 
       - name: Use the same signing key every time and raise the version number (so each APK installs as an update)
