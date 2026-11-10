@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   push:
     branches: [feature/central-network]
-    paths: ['.github/workflows/central-test-apk.yml']
+    paths: ['.github/workflows/central-test-apk.yml', 'oli/economy.js', 'oli/test-refinery-v2.js']
 
 permissions:
   contents: write
@@ -25,7 +25,9 @@ jobs:
           java-version: 21
       - name: Install
         working-directory: oli
-        run: npm ci
+        run: |
+          npm ci
+          npm test
       - name: Package the game page and make it a separate Android app
         working-directory: oli
         run: |
