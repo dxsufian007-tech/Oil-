@@ -1,0 +1,20 @@
+11-10 22:53:53.961  4657  4657 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-10 22:53:53.962  4657  4657 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-10 22:53:53.965  4657  4657 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-10 22:53:53.965  4657  4657 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-10 22:53:53.969  4657  4657 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-10 22:53:53.971  4657  4657 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-10 22:53:53.972  4657  4657 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-10 22:53:56.637  4657  4657 I Capacitor/Console: File: https://localhost/phaser.min.js - Line 1 - Msg: %c %c %c %c %c Phaser v3.80.1 (WebGL | Web Audio) %c https://phaser.io background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent
+11-10 22:56:03.008  6928  6984 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.oilgame/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+11-10 22:56:03.008  6928  6984 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+11-10 22:56:03.008  6928  6984 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.oilgame/cache/WebView/Default/HTTP Cache/Code Cache/wasm: No such file or directory (2)
+11-10 22:56:03.008  6928  6984 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+11-10 22:56:03.943  6928  6928 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-10 22:56:03.945  6928  6928 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-10 22:56:03.945  6928  6928 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-10 22:56:03.946  6928  6928 E Capacitor/Console: File:  - Line 6 - Msg: Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')
+11-10 22:56:06.567  6928  6928 I Capacitor/Console: File: https://localhost/phaser.min.js - Line 1 - Msg: %c %c %c %c %c Phaser v3.80.1 (WebGL | Web Audio) %c https://phaser.io background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent
+11-10 22:57:34.417  7856  7903 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.oli.oilgame/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+11-10 22:57:34.418  7856  7903 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+11-10 22:57:36.760  7856  7856 I Capacitor/Console: File: https://localhost/phaser.min.js - Line 1 - Msg: %c %c %c %c %c Phaser v3.80.1 (WebGL | Web Audio) %c https://phaser.io background: #ff0000 background: #ffff00 background: #00ff00 background: #00ffff color: #ffffff; background: #000000 background: transparent

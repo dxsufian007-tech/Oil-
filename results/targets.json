@@ -1,0 +1,17 @@
+[ {
+   "description": "{\"attached\":true,\"empty\":false,\"height\":2272,\"never_attached\":false,\"screenX\":0,\"screenY\":128,\"visible\":true,\"width\":1080}",
+   "devtoolsFrontendUrl": "https://chrome-devtools-frontend.appspot.com/serve_internal_file/@2d54072eb2f350d37f3f304c4ba0fafcddbd7e82/inspector.html?ws=127.0.0.1:9222/devtools/page/7007BDA853EB19213BCCAEECDE797A49",
+   "id": "7007BDA853EB19213BCCAEECDE797A49",
+   "title": "Oli",
+   "type": "page",
+   "url": "https://localhost/",
+   "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/7007BDA853EB19213BCCAEECDE797A49"
+}, {
+   "description": "{\"attached\":false,\"empty\":true,\"never_attached\":true,\"screenX\":0,\"screenY\":0,\"visible\":true}",
+   "devtoolsFrontendUrl": "https://chrome-devtools-frontend.appspot.com/serve_internal_file/@2d54072eb2f350d37f3f304c4ba0fafcddbd7e82/inspector.html?ws=127.0.0.1:9222/devtools/page/EE932CEE688584164D295926DC905E36",
+   "id": "EE932CEE688584164D295926DC905E36",
+   "title": "Oli",
+   "type": "page",
+   "url": "https://localhost/",
+   "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/EE932CEE688584164D295926DC905E36"
+} ]
