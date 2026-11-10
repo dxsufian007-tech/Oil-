@@ -1,6 +1,6 @@
 name: OLI EMPIRE Update APK
 
-# Update build of the installed OLI EMPIRE app from feature/central-network. Preserve its application ID and signing key.
+# Build an update for the original installed OLI EMPIRE app (com.oli.olicentral) using the original signing key.
 # Result: branch central-apk-build (Oli.apk). Does not touch build-apk.yml, demo-apk.yml or demo-apk-build. Not merged to main.
 on:
   workflow_dispatch:
@@ -28,10 +28,10 @@ jobs:
         run: |
           npm ci
           npm test
-      - name: Package the game page and make it a separate Android app
+      - name: Package the game page and package the original installed OLI EMPIRE application
         working-directory: oli
         run: |
-          ID=com.oli.oilgame; NAME="OLI EMPIRE"; OLI_DEMO=1 OLI_BUILD=${GITHUB_SHA::7} node build-www-map.js
+          ID=com.oli.olicentral; NAME="OLI EMPIRE"; OLI_DEMO=1 OLI_BUILD=${GITHUB_SHA::7} node build-www-map.js
           sed -i "s/\"appId\": \"com.oli.oilgame\"/\"appId\": \"$ID\"/; s/\"appName\": \"OLI EMPIRE\"/\"appName\": \"$NAME\"/" capacitor.config.json
           npx cap sync android
           sed -i "s/applicationId \"com.oli.oilgame\"/applicationId \"$ID\"/" android/app/build.gradle
