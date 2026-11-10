@@ -546,11 +546,8 @@
       for (const { b, s } of tanks) { if (left <= 1e-9) break; const room = DEFS[b.d].capacity.value - s.vol; if (room <= 0) continue; const put = Math.min(room, left); s.vol += put; left -= put; }
       return qty - left;
     }
-    /* the refinery's material limit: the share of its capacity that the chemicals and operating materials on hand allow for a step of dt days. Set BEFORE the simulator draws crude (no crude leaves the tanks without being processed) and again when materials arrive, so a purchase lifts the limit at once instead of at the next hourly tick */
-    _gateMaterials(items, dt) { const S = this.sim;
-      this.matLimit = 1; { const MUg = this.cfg.MATERIAL_USE, rem = { CHEM: this.mats.CHEM || 0, OPS: this.mats.OPS || 0 }; for (const b of items) { if (DEFS[b.d].type !== 'refinery' || b.st !== 'OPERATIONAL') continue; const s = S.ensure(b), cap = S.capOf(b); let lim = 1;
-        if (cap > 0) { const need = { CHEM: cap * dt * MUg.CHEM.qty, OPS: cap * dt * MUg.OPS.qty }; const fr = k => (need[k] > 0 ? Math.min(1, rem[k] / need[k]) : 1); lim = Math.min(fr('CHEM'), fr('OPS')); for (const k of ['CHEM', 'OPS']) rem[k] = Math.max(0, rem[k] - lim * need[k]); }
-        s.matLim = lim; this.matLimit = Math.min(this.matLimit, lim); } } }
+    /* Refineries do not require purchased chemicals or operating-material stock. Keep the legacy stock pools available for compatibility, but never gate crude processing on them. */
+    _gateMaterials(items) { this.matLimit = 1; for (const b of items) { if (DEFS[b.d].type !== 'refinery' || b.st !== 'OPERATIONAL') continue; this.sim.ensure(b).matLim = 1; } }
     buy(item, qty, supplierId, terms) {
       if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync();
       const qt = this.buyQuote(item, qty, supplierId); if (!qt.ok) return qt; if (!(qt.qty > 0)) return { ok: false, reason: 'nothingToBuy', quote: qt };
@@ -814,16 +811,11 @@
       { const ts = this.store.ts; if (ts && ts.injectionCostDay) crude.operating += ts.injectionCostDay() * dt; }                // the running cost of the injection wells
       const crudeCost = crude.operating + crude.maintenance + crude.energy + crude.lifting;
       if (crudeCost > 0) this._post({ type: 'PROD_CRUDE', flow: 'OP', desc: 'Wells · pumps · separators', inc: { operating: crude.operating, maintenance: crude.maintenance, energy: crude.energy, lifting: crude.lifting } }, [[prod.CRUDE <= 0 && this.qty.CRUDE <= EPS2 && this.bq > EPS2 ? 'INV_CRUDE_BUY' : 'INV_CRUDE', crudeCost], ['CASH', -crudeCost]]);   // the handling cost of an hour with no wellhead oil belongs to the bought oil on hand (otherwise it would wait in an empty pool)
-      // chemicals and operating materials: used from stock first (at average cost); only the shortfall is paid in cash at the material price
-      const MU = C.MATERIAL_USE; let chemStock = 0, opsStock = 0; const chemCash = 0, opsCash = 0;
-      // no chemicals or operating materials on hand: the refinery slows down to what the stock allows, and nothing is bought on its behalf
-      if (prod.THRU > 0) { const ch = this._drawMaterial('CHEM', prod.THRU * MU.CHEM.qty), op = this._drawMaterial('OPS', prod.THRU * MU.OPS.qty); chemStock = ch.cost; opsStock = op.cost; }
-      refin.chem = chemStock + chemCash; refin.ops = opsStock + opsCash;
-      const refCash = refin.operating + refin.maintenance + refin.energy + chemCash + opsCash, refCost = refCash + chemStock + opsStock;
+      // Refinery operation has no purchased CHEM / OPS prerequisite or material-stock consumption.
+      const refCash = refin.operating + refin.maintenance + refin.energy, refCost = refCash;
       if (refCost > 0 && prod.THRU <= 0) { this._expense('operating', refin.operating, 'Refinery · idle operation'); this._expense('maintenance', refin.maintenance, 'Refinery · idle maintenance'); this._expense('energy', refin.energy, 'Refinery · idle energy'); }   // no crude processed this hour: a period cost, not carried in stock (otherwise it waits in WIP until the next barrel)
       else if (refCost > 0) this._post({ type: 'PROD_REFINERY', flow: 'OP', desc: 'Refinery operation', inc: { operating: refin.operating, maintenance: refin.maintenance, energy: refin.energy, chem: refin.chem, ops: refin.ops } },
         [['INV_WIP', refCost], ['CASH', -refCash], ['INV_CHEM', -chemStock], ['INV_OPS', -opsStock]]);
-      this._clearMat('CHEM'); this._clearMat('OPS');
       this._expense('operating', tankOpex * (this.costCutOn() ? 1 - C.RESCUE.costCutShare : 1), 'Tanks · operation'); this._expense('maintenance', tankMaint, 'Tanks · maintenance'); this._expense('storage', storageCost, 'Oil kept in tanks (per barrel per day)');
       this._expense('energy', powerCost, 'Gas storage · power');
       this._expense('rops', rOps * (this.costCutOn() ? 1 - C.RESCUE.costCutShare : 1), 'Strategic Reserve · operation and maintenance'); this._expense('rstorage', rStor, 'Strategic Reserve · oil kept (per barrel per day)');      // separate lines: the reserve costs are never charged twice, never inside the commercial lines
@@ -989,10 +981,6 @@
       if (this.loans.length && this.nextPaymentInDays() <= A.loanDueDays) add('loandue', 'warn', 'LOAN PAYMENT DUE', Math.ceil(this.nextPaymentInDays()) + ' days · ' + Math.round(this.loans.reduce((a, l) => a + l.payment, 0)));
       { const wi = this.waterInfo(); if (wi.full) add('waterfull', 'warn', 'WATER TANKS FULL', 'water intake stopped · ' + Math.round(wi.stock) + ' bbl'); }   // water cannot be stored beyond the tanks: the intake stops and this says so
       for (const c of this.activeContracts()) { const left = (c.deadline - this.hours) / 24; if (left <= A.contractDays) add('contract' + c.id, 'warn', 'CONTRACT DEADLINE', c.product + ' · ' + Math.ceil(left) + ' days · ' + Math.round(c.qty - c.delivered) + ' left'); }
-      /* things that silently stop crude from reaching the refinery: a refinery with no chemicals / operating materials, a broken building, repairs that cannot be paid for in spare parts */
-      { const list = this.store.list(), refs = list.filter(b => DEFS[b.d].type === 'refinery' && b.st !== 'UNDER_CONSTRUCTION'), MU = this.cfg.MATERIAL_USE;
-        if (refs.length && (this.matLimit || 0) <= 0) add('nomat', 'warn', 'REFINERY LACKS MATERIALS', 'buy chemicals and operating materials');
-      }
       for (const v of this.inventory()) {
         if (v.capacity > 0 && v.fill >= A.highInventoryFill) add('hiinv' + v.product, 'warn', 'HIGH INVENTORY', v.label + ' ' + Math.round(v.fill * 100) + '%');
         const needs = this.activeContracts().some(c => c.product === v.product); if (needs && v.fill < A.lowInventoryFill) add('loinv' + v.product, 'info', 'LOW INVENTORY', v.label + ' for a contract');
