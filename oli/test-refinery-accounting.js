@@ -50,11 +50,11 @@ console.log('REFINERY ACCOUNTING TESTS');
 { const x = build(false, Object.assign({}, EC, { MATERIALS_REQUIRED: true })); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const t0 = tankSum(x.cts), q0 = (x.co.qty.CRUDE + x.co.bq);
   const a = runHours(x, 24, false); T('13 (old rule, MATERIALS_REQUIRED = true) without chemicals and operating materials the refinery draws no crude and books no output', near(tankSum(x.cts), t0, 1e-9) && a.feed === 0 && a.GASOLINE === 0 && a.loss === 0 && x.co.matLimit === 0, { t0, now: tankSum(x.cts), feed: a.feed }); }
 // 14. partial chemicals: throughput is capped by the stock before any crude is drawn
-// 13b. the default (owner, Nov 2026): no materials in stock is no stop; their cost is paid in cash at the listed price, nothing is bought into stock
+// 13b. the default (owner, Nov 2026): no materials needed and no material cost
 { const x = build(); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const t0 = tankSum(x.cts), j0 = x.co.journal.n, life0 = Object.assign({}, x.co.led.life);
-  const a = runHours(x, 24, false), M = EC.MATERIAL_USE, P = EC.MATERIAL_PRICE, want = a.feed * (M.CHEM.qty * P.CHEM + M.OPS.qty * P.OPS), got = (x.co.led.life.chem || 0) - (life0.chem || 0) + (x.co.led.life.ops || 0) - (life0.ops || 0);
+  const a = runHours(x, 24, false), got = (x.co.led.life.chem || 0) - (life0.chem || 0) + (x.co.led.life.ops || 0) - (life0.ops || 0);
   T('13b with no chemicals bought the refinery runs and draws crude from the tanks', a.feed > 1000 && tankSum(x.cts) < t0 - 1000 && x.co.matLimit === 1, { feed: a.feed });
-  T('13c the materials it used cost exactly feed x (0.36 kg x $2.5 + 0.002 x $40) = $' + (M.CHEM.qty * P.CHEM + M.OPS.qty * P.OPS).toFixed(2) + ' per barrel, paid in cash', near(got, want, 1e-6), { got, want });
+  T('13c and no material cost is booked (no purchase, no stock drawn, no cash for chemicals)', got === 0, { got });
   T('13d no purchase entries and no material stock appear', x.co.mats.CHEM === 0 && x.co.mats.OPS === 0 && !x.co.journal.log.filter(e => e.id > j0).some(e => /PURCHASE/.test(e.type || '')), x.co.mats);
   T('13e the books still balance', x.co.audit().ok && x.co.journal.check().ok, x.co.audit()); }
 // 14. (old rule) partial chemicals: throughput is capped by the stock before any crude is drawn

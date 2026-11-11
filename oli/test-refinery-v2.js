@@ -130,5 +130,11 @@ CHK('2b efficiency limits the crude taken in: less power, less processed', SMALL
   CHK('10 after buying chemicals the limit is lifted immediately, before any tick', s.matLim === 1, s.matLim);
   P.sim.run(1); CHK('10 the simulator now runs the refinery on the new stock', P.sim.status(P.ref) === 'RUNNING', P.sim.status(P.ref)); }
 
+/* 10b. the default (owner, Nov 2026): the refinery runs without purchased CHEM / OPS stock */
+{ const P = plant('x', fullCfg()), co = P.co; for (const ct of P.cts) co.buy('CRUDE', 250000, 'A', 'CASH'); co.sync(); const s = P.sim.ensure(P.ref); co.advanceHours(1);
+  CHK('10b material gate stays open without CHEM / OPS stock', s.matLim === 1 && co.matLimit === 1, { lim: s.matLim, stock: co.mats });
+  CHK('10b refinery processes crude without purchasing materials', co.refLast && co.refLast.feed > 0 && P.sim.status(P.ref) === 'RUNNING', { feed: co.refLast && co.refLast.feed, status: P.sim.status(P.ref) });
+  CHK('10b legacy material stock remains unused', co.mats.CHEM === 0 && co.mats.OPS === 0, co.mats); }
+
 console.log('\nREFINERY V2 TESTS: ' + pass + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);

@@ -869,8 +869,7 @@
       // chemicals and operating materials: used from stock first (at average cost); only the shortfall is paid in cash at the material price
       const MU = C.MATERIAL_USE; let chemStock = 0, opsStock = 0, chemCash = 0, opsCash = 0;
       // no chemicals or operating materials on hand: the refinery slows down to what the stock allows, and nothing is bought on its behalf
-      if (prod.THRU > 0) { const ch = this._drawMaterial('CHEM', prod.THRU * MU.CHEM.qty), op = this._drawMaterial('OPS', prod.THRU * MU.OPS.qty); chemStock = ch.cost; opsStock = op.cost;
-        if (C.MATERIALS_REQUIRED === false) { chemCash = ch.short * C.MATERIAL_PRICE.CHEM; opsCash = op.short * C.MATERIAL_PRICE.OPS; } }      // no stock is no stop: the missing quantity is paid in cash at the material's listed price
+      if (prod.THRU > 0 && C.MATERIALS_REQUIRED !== false) { const ch = this._drawMaterial('CHEM', prod.THRU * MU.CHEM.qty), op = this._drawMaterial('OPS', prod.THRU * MU.OPS.qty); chemStock = ch.cost; opsStock = op.cost; }      // (owner, Nov 2026) MATERIALS_REQUIRED = false: refining has no CHEM / OPS prerequisite and no material cost; a legacy stock stays untouched
       refin.chem = chemStock + chemCash; refin.ops = opsStock + opsCash;
       const refCash = refin.operating + refin.maintenance + refin.energy + chemCash + opsCash, refCost = refCash + chemStock + opsStock;
       if (refCost > 0 && prod.THRU <= 0) { this._expense('operating', refin.operating, 'Refinery · idle operation'); this._expense('maintenance', refin.maintenance, 'Refinery · idle maintenance'); this._expense('energy', refin.energy, 'Refinery · idle energy'); }   // no crude processed this hour: a period cost, not carried in stock (otherwise it waits in WIP until the next barrel)
