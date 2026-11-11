@@ -8,7 +8,7 @@ const TERR = { FLAT_DESERT: { buildable: true, buildCost: 1, maxSlope: 99 } };
 const world = (W, H) => ({ W, H, tile: () => ({ terrain: 'FLAT_DESERT', slope: 0 }), terrain: TERR, slopeK: 1, oilFieldAt: () => ({ kind: 'FIELD', id: 1 }), stateOf: () => 'DRILLABLE', zoneAt: () => ({ id: 1 }) });
 const gc = () => { if (global.gc) global.gc(); }, heapMB = () => { gc(); return process.memoryUsage().heapUsed / 1048576; };
 function build(N) {
-  const W = 1400, H = 1000, ts = world(W, H), store = new B.BuildingStore(ts, { cash: 1e15 }), net = new I.PipeNet(W), sim = new I.Sim(store, net), co = new E.Company(store, net, sim, { now: () => 1e12 });
+  const W = +process.env.BW || 1400, H = +process.env.BH || 1000, ts = world(W, H), store = new B.BuildingStore(ts, { cash: +process.env.BCASH || 1e15 }), net = new I.PipeNet(W), sim = new I.Sim(store, net), co = new E.Company(store, net, sim, { now: () => 1e12 });
   const put = (d, x, y) => { const v = store.place(d, x, y, 0, { instant: true }); return v.ok ? v.building : null; }, FAIL = {}, pipe = (a, ap, b, bp, dia) => { const r = a && b ? I.layPipe(store, net, ts, { b: a.id, port: ap }, { b: b.id, port: bp }, dia || 16) : { ok: false, reason: 'noBuilding' }; if (!r.ok) { const k = ap + '>' + bp + ':' + r.reason; FAIL[k] = (FAIL[k] || 0) + 1; } return r; }, conn = (a, b) => { const r = a && b ? I.layConnect(store, net, ts, a.id, b.id, { allowOneWay: true }) : { ok: false, reason: 'noBuilding' }; if (!r.ok) { const k = (a ? a.d : '?') + '>' + (b ? b.d : '?') + ':' + r.reason; FAIL[k] = (FAIL[k] || 0) + 1; } return r; };
   let n = 0, k = 0; const CW = 46, CH = 30, cols = Math.floor((W - 10) / CW);
   while (n < N) { const ox = 5 + (k % cols) * CW, oy = 5 + Math.floor(k / cols) * CH; k++; if (oy + CH > H) break;

@@ -36,6 +36,17 @@ srv.listen(0, async () => {
     }, N);
     const buildMs = Date.now() - t0;
     await p.evaluate(() => { __lab.company.advanceHours(6); }); await cdp.send('Emulation.setCPUThrottlingRate', { rate: THR }); await p.waitForTimeout(1500);
+    if (process.env.AUDIT_H) {    // books check over a long game time with no rendering in the way: the same scene, advanceHours in 240 h steps, audit() after each step
+      const rows = await p.evaluate(H => { const L = __lab, co = L.company, out = []; co.speed = 0; let bad = 0; for (let h = 0; h < H; h += 240) { co.advanceHours(240); const a = co.audit(); if (!a.ok || h % 2400 === 0) out.push({ hours: co.hours, ok: a.ok, errors: a.errors, cash: L.store.cash, entries: a.entries, mats: Object.assign({}, co.mats), autoBuy: (co.autoBuy && co.autoBuy.log || []).length }); if (!a.ok && ++bad >= 3) break; } return out; }, +process.env.AUDIT_H);
+      for (const r of rows) console.log('AUDIT ' + JSON.stringify(r).slice(0, 700)); results.push({ audit: rows, N: sc.buildings }); await ctx.close(); continue; }
+    if (process.env.SOAK_MIN) {   // continuous run: speed x10, the map moving, one sample a minute (fps over 5 s, heap, game hours really simulated, the longest block)
+      const mins = +process.env.SOAK_MIN, samples = []; await p.evaluate(() => { const L = __lab; L.company.speed = 10; let a = 0; window.__iv = setInterval(() => { a += .05; __wp.goto(L.__cx + Math.cos(a) * 30, L.__cy + Math.sin(a) * 30, .7); }, 33); window.__lt = 0; try { new PerformanceObserver(l => { for (const e of l.getEntries()) if (e.duration > __lt) __lt = e.duration; }).observe({ entryTypes: ['longtask'] }); } catch (_) { } });
+      let hPrev = await p.evaluate(() => __lab.company.hours), tPrev = Date.now();
+      for (let m = 1; m <= mins; m++) { await p.waitForTimeout(Math.max(0, 60000 - 5200)); const fr = await p.evaluate(() => new Promise(res => { const d = []; let last = performance.now(), t0 = last; const f = t => { d.push(t - last); last = t; if (t - t0 < 5000) requestAnimationFrame(f); else res(d); }; requestAnimationFrame(f); }));
+        const x = await p.evaluate(() => { if (window.gc) gc(); const r = { heap: performance.memory.usedJSHeapSize, hours: __lab.company.hours, lt: window.__lt, n: __lab.store.items.size, audit: __lab.company.audit().ok }; window.__lt = 0; return r; }), now = Date.now();
+        const row = { minute: m, fps: +(fr.length / (fr.reduce((a, v) => a + v, 0) / 1000)).toFixed(1), heapMB: +(x.heap / 1048576).toFixed(1), gameHoursPerSec: +((x.hours - hPrev) / ((now - tPrev) / 1000)).toFixed(2), longestBlockMs: Math.round(x.lt), buildings: x.n, booksBalance: x.audit };
+        hPrev = x.hours; tPrev = now; samples.push(row); console.log('SOAK ' + JSON.stringify(row)); }
+      results.push({ soak: samples, N: sc.buildings }); await ctx.close(); continue; }
     for (const speed of SPEEDS) for (const act of ACTS) {
       await p.evaluate(([speed, act]) => { const L = __lab; L.company.speed = speed; clearInterval(window.__iv); let a = 0; __wp.goto(L.__cx, L.__cy, .7); if (act === 'pan') window.__iv = setInterval(() => { a += .08; __wp.goto(L.__cx + Math.cos(a) * 30, L.__cy + Math.sin(a) * 30, .7); }, 33);
         const C = L.company; if (!C.__w) { C.__w = 1; window.__tm = { run: 0, runs: 0, maxRun: 0 }; const r0 = C.run.bind(C); C.run = function (...x) { const t = performance.now(); const o = r0(...x); const d = performance.now() - t; __tm.run += d; __tm.runs++; if (d > __tm.maxRun) __tm.maxRun = d; return o; }; } }, [speed, act]);

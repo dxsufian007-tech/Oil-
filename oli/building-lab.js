@@ -622,9 +622,10 @@
   const simPump = setInterval(() => { const now = performance.now(), dtS = Math.min(2, (now - simLast) / 1000); simLast = now; if (window.__homeOpen) return;      /* the main menu is open: the company waits */
     if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) { const hrs = dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0);
       if (now < simNext) { COMPANY.addTime(hrs); realSpeed(0, now); }                                 /* frame share: the map's turn - the time waits, nothing is skipped */
-      else { const t0 = performance.now(), n = COMPANY.run(hrs, EC.TIME.liveBudgetMs || 20), took = performance.now() - t0, sh = EC.TIME.liveShare || 0.5; simNext = t0 + took / sh; realSpeed(n, now); } }
+      else { const mv = camMoving(now), t0 = performance.now(), n = COMPANY.run(hrs, mv ? (EC.TIME.liveBudgetMs || 20) : (EC.TIME.liveBudgetStillMs || 36)), took = performance.now() - t0, sh = mv ? (EC.TIME.liveShare || 0.5) : (EC.TIME.liveShareStill || 0.8); simNext = t0 + took / sh; realSpeed(n, now); } }
     else realSpeed(0, now, true); }, 62);
-  let simNext = 0;
+  let simNext = 0; const camSeen = { x: NaN, y: NaN, z: NaN, at: -1e9 };
+  function camMoving(now) { if (cam.x !== camSeen.x || cam.y !== camSeen.y || cam.z !== camSeen.z) { camSeen.x = cam.x; camSeen.y = cam.y; camSeen.z = cam.z; camSeen.at = now; } return now - camSeen.at < 600; }      // the map is being moved or zoomed (or was within 0.6 s): it gets more of the frame
   /* the speed really reached (game hours per real second / the hours per second of x1): shown next to the speed button when the device cannot keep up */
   const RS = { t0: performance.now(), h: 0 }; function realSpeed(n, now, idle) { if (idle) { RS.t0 = now; RS.h = 0; COMPANY.realSpeed = null; return; } RS.h += n; const el = now - RS.t0; if (el >= 2000) { COMPANY.realSpeed = RS.h / (el / 1000) / (24 / EC.TIME.dayRealSeconds); RS.t0 = now; RS.h = 0; } }
   const tick = setInterval(() => { if (!state.pipeMode && !state.pipeEdit && document.body.classList.contains('pipemode')) document.body.classList.remove('pipemode');      // self-heal: no pipe is being drawn, so the cards must be visible
