@@ -1,0 +1,13 @@
+test-playthrough rc=0 15s :: PLAYTHROUGH TESTS PASSED (24 checks)
+test-game-time rc=0 6s :: GAME TIME TESTS PASSED (69 checks)
+test-game-time-ui rc=0 20s :: PASS 20
+test-economy-ui rc=0 28s :: ECONOMY UI TESTS PASSED (53 checks)
+test-building-lab rc=0 41s :: BUILDING LAB TESTS PASSED (92 checks)
+test-help rc=0 0s :: 27 passed, 0 failed
+test-help-ui rc=0 13s :: 14 passed, 0 failed
+test-sliced-hour rc=0 6s :: SLICED HOUR TESTS PASSED (9 checks)
+test-ground-cache rc=0 6s :: PASS 7 checks
+test-offline rc=0 4s :: OFFLINE-ALLPASS (12 groups)
+test-save-safety rc=0 11s :: SAVE SAFETY TESTS PASSED (7 checks)
+test-catchup-sliced rc=0 1s :: CATCHUP SLICED: 24 passed, 0 failed
+DONE
