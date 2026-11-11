@@ -130,7 +130,8 @@ console.log('7. the refinery uses bought oil, produced oil, or both — each fro
   T('8d the audit is clean after ten days', co.audit().ok, co.audit()); }
 
 console.log('9. storage and operating costs');
-{ const x = plant(), co = x.co; co.buy('CRUDE', 20000, 'A', 'CASH'); const st0 = bal(co, 'EXP_STORAGE'), inv0 = bal(co, 'INV_CRUDE_BUY'); const stored = co.boughtInTanks() + co.crudeOnHand() - co.boughtInTanks();
+{ const x = plant(), co = x.co; for (const m of ['CHEM', 'OPS']) co.setAutoBuy(m, { on: false });   /* this checks the storage of bought oil: the refinery stays idle (no materials) as before automatic purchasing */
+  co.buy('CRUDE', 20000, 'A', 'CASH'); const st0 = bal(co, 'EXP_STORAGE'), inv0 = bal(co, 'INV_CRUDE_BUY'); const stored = co.boughtInTanks() + co.crudeOnHand() - co.boughtInTanks();
   for (let h = 0; h < 24; h++) co.advanceHours(1); const st1 = bal(co, 'EXP_STORAGE') - st0;
   T('9a keeping oil in tanks costs money every day, charged to the period (about volume x storage rate)', st1 > 0 && near(st1, co.crudeOnHand() * 0 + 20000 * EC.STORAGE_COST.CRUDE, 0.25), [st1, 20000 * EC.STORAGE_COST.CRUDE]);
   T('9b storage is an expense of the period; it is not added to the bought oil\'s cost (only freight is capitalised)', near(bal(co, 'INV_CRUDE_BUY'), inv0, 0.02) || bal(co, 'INV_CRUDE_BUY') >= inv0 - 1e-9);

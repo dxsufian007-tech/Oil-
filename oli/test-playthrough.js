@@ -13,7 +13,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   const url = 'http://localhost:' + srv.address().port + '/?lab=1&lang=en', co = f => p.evaluate(f), shot = async nm => { if (shots) await p.screenshot({ path: path.join(shots, nm + '.png') }); };
   await p.goto(url); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 });
 
-  console.log('NEW GAME'); await co(() => { localStorage.clear(); window.OliEconomyConfig.ENGINE.enabled = false; __lab.reset(); });   // this playthrough checks the plant's profit at the nominal prices (the 2000 prices of the Brent market are a third of them, see test-brent-market.js) await co(() => { __lab.company.speed = 0; });
+  console.log('NEW GAME'); await co(() => { localStorage.clear(); window.OliEconomyConfig.ENGINE.enabled = false; __lab.reset(); for (const m of ['CHEM', 'OPS']) __lab.company.setAutoBuy(m, { on: false }); });   // this playthrough manages the materials by hand (automatic purchasing has its own tests)   // this playthrough checks the plant's profit at the nominal prices (the 2000 prices of the Brent market are a third of them, see test-brent-market.js) await co(() => { __lab.company.speed = 0; });
   ok(await co(() => __lab.store.cash) === 10e6, 'a new game starts with $10,000,000');
 
   console.log('BUILD THE FULL CHAIN'); const r = await co(() => __lab.buildDemo());
