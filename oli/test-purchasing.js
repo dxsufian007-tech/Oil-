@@ -50,6 +50,7 @@ const tankGame = (cash, cfg) => { const g = game(cash == null ? 10e6 : cash, cfg
 
 /* P6. chemicals bought, then used by the refinery from stock (cost leaves stock, not cash) */
 { const g = game(500e6, quietCfg()), co = g.co, c = chain(g, true, false); for (const p of EC.PRODUCTS) co.setMode(p, 'WAIT');
+  for (const m of ['CHEM', 'OPS']) co.setAutoBuy(m, { on: false });   // this checks the hand-bought stock being drawn: automatic purchasing off
   const r = co.buy('CHEM', 5000, 'A', 'CASH'); T('P6 chemicals bought', r.ok, r); co.buy('OPS', 500, 'A', 'CASH');
   T('P6a chemicals: stock up, inventory up', co.mats.CHEM === 5000 && near(co.journal.bal.INV_CHEM, r.cost, 1e-9), [co.mats.CHEM, co.journal.bal.INV_CHEM]);
   const c1 = cashOf(g), inv1 = co.journal.bal.INV_CHEM; co.advanceHours(48);
