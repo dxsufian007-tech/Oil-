@@ -1,0 +1,663 @@
+{
+ "root": "/tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/wt-before/oli",
+ "scenario": "central",
+ "hours": 48,
+ "timing": [
+  {
+   "rep": 0,
+   "buildings": 38,
+   "lines": 10,
+   "msPerHour": 1.599221125,
+   "worstHourMs": 6.308279,
+   "gcCount": 0,
+   "gcMs": 0,
+   "heapStartMB": 18.241302490234375,
+   "heapEndMB": 13.3857421875,
+   "rssMB": 113.10546875
+  },
+  {
+   "rep": 1,
+   "buildings": 38,
+   "lines": 10,
+   "msPerHour": 1.99778375,
+   "worstHourMs": 10.241516,
+   "gcCount": 0,
+   "gcMs": 0,
+   "heapStartMB": 24.707176208496094,
+   "heapEndMB": 16.900306701660156,
+   "rssMB": 139.23046875
+  },
+  {
+   "rep": 2,
+   "buildings": 38,
+   "lines": 10,
+   "msPerHour": 1.0364482916666666,
+   "worstHourMs": 1.637556,
+   "gcCount": 0,
+   "gcMs": 0,
+   "heapStartMB": 26.436386108398438,
+   "heapEndMB": 13.539314270019531,
+   "rssMB": 141.71484375
+  }
+ ],
+ "profile": {
+  "totalMsProfiled": 53.210956,
+  "samples": 130,
+  "top50Self": [
+   {
+    "fn": "path central.js:94",
+    "pct": 22.31,
+    "msPerHour": 0.247
+   },
+   {
+    "fn": "_tick economy.js:885",
+    "pct": 10,
+    "msPerHour": 0.111
+   },
+   {
+    "fn": "usedOf central.js:88",
+    "pct": 10,
+    "msPerHour": 0.111
+   },
+   {
+    "fn": "accept industry.js:428",
+    "pct": 6.92,
+    "msPerHour": 0.077
+   },
+   {
+    "fn": "advanceHours economy.js:1168",
+    "pct": 3.85,
+    "msPerHour": 0.043
+   },
+   {
+    "fn": "step industry.js:513",
+    "pct": 3.85,
+    "msPerHour": 0.043
+   },
+   {
+    "fn": "plan central.js:104",
+    "pct": 3.85,
+    "msPerHour": 0.043
+   },
+   {
+    "fn": "_planHops central.js:116",
+    "pct": 3.85,
+    "msPerHour": 0.043
+   },
+   {
+    "fn": "refine industry.js:491",
+    "pct": 3.08,
+    "msPerHour": 0.034
+   },
+   {
+    "fn": "end central.js:166",
+    "pct": 3.08,
+    "msPerHour": 0.034
+   },
+   {
+    "fn": "(garbage collector) ",
+    "pct": 3.08,
+    "msPerHour": 0.034
+   },
+   {
+    "fn": "offer industry.js:406",
+    "pct": 2.31,
+    "msPerHour": 0.026
+   },
+   {
+    "fn": "segUp central.js:92",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "_apply central.js:136",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "recent economy.js:1086",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "(anonymous) economy.js:179",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "post ledger.js:75",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "(anonymous) central.js:161",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "toStation central.js:146",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "(anonymous) industry.js:429",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "riskIndicators economy.js:1062",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "(anonymous) economy.js:202",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "(anonymous) ledger.js:96",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "_notify economy.js:1083",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "waterSellable economy.js:708",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "_post economy.js:165",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "_L economy.js:191",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "(anonymous) economy.js:596",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "matNeedDay economy.js:590",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "(anonymous) worldmap.js:350",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "allSites worldmap.js:292",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "(anonymous) economy.js:969",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "_engineTick economy.js:86",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "hour oil-engine.js:148",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "_drawMaterial economy.js:668",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "fromHours game-calendar.js:27",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "_matHour economy.js:597",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "computeStaff economy.js:838",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "(anonymous) audit-profile.js:17",
+    "pct": 0,
+    "msPerHour": 0
+   },
+   {
+    "fn": "post audit-profile.js:16",
+    "pct": 0,
+    "msPerHour": 0
+   },
+   {
+    "fn": "(anonymous) audit-profile.js:16",
+    "pct": 0,
+    "msPerHour": 0
+   },
+   {
+    "fn": "post node:inspector:118",
+    "pct": 0,
+    "msPerHour": 0
+   },
+   {
+    "fn": "split industry.js:418",
+    "pct": 0,
+    "msPerHour": 0
+   },
+   {
+    "fn": "deliver central.js:159",
+    "pct": 0,
+    "msPerHour": 0
+   },
+   {
+    "fn": "_finance economy.js:1048",
+    "pct": 0,
+    "msPerHour": 0
+   },
+   {
+    "fn": "balanceSheet economy.js:200",
+    "pct": 0,
+    "msPerHour": 0
+   },
+   {
+    "fn": "balanceSheet ledger.js:95",
+    "pct": 0,
+    "msPerHour": 0
+   },
+   {
+    "fn": "sumKind ledger.js:96",
+    "pct": 0,
+    "msPerHour": 0
+   },
+   {
+    "fn": "alerts economy.js:1087",
+    "pct": 0,
+    "msPerHour": 0
+   },
+   {
+    "fn": "waterInfo economy.js:712",
+    "pct": 0,
+    "msPerHour": 0
+   }
+  ],
+  "top40Inclusive": [
+   {
+    "fn": "(anonymous) audit-profile.js:17",
+    "pct": 96.92,
+    "msPerHour": 1.074
+   },
+   {
+    "fn": "advanceHours economy.js:1168",
+    "pct": 96.92,
+    "msPerHour": 1.074
+   },
+   {
+    "fn": "_tick economy.js:885",
+    "pct": 93.08,
+    "msPerHour": 1.032
+   },
+   {
+    "fn": "step industry.js:513",
+    "pct": 64.62,
+    "msPerHour": 0.716
+   },
+   {
+    "fn": "split industry.js:418",
+    "pct": 57.69,
+    "msPerHour": 0.64
+   },
+   {
+    "fn": "offer industry.js:406",
+    "pct": 57.69,
+    "msPerHour": 0.64
+   },
+   {
+    "fn": "accept industry.js:428",
+    "pct": 56.92,
+    "msPerHour": 0.631
+   },
+   {
+    "fn": "deliver central.js:159",
+    "pct": 56.15,
+    "msPerHour": 0.622
+   },
+   {
+    "fn": "toStation central.js:146",
+    "pct": 56.15,
+    "msPerHour": 0.622
+   },
+   {
+    "fn": "plan central.js:104",
+    "pct": 41.54,
+    "msPerHour": 0.46
+   },
+   {
+    "fn": "(anonymous) central.js:161",
+    "pct": 39.23,
+    "msPerHour": 0.435
+   },
+   {
+    "fn": "path central.js:94",
+    "pct": 31.54,
+    "msPerHour": 0.35
+   },
+   {
+    "fn": "refine industry.js:491",
+    "pct": 23.85,
+    "msPerHour": 0.264
+   },
+   {
+    "fn": "usedOf central.js:88",
+    "pct": 10,
+    "msPerHour": 0.111
+   },
+   {
+    "fn": "_planHops central.js:116",
+    "pct": 6.15,
+    "msPerHour": 0.068
+   },
+   {
+    "fn": "_finance economy.js:1048",
+    "pct": 3.85,
+    "msPerHour": 0.043
+   },
+   {
+    "fn": "riskIndicators economy.js:1062",
+    "pct": 3.85,
+    "msPerHour": 0.043
+   },
+   {
+    "fn": "_post economy.js:165",
+    "pct": 3.85,
+    "msPerHour": 0.043
+   },
+   {
+    "fn": "end central.js:166",
+    "pct": 3.08,
+    "msPerHour": 0.034
+   },
+   {
+    "fn": "(garbage collector) ",
+    "pct": 3.08,
+    "msPerHour": 0.034
+   },
+   {
+    "fn": "_expense economy.js:192",
+    "pct": 2.31,
+    "msPerHour": 0.026
+   },
+   {
+    "fn": "_L economy.js:191",
+    "pct": 2.31,
+    "msPerHour": 0.026
+   },
+   {
+    "fn": "segUp central.js:92",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "_apply central.js:136",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "balanceSheet economy.js:200",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "recent economy.js:1086",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "(anonymous) economy.js:179",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "_notify economy.js:1083",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "post ledger.js:75",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "_project economy.js:177",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "_autoBuy economy.js:616",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "autoBuyInfo economy.js:598",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "injectionCostDay buildings.js:179",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "injectorsTotal worldmap.js:350",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "tick economy.js:66",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "_engineTick economy.js:86",
+    "pct": 1.54,
+    "msPerHour": 0.017
+   },
+   {
+    "fn": "(anonymous) industry.js:429",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "(anonymous) economy.js:202",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "balanceSheet ledger.js:95",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   },
+   {
+    "fn": "sumKind ledger.js:96",
+    "pct": 0.77,
+    "msPerHour": 0.009
+   }
+  ]
+ },
+ "callsPerHour": [
+  {
+   "fn": "edgeOf industry.js:402",
+   "callsPerHour": 1338
+  },
+  {
+   "fn": "usedOf central.js:88",
+   "callsPerHour": 1204
+  },
+  {
+   "fn": "segUp central.js:92",
+   "callsPerHour": 987
+  },
+  {
+   "fn": "ok industry.js:425",
+   "callsPerHour": 744
+  },
+  {
+   "fn": "get buildings.js:189",
+   "callsPerHour": 670
+  },
+  {
+   "fn": "(anonymous) worldmap.js:350",
+   "callsPerHour": 490
+  },
+  {
+   "fn": "stateOf worldmap.js:298",
+   "callsPerHour": 454
+  },
+  {
+   "fn": "(anonymous) ledger.js:96",
+   "callsPerHour": 293
+  },
+  {
+   "fn": "(anonymous) central.js:118",
+   "callsPerHour": 222
+  },
+  {
+   "fn": "_hopPump central.js:115",
+   "callsPerHour": 177
+  },
+  {
+   "fn": "(anonymous) industry.js:429",
+   "callsPerHour": 174
+  },
+  {
+   "fn": "ensure industry.js:337",
+   "callsPerHour": 171
+  },
+  {
+   "fn": "(anonymous) central.js:119",
+   "callsPerHour": 111
+  },
+  {
+   "fn": "(anonymous) economy.js:288",
+   "callsPerHour": 84
+  },
+  {
+   "fn": "clamp economy.js:14",
+   "callsPerHour": 80
+  },
+  {
+   "fn": "list buildings.js:191",
+   "callsPerHour": 78
+  },
+  {
+   "fn": "staffKey economy.js:272",
+   "callsPerHour": 76
+  },
+  {
+   "fn": "(anonymous) central.js:110",
+   "callsPerHour": 70
+  },
+  {
+   "fn": "tanksOf economy.js:286",
+   "callsPerHour": 70
+  },
+  {
+   "fn": "(anonymous) ledger.js:86",
+   "callsPerHour": 52
+  },
+  {
+   "fn": "pk industry.js:39",
+   "callsPerHour": 50
+  },
+  {
+   "fn": "other industry.js:403",
+   "callsPerHour": 50
+  },
+  {
+   "fn": "offer industry.js:406",
+   "callsPerHour": 50
+  },
+  {
+   "fn": "accept industry.js:428",
+   "callsPerHour": 50
+  },
+  {
+   "fn": "(anonymous) economy.js:179",
+   "callsPerHour": 48
+  },
+  {
+   "fn": "(anonymous) central.js:161",
+   "callsPerHour": 44
+  },
+  {
+   "fn": "_graph central.js:82",
+   "callsPerHour": 41
+  },
+  {
+   "fn": "path central.js:94",
+   "callsPerHour": 41
+  },
+  {
+   "fn": "(anonymous) economy.js:596",
+   "callsPerHour": 41
+  },
+  {
+   "fn": "assetRec economy.js:211",
+   "callsPerHour": 40
+  },
+  {
+   "fn": "(anonymous) industry.js:544",
+   "callsPerHour": 38
+  },
+  {
+   "fn": "loadOf economy.js:261",
+   "callsPerHour": 38
+  },
+  {
+   "fn": "kwOf economy.js:267",
+   "callsPerHour": 38
+  },
+  {
+   "fn": "opDay economy.js:273",
+   "callsPerHour": 38
+  },
+  {
+   "fn": "maintDay economy.js:274",
+   "callsPerHour": 38
+  },
+  {
+   "fn": "effOf economy.js:277",
+   "callsPerHour": 38
+  },
+  {
+   "fn": "(anonymous) economy.js:1063",
+   "callsPerHour": 38
+  },
+  {
+   "fn": "(anonymous) economy.js:1101",
+   "callsPerHour": 38
+  },
+  {
+   "fn": "levelOf industry.js:325",
+   "callsPerHour": 34
+  },
+  {
+   "fn": "_planHops central.js:116",
+   "callsPerHour": 31
+  }
+ ]
+}

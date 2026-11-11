@@ -1,0 +1,3 @@
+{"N":1000,"thr":4,"buildings":1001,"saveToJSON_ms":0.8,"saveStringify_ms":7.3,"saveKB":151,"localStorageSetItem_ms":11.2,"visSigLoop_ms":0,"alerts_ms":0.5,"balanceSheet_ms":0,"heapMB":27.5,"counts":{"si":6,"st":3,"ael":65,"rael":0},"domNodes":253}
+{"N":3000,"thr":4,"buildings":3008,"saveToJSON_ms":1.2,"saveStringify_ms":10.3,"saveKB":193,"localStorageSetItem_ms":12.6,"visSigLoop_ms":0.7,"alerts_ms":1.1,"balanceSheet_ms":0,"heapMB":34.1,"counts":{"si":6,"st":3,"ael":65,"rael":0},"domNodes":253}
+{"N":10000,"thr":4,"buildings":9228,"saveToJSON_ms":3.1,"saveStringify_ms":16.8,"saveKB":317,"localStorageSetItem_ms":22.2,"visSigLoop_ms":5.5,"alerts_ms":5.4,"balanceSheet_ms":0,"heapMB":51.7,"counts":{"si":6,"st":10,"ael":65,"rael":0},"domNodes":253}

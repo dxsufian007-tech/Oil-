@@ -1,0 +1,4 @@
+{"N":1000,"thr":4,"buildings":1001,"localStorageKeysChars":[],"job":{"job":true,"total":576},"catchUp":{"absentHours":4,"gameHours":576,"totalMs":3285,"slices30ms":83,"worstSliceMs":64}}
+{"N":3000,"thr":4,"buildings":3008,"localStorageKeysChars":[],"job":{"job":true,"total":576},"catchUp":{"absentHours":4,"gameHours":576,"totalMs":9911,"slices30ms":192,"worstSliceMs":116}}
+{"N":3000,"thr":4,"buildings":3008,"localStorageKeysChars":[],"job":{"job":true,"total":3456},"catchUp":{"absentHours":24,"gameHours":3456,"totalMs":56867,"slices30ms":1147,"worstSliceMs":140}}
+{"N":10000,"thr":4,"buildings":9228,"localStorageKeysChars":[],"job":{"job":true,"total":576},"catchUp":{"absentHours":4,"gameHours":576,"totalMs":35159,"slices30ms":192,"worstSliceMs":318}}

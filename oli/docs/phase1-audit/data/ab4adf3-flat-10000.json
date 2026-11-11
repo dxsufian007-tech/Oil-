@@ -1,0 +1,663 @@
+{
+ "root": "/tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/wt-before/oli",
+ "scenario": "flat:10000",
+ "hours": 18,
+ "timing": [
+  {
+   "rep": 0,
+   "buildings": 10006,
+   "lines": 9123,
+   "msPerHour": 68.63098544444443,
+   "worstHourMs": 113.215514,
+   "gcCount": 0,
+   "gcMs": 0,
+   "heapStartMB": 112.28744506835938,
+   "heapEndMB": 59.083740234375,
+   "rssMB": 293.2578125
+  },
+  {
+   "rep": 1,
+   "buildings": 10006,
+   "lines": 9123,
+   "msPerHour": 79.00054811111112,
+   "worstHourMs": 105.690153,
+   "gcCount": 0,
+   "gcMs": 0,
+   "heapStartMB": 287.0464172363281,
+   "heapEndMB": 64.03514099121094,
+   "rssMB": 415.16015625
+  },
+  {
+   "rep": 2,
+   "buildings": 10006,
+   "lines": 9123,
+   "msPerHour": 79.5061661111111,
+   "worstHourMs": 115.187737,
+   "gcCount": 0,
+   "gcMs": 0,
+   "heapStartMB": 260.81117248535156,
+   "heapEndMB": 59.974693298339844,
+   "rssMB": 417.3359375
+  }
+ ],
+ "profile": {
+  "totalMsProfiled": 1386.627838,
+  "samples": 4237,
+  "top50Self": [
+   {
+    "fn": "step industry.js:513",
+    "pct": 22.23,
+    "msPerHour": 17.127
+   },
+   {
+    "fn": "offer industry.js:406",
+    "pct": 19.97,
+    "msPerHour": 15.382
+   },
+   {
+    "fn": "accept industry.js:428",
+    "pct": 19.54,
+    "msPerHour": 15.054
+   },
+   {
+    "fn": "_tick economy.js:885",
+    "pct": 9.06,
+    "msPerHour": 6.982
+   },
+   {
+    "fn": "(garbage collector) ",
+    "pct": 4.22,
+    "msPerHour": 3.254
+   },
+   {
+    "fn": "split industry.js:418",
+    "pct": 3,
+    "msPerHour": 2.309
+   },
+   {
+    "fn": "ensure industry.js:337",
+    "pct": 2.83,
+    "msPerHour": 2.182
+   },
+   {
+    "fn": "loadOf economy.js:261",
+    "pct": 2.55,
+    "msPerHour": 1.964
+   },
+   {
+    "fn": "computeStaff economy.js:838",
+    "pct": 2.05,
+    "msPerHour": 1.582
+   },
+   {
+    "fn": "advanceHours economy.js:1168",
+    "pct": 1.82,
+    "msPerHour": 1.4
+   },
+   {
+    "fn": "levelOf industry.js:325",
+    "pct": 1.6,
+    "msPerHour": 1.236
+   },
+   {
+    "fn": "_qNow economy.js:983",
+    "pct": 1.39,
+    "msPerHour": 1.073
+   },
+   {
+    "fn": "pk industry.js:39",
+    "pct": 1.04,
+    "msPerHour": 0.8
+   },
+   {
+    "fn": "other industry.js:403",
+    "pct": 0.64,
+    "msPerHour": 0.491
+   },
+   {
+    "fn": "effOf economy.js:277",
+    "pct": 0.61,
+    "msPerHour": 0.473
+   },
+   {
+    "fn": "matNeedDay economy.js:590",
+    "pct": 0.57,
+    "msPerHour": 0.436
+   },
+   {
+    "fn": "crudeAvailable economy.js:493",
+    "pct": 0.57,
+    "msPerHour": 0.436
+   },
+   {
+    "fn": "crudeOnHand economy.js:449",
+    "pct": 0.57,
+    "msPerHour": 0.436
+   },
+   {
+    "fn": "(anonymous) industry.js:421",
+    "pct": 0.52,
+    "msPerHour": 0.4
+   },
+   {
+    "fn": "available economy.js:447",
+    "pct": 0.42,
+    "msPerHour": 0.327
+   },
+   {
+    "fn": "(anonymous) economy.js:1063",
+    "pct": 0.38,
+    "msPerHour": 0.291
+   },
+   {
+    "fn": "put industry.js:440",
+    "pct": 0.33,
+    "msPerHour": 0.255
+   },
+   {
+    "fn": "assetRec economy.js:211",
+    "pct": 0.33,
+    "msPerHour": 0.255
+   },
+   {
+    "fn": "physicalVol economy.js:446",
+    "pct": 0.28,
+    "msPerHour": 0.218
+   },
+   {
+    "fn": "_gateMaterials economy.js:638",
+    "pct": 0.28,
+    "msPerHour": 0.218
+   },
+   {
+    "fn": "boughtInTanks economy.js:457",
+    "pct": 0.28,
+    "msPerHour": 0.218
+   },
+   {
+    "fn": "(anonymous) economy.js:1101",
+    "pct": 0.26,
+    "msPerHour": 0.2
+   },
+   {
+    "fn": "tick buildings.js:275",
+    "pct": 0.24,
+    "msPerHour": 0.182
+   },
+   {
+    "fn": "drawBottomWater industry.js:375",
+    "pct": 0.24,
+    "msPerHour": 0.182
+   },
+   {
+    "fn": "edgeOf industry.js:402",
+    "pct": 0.21,
+    "msPerHour": 0.164
+   },
+   {
+    "fn": "refine industry.js:491",
+    "pct": 0.19,
+    "msPerHour": 0.145
+   },
+   {
+    "fn": "capacity economy.js:448",
+    "pct": 0.19,
+    "msPerHour": 0.145
+   },
+   {
+    "fn": "tanksOf economy.js:286",
+    "pct": 0.19,
+    "msPerHour": 0.145
+   },
+   {
+    "fn": "eco industry.js:20",
+    "pct": 0.17,
+    "msPerHour": 0.127
+   },
+   {
+    "fn": "autoBuyInfo economy.js:598",
+    "pct": 0.14,
+    "msPerHour": 0.109
+   },
+   {
+    "fn": "alerts economy.js:1087",
+    "pct": 0.14,
+    "msPerHour": 0.109
+   },
+   {
+    "fn": "_engineTick economy.js:86",
+    "pct": 0.09,
+    "msPerHour": 0.073
+   },
+   {
+    "fn": "assetValue economy.js:213",
+    "pct": 0.09,
+    "msPerHour": 0.073
+   },
+   {
+    "fn": "inventory economy.js:484",
+    "pct": 0.07,
+    "msPerHour": 0.055
+   },
+   {
+    "fn": "(anonymous) economy.js:485",
+    "pct": 0.07,
+    "msPerHour": 0.055
+   },
+   {
+    "fn": "_auto economy.js:984",
+    "pct": 0.07,
+    "msPerHour": 0.055
+   },
+   {
+    "fn": "gasPressure industry.js:566",
+    "pct": 0.05,
+    "msPerHour": 0.036
+   },
+   {
+    "fn": "riskIndicators economy.js:1062",
+    "pct": 0.05,
+    "msPerHour": 0.036
+   },
+   {
+    "fn": "balanceSheet economy.js:200",
+    "pct": 0.05,
+    "msPerHour": 0.036
+   },
+   {
+    "fn": "(anonymous) ledger.js:96",
+    "pct": 0.05,
+    "msPerHour": 0.036
+   },
+   {
+    "fn": "dateOfDay game-calendar.js:21",
+    "pct": 0.05,
+    "msPerHour": 0.036
+   },
+   {
+    "fn": "wrappedFn errors:535",
+    "pct": 0.02,
+    "msPerHour": 0.018
+   },
+   {
+    "fn": "dispatch ",
+    "pct": 0.02,
+    "msPerHour": 0.018
+   },
+   {
+    "fn": "_autoBuy economy.js:616",
+    "pct": 0.02,
+    "msPerHour": 0.018
+   },
+   {
+    "fn": "_finance economy.js:1048",
+    "pct": 0.02,
+    "msPerHour": 0.018
+   }
+  ],
+  "top40Inclusive": [
+   {
+    "fn": "(anonymous) audit-profile.js:17",
+    "pct": 95.78,
+    "msPerHour": 73.78
+   },
+   {
+    "fn": "advanceHours economy.js:1168",
+    "pct": 95.7,
+    "msPerHour": 73.726
+   },
+   {
+    "fn": "_tick economy.js:885",
+    "pct": 93.89,
+    "msPerHour": 72.326
+   },
+   {
+    "fn": "step industry.js:513",
+    "pct": 71.47,
+    "msPerHour": 55.053
+   },
+   {
+    "fn": "split industry.js:418",
+    "pct": 47.3,
+    "msPerHour": 36.436
+   },
+   {
+    "fn": "offer industry.js:406",
+    "pct": 46.83,
+    "msPerHour": 36.072
+   },
+   {
+    "fn": "accept industry.js:428",
+    "pct": 37.95,
+    "msPerHour": 29.236
+   },
+   {
+    "fn": "(anonymous) industry.js:421",
+    "pct": 15.22,
+    "msPerHour": 11.727
+   },
+   {
+    "fn": "(garbage collector) ",
+    "pct": 4.22,
+    "msPerHour": 3.254
+   },
+   {
+    "fn": "ensure industry.js:337",
+    "pct": 2.83,
+    "msPerHour": 2.182
+   },
+   {
+    "fn": "loadOf economy.js:261",
+    "pct": 2.55,
+    "msPerHour": 1.964
+   },
+   {
+    "fn": "_notify economy.js:1083",
+    "pct": 2.12,
+    "msPerHour": 1.636
+   },
+   {
+    "fn": "alerts economy.js:1087",
+    "pct": 2.12,
+    "msPerHour": 1.636
+   },
+   {
+    "fn": "computeStaff economy.js:838",
+    "pct": 2.05,
+    "msPerHour": 1.582
+   },
+   {
+    "fn": "inventory economy.js:484",
+    "pct": 1.72,
+    "msPerHour": 1.327
+   },
+   {
+    "fn": "other industry.js:403",
+    "pct": 1.68,
+    "msPerHour": 1.291
+   },
+   {
+    "fn": "levelOf industry.js:325",
+    "pct": 1.6,
+    "msPerHour": 1.236
+   },
+   {
+    "fn": "_qNow economy.js:983",
+    "pct": 1.39,
+    "msPerHour": 1.073
+   },
+   {
+    "fn": "pk industry.js:39",
+    "pct": 1.04,
+    "msPerHour": 0.8
+   },
+   {
+    "fn": "_autoBuy economy.js:616",
+    "pct": 0.9,
+    "msPerHour": 0.691
+   },
+   {
+    "fn": "autoBuyInfo economy.js:598",
+    "pct": 0.87,
+    "msPerHour": 0.673
+   },
+   {
+    "fn": "crudeAvailable economy.js:493",
+    "pct": 0.83,
+    "msPerHour": 0.636
+   },
+   {
+    "fn": "(anonymous) economy.js:485",
+    "pct": 0.76,
+    "msPerHour": 0.582
+   },
+   {
+    "fn": "matNeedDay economy.js:590",
+    "pct": 0.73,
+    "msPerHour": 0.564
+   },
+   {
+    "fn": "crudeOnHand economy.js:449",
+    "pct": 0.71,
+    "msPerHour": 0.545
+   },
+   {
+    "fn": "effOf economy.js:277",
+    "pct": 0.61,
+    "msPerHour": 0.473
+   },
+   {
+    "fn": "_finance economy.js:1048",
+    "pct": 0.54,
+    "msPerHour": 0.418
+   },
+   {
+    "fn": "available economy.js:447",
+    "pct": 0.54,
+    "msPerHour": 0.418
+   },
+   {
+    "fn": "riskIndicators economy.js:1062",
+    "pct": 0.52,
+    "msPerHour": 0.4
+   },
+   {
+    "fn": "(anonymous) economy.js:1063",
+    "pct": 0.38,
+    "msPerHour": 0.291
+   },
+   {
+    "fn": "put industry.js:440",
+    "pct": 0.33,
+    "msPerHour": 0.255
+   },
+   {
+    "fn": "assetRec economy.js:211",
+    "pct": 0.33,
+    "msPerHour": 0.255
+   },
+   {
+    "fn": "physicalVol economy.js:446",
+    "pct": 0.31,
+    "msPerHour": 0.236
+   },
+   {
+    "fn": "_gateMaterials economy.js:638",
+    "pct": 0.31,
+    "msPerHour": 0.236
+   },
+   {
+    "fn": "refine industry.js:491",
+    "pct": 0.28,
+    "msPerHour": 0.218
+   },
+   {
+    "fn": "boughtInTanks economy.js:457",
+    "pct": 0.28,
+    "msPerHour": 0.218
+   },
+   {
+    "fn": "(anonymous) economy.js:1101",
+    "pct": 0.26,
+    "msPerHour": 0.2
+   },
+   {
+    "fn": "tick buildings.js:275",
+    "pct": 0.24,
+    "msPerHour": 0.182
+   },
+   {
+    "fn": "drawBottomWater industry.js:375",
+    "pct": 0.24,
+    "msPerHour": 0.182
+   },
+   {
+    "fn": "edgeOf industry.js:402",
+    "pct": 0.21,
+    "msPerHour": 0.164
+   }
+  ]
+ },
+ "callsPerHour": [
+  {
+   "fn": "edgeOf industry.js:402",
+   "callsPerHour": 67693
+  },
+  {
+   "fn": "ensure industry.js:337",
+   "callsPerHour": 58273
+  },
+  {
+   "fn": "ok industry.js:425",
+   "callsPerHour": 36789
+  },
+  {
+   "fn": "levelOf industry.js:325",
+   "callsPerHour": 34730
+  },
+  {
+   "fn": "(anonymous) industry.js:429",
+   "callsPerHour": 32671
+  },
+  {
+   "fn": "(anonymous) economy.js:288",
+   "callsPerHour": 32664
+  },
+  {
+   "fn": "(anonymous) industry.js:459",
+   "callsPerHour": 31788
+  },
+  {
+   "fn": "(anonymous) industry.js:419",
+   "callsPerHour": 29139
+  },
+  {
+   "fn": "get buildings.js:189",
+   "callsPerHour": 22075
+  },
+  {
+   "fn": "pk industry.js:39",
+   "callsPerHour": 22075
+  },
+  {
+   "fn": "other industry.js:403",
+   "callsPerHour": 22075
+  },
+  {
+   "fn": "offer industry.js:406",
+   "callsPerHour": 22075
+  },
+  {
+   "fn": "accept industry.js:428",
+   "callsPerHour": 22075
+  },
+  {
+   "fn": "(anonymous) industry.js:532",
+   "callsPerHour": 22075
+  },
+  {
+   "fn": "(anonymous) industry.js:544",
+   "callsPerHour": 21773
+  },
+  {
+   "fn": "staffKey economy.js:272",
+   "callsPerHour": 20012
+  },
+  {
+   "fn": "(anonymous) industry.js:421",
+   "callsPerHour": 18543
+  },
+  {
+   "fn": "(anonymous) industry.js:448",
+   "callsPerHour": 15894
+  },
+  {
+   "fn": "clamp economy.js:14",
+   "callsPerHour": 14425
+  },
+  {
+   "fn": "(anonymous) industry.js:549",
+   "callsPerHour": 11479
+  },
+  {
+   "fn": "assetRec economy.js:211",
+   "callsPerHour": 10562
+  },
+  {
+   "fn": "eco industry.js:20",
+   "callsPerHour": 10007
+  },
+  {
+   "fn": "loadOf economy.js:261",
+   "callsPerHour": 10006
+  },
+  {
+   "fn": "kwOf economy.js:267",
+   "callsPerHour": 10006
+  },
+  {
+   "fn": "opDay economy.js:273",
+   "callsPerHour": 10006
+  },
+  {
+   "fn": "maintDay economy.js:274",
+   "callsPerHour": 10006
+  },
+  {
+   "fn": "effOf economy.js:277",
+   "callsPerHour": 10006
+  },
+  {
+   "fn": "(anonymous) economy.js:1063",
+   "callsPerHour": 10006
+  },
+  {
+   "fn": "(anonymous) economy.js:1101",
+   "callsPerHour": 10006
+  },
+  {
+   "fn": "split industry.js:418",
+   "callsPerHour": 7947
+  },
+  {
+   "fn": "put industry.js:440",
+   "callsPerHour": 5004
+  },
+  {
+   "fn": "lerp industry.js:19",
+   "callsPerHour": 4709
+  },
+  {
+   "fn": "fieldProfile industry.js:31",
+   "callsPerHour": 4415
+  },
+  {
+   "fn": "hash economy.js:15",
+   "callsPerHour": 4415
+  },
+  {
+   "fn": "liftFactor economy.js:207",
+   "callsPerHour": 4415
+  },
+  {
+   "fn": "wellQuality economy.js:275",
+   "callsPerHour": 4415
+  },
+  {
+   "fn": "clamp industry.js:17",
+   "callsPerHour": 3235
+  },
+  {
+   "fn": "dirty industry.js:401",
+   "callsPerHour": 1473
+  },
+  {
+   "fn": "drawBottomWater industry.js:375",
+   "callsPerHour": 1472
+  },
+  {
+   "fn": "tankKind industry.js:574",
+   "callsPerHour": 1472
+  }
+ ]
+}

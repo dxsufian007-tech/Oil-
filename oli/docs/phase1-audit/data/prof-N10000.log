@@ -1,0 +1,102 @@
+N=9228 x1 still cache on | sim 285.6 ms/hour, draw 18.24 ms/redraw, 1.7 redraws/s, whole h/s 2.71 | fps 9.8 p95 450 max 883 slow>33 31.7% | econ 774 ms/s (max 615) | game h/s 2.83 of 2 | heap 52 MB | draw ms/s {"terrain":2,"decorate":3,"overlays":3,"afterOv":15,"top":0,"pipes":8,"buildings":0}
+   27.8% (program) :0
+   10.8% step industry.js:513
+   10.4% accept industry.js:428
+   8.0% offer industry.js:406
+   7.5% save_ building-lab.js:538
+   5.5% _tick economy.js:885
+   5.2% (idle) :0
+   3.9% setItem :0
+   1.7% (garbage collector) :0
+   1.7%  buildings.js:346
+   1.6% loadOf economy.js:261
+   1.3% computeStaff economy.js:838
+   1.2% ensure industry.js:337
+   1.0% visSig building-lab.js:619
+   0.9% _qNow economy.js:983
+   0.6% run economy.js:1176
+   0.6% available economy.js:447
+   0.6% matNeedDay economy.js:590
+   0.5%  industry.js:421
+   0.4% drawBottomWater industry.js:375
+   0.4% drawPipes building-lab.js:493
+   0.4%  economy.js:288
+   0.4% crudeAvailable economy.js:493
+   0.3% effOf economy.js:277
+   0.3% counts game-ui.js:61
+   0.3% physicalVol economy.js:446
+   0.3% edgeOf industry.js:402
+   0.3% _gateMaterials economy.js:638
+   0.2% getItem :0
+   0.2%  economy.js:1101
+   0.2% crudeOnHand economy.js:449
+   0.2%  industry.js:429
+   0.2%  industry.js:544
+   0.2%  economy.js:1063
+   0.2% assetRec economy.js:211
+   0.2% pipeValue economy.js:220
+   0.1% tick buildings.js:275
+   0.1% boughtInTanks economy.js:457
+   0.1%  economy.js:485
+   0.1% tanksOf economy.js:286
+   0.1% draw world-preview.js:209
+   0.1% capacity economy.js:448
+   0.1% drawImage :0
+   0.1% maintDay economy.js:274
+   0.1% refine industry.js:491
+   0.1% end central.js:166
+   0.1% toJSON economy.js:1212
+   0.1% requestAnimationFrame :0
+   0.1%  ledger.js:96
+   0.1% stroke :0
+N=9228 x1 pan   cache on | sim 246.7 ms/hour, draw 14.8 ms/redraw, 5 redraws/s, whole h/s 2.74 | fps 5.5 p95 400 max 683 slow>33 86% | econ 676 ms/s (max 495) | game h/s 2.87 of 2 | heap 46 MB | draw ms/s {"terrain":15,"decorate":6,"overlays":5,"afterOv":34,"top":0,"pipes":14,"buildings":0}
+   38.0% (program) :0
+   10.0% step industry.js:513
+   8.6% accept industry.js:428
+   7.6% offer industry.js:406
+   5.9% _tick economy.js:885
+   4.3% save_ building-lab.js:538
+   2.2% setItem :0
+   2.0% loadOf economy.js:261
+   1.9% (garbage collector) :0
+   1.3% computeStaff economy.js:838
+   1.2% _qNow economy.js:983
+   1.1% ensure industry.js:337
+   1.1%  industry.js:459
+   1.0% visSig building-lab.js:619
+   0.9% drawPipes building-lab.js:493
+   0.9% setTransform :0
+   0.9% split industry.js:418
+   0.8%  buildings.js:346
+   0.5% drawImage :0
+   0.5% available economy.js:447
+   0.5% physicalVol economy.js:446
+   0.4% run economy.js:1176
+   0.4% crudeAvailable economy.js:493
+   0.4% drawBottomWater industry.js:375
+   0.3% matNeedDay economy.js:590
+   0.3% _gateMaterials economy.js:638
+   0.3% counts game-ui.js:61
+   0.2% stroke :0
+   0.2%  economy.js:1101
+   0.2% tick buildings.js:275
+   0.2% crudeOnHand economy.js:449
+   0.2%  economy.js:288
+   0.2% alerts economy.js:1087
+   0.2% riskIndicators economy.js:1062
+   0.2%  industry.js:421
+   0.2% resize world-preview.js:82
+   0.2%  industry.js:429
+   0.2% edgeOf industry.js:402
+   0.1%  economy.js:485
+   0.1% pipeValue economy.js:220
+   0.1% getItem :0
+   0.1% capacity economy.js:448
+   0.1% refine industry.js:491
+   0.1%  industry.js:544
+   0.1% overlays world-preview.js:174
+   0.1% poly building-art.js:29
+   0.1% tanksOf economy.js:286
+   0.1% list buildings.js:191
+   0.1% end central.js:166
+   0.1% inventory economy.js:484

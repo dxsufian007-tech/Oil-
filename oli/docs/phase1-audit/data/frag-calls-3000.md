@@ -1,0 +1,32 @@
+| دالة | استدعاءات/ساعة |
+|---|---|
+| edgeOf industry.js:402 | 20313 |
+| ensure industry.js:337 | 17485 |
+| ok industry.js:425 | 11039 |
+| levelOf industry.js:325 | 10422 |
+| (anonymous) industry.js:429 | 9805 |
+| (anonymous) economy.js:288 | 9798 |
+| (anonymous) industry.js:459 | 9540 |
+| (anonymous) industry.js:419 | 8745 |
+| get buildings.js:189 | 6625 |
+| pk industry.js:39 | 6625 |
+| other industry.js:403 | 6625 |
+| offer industry.js:406 | 6625 |
+| accept industry.js:428 | 6625 |
+| (anonymous) industry.js:532 | 6625 |
+| (anonymous) industry.js:544 | 6529 |
+| staffKey economy.js:272 | 6004 |
+| (anonymous) industry.js:421 | 5565 |
+| (anonymous) industry.js:448 | 4770 |
+| clamp economy.js:14 | 4596 |
+| (anonymous) industry.js:549 | 3445 |
+| assetRec economy.js:211 | 3085 |
+| eco industry.js:20 | 3003 |
+| loadOf economy.js:261 | 3002 |
+| kwOf economy.js:267 | 3002 |
+| opDay economy.js:273 | 3002 |
+| maintDay economy.js:274 | 3002 |
+| effOf economy.js:277 | 3002 |
+| (anonymous) economy.js:1063 | 3002 |
+| (anonymous) economy.js:1101 | 3002 |
+| split industry.js:418 | 2385 |

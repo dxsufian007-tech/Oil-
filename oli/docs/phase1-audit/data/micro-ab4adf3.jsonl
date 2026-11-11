@@ -1,0 +1,3 @@
+{"N":400,"buildings":408,"simBuild_ms":1.85,"storeToJSON_live_ms":1.42,"storeSaveKB":117,"pipesToJSON_ms":0.03,"companyToJSON_ms":0.24,"companyKB":140,"stringifyStore_ms":2.1,"parseStore_ms":0.67}
+{"N":3000,"buildings":3002,"simBuild_ms":27.05,"storeToJSON_live_ms":10.23,"storeSaveKB":775,"pipesToJSON_ms":0.1,"companyToJSON_ms":0.28,"companyKB":192,"stringifyStore_ms":14.4,"parseStore_ms":3.55}
+{"N":10000,"buildings":10006,"simBuild_ms":70.41,"storeToJSON_live_ms":38.12,"storeSaveKB":2568,"pipesToJSON_ms":0.87,"companyToJSON_ms":0.94,"companyKB":332,"stringifyStore_ms":61.07,"parseStore_ms":11.05}

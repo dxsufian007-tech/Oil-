@@ -1,0 +1,2 @@
+cd /tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/audit; export NODE_PATH=/opt/npm-tools/node_modules
+for r in 1 2 3; do for n in 400 1000 3000 5000 10000; do ROOT=/tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/wt-before/oli SPEEDS=1,10 ACTS=still,pan THR=4 SECS=8 node bb.js /tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/audit/out/br-ab4adf3-N$n-r$r.json $n 2>&1 | tail -4 | cut -c1-260; done; done; echo BMATRIXDONE

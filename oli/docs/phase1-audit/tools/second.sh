@@ -1,0 +1,4 @@
+cd /tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/audit; export NODE_PATH=/opt/npm-tools/node_modules
+for n in 3000 10000; do ROOT=/tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/wt-before/oli PROFILE=1 SPEEDS=1 ACTS=still,pan THR=4 SECS=8 node bb2.js /tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/audit/out/prof-ab4adf3-N$n.json $n > /tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/audit/out/prof-N$n.log 2>&1; done
+for n in 1000 3000 10000; do ROOT=/tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/wt-before/oli node probe.js $n >> /tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/audit/out/probe-ab4adf3.jsonl 2>> /tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/audit/out/probe-err.log; done
+echo SECONDDONE

@@ -1,0 +1,2 @@
+cd /tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/audit; export NODE_PATH=/opt/npm-tools/node_modules
+for sc in flat:400:96 flat:1000:48 flat:3000:36 flat:5000:24 flat:10000:18 central:0:48; do IFS=: read k n h <<< "$sc"; [ "$k" = central ] && s=central || s=$k:$n; node --expose-gc audit-profile.js /tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/wt-before/oli $s $h 3 /tmp/claude-0/-home-claude/abf9ae5e-1fb3-542f-b1a9-a2bbb18dc678/scratchpad/audit/out/ab4adf3-${s//:/-}.json 2>&1 | tail -1; done; echo MATRIXDONE

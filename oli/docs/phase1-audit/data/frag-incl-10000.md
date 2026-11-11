@@ -1,0 +1,32 @@
+| الدالة (inclusive) | % من الساعة | ms/ساعة |
+|---|---|---|
+| (anonymous) audit-profile.js:17 | 95.78 | 73.78 |
+| advanceHours economy.js:1168 | 95.7 | 73.726 |
+| _tick economy.js:885 | 93.89 | 72.326 |
+| step industry.js:513 | 71.47 | 55.053 |
+| split industry.js:418 | 47.3 | 36.436 |
+| offer industry.js:406 | 46.83 | 36.072 |
+| accept industry.js:428 | 37.95 | 29.236 |
+| (anonymous) industry.js:421 | 15.22 | 11.727 |
+| (garbage collector)  | 4.22 | 3.254 |
+| ensure industry.js:337 | 2.83 | 2.182 |
+| loadOf economy.js:261 | 2.55 | 1.964 |
+| _notify economy.js:1083 | 2.12 | 1.636 |
+| alerts economy.js:1087 | 2.12 | 1.636 |
+| computeStaff economy.js:838 | 2.05 | 1.582 |
+| inventory economy.js:484 | 1.72 | 1.327 |
+| other industry.js:403 | 1.68 | 1.291 |
+| levelOf industry.js:325 | 1.6 | 1.236 |
+| _qNow economy.js:983 | 1.39 | 1.073 |
+| pk industry.js:39 | 1.04 | 0.8 |
+| _autoBuy economy.js:616 | 0.9 | 0.691 |
+| autoBuyInfo economy.js:598 | 0.87 | 0.673 |
+| crudeAvailable economy.js:493 | 0.83 | 0.636 |
+| (anonymous) economy.js:485 | 0.76 | 0.582 |
+| matNeedDay economy.js:590 | 0.73 | 0.564 |
+| crudeOnHand economy.js:449 | 0.71 | 0.545 |
+| effOf economy.js:277 | 0.61 | 0.473 |
+| _finance economy.js:1048 | 0.54 | 0.418 |
+| available economy.js:447 | 0.54 | 0.418 |
+| riskIndicators economy.js:1062 | 0.52 | 0.4 |
+| (anonymous) economy.js:1063 | 0.38 | 0.291 |
