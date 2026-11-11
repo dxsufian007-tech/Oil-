@@ -42,11 +42,16 @@ function central() {
 }
 const g = SCEN === 'central' ? central() : flat(+SCEN.split(':')[1] || 1000), co = g.co;
 const SELLP = ['CRUDE', 'GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'], sales = [];     // the same player actions in both runs: at the end of every game day, half of what is available of each product is sold on the spot market
-for (let left = +HOURS; left > 0; ) { const h = Math.min(24, left); co.advanceHours(h); left -= h; if (h === 24) for (const p of SELLP) { const q = Math.floor(co.available(p) * 0.5); if (q > 0) { const r = co.sell(p, q); sales.push([co.hours, p, q, r.ok ? r.net : 0]); } } }
+/* env SLICED=1: the same hours are run the way the live game runs them when a device cannot finish an hour in one frame - every hour in the smallest possible slices
+   (run() with a ~0 ms budget pauses after every chunk of 256 buildings), with the screen's reads (stocks, building status, economics) made while the hour is open.
+   The snapshot must be identical to the hours run in one go. */
+let slices = 0; const adv = h => { if (!process.env.SLICED) return co.advanceHours(h); let done = 0; while (done < h) { done += co.run(!co.midHour && co.acc < 1 ? 1 : 0, 1e-9); slices++;
+  if (co.midHour && slices % 3 === 0) { for (const p of SELLP) co.available(p); for (const b of g.store.list().slice(0, 40)) { g.sim.status(b); co.economics(b.id); } } } };
+for (let left = +HOURS; left > 0; ) { const h = Math.min(24, left); adv(h); left -= h; if (h === 24) for (const p of SELLP) { const q = Math.floor(co.available(p) * 0.5); if (q > 0) { const r = co.sell(p, q); sales.push([co.hours, p, q, r.ok ? r.net : 0]); } } }
 const num = o => { const r = {}; for (const k in o) { const v = o[k]; if (typeof v === 'number' || typeof v === 'boolean') r[k] = v; else if (v && typeof v === 'object' && !Array.isArray(v)) { const n = num(v); if (Object.keys(n).length) r[k] = n; } } return r; };
 const snap = { scenario: SCEN, hours: co.hours, nBuildings: g.store.items.size, lines: g.net.lines.size, cash: g.store.cash, journal: Object.assign({ entries: co.journal.n }, co.journal.bal), life: num(co.led.life), month: num(co.led.month),
   stocks: { qty: co.qty, qty2: co.qty2, mats: co.mats, bq: co.bq }, prices: num(co.market.price), sales, purchases: co.purchases.map(p => [p.item, p.qty, p.total, p.terms, !!p.auto]), events: co.events.length,
   water: num(co.water), staff: num(co.staff), power: num(co.pw), autoBuyLog: (co.autoBuy && co.autoBuy.log || []).map(e => [e.t, e.item, e.ok, e.qty || 0, e.total || 0]),
   buildings: [...g.store.items.values()].map(b => [b.id, b.d, b.st, b.s ? num(b.s) : null]), pipes: [...g.net.lines.values()].map(L => [L.id, L.flow || 0, L.pressure || 0, L.open !== false]) };
 if (g.net.central) { const cn = g.net.central; snap.central = { channels: num(cn.ch), segments: [...cn.seg.values()].map(s => [s.id, num(s.f), num(s.fault)]), pumps: [...cn.pumps.values()].map(p => [p.id, p.dir, p.flow || 0, p.pIn || 0, p.pOut || 0, !!p.fault]) }; }
-fs.writeFileSync(OUT, JSON.stringify(snap)); console.log(SCEN, 'hours', co.hours, 'buildings', snap.nBuildings, 'lines', snap.lines, 'cash', Math.round(g.store.cash), 'sold', JSON.stringify(num(co.led.life.sold)).slice(0, 120), 'purchases', snap.purchases.length, 'sales', sales.length);
+fs.writeFileSync(OUT, JSON.stringify(snap)); console.log(SCEN, 'hours', co.hours, 'buildings', snap.nBuildings, 'lines', snap.lines, 'cash', Math.round(g.store.cash), 'sold', JSON.stringify(num(co.led.life.sold)).slice(0, 120), 'purchases', snap.purchases.length, 'sales', sales.length, process.env.SLICED ? 'slices ' + slices : '');

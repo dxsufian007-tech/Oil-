@@ -7,7 +7,7 @@
  */
 const { chromium } = require('playwright'), http = require('http'), fs = require('fs'), path = require('path');
 const root = process.env.ROOT || __dirname, OUT = process.argv[2], NS = (process.argv[3] || '500,1000,3000,5000').split(',').map(Number), THR = +process.env.THR || 4, SECS = +process.env.SECS || 6;
-const SPEEDS = (process.env.SPEEDS || '1,2,5,10').split(',').map(Number), ACTS = (process.env.ACTS || 'still,pan').split(',');
+const SPEEDS = (process.env.SPEEDS || '1,2,5,10').split(',').map(Number), ACTS = (process.env.ACTS || 'still,pan').split(','), CACHES = (process.env.CACHE || 'on').split(',');      // CACHE=on,off: every case also with the still-map ground cache switched off (same page)
 const srv = http.createServer((q, r) => { const u = q.url.split('?')[0], f = path.join(root, u === '/' ? 'world-preview.html' : u); fs.readFile(f, (e, d) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : f.endsWith('.html') ? 'text/html' : f.endsWith('.webp') ? 'image/webp' : f.endsWith('.json') ? 'application/json' : 'application/octet-stream' }); r.end(d); }); });
 const pct = (a, p) => { if (!a.length) return 0; const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p / 100 * s.length))]; };
 srv.listen(0, async () => {
@@ -47,15 +47,15 @@ srv.listen(0, async () => {
         const row = { minute: m, fps: +(fr.length / (fr.reduce((a, v) => a + v, 0) / 1000)).toFixed(1), heapMB: +(x.heap / 1048576).toFixed(1), gameHoursPerSec: +((x.hours - hPrev) / ((now - tPrev) / 1000)).toFixed(2), longestBlockMs: Math.round(x.lt), buildings: x.n, booksBalance: x.audit };
         hPrev = x.hours; tPrev = now; samples.push(row); console.log('SOAK ' + JSON.stringify(row)); }
       results.push({ soak: samples, N: sc.buildings }); await ctx.close(); continue; }
-    for (const speed of SPEEDS) for (const act of ACTS) {
-      await p.evaluate(([speed, act]) => { const L = __lab; L.company.speed = speed; clearInterval(window.__iv); let a = 0; __wp.goto(L.__cx, L.__cy, .7); if (act === 'pan') window.__iv = setInterval(() => { a += .08; __wp.goto(L.__cx + Math.cos(a) * 30, L.__cy + Math.sin(a) * 30, .7); }, 33);
-        const C = L.company; if (!C.__w) { C.__w = 1; window.__tm = { run: 0, runs: 0, maxRun: 0 }; const r0 = C.run.bind(C); C.run = function (...x) { const t = performance.now(); const o = r0(...x); const d = performance.now() - t; __tm.run += d; __tm.runs++; if (d > __tm.maxRun) __tm.maxRun = d; return o; }; } }, [speed, act]);
+    for (const speed of SPEEDS) for (const act of ACTS) for (const cache of CACHES) {
+      await p.evaluate(([speed, act, cache]) => { window.OLI_NOGROUNDCACHE = cache === 'off'; const L = __lab; L.company.speed = speed; clearInterval(window.__iv); let a = 0; __wp.goto(L.__cx, L.__cy, .7); if (act === 'pan') window.__iv = setInterval(() => { a += .08; __wp.goto(L.__cx + Math.cos(a) * 30, L.__cy + Math.sin(a) * 30, .7); }, 33);
+        const C = L.company; if (!C.__w) { C.__w = 1; window.__tm = { run: 0, runs: 0, maxRun: 0 }; const r0 = C.run.bind(C); C.run = function (...x) { const t = performance.now(); const o = r0(...x); const d = performance.now() - t; __tm.run += d; __tm.runs++; if (d > __tm.maxRun) __tm.maxRun = d; return o; }; } }, [speed, act, cache]);
       await p.waitForTimeout(2500); await p.evaluate(() => { if (window.gc) gc(); __tm.run = 0; __tm.runs = 0; __tm.maxRun = 0; window.__lt = 0; window.__lts = 0; try { if (!window.__po) { window.__po = new PerformanceObserver(l => { for (const e of l.getEntries()) { __lts += e.duration; if (e.duration > __lt) __lt = e.duration; } }); __po.observe({ entryTypes: ['longtask'] }); } } catch (_) { } });
       const T0 = await p.evaluate(() => JSON.parse(JSON.stringify(__wp.stats.t || {})));
-      const h0 = await p.evaluate(() => __lab.company.hours + __lab.company.acc);
+      const h0 = await p.evaluate(() => __lab.company.hours + __lab.company.acc), hw0 = await p.evaluate(() => ({ h: __lab.company.hours, d: __wp.stats.draws | 0 }));
       if (process.env.PROFILE) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 500 }); await cdp.send('Profiler.start'); }
       const fr = await p.evaluate(ms => new Promise(res => { const d = []; let last = performance.now(), t0 = last; const f = t => { d.push(t - last); last = t; if (t - t0 < ms) requestAnimationFrame(f); else res(d); }; requestAnimationFrame(f); }), SECS * 1000);
-      const s1 = await p.evaluate(() => ({ tm: Object.assign({}, __tm), lt: window.__lt || 0, heap: performance.memory.usedJSHeapSize, hours: __lab.company.hours + __lab.company.acc, backlog: __lab.company.acc }));
+      const s1 = await p.evaluate(() => ({ tm: Object.assign({}, __tm), lt: window.__lt || 0, heap: performance.memory.usedJSHeapSize, hours: __lab.company.hours + __lab.company.acc, backlog: __lab.company.acc, whole: __lab.company.hours, draws: __wp.stats.draws | 0 }));
       const dur = fr.reduce((a, x) => a + x, 0) / 1000, ft = fr.slice(1), gh = (s1.hours - h0) / dur;
       const T1 = await p.evaluate(() => JSON.parse(JSON.stringify(__wp.stats.t || {}))), layers = {}; for (const k in T1) layers[k] = +(((T1[k] || 0) - (T0[k] || 0)) / dur).toFixed(0);
       let prof = null; if (process.env.PROFILE) { const { profile } = await cdp.send('Profiler.stop'), byId = new Map(profile.nodes.map(n => [n.id, n])), self = new Map(); let tot = 0;
@@ -63,9 +63,10 @@ srv.listen(0, async () => {
         prof = [...self].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([k, v]) => (v / tot * 100).toFixed(1) + '% ' + k); }
       const row = { N: sc.buildings, lines: sc.lines, speed, act, thr: THR, fps: +(fr.length / dur).toFixed(1), p50: +pct(ft, 50).toFixed(1), p95: +pct(ft, 95).toFixed(1), max: +Math.max(...ft).toFixed(0), slow33: +(ft.filter(x => x > 33.4).length / ft.length * 100).toFixed(1),
         econMsPerSec: +(s1.tm.run / dur).toFixed(0), econMaxMs: +s1.tm.maxRun.toFixed(0), longestTask: +s1.lt.toFixed(0), gameHoursPerSec: +gh.toFixed(2), wantedHoursPerSec: 2 * speed, backlogH: +s1.backlog.toFixed(1), heapMB: +(s1.heap / 1048576).toFixed(0) };
-      row.drawMsPerSec = layers;
+      row.drawMsPerSec = layers; row.cache = cache; row.wholeHoursPerSec = +((s1.whole - hw0.h) / dur).toFixed(2); row.redrawsPerSec = +((s1.draws - hw0.d) / dur).toFixed(1);
+      { const dsum = Object.values(layers).reduce((a, v) => a + v, 0); row.drawMsPerRedraw = row.redrawsPerSec ? +(dsum / row.redrawsPerSec).toFixed(2) : 0; row.econMsPerHour = row.wholeHoursPerSec ? +(row.econMsPerSec / row.wholeHoursPerSec).toFixed(1) : 0; }
       if (prof) row.profile = prof;
-      results.push(row); console.log(`N=${row.N} x${speed} ${act.padEnd(5)} fps ${row.fps} p95 ${row.p95} max ${row.max} slow>33 ${row.slow33}% | econ ${row.econMsPerSec} ms/s (max ${row.econMaxMs}) | game h/s ${row.gameHoursPerSec} of ${row.wantedHoursPerSec} | heap ${row.heapMB} MB | draw ms/s ${JSON.stringify(layers)}`); if (prof) console.log('   ' + prof.join('\n   '));
+      results.push(row); console.log(`N=${row.N} x${speed} ${act.padEnd(5)} cache ${cache} | sim ${row.econMsPerHour} ms/hour, draw ${row.drawMsPerRedraw} ms/redraw, ${row.redrawsPerSec} redraws/s, whole h/s ${row.wholeHoursPerSec} | fps ${row.fps} p95 ${row.p95} max ${row.max} slow>33 ${row.slow33}% | econ ${row.econMsPerSec} ms/s (max ${row.econMaxMs}) | game h/s ${row.gameHoursPerSec} of ${row.wantedHoursPerSec} | heap ${row.heapMB} MB | draw ms/s ${JSON.stringify(layers)}`); if (prof) console.log('   ' + prof.join('\n   '));
     }
     await p.evaluate(() => { clearInterval(window.__iv); __lab.company.speed = 0; }); results.push({ scene: Object.assign({ N, buildMs }, sc), errors: errs }); await ctx.close();
   }

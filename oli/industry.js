@@ -409,13 +409,13 @@
 
     /* offer a flow into the pipeline attached to (b, port); returns the accepted rate. Pressure falls along the line, capacity limits the rate. */
     offer(b, port, f, commit, vis) {
-      if (f.r <= 1e-9) return 0; const e = this.edgeOf(b, port); if (!e) return 0; const far = this.other(e, b, port); if (!far.b) return 0;
+      if (f.r <= 1e-9) return 0; const e = this.edgeOf(b, port); if (!e) return 0; const fw = e.ab === b.id && e.ap === port, farB = this.store.get(fw ? e.bb : e.ab), farP = fw ? e.bp : e.ap; if (!farB) return 0;      // perf: the far end without a new object per call (same test as other())
       if (e.int) return 0;                                                  // a link INSIDE a tank group: no oil is pushed through it (the group draws and fills as one unit)
       const room = e.cap - e.flow; let r = Math.min(f.r, room);
-      if (e.lvl && f.sv != null && this.ensure(far.b).vol != null) { const fs = this.ensure(far.b), fd = DEFS[far.b.d], fc = fd.capacity.value * levelOf(far.b).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
+      if (e.lvl && f.sv != null && this.ensure(farB).vol != null) { const fs = this.ensure(farB), fd = DEFS[farB.d], fc = fd.capacity.value * levelOf(farB).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
       const ratio = r / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * (e.line && CFG.PIPES[e.line.dia] ? CFG.PIPES[e.line.dia].fric : 1); let p = f.p - loss;
       if (p < 0) { r *= Math.max(0, f.p / (loss || 1)); p = 0; if (commit) e.lowP = true; }
-      if (r <= 1e-9) return 0; const acc = this.accept(far.b, far.port, { ...f, r, p }, commit, vis);
+      if (r <= 1e-9) return 0; const acc = this.accept(farB, farP, { ...f, r, p }, commit, vis);
       if (commit && acc > 0) { e.flow += acc; e.p = p; e.prod = f.prod; if (e.line) e.line.flow = e.flow; if (p > e.maxP) e.hiP = true; }
       return acc;
     }
@@ -515,13 +515,17 @@
     }
 
     /* ---- one step of dt days ---- */
-    step(dt) {
-      if (this.dirty()) this.build(); this.dt = dt = Math.max(1e-6, dt); const store = this.store; this.time += dt;
-      for (const e of this._el) { e.flow = 0; e.over = false; e.lowP = false; e.hiP = false; }
-      const items = store.list(); for (const b of items) { const s = this.ensure(b); for (const k in s) if (k.charCodeAt(0) === 95 && s[k] !== undefined) s[k] = undefined;      /* perf: the per-step values (_in, _out, ...) are cleared to undefined instead of deleted: same reads, same save (JSON drops undefined), but the objects keep a fast shape */ const ty = DEFS[b.d].type; if (ty === 'pump' || ty === 'separator' || ty === 'refinery') { s.pIn = 0; if (ty === 'pump') s.pOut = 0; } }
+    /* One simulator step.  step(dt) runs it in one go; stepGen(dt) is the SAME code as a generator that can pause between buildings (every 256), so the live game can spread one
+       game hour over several frames (the push loops, where one building can move oil through a long chain, pause every 32 buildings).  A pause only stops the loop: the operations, their order and their numbers are exactly those of step(dt) (it is step(dt), run to the end).
+       Nothing else may change the game while a step is paused - the company finishes the hour (settle) before any player action, save, pause or catch-up. */
+    step(dt) { const g = this.stepGen(dt, false); g.next(); }      // one go: the generator never pauses (sl = false), a single resume runs it to the end
+    *stepGen(dt, sl) {
+      if (this.dirty()) this.build(); this.dt = dt = Math.max(1e-6, dt); const store = this.store; this.time += dt; let Y = 0;
+      for (const e of this._el) { if (sl && (++Y & 1023) === 0) yield; e.flow = 0; e.over = false; e.lowP = false; e.hiP = false; }
+      const items = store.list(); for (const b of items) { if (sl && (++Y & 255) === 0) yield; const s = this.ensure(b); for (const k in s) if (k.charCodeAt(0) === 95 && s[k] !== undefined) s[k] = undefined;      /* perf: the per-step values (_in, _out, ...) are cleared to undefined instead of deleted: same reads, same save (JSON drops undefined), but the objects keep a fast shape */ const ty = DEFS[b.d].type; if (ty === 'pump' || ty === 'separator' || ty === 'refinery') { s.pIn = 0; if (ty === 'pump') s.pOut = 0; } }
       const cn = this.net.central; if (cn) cn.begin(dt);
       const fieldGroups = new Map(), sharedWells = [];
-      for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
+      for (const b of items) { if (sl && (++Y & 31) === 0) yield; if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
         if (def.type === 'well') {
           const fp = (s.shared || b.field) ? fieldProfile(store, b) : null, site = fp ? fp.site : null;
           if (fp && !s.shared) { s.shared = 1; s.nominal = fp.nominal; s.p0 = fp.p0; s.reserve0 = site.initialReserve; }       // a well of an older save: from now on it draws from its field
@@ -542,7 +546,7 @@
         }
       }
       const gdone = new Set();
-      for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
+      for (const b of items) { if (sl && (++Y & 31) === 0) yield; if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
         if (def.type === 'tank' && this._gof.has(b.id)) { const g = this._gof.get(b.id); if (!gdone.has(g)) { gdone.add(g); this.stepGroup(g, dt); } continue; }
         if (def.type === 'tank' || def.type === 'gas') {
           if (def.product === P.CRUDE) this.drawBottomWater(b, [b]);     // reserve tanks too: only the settled WATER leaves (net oil, cost and quality of the reserve are untouched)
@@ -558,7 +562,7 @@
       }
       if (cn) cn.end();
       for (const [ws, st] of sharedWells) ws.reserve = st.remainingReserve;   // every well of a field shows the reserve that is left after ALL of them have produced
-      for (const b of items) { const def = DEFS[b.d], s = b.s;                                         // apply deliveries, derive display values
+      for (const b of items) { if (sl && (++Y & 255) === 0) yield; const def = DEFS[b.d], s = b.s;                                         // apply deliveries, derive display values
         if (def.type === 'tank' || def.type === 'gas') { if (s._pend) { s.vol += s._pend; s.total += s._pend; if (def.type === 'tank') s.wat += s._pw || 0; if (s._pbv) s.bv = (s.bv || 0) + s._pbv; if (b.rs) { s.arr = (s.arr || 0) + s._pend; s.arrBv = (s.arrBv || 0) + (s._pbv || 0); s.arrW = (s.arrW || 0) + (def.type === 'tank' ? s._pw || 0 : 0); } } const cap = def.capacity.value; s.vol = Math.min(s.vol, cap); if (s.bv) s.bv = Math.min(s.bv, s.vol); const fill = s.vol / cap;
           if (def.type === 'gas') { s.press = this.gasPressure(def, fill, b); s.temp = SAFE.ambientC + .08 * s.press + 8 * fill; } else s.temp = SAFE.ambientC + 6 * Math.min(1, (s._in || 0) / cap * 4); }
         if (def.type === 'refinery') { s.eff = s._eff == null ? s.eff * .8 : s._eff; s.temp = s._temp == null ? Math.max(60, s.temp - 40 * dt * 10) : s._temp; }
