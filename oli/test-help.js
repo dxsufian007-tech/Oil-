@@ -18,7 +18,7 @@ console.log('1. every building in the game has a full help sheet before it is bu
   T('1b the twelve sections are the requested ones, in order', H.SECTIONS.map(s => s[2]).join('|') === 'وظيفة المعدة|طريقة التشغيل|المدخلات|المخرجات|الطاقة الإنتاجية|متطلبات البناء|التوصيلات|الكفاءة|التكاليف|حالة المعدة|المشاكل والحلول|مثال عملي');
   const ref = H.definition(ctx(g), 'refinery_l'), cap = BC.REFINERY.sizes.L.cap;
   T('1c numbers come from the config: large refinery capacity, cost and yields', has(ref, new RegExp(cap.toLocaleString('en-US'))) && has(ref, /\$400 مليون/) && has(ref, /45 بنزين · 30 ديزل · 10 وقود طائرات · 5 غاز/));
-  T('1d refinery materials per barrel come from economy-config, and the sheet says they need no purchase', has(ref, new RegExp(String(EC.MATERIAL_USE.CHEM.qty) + ' كغ لكل برميل')) && has(ref, /لا تحتاج شراء كيماويات/) && has(ref, /ولا تُحسب لها تكلفة/));
+  T('1d refinery materials per barrel come from economy-config', has(ref, new RegExp(String(EC.MATERIAL_USE.CHEM.qty) + ' كغ لكل برميل')) && has(ref, new RegExp((cap * EC.MATERIAL_USE.CHEM.qty).toLocaleString('en-US') + ' كغ كيماويات')) && has(ref, /اشترِ كيماويات ومواد تشغيل/));
   const pu = H.definition(ctx(g), 'pump_station_s'); T('1e pump: max flow, boost range and minimum inlet from the config', has(pu, /5,000/) && has(pu, /100 و250/) && has(pu, /15 رطل/));
   const pd0 = H.definition(ctx(g), 'pipe'); T('1e2 the pipe card of the build menu has its own sheet (every diameter from the config)', pd0 && full(pd0) && clean(text(pd0)) && Object.keys(BC.PIPES).every(d => has(pd0, new RegExp(BC.PIPES[d].capacity.toLocaleString('en-US')))));
   const fake = 'help_probe_def'; B.define({ id: fake, name: 'Probe', category: 'PIPELINE', section: 'PIPELINE', family: 'PROBE', type: 'probe', footprint: [2, 2], cost: 123456, maintenanceCost: 10, operatingCost: 20, buildTime: 5, visual: 'valve', allowedTerrain: ['FLAT_DESERT'], maxSlope: 3, capacity: { value: 777, unit: 'bbl/day' }, connections: [] });
@@ -40,10 +40,9 @@ console.log('3. smart help: the reason and the fix follow the real state');
   let d = H.building(ctx(g), w); T('3a stopped well: status «متوقف بأمرك», tells to press «ابدأ الإنتاج»', d.status.code === 'STOPPED' && d.issues.some(i => /ابدأ الإنتاج/.test(i.fix)), d.issues);
   for (const x of c.wells) g.sim.ensure(x).started = true;
   g.co.advanceHours(48); d = H.building(ctx(g), c.ref);
-  T('3b refinery with NO chemicals bought: it runs (materials are no condition any more) and no material warning', /RUNNING|OVER_CAPACITY|LOW_PRESSURE/.test(g.sim.status(c.ref)) && c.ref.s.crude > 0 && !d.issues.some(i => /المواد لا تكفي/.test(i.t)), [g.sim.status(c.ref), d.issues]);
-  { const LEG = Object.assign({}, EC, { MATERIALS_REQUIRED: true }), g2 = game(500e6, LEG), c2 = chain(g2, true, false); for (const b of g2.store.list()) g2.sim.ensure(b); for (const x of c2.wells) g2.sim.ensure(x).started = true; g2.co.advanceHours(48);
-    const d2 = H.building(Object.assign(ctx(g2), { EC: LEG }), c2.ref);
-    T('3c (old rule as an option) NO_MATERIALS names the missing materials with stock and daily need', g2.sim.status(c2.ref) === 'NO_MATERIALS' && d2.issues.some(i => /كيماويات 0 كغ \(تحتاج 1,800 كغ\/يوم/.test(i.t) && /الشراء/.test(i.fix)), d2.issues); }
+  T('3b refinery without chemicals: NO_MATERIALS, names the missing materials with stock and daily need', g.sim.status(c.ref) === 'NO_MATERIALS' && d.issues.some(i => /كيماويات 0 كغ \(تحتاج 1,800 كغ\/يوم/.test(i.t) && /الشراء/.test(i.fix)), d.issues);
+  stockUp(g.co); g.co.advanceHours(24); d = H.building(ctx(g), c.ref);
+  T('3c with materials bought the same refinery runs (no material warning)', /RUNNING|OVER_CAPACITY|LOW_PRESSURE/.test(g.sim.status(c.ref)) && c.ref.s._in > 0 && !d.issues.some(i => /المواد لا تكفي/.test(i.t)), [g.sim.status(c.ref), d.issues]);
   const tk = c.tg, cap = B.DEFS[tk.d].capacity.value; g.sim.ensure(tk).vol = cap; d = H.building(ctx(g), tk);
   T('3d full tank: says full, its capacity and the room left (0), and how to fix', d.issues.some(i => i.tone === 'bad' && /ممتلئ/.test(i.t) && new RegExp(cap.toLocaleString('en-US')).test(i.t) && /المتبقي 0/.test(i.t) && /بِع/.test(i.fix)), d.issues);
   g.sim.ensure(tk).vol = cap * 0.5; d = H.building(ctx(g), tk); T('3e the same tank half full: no full warning, shows level and room left', !d.issues.some(i => /ممتلئ/.test(i.t)) && has(d, /المتبقي/) && has(d, /50%/), d.issues);

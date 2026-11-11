@@ -1,13 +1,12 @@
-name: OLI EMPIRE Update APK
+name: Central Network Test APK (separate app)
 
-# Build an update for the original installed OLI EMPIRE app (com.oli.olicentral) using the original signing key.
-# Result: branch central-apk-build (Oli.apk). Does not touch build-apk.yml, demo-apk.yml or demo-apk-build. Not merged to main.
-# Build stamp: 2026-11-11 help sheet + refinery/central fixes + no material purchase + cards after pipe mode
+# Test build of branch feature/central-network (Central Hybrid Pipeline Network). A SEPARATE app (OLI Central Test, id com.oli.olicentral): it never replaces the game or the demo.
+# Result: branch central-apk-build (OliCentral.apk). Does not touch build-apk.yml, demo-apk.yml or demo-apk-build. Not merged to main.
 on:
   workflow_dispatch:
   push:
     branches: [feature/central-network]
-    paths: ['.github/workflows/central-test-apk.yml', 'oli/economy.js', 'oli/test-refinery-v2.js']
+    paths: ['.github/workflows/central-test-apk.yml']
 
 permissions:
   contents: write
@@ -26,13 +25,11 @@ jobs:
           java-version: 21
       - name: Install
         working-directory: oli
-        run: |
-          npm ci
-          npm test
-      - name: Package the game page and package the original installed OLI EMPIRE application
+        run: npm ci
+      - name: Package the game page and make it a separate Android app
         working-directory: oli
         run: |
-          ID=com.oli.olicentral; NAME="OLI EMPIRE"; OLI_DEMO=1 OLI_BUILD=${GITHUB_SHA::7} node build-www-map.js
+          ID=com.oli.olicentral; NAME="OLI Central Test"; OLI_DEMO=1 OLI_BUILD=${GITHUB_SHA::7} node build-www-map.js
           sed -i "s/\"appId\": \"com.oli.oilgame\"/\"appId\": \"$ID\"/; s/\"appName\": \"OLI EMPIRE\"/\"appName\": \"$NAME\"/" capacitor.config.json
           npx cap sync android
           sed -i "s/applicationId \"com.oli.oilgame\"/applicationId \"$ID\"/" android/app/build.gradle
@@ -48,19 +45,19 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
-      - run: cp oli/android/app/build/outputs/apk/debug/app-debug.apk Oli.apk
+      - run: cp oli/android/app/build/outputs/apk/debug/app-debug.apk OliCentral.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Oli-apk
-          path: Oli.apk
+          name: OliCentral-apk
+          path: OliCentral.apk
       - name: Publish the APK on the branch central-apk-build
         run: |
-          mkdir -p /tmp/out && cp Oli.apk /tmp/out/
+          mkdir -p /tmp/out && cp OliCentral.apk /tmp/out/
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git checkout --orphan central-apk-build
           git rm -rf --quiet .
-          cp /tmp/out/Oli.apk .
-          git add Oli.apk
+          cp /tmp/out/OliCentral.apk .
+          git add OliCentral.apk
           git commit -q -m "OLI Central Test APK"
           git push -f origin central-apk-build

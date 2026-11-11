@@ -24,7 +24,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   const cash0 = await co(() => __lab.store.cash);
   const refSt = () => co(() => { const l = __lab, r = l.store.list().find(b => /refinery/.test(b.d)); return { st: l.sim.status(r), mat: l.company.matLimit }; });
   await co(() => __lab.company.advanceHours(24)); const noMat = await refSt();
-  ok(['RUNNING', 'OVER_CAPACITY', 'LOW_PRESSURE'].includes(noMat.st) && noMat.mat === 1, 'with no chemicals bought the refinery runs anyway: materials are no condition any more, their cost is paid automatically (' + noMat.st + ')');
+  ok(noMat.st === 'NO_MATERIALS' && noMat.mat === 0, 'with no chemicals the refinery says it lacks materials, not "no oil reaches it" (' + noMat.st + ')');
   ok(await restock() === null, 'chemicals and operating materials are bought'); await co(() => __lab.company.advanceHours(24)); ok((await refSt()).st === 'RUNNING', 'after buying them the same refinery runs'); for (let d = 0; d < 10; d++) { const why = await restock(); if (why) { ok(false, 'restock failed: ' + why); } await co(() => __lab.company.advanceHours(24)); }
   const inv = await co(() => __lab.company.inventory().map(v => [v.product, Math.round(v.volume)])), prod = Object.fromEntries(inv);
   ok(prod.CRUDE > 0 && prod.GASOLINE > 0 && prod.DIESEL > 0 && prod.JET_FUEL > 0 && prod.GAS > 0, 'after 10 days every product is in stock ' + JSON.stringify(prod));
