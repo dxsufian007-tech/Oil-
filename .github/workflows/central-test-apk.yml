@@ -2,6 +2,7 @@ name: Central Network Test APK (separate app)
 
 # Test build of branch feature/central-network (Central Hybrid Pipeline Network). A SEPARATE app (OLI Central Test, id com.oli.olicentral): it never replaces the game or the demo.
 # Result: branch central-apk-build (OliCentral.apk). Does not touch build-apk.yml, demo-apk.yml or demo-apk-build. Not merged to main.
+# Build stamp: 2026-11-11 help sheet + refinery/central fixes + no material purchase + cards after pipe mode
 on:
   workflow_dispatch:
   push:
