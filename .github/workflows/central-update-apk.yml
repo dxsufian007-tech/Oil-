@@ -1,0 +1,81 @@
+name: OLI EMPIRE update APK from feature/central-network
+
+# The owner's request (Nov 11): an APK of feature/central-network that installs as an UPDATE over the installed game.
+# Same package id as the game (com.oli.oilgame), same fixed signing key, a version code just above the latest main game build.
+# Result: Oli.apk on the NEW branch central-update-apk-build. Does not touch build-apk.yml, demo-apk.yml, central-test-apk.yml,
+# main, apk-build, map-apk-build, demo-apk-build or central-apk-build. Not merged to main.
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/central-network]
+    paths: ['.github/workflows/central-update-apk.yml']
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install dependencies and run the game tests
+        working-directory: oli
+        run: |
+          npm ci
+          npm test
+      - name: Copy the web game into the Android project (package id com.oli.oilgame, name OLI EMPIRE - unchanged)
+        working-directory: oli
+        run: |
+          OLI_DEMO=1 OLI_BUILD=${GITHUB_SHA::7} node build-www-map.js
+          npx cap sync android
+          grep -n "applicationId" android/app/build.gradle
+          grep -q 'applicationId "com.oli.oilgame"' android/app/build.gradle || { echo "package id is not com.oli.oilgame"; exit 1; }
+      - name: Same signing key as the game, version code above the latest game build (so it installs as an update)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ~/.android
+          cp .github/signing/debug.keystore ~/.android/debug.keystore
+          LAST=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/workflows/build-apk.yml/runs?per_page=1" | python3 -c "import json,sys; r=json.load(sys.stdin).get('workflow_runs',[]); print(r[0]['run_number'] if r else 0)")
+          [ "$LAST" -gt 0 ] || LAST=64
+          VC=$((100 + LAST + 1)); echo "latest game build run $LAST -> versionCode $VC"
+          sed -i "s/versionCode [0-9]*/versionCode $VC/" oli/android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.$((LAST + 1))-central\"/" oli/android/app/build.gradle
+          grep -n "versionCode\|versionName" oli/android/app/build.gradle
+      - name: Build the APK
+        working-directory: oli/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+      - run: cp oli/android/app/build/outputs/apk/debug/app-debug.apk Oli.apk
+      - name: Check the APK is signed with the fixed Oli key (otherwise phones refuse the update)
+        run: |
+          SIGNER=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)apksigner
+          $SIGNER verify --print-certs Oli.apk | tee /tmp/certs.txt
+          grep -qi "SHA-256 digest: 3f5e924227aef8c5d1783ae6677db8b9b0a36a1c7b086b457133e6a4375e1aaf" /tmp/certs.txt || { echo "APK is NOT signed with the fixed key"; exit 1; }
+          AAPT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)aapt
+          $AAPT dump badging Oli.apk | head -3
+          ls -l Oli.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Oli-update-apk
+          path: Oli.apk
+      - name: Publish the APK on the branch central-update-apk-build
+        run: |
+          mkdir -p /tmp/out && cp Oli.apk /tmp/out/
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout --orphan central-update-apk-build
+          git rm -rf --quiet .
+          cp /tmp/out/Oli.apk .
+          git add Oli.apk
+          git commit -q -m "OLI EMPIRE update APK from feature/central-network ${GITHUB_SHA::7}"
+          git push -f origin central-update-apk-build
