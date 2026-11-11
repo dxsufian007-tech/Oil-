@@ -2,7 +2,8 @@ name: OLI EMPIRE update APK from feature/central-network
 
 # The owner's request (Nov 11): an APK of feature/central-network that installs as an UPDATE over the installed game.
 # It updates the app actually installed on the owner's phone: build 3615f51 of central-test-apk.yml = package com.oli.olicentral (versionCode 301).
-# Same package id (com.oli.olicentral), same fixed signing key, a version code above every build of that app (300 + its latest run + 1).
+# Same package id (com.oli.olicentral), same fixed signing key, a version code above every build of that app (max(300 + its latest run + 1, 310 + this workflow's run)).
+# Build stamp: 2026-11-11 automatic purchasing of materials + upgradable warehouses
 # Result: Oli.apk on the NEW branch central-update-apk-build. Does not touch build-apk.yml, demo-apk.yml, central-test-apk.yml,
 # main, apk-build, map-apk-build, demo-apk-build or central-apk-build. Not merged to main.
 on:
@@ -49,7 +50,7 @@ jobs:
           cp .github/signing/debug.keystore ~/.android/debug.keystore
           LAST=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/workflows/central-test-apk.yml/runs?per_page=1" | python3 -c "import json,sys; r=json.load(sys.stdin).get('workflow_runs',[]); print(r[0]['run_number'] if r else 0)")
           [ "$LAST" -gt 0 ] || LAST=8
-          VC=$((300 + LAST + 1)); echo "latest com.oli.olicentral build run $LAST -> versionCode $VC"
+          VC=$((300 + LAST + 1)); OWN=$((310 + ${{ github.run_number }})); [ "$OWN" -gt "$VC" ] && VC=$OWN; echo "latest com.oli.olicentral build run $LAST, this build run ${{ github.run_number }} -> versionCode $VC"   # always above the previous update builds too
           sed -i "s/versionCode [0-9]*/versionCode $VC/" oli/android/app/build.gradle
           sed -i "s/versionName \"[^\"]*\"/versionName \"1.0.$((LAST + 1))\"/" oli/android/app/build.gradle
           grep -n "versionCode\|versionName" oli/android/app/build.gradle
