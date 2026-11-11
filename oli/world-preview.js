@@ -209,15 +209,16 @@
      the simulation (a tank level, a flowing pipe, a running refinery: markDirty('sim')) copies it in one drawImage and draws only the buildings and pipes on top.
      Anything else that marks the map dirty (input, a loaded image or region, a toggle, a change of resolution) invalidates it; it also expires after 3 s.  The copy is
      pixel-for-pixel the same picture (device pixels, no scaling) - nothing is drawn at a lower resolution. */
-  const G = { c: document.createElement('canvas'), g: null, key: '', lastKey: '', at: 0, ok: false }; G.g = G.c.getContext('2d'); stats.groundHits = 0; stats.groundStores = 0;
+  const G = { c: document.createElement('canvas'), g: null, key: '', lastKey: '', at: 0, ok: false, full: 0, fullN: 0, blit: 0, blitN: 0 };      /* full / blit: measured cost (ms, moving average) of drawing the ground and of copying it - the copy is used only while it is the cheaper of the two on this device */ G.g = G.c.getContext('2d'); stats.groundHits = 0; stats.groundStores = 0;
   function dirtyAll() { dirty = true; gRev++; }
   let missingHi = 0;
   let hudText = '', hudLv = '';
   function draw() {
     dirty = false; const T = stats.t || (stats.t = { terrain: 0, decorate: 0, overlays: 0, afterOv: 0, top: 0, pipes: 0, buildings: 0, ground: 0 }), pn = performance.now.bind(performance); let t0 = pn(); const lv = level(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.lineJoin = 'round';
     const b = bounds(), gk = gRev + '|' + cam.x + '|' + cam.y + '|' + cam.z + '|' + DPR + '|' + VW + '|' + VH + '|' + cv.width + 'x' + cv.height;
-    if (G.ok && G.key === gk && t0 - G.at < 3000 && !window.OLI_NOGROUNDCACHE) {      // still map: the ground is copied, only what the simulation changes is drawn again
-      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(G.c, 0, 0); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); stats.groundHits++; const tg = pn(); T.ground += tg - t0; missingHi = 0; drawRest(lv, b, T, pn, tg); return; }
+    const gWorth = !(G.blitN >= 3 && G.fullN >= 3 && G.blit >= G.full); stats.groundWorth = gWorth;
+    if (G.ok && G.key === gk && t0 - G.at < 3000 && gWorth && !window.OLI_NOGROUNDCACHE) {      // still map: the ground is copied, only what the simulation changes is drawn again
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(G.c, 0, 0); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); stats.groundHits++; const tg = pn(); T.ground += tg - t0; G.blit = G.blitN ? G.blit * 0.8 + (tg - t0) * 0.2 : tg - t0; G.blitN++; missingHi = 0; drawRest(lv, b, T, pn, tg); return; }
     if (skin.bg && skin.bg(ctx, VW, VH)) { } else { ctx.fillStyle = '#0c1015'; ctx.fillRect(0, 0, VW, VH); }
     const c0 = Math.max(0, Math.floor(b.x0 / C)), c1 = Math.min(CX - 1, Math.floor(b.x1 / C)), r0 = Math.max(0, Math.floor(b.y0 / C)), r1 = Math.min(CY - 1, Math.floor(b.y1 / C));
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low'; missingHi = 0;
@@ -242,8 +243,8 @@
     overlays(lv, b);
     if (skin.sectors) skin.sectors(lv, b);
     sectorLayer(lv, b, true);                            // the sector names are written AFTER the field pins and the zones, so a pin never hides a name
-    let t3 = pn(); T.overlays += t3 - t2;
-    if (!missingHi && G.lastKey === gk && !window.OLI_NOGROUNDCACHE) {                   // the second frame with the camera at rest: keep the ground picture
+    let t3 = pn(); T.overlays += t3 - t2; if (!missingHi) { G.full = G.fullN ? G.full * 0.8 + (t3 - t0) * 0.2 : t3 - t0; G.fullN++; }
+    if (!missingHi && G.lastKey === gk && gWorth && !window.OLI_NOGROUNDCACHE) {                   // the second frame with the camera at rest: keep the ground picture
       if (G.c.width !== cv.width || G.c.height !== cv.height) { G.c.width = cv.width; G.c.height = cv.height; } G.g.setTransform(1, 0, 0, 1, 0, 0); G.g.clearRect(0, 0, G.c.width, G.c.height); G.g.drawImage(cv, 0, 0); G.ok = true; G.key = gk; G.at = t3; stats.groundStores++; const tg = pn(); T.ground += tg - t3; t3 = tg; }
     else if (G.key !== gk) G.ok = false;
     G.lastKey = gk; drawRest(lv, b, T, pn, t3);

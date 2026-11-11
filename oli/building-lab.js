@@ -621,14 +621,19 @@
   let simLast = performance.now();
   const simPump = setInterval(() => { const now = performance.now(), dtS = Math.min(2, (now - simLast) / 1000); simLast = now; if (window.__homeOpen) { if (COMPANY.settle) COMPANY.settle(); return; }      /* the main menu is open: the company waits (an open hour is finished first) */
     if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) { const hrs = dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0);
-      if (now < simNext || (WP.frames && WP.frames() === simFrame)) { COMPANY.addTime(hrs); realSpeed(0, now); }                                 /* frame share: the map's turn - the time waits, nothing is skipped. Also: no new slice before the map has had at least one frame since the last one (the simulation never runs twice in a row without a frame in between) */
-      else { const mv = camMoving(now), t0 = performance.now(), n = COMPANY.run(hrs, mv ? (EC.TIME.liveBudgetMs || 20) : (EC.TIME.liveBudgetStillMs || 30), PNOW), took = performance.now() - t0, sh = mv ? (EC.TIME.liveShare || 0.5) : (EC.TIME.liveShareStill || 0.65); simNext = t0 + took / sh; simFrame = WP.frames ? WP.frames() : 0; realSpeed(n, now); } }
+      const DG = DIAG; DG.pumps++;
+      if (now < simNext) { COMPANY.addTime(hrs); realSpeed(0, now); DG.waitShare++; }                                 /* frame share: the map's turn - the time waits, nothing is skipped */
+      else if (WP.frames && WP.frames() === simFrame && now - simAt < 125) { COMPANY.addTime(hrs); realSpeed(0, now); DG.waitFrame++; }      /* no second slice before the map has had a frame - but never more than ~2 pump periods: a slow frame must not starve the simulation */
+      else { const mv = camMoving(now), t0 = performance.now(), h0 = COMPANY.hours, n = COMPANY.run(hrs, mv ? (EC.TIME.liveBudgetMs || 20) : (EC.TIME.liveBudgetStillMs || 30), PNOW), took = performance.now() - t0, sh = mv ? (EC.TIME.liveShare || 0.5) : (EC.TIME.liveShareStill || 0.65); simNext = t0 + took / sh; simFrame = WP.frames ? WP.frames() : 0; simAt = now; realSpeed(n, now);
+        DG.slices++; DG.runMs += took; DG.hours += COMPANY.hours - h0; if (took > DG.maxRun) DG.maxRun = took; } }
     else { if (COMPANY.settle) COMPANY.settle(); realSpeed(0, now, true); } }, 62);      /* paused (or catching up): an hour the live game left open is finished, so a paused game always shows whole hours */
   /* An hour may be spread over a few frames (COMPANY.run continues it).  Before ANY player action - a tap, a key, a typed value - the open hour is finished first, so every
      action lands between two whole hours exactly as before (the listeners run in the capture phase, before the game's own handlers). */
-  for (const ev of ['pointerup', 'click', 'keydown', 'change', 'input']) window.addEventListener(ev, () => { if (COMPANY.midHour) COMPANY.settle(); }, true);
+  for (const ev of ['pointerup', 'click', 'keydown', 'change', 'input']) window.addEventListener(ev, () => { if (COMPANY.midHour) { const t = performance.now(); COMPANY.settle(); RS.h += 1; DIAG.settles++; DIAG.settleMs += performance.now() - t; DIAG.hours += 1; } }, true);      // the finished hour counts in the real speed
+  /* live diagnostics (measurement only, nothing in the game depends on it): counters of the game loop, read once a second by live-diag.js (long-press the speed) */
+  const DIAG = window.__diag = { pumps: 0, waitShare: 0, waitFrame: 0, slices: 0, runMs: 0, hours: 0, maxRun: 0, settles: 0, settleMs: 0 };
   const PNOW = () => performance.now();      // the frame budget's clock, given to the economy (which never reads the real clock itself)
-  let simNext = 0, simFrame = -1; const camSeen = { x: NaN, y: NaN, z: NaN, at: -1e9 };
+  let simNext = 0, simFrame = -1, simAt = -1e9; const camSeen = { x: NaN, y: NaN, z: NaN, at: -1e9 };
   function camMoving(now) { if (cam.x !== camSeen.x || cam.y !== camSeen.y || cam.z !== camSeen.z) { camSeen.x = cam.x; camSeen.y = cam.y; camSeen.z = cam.z; camSeen.at = now; } return now - camSeen.at < 600; }      // the map is being moved or zoomed (or was within 0.6 s): it gets more of the frame
   /* the speed really reached (game hours per real second / the hours per second of x1): shown next to the speed button when the device cannot keep up */
   /* measured over 2 s windows; a new window starts when the speed changes or the game is reset / loaded, and the real speed is shown only after TWO slow windows in a row
