@@ -176,7 +176,7 @@
   }
   const REASON_RANK = { cash: 5, noRoute: 4, portTaken: 3, invalidProduct: 2, portRoles: 1, noPort: 0 };
   function planDirection(store, net, ts, src, dst, o) {
-    const pairs = []; for (const pa of portsOf(src)) if (canSend(pa)) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product) && !B.refuses(pa, pb) && !B.refuses(pb, pa)) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
+    const pairs = [], skip = o.skipProducts || null; for (const pa of portsOf(src)) if (canSend(pa) && !(skip && skip.has(pa.product))) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product) && !B.refuses(pa, pb) && !B.refuses(pb, pa)) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
     if (!pairs.length) return { natural: true };
     const sp = (b, free) => q => { if (portTaken(net, { b: b.id, port: q.id })) return 0; const nb = portsOf(b).filter(z => z.id !== q.id && z.side === q.side && z.role === q.role && z.group === q.group && Math.abs(z.ax - q.ax) + Math.abs(z.ay - q.ay) === 1 && !portTaken(net, { b: b.id, port: z.id })); return nb.length >= 2 ? 1 : 0; };    // a port in the MIDDLE of a run of free ports would wall the others in: take the ends of the run first
     const spS = sp(src), spD = sp(dst); for (const q of pairs) q.k = q.d + 1000 * (spS(q.pa) + spD(q.pb)) + (((q.pa.product === 'WATER') !== (q.pb.product === 'WATER') && (q.pa.product === '*' || q.pb.product === '*')) ? 100000 : 0); pairs.sort((x, y) => x.k - y.k); const fm = o.dia ? null : flowModel(store, net), diaFor = q => o.dia || sizeFor(fm.newLine(src, q.pa.id, dst)); let best = null, worst = null, tried = 0;       // auto-connect never PREFERS a water port on a generic (oil) port; it is still allowed when nothing else exists (water tank <-> junction / valve)
@@ -200,8 +200,14 @@
     const saveNext = net.nextId, saveRev = net.rev, laid = [];
     try {
       for (const [src, dst, dir] of specs) {
-        if (reaches(store, net, src.id, dst.id)) { res.notes.push({ dir, reason: 'exists', from: src.id, to: dst.id }); continue; }      // never a second line for the same direction
-        const r = planDirection(store, net, ts, src, dst, o);
+        let oo = o;
+        if (reaches(store, net, src.id, dst.id)) {      // never a second line for the same direction AND the same product; a multi-product outlet (refinery, separator) may add a line for a product it does not send there yet
+          const have = new Set(); for (const L of net.lines.values()) if (L.a && L.b && L.a.b === src.id && L.b.b === dst.id) have.add(L.product);
+          const more = portsOf(src).some(pa => canSend(pa) && pa.product && pa.product !== ANY && !have.has(pa.product) && !portTaken(net, { b: src.id, port: pa.id }) && portsOf(dst).some(pb => canTake(pb) && pb.product === pa.product && !portTaken(net, { b: dst.id, port: pb.id })));
+          if (!more || have.has(ANY)) { res.notes.push({ dir, reason: 'exists', from: src.id, to: dst.id }); continue; }
+          oo = Object.assign({}, o, { skipProducts: have });
+        }
+        const r = planDirection(store, net, ts, src, dst, oo);
         if (r.plan) { const v = r.plan, L = net.lay({ a: v.a, b: v.b, path: v.path, product: v.product, dia: v.dia }); laid.push(L.id); res.lines.push({ dir, from: src.id, to: dst.id, a: v.a, b: v.b, path: v.path, product: v.product, dia: v.dia, cost: v.cost, length: v.length, warn: r.warn }); res.cost += v.cost; res.length += v.length; if (r.warn) res.notes.push(Object.assign({ dir }, r.warn)); }
         else if (r.natural) res.notes.push({ dir, reason: 'oneWay', from: src.id, to: dst.id }); else res.problems.push(Object.assign({ dir, from: src.id, to: dst.id }, r.fail));
       }
@@ -223,7 +229,9 @@
   }
   function commitPlan(store, net, v, o) {                                                    // lay a plan that planDirs() returned (paths are already routed around each other, in the same order)
     o = o || {}; if (!v.lines.length) return v; if (!v.ok && !(o.allowOneWay && v.partial)) return v; if (store.cash < v.cost && !o.ignoreCash) return Object.assign({}, v, { ok: false, state: 'UNAFFORDABLE', reason: 'cash' });
-    const conn = net.nextConn++, made = [], closeBack = v.lines.length === 2 || (v.notes || []).some(n => n.reason === 'exists' && n.dir === 'ab');
+    const conn = net.nextConn++, made = [], same = (p, q) => p === q || p === ANY || q === ANY, ab = v.lines.find(l => l.dir === 'ab'), ba = v.lines.find(l => l.dir === 'ba');
+    /* two lines between the same pair are a "return pair" (closed back valve, else the oil sloshes back and forth) ONLY when they carry the same product: a refinery's crude feed from a station and its gasoline outlet to it are two different jobs and both run */
+    const closeBack = (ab && ba && same(ab.product, ba.product)) || (ba && !ab && (v.notes || []).some(n => n.reason === 'exists' && n.dir === 'ab') && [...net.lines.values()].some(L => L.a && L.b && L.a.b === ba.b.b && L.b.b === ba.a.b && same(L.product, ba.product)));
     for (const l of v.lines) { const L = net.lay({ a: l.a, b: l.b, path: l.path, product: l.product, dia: l.dia, conn }); if (l.dir === 'ba' && closeBack) L.open = false; made.push(L); }      // two lines are built, ONE runs: the return line is ready but its valve is closed (open both and the oil only sloshes back and forth)
     net.rev++;
     if (store.cash !== Infinity) store.cash -= v.cost; return Object.assign({}, v, { ok: true, state: 'BUILT', conn, made });
@@ -354,7 +362,7 @@
           if (da && db && da.type === 'tank' && db.type === 'tank' && da.product === db.product && !ba.rs && !bb.rs) {      // TANK GROUP: two tanks of the same product (outside the Strategic Reserve) joined by a pair of opposite open lines: one storage unit, each tank keeps its own stock
             for (const e of es) if (e) e.int = true;
             for (const id of [ba.id, bb.id]) if (!par.has(id)) par.set(id, id); const ra = find(ba.id), rb = find(bb.id); if (ra !== rb) par.set(rb, ra); }
-          else for (const e of es) if (e) e.lvl = true;                                                       // gas / other pairs: the two sides level out (they would only pass the same oil back and forth)
+          else if (da && db && /^(tank|gas)$/.test(da.type) && /^(tank|gas)$/.test(db.type)) { for (const e of es) if (e) e.lvl = true; }      // two STORAGES (gas, reserve...) joined both ways: the two sides level out (they would only pass the same oil back and forth). A refinery, a station, a pump... is no storage: its two lines are two ordinary lines
         }
         const by = new Map(); for (const id of par.keys()) { const r = find(id); let a = by.get(r); if (!a) by.set(r, a = []); a.push(id); }
         for (const ids of by.values()) { ids.sort((x, y) => x - y); const g = { id: ids[0], members: ids }; this._groups.push(g); for (const id of ids) this._gof.set(id, g); } }
@@ -399,7 +407,7 @@
       if (f.r <= 1e-9) return 0; const e = this.edgeOf(b, port); if (!e) return 0; const far = this.other(e, b, port); if (!far.b) return 0;
       if (e.int) return 0;                                                  // a link INSIDE a tank group: no oil is pushed through it (the group draws and fills as one unit)
       const room = e.cap - e.flow; let r = Math.min(f.r, room);
-      if (e.lvl && f.sv != null) { const fs = this.ensure(far.b), fd = DEFS[far.b.d], fc = fd.capacity.value * levelOf(far.b).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
+      if (e.lvl && f.sv != null && this.ensure(far.b).vol != null) { const fs = this.ensure(far.b), fd = DEFS[far.b.d], fc = fd.capacity.value * levelOf(far.b).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
       const ratio = r / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * (e.line && CFG.PIPES[e.line.dia] ? CFG.PIPES[e.line.dia].fric : 1); let p = f.p - loss;
       if (p < 0) { r *= Math.max(0, f.p / (loss || 1)); p = 0; if (commit) e.lowP = true; }
       if (r <= 1e-9) return 0; const acc = this.accept(far.b, far.port, Object.assign({}, f, { r, p }), commit, vis);
@@ -490,7 +498,7 @@
       const outs = [['GASOLINE', 'GASOLINE_OUT', P.GASOLINE], ['DIESEL', 'DIESEL_OUT', P.DIESEL], ['JET_FUEL', 'JET_OUT', P.JET_FUEL], ['GAS', 'GAS_OUT', P.GAS]];
       let connected = 0; for (const [, port] of outs) if (this.edgeOf(b, port)) connected++; if (!connected) { if (commit) s._noOut = true; return 0; }
       let th = 1; const pOut = Math.max(20, f.p * .6);
-      for (const [y, port, prod] of outs) { if (!this.edgeOf(b, port)) continue; const want = thr * R.yields[y] / 100 * passF; if (want > 0) th = Math.min(th, this.offer(b, port, { prod, r: want, p: pOut }, false, vis) / want); }
+      for (const [y, port, prod] of outs) { if (!this.edgeOf(b, port)) continue; const want = thr * R.yields[y] / 100 * passF; if (want > 0) { const t1 = this.offer(b, port, { prod, r: want, p: pOut }, false, vis) / want; if (t1 <= 1e-9) { s._blk = true; s._blkPort = port; } th = Math.min(th, t1); } }      // _blk / _blkPort: which connected outlet takes nothing (a full tank, a channel with no receiver): the panel says THAT instead of "no oil reaches it"
       if (th <= 1e-9) { if (commit) s._blocked = true; return 0; }
       thr *= th; const consumed = thr;   // the crude actually taken from the feed (all of it is processed; efficiency limited how much was accepted)
       if (commit) {
@@ -585,7 +593,7 @@
       if (t === 'junction') { if (s._sat) return 'OVER_CAPACITY'; if (s._hiP) return 'HIGH_PRESSURE'; return (s._in || 0) > 0 ? 'RUNNING' : 'READY'; }
       if (t === 'tank' || t === 'gas') { if (s._badProduct) return 'BLOCKED'; return ((s._in || 0) > 0 || (s._out || 0) > 0) ? 'RUNNING' : 'READY'; }
       if (t === 'separator' || t === 'refinery') {
-        if (!hasIn) return 'NO_INPUT'; if (t === 'refinery' ? !outs.some(has) : !has('OIL_OUT')) return 'NO_OUTPUT'; if (s._lowIn) return 'LOW_PRESSURE'; if (s._blocked) return 'BLOCKED';
+        if (!hasIn) return 'NO_INPUT'; if (t === 'refinery' ? !outs.some(has) : !has('OIL_OUT')) return 'NO_OUTPUT'; if (s._lowIn) return 'LOW_PRESSURE'; if (s._blocked || (s._blk && !((s._in || 0) > 0))) return 'BLOCKED';
         if (s._sat && (s._in || 0) > 0) return 'OVER_CAPACITY'; if ((s._in || 0) > 0) return (s.pIn != null && s.pIn < CFG.REFINERY.minInletPsi && t === 'refinery') ? 'LOW_PRESSURE' : 'RUNNING'; return (s._off || 0) > 0 ? ((t === 'refinery' && s.matLim != null && s.matLim <= 0 && clamp(s.opLimit, 0, 1) > 0) ? 'NO_MATERIALS' : 'NO_INPUT') : 'READY';   /* oil is offered but none is taken: with no chemicals / operating materials in stock say so, instead of "no oil reaches it" */
       }
       return 'READY';

@@ -65,7 +65,7 @@ const lastTypes = (co, from) => co.journal.log.filter(e => e.id > from).map(e =>
   audit(co, 'D'); }
 
 /* E. refinery: takes what it consumes from stock, once, and stops when chemicals or operating materials run out */
-{ const g = game(500e6, quietCfg()), co = g.co; chain(g, true, true); for (const p of EC.PRODUCTS) co.setMode(p, 'WAIT');
+{ const g = game(500e6, Object.assign(quietCfg(), { MATERIALS_REQUIRED: true })), co = g.co; chain(g, true, true); for (const p of EC.PRODUCTS) co.setMode(p, 'WAIT');   // the old rule, still available as an option (MATERIALS_REQUIRED = true)
   co.buy('CHEM', 20000, 'A', 'CASH'); co.buy('OPS', 5000, 'A', 'CASH');
   const chem0 = mat(co, 'CHEM').qty, ops0 = mat(co, 'OPS').qty, cashE = cashOf(g), inv0 = bal(co, 'INV_CHEM'), thr0 = co.led.life.produced.THRU, n0 = co.journal.n;
   days(g, 2); const thr = co.led.life.produced.THRU - thr0, used = chem0 - mat(co, 'CHEM').qty, usedOps = ops0 - mat(co, 'OPS').qty;

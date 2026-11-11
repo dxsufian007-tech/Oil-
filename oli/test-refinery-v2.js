@@ -123,8 +123,8 @@ CHK('2b efficiency limits the crude taken in: less power, less processed', SMALL
   CHK('9 gasoline = processed x (1 - loss rate) x 45%: the yield is applied to what is not lost', near(R.tot.products.GASOLINE, R.tot.processed * 0.98 * 0.45, 1e-6), R.tot.products);
 } finally { BC.REFINERY.physicalLoss = old; } }
 
-/* 10. a purchase of chemicals lifts the refinery limit at once (not at the next hourly tick) */
-{ const P = plant('x', fullCfg()), co = P.co; for (const ct of P.cts) co.buy('CRUDE', 250000, 'A', 'CASH'); co.sync(); const s = P.sim.ensure(P.ref); co.advanceHours(1);
+/* 10. (old rule, MATERIALS_REQUIRED = true) a purchase of chemicals lifts the refinery limit at once (not at the next hourly tick) */
+{ const P = plant('x', Object.assign(fullCfg(), { MATERIALS_REQUIRED: true })), co = P.co; for (const ct of P.cts) co.buy('CRUDE', 250000, 'A', 'CASH'); co.sync(); const s = P.sim.ensure(P.ref); co.advanceHours(1);
   CHK('10 no chemicals: the refinery is held (limit 0, nothing processed)', s.matLim === 0 && co.refLast && co.refLast.feed === 0, { lim: s.matLim, feed: co.refLast && co.refLast.feed });
   co.buy('CHEM', 20000, 'A', 'CASH'); co.buy('OPS', 5000, 'A', 'CASH');
   CHK('10 after buying chemicals the limit is lifted immediately, before any tick', s.matLim === 1, s.matLim);

@@ -3,8 +3,8 @@
 const { B, I, E, EC, game, put, pipe } = require('./test-economy-helpers.js');
 const assert = require('assert'); let n = 0; const T = (name, ok, detail) => { if (!ok) { console.log('FAIL ' + name + (detail !== undefined ? ' :: ' + JSON.stringify(detail) : '')); process.exit(1); } n++; console.log('  ok  ' + name); };
 const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-6 : tol) * Math.max(1, Math.abs(b));
-function build(withPumps) {
-  const g = game(1e12), co = g.co, ref = put(g, 'refinery_x', 160, 60), j = put(g, 'junction', 120, 60), cts = [], pus = [];
+function build(withPumps, cfg) {
+  const g = game(1e12, cfg), co = g.co, ref = put(g, 'refinery_x', 160, 60), j = put(g, 'junction', 120, 60), cts = [], pus = [];
   [[40, 40, 'PORT_N'], [40, 60, 'PORT_W'], [40, 80, 'PORT_S']].forEach(([x, y, port]) => { const ct = put(g, 'crude_tank_l', x, y), pu = put(g, 'pump_station_l', x + 24, y); cts.push(ct); pus.push(pu); pipe(g, ct, 'OUTPUT_E', pu, 'INPUT', 36); pipe(g, pu, 'OUTPUT', j, port, 36); });
   const tg = put(g, 'gasoline_tank_l', 200, 40), td = put(g, 'diesel_tank_l', 200, 60), tj = put(g, 'jet_tank_l', 200, 80), tl = put(g, 'gas_sphere_l', 180, 20);
   pipe(g, j, 'PORT_E', ref, 'CRUDE_IN', 36); pipe(g, ref, 'GASOLINE_OUT', tg, 'INPUT_W', 36); pipe(g, ref, 'DIESEL_OUT', td, 'INPUT_W', 36); pipe(g, ref, 'JET_OUT', tj, 'INPUT_W', 36); pipe(g, ref, 'GAS_OUT', tl, 'INPUT_N', 36);
@@ -47,10 +47,18 @@ console.log('REFINERY ACCOUNTING TESTS');
   const json = JSON.parse(JSON.stringify(x.co.toJSON())); T('12 by-product and residue quantities are saved', json.qty2 && json.qty2.BYPRODUCT > 0 && json.qty2.RESIDUE > 0, json.qty2);
 }
 // 13. no chemicals: the refinery does not run and draws no crude
-{ const x = build(); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const t0 = tankSum(x.cts), q0 = (x.co.qty.CRUDE + x.co.bq);
-  const a = runHours(x, 24, false); T('13 without chemicals and operating materials the refinery draws no crude and books no output', near(tankSum(x.cts), t0, 1e-9) && a.feed === 0 && a.GASOLINE === 0 && a.loss === 0 && x.co.matLimit === 0, { t0, now: tankSum(x.cts), feed: a.feed }); }
+{ const x = build(false, Object.assign({}, EC, { MATERIALS_REQUIRED: true })); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const t0 = tankSum(x.cts), q0 = (x.co.qty.CRUDE + x.co.bq);
+  const a = runHours(x, 24, false); T('13 (old rule, MATERIALS_REQUIRED = true) without chemicals and operating materials the refinery draws no crude and books no output', near(tankSum(x.cts), t0, 1e-9) && a.feed === 0 && a.GASOLINE === 0 && a.loss === 0 && x.co.matLimit === 0, { t0, now: tankSum(x.cts), feed: a.feed }); }
 // 14. partial chemicals: throughput is capped by the stock before any crude is drawn
-{ const x = build(); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const ch = x.co.buy('CHEM', 2000, 'A', 'CASH'); if (!ch.ok) throw new Error('chem ' + ch.reason); x.co.buy('OPS', 500, 'A', 'CASH'); x.co.sync();
+// 13b. the default (owner, Nov 2026): no materials in stock is no stop; their cost is paid in cash at the listed price, nothing is bought into stock
+{ const x = build(); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const t0 = tankSum(x.cts), j0 = x.co.journal.n, life0 = Object.assign({}, x.co.led.life);
+  const a = runHours(x, 24, false), M = EC.MATERIAL_USE, P = EC.MATERIAL_PRICE, want = a.feed * (M.CHEM.qty * P.CHEM + M.OPS.qty * P.OPS), got = (x.co.led.life.chem || 0) - (life0.chem || 0) + (x.co.led.life.ops || 0) - (life0.ops || 0);
+  T('13b with no chemicals bought the refinery runs and draws crude from the tanks', a.feed > 1000 && tankSum(x.cts) < t0 - 1000 && x.co.matLimit === 1, { feed: a.feed });
+  T('13c the materials it used cost exactly feed x (0.36 kg x $2.5 + 0.002 x $40) = $' + (M.CHEM.qty * P.CHEM + M.OPS.qty * P.OPS).toFixed(2) + ' per barrel, paid in cash', near(got, want, 1e-6), { got, want });
+  T('13d no purchase entries and no material stock appear', x.co.mats.CHEM === 0 && x.co.mats.OPS === 0 && !x.co.journal.log.filter(e => e.id > j0).some(e => /PURCHASE/.test(e.type || '')), x.co.mats);
+  T('13e the books still balance', x.co.audit().ok && x.co.journal.check().ok, x.co.audit()); }
+// 14. (old rule) partial chemicals: throughput is capped by the stock before any crude is drawn
+{ const x = build(false, Object.assign({}, EC, { MATERIALS_REQUIRED: true })); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const ch = x.co.buy('CHEM', 2000, 'A', 'CASH'); if (!ch.ok) throw new Error('chem ' + ch.reason); x.co.buy('OPS', 500, 'A', 'CASH'); x.co.sync();
   const a = runHours(x, 24, false), cap = (2000 / (0.36 / 1)); // CHEM use is 0.36 kg per bbl
   T('14 materials cap the throughput: the feed never exceeds what the chemicals allow (' + Math.round(a.feed) + ' bbl)', a.feed <= 2000 / 0.36 + 1e-6 && a.feed > 0, { feed: a.feed, limit: 2000 / 0.36 }); }
 // 15. save and load keep the books

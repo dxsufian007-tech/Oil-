@@ -5,7 +5,7 @@ const { B, I, E, EC, game, put, pipe, chain } = require('./test-economy-helpers.
 let pass = 0, fail = 0; const T = (n, c, x) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail++; console.log('FAIL ' + n + (x === undefined ? '' : ' ' + JSON.stringify(x))); } };
 const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-6 : tol) * Math.max(1, Math.abs(a), Math.abs(b));
 const stockUp = co => { for (const [m, q] of [['CHEM', 20000], ['OPS', 5000], ['PARTS', 200]]) { const r = co.buy(m, q, 'A', 'CASH'); if (!r.ok) throw new Error('stock ' + m + ' ' + r.reason); } };
-const prep = (nWells, mats) => { const g = game(500e6), c = chain(g, true, true); for (const w of c.wells.slice(nWells)) { g.store.demolish(w.id, { building: true, pipes: true, pipeSet: g.net }); } c.wells = c.wells.slice(0, nWells); for (const b of g.store.list()) g.sim.ensure(b); if (mats !== false) stockUp(g.co); return Object.assign(g, { c }); };
+const prep = (nWells, mats, cfg) => { const g = game(500e6, cfg), c = chain(g, true, true); for (const w of c.wells.slice(nWells)) { g.store.demolish(w.id, { building: true, pipes: true, pipeSet: g.net }); } c.wells = c.wells.slice(0, nWells); for (const b of g.store.list()) g.sim.ensure(b); if (mats !== false) stockUp(g.co); return Object.assign(g, { c }); };
 /* run `hours` one at a time and add up the flow (bbl/day -> bbl per hour) at every stage */
 const run = (g, hours) => { const c = g.c, t = { wells: 0, sepIn: 0, sepOut: 0, ctIn: 0, ctOut: 0, refIn: 0 }, v0 = c.ct.s.vol || 0, tot0 = c.ct.s.total || 0; for (let h = 0; h < hours; h++) { g.co.advanceHours(1); t.wells += c.wells.reduce((a, w) => a + (w.s._out || 0), 0) / 24; t.sepIn += (c.sep.s._in || 0) / 24; t.ctIn += (c.ct.s._in || 0) / 24; t.ctOut += (c.ct.s._out || 0) / 24; t.refIn += (c.ref.s._in || 0) / 24; } t.v0 = v0; t.v1 = c.ct.s.vol || 0; t.rcv = (c.ct.s.total || 0) - tot0; return t; };
 
@@ -47,8 +47,8 @@ console.log('4. (changed) maintenance needs no spare parts from the player: it i
   T('4c the repair call stays harmless', g.co.repair(g.c.pump.id).ok && g.c.pump.c === 1);
   T('4d and no alert about it', !g.co.alerts().some(a => a.key === 'noparts')); }
 
-console.log('5. a refinery with no chemicals / operating materials refuses crude and says so');
-{ const g = prep(3, false), t0 = run(g, 48);
+console.log('5. (old rule, MATERIALS_REQUIRED = true) a refinery with no chemicals / operating materials refuses crude and says so');
+{ const g = prep(3, false, Object.assign({}, EC, { MATERIALS_REQUIRED: true })), t0 = run(g, 48);   // the old rule (still an option)
   T('5a oil reaches the refinery but it takes none', t0.ctIn > 0 && t0.refIn === 0, t0);
   T('5b the status says it lacks materials, not that no oil reaches it', g.sim.status(g.c.ref) === 'NO_MATERIALS', g.sim.status(g.c.ref));
   T('5c the company is warned', g.co.alerts().some(a => a.key === 'nomat'));

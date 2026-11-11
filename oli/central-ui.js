@@ -75,7 +75,7 @@
     for (const c of env.CEN.CHANNELS) { const f = g.f[c]; h += '<tr><td><span style="color:' + env.CEN.COLOR[c] + '">●</span> ' + NAME[c] + '</td><td>' + (g.fault[c] ? '<span style="color:#ff8a7a">مقطوعة</span>' : num(f.flow, 0) + ' bbl/يوم') + '</td></tr>'; }
     h += '</table><div class="row" style="flex-wrap:wrap">' + (tp.atEnd ? '<span class="k">هذه نقطة ربط قائمة (محطة).</span>' : '<button id="cn-here" style="min-height:44px">🔀 فرع هنا</button>') + env.CEN.CHANNELS.map(c => '<button class="cn-cut" data-ch="' + c + '" data-seg="' + g.id + '" style="min-height:36px;border:2px solid ' + env.CEN.COLOR[c] + '">' + (g.fault[c] ? '🔧 ' : '✂ ') + NAME[c] + '</button>').join('') + '</div>';
     const pr = env.CEN.CHANNELS.map(c => pumpRows(cn, c, g.id)).filter(x => x.indexOf('<table>') === 0).join(''); if (pr) h += '<div class="k" style="margin-top:6px">مضخات هذا المقطع:</div>' + pr;
-    const $i = document.getElementById('info'); $i.innerHTML = h; $i.dataset.cn = x + ',' + y; env.WP.markDirty(); return true;
+    const $i = document.getElementById('info'); $i.innerHTML = h; $i.dataset.cn = x + ',' + y; $i.dataset.hk = 'c:' + x + ',' + y; env.WP.markDirty(); return true;
   }
   function planAt(x, y, toward) {
     const r = env.CEN.planTap(env.store, env.pipes, x, y, { toward: toward || null }); const $i = document.getElementById('info');

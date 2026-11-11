@@ -96,6 +96,7 @@
     MATERIAL_UNIT: { CHEM: 'kg', PARTS: 'pcs', OPS: 'unit' },                         // the unit each price refers to (UI keys: u.kg, u.pcs, u.unit)
     MATERIAL_STORE: { CHEM: 20000, PARTS: 200, OPS: 5000 },                           // warehouse capacity per material, in its unit: a purchase above it is refused
     MATERIAL_PRICE: { CHEM: 2.5, PARTS: 1200, OPS: 40 },                             // editable starting prices ($ per unit): change them here, the engine reads them
+    MATERIALS_REQUIRED: false,                                                        // (owner, Nov 2026) the refinery no longer waits for bought chemicals / operating materials: stock on hand is used first at its average cost, the rest is paid automatically in cash at MATERIAL_PRICE. true = the old rule (no stock -> no refining)
     MATERIAL_USE: { CHEM: { per: 'refinedBbl', qty: 0.36 }, OPS: { per: 'refinedBbl', qty: 0.002 }, PARTS: { per: 'repair', qty: 1 }, REPAIR_OPS: { per: 'repair', qty: 2 } },   // units used: chemicals 0.36 per refined bbl (= 0.90 $/bbl at 2.5 $/unit, the existing cost); operating materials 0.002 per bbl; one spare part per repair
     SUPPLIERS: [
       { id: 'A', name: 'مورد أ', premium: 0.00, freightPerUnit: { crude: 0.40, product: 0.50, material: 0.05 }, feeRate: 0.005, creditDays: 30 },   // cheapest, pays 30 days after delivery
