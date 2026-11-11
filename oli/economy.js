@@ -272,7 +272,7 @@
     staffKey(def) { const t = def.type; if (def.family === 'MANIFOLD') return 'manifold'; return t === 'well' || t === 'valve' || t === 'junction' || t === 'separator' ? t : t + '_' + def.size; }
     opDay(b, load) { const O = this.cfg.OPERATING; return DEFS[b.d].operatingCost * (O.fixedShare + (1 - O.fixedShare) * load) * (1 + O.conditionPenalty * (1 - b.c)); }     // DailyOperatingCost = Base x Load x Condition
     maintDay(b, load) { const M = this.cfg.MAINTENANCE; return DEFS[b.d].maintenanceCost * (1 + M.damage * Math.pow(1 - b.c, 1.5)) * (M.utilBase + M.utilSlope * load); }   // MaintenanceCost = Base x Damage x Utilization
-    wellQuality(b) { const q = this.cfg.QUALITY, u = hash(b.x, b.y, 11); return u < q.share.HIGH ? 'HIGH' : u > 1 - q.share.LOW ? 'LOW' : 'NORMAL'; }
+    wellQuality(b) { const q = this.cfg.QUALITY, u = b.__wqx === b.x && b.__wqy === b.y ? b.__wq : (b.__wqx = b.x, b.__wqy = b.y, b.__wq = hash(b.x, b.y, 11)); /* perf: the hash of a well's position is kept on it (not saved: the store saves explicit fields) */ return u < q.share.HIGH ? 'HIGH' : u > 1 - q.share.LOW ? 'LOW' : 'NORMAL'; }
     crudeLabel() { const q = this.cfg.QUALITY; return this.crudeQ >= q.highAt ? 'HIGH' : this.crudeQ <= q.lowAt ? 'LOW' : 'NORMAL'; }
     effOf(b) {                                                                      // written to b.s.ecoEff before every Sim step: power shortage, wear and crude quality
       const t = DEFS[b.d].type, P = this.cfg.POWER; if (t === 'well' && b.s && b.s.started === false) return 0;      // a new well waits for the player's "start production"
@@ -836,8 +836,12 @@
 
     /* ---- staff (a headcount per category, never individual workers) ---- */
     computeStaff() {
-      const need = { operators: 0, engineers: 0, maintenance: 0, managers: 0 }, c = this.cfg.LABOR;
-      for (const b of this.store.list()) { if (b.st !== 'OPERATIONAL') continue; const sk = c.staff[this.staffKey(DEFS[b.d])]; if (sk) for (const k in sk) need[k] += sk[k]; }
+      const c = this.cfg.LABOR, L = this.store.list();
+      /* perf: what the buildings need is summed once per game hour (it was summed twice an hour, every building, with a string key per building); the same sums */
+      let need = this._staffNeed; if (!need || this._staffNeedAt !== this.hours || this._staffNeedL !== L || this._staffNeedCfg !== c) { need = { operators: 0, engineers: 0, maintenance: 0, managers: 0 }; const SK = this._skByDef || (this._skByDef = new Map());
+        for (const b of L) { if (b.st !== 'OPERATIONAL') continue; let sk = SK.get(b.d); if (sk === undefined) { sk = c.staff[this.staffKey(DEFS[b.d])] || null; SK.set(b.d, sk); } if (sk) for (const k in sk) need[k] += sk[k]; }
+        this._staffNeed = need; this._staffNeedAt = this.hours; this._staffNeedL = L; this._staffNeedCfg = c; }
+      need = Object.assign({}, need);
       const crew = Math.ceil(need.operators) + Math.ceil(need.engineers) + Math.ceil(need.maintenance), s = { operators: Math.ceil(need.operators), engineers: Math.ceil(need.engineers), maintenance: Math.ceil(need.maintenance), managers: Math.ceil(need.managers + (crew ? crew / c.perManager : 0)) };
       const H = this.cfg.HR, req = { operators: s.operators, engineers: s.engineers, maintenance: s.maintenance, managers: s.managers };   // what the buildings need
       for (const r of HRROLES) s[r] = Math.max(0, req[r] + (this.hr[r] ? this.hr[r].extra : 0));                                       // what the company employs
@@ -883,7 +887,7 @@
       if (was > phys + 1e-6) { this.qty.CRUDE = phys; this.netOilFix = { barrels: was - phys, day: this.dayIdx }; }
     }
     _tick(h) {
-      const S = this.sim, st = this.store, C = this.cfg, dt = h / 24, price = C.ENERGY.pricePerKWh * this.market.costMult().energy; this.sync(); this._collect(); st.tick(h); const items = st.list();
+      const S = this.sim, st = this.store, C = this.cfg, dt = h / 24, price = C.ENERGY.pricePerKWh * this.market.costMult().energy; this.sync(); this._collect(); st.tick(h); const items = st.list(); this._staffNeed = null;      // buildings may have changed state (construction finished): the staff need is summed again this hour
       if (this._restoreWear) { this._restoreWear = false; for (const b of items) { if (b.st === 'DAMAGED') b.st = 'OPERATIONAL'; if (b.c < 1) b.c = 1; } }      // no wear and no breakdowns: buildings an older save left worn or damaged are restored once, on the first hour after loading (nothing is deleted)
       if (!this.netOil) this._netOilMigrate();
       for (const b of items) { const s = S.ensure(b); s.ecoEff = this.effOf(b); }
@@ -1173,6 +1177,8 @@
     togglePause() { return this.speed === 0 ? this.resume() : this.pause(); }
     faster() { const sp = this.cfg.TIME.speeds.filter(x => x > 0), cur = this.speed || this.lastSpeed || 1, i = sp.indexOf(cur); return this.setSpeed(sp[Math.min(sp.length - 1, i < 0 ? 0 : i + 1)]); }
     slower() { const sp = this.cfg.TIME.speeds.filter(x => x > 0), cur = this.speed || this.lastSpeed || 1, i = sp.indexOf(cur); return this.setSpeed(sp[Math.max(0, i < 0 ? 0 : i - 1)]); }
+    /* live play: the time waits (capped) without running a game hour now - used by the frame-share pacing of the game loop */
+    addTime(hours) { if (this.bankrupt || !(hours > 0) || this.speed === 0) return; this.acc = Math.min(this.acc + hours, this.cfg.TIME.liveBacklogHours || 4); }
     run(hours, budgetMs) {                                                         // the lab calls this with real time x speed; whole hours only, the remainder waits for the next call
       if (this.bankrupt || !(hours > 0) || this.speed === 0) return 0;
       /* budgetMs (the live game): every game hour is still computed in full and in order; a call stops starting new hours once it has used budgetMs, and the waiting time
@@ -1215,7 +1221,7 @@
     /* ---- save / load (the store and the pipes are saved by the lab as before; this is the company) ---- */
     toJSON() {
       return { v: 2, central: this.central, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0, a.useStart == null ? null : a.useStart]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
-        autoBuy: this.autoBuy, whLv: this.whLv, matHist: this.matHist, recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, reserve: this.reserve, water: this.water, netOil: this.netOil ? 1 : 0, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
+        autoBuy: this.autoBuy, whLv: this.whLv, matHist: this.matHist, pwState: { factor: this.pw.factor, stop: this.pwStop == null ? null : this.pwStop }, recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, reserve: this.reserve, water: this.water, netOil: this.netOil ? 1 : 0, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
     }
     fromJSON(d) {
       this._restoreWear = true;
@@ -1230,7 +1236,7 @@
       { const ab = this._abDefaults(), sv = d.autoBuy || {}; for (const m of c.MATERIALS) if (sv[m]) ab[m] = Object.assign(ab[m], sv[m]); ab.log = Array.isArray(sv.log) ? sv.log : []; this.autoBuy = ab; this.whLv = Object.assign({}, d.whLv || {}); this.matHist = d.matHist || {}; }      // saves from before auto-buy: the default settings, warehouse level 0
       this.bq = d.bq || 0; this.explLog = d.explLog || []; this.bprod = d.bprod || {}; this.tradeLog = d.tradeLog || []; this.nextTrade = d.nextTrade || 1; this.boughtUsed = d.boughtUsed || 0;
       if (!d.journal) this._migrate();                                                         // a save from before the journal: the company starts from an opening balance sheet of what it holds now
-      this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.mirror = this.store.cash; if (!this.bsStart) this.bsStart = this._snap(); this.away = null; this.events = []; this.seen = new Set(); this._refreshOffers(); this.computeStaff(); return true;
+      this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: d.pwState && d.pwState.factor != null ? d.pwState.factor : 1, limited: false }; if (d.pwState) this.pwStop = d.pwState.stop;      // the power supply factor is smoothed hour to hour: restoring it makes a loaded game continue exactly where it was (it restarted at 100%: a few hours of extra output after every load when power was short) this.mirror = this.store.cash; if (!this.bsStart) this.bsStart = this._snap(); this.away = null; this.events = []; this.seen = new Set(); this._refreshOffers(); this.computeStaff(); return true;
     }
     _migrate() {
       const j = new Journal(), cash = isFinite(this.store.cash) ? this.store.cash : 0; j.bal.CASH = cash; let fixed = this.pipeValue(), dep = 0;
