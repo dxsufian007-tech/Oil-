@@ -1185,11 +1185,11 @@
     slower() { const sp = this.cfg.TIME.speeds.filter(x => x > 0), cur = this.speed || this.lastSpeed || 1, i = sp.indexOf(cur); return this.setSpeed(sp[Math.max(0, i < 0 ? 0 : i - 1)]); }
     /* live play: the time waits (capped) without running a game hour now - used by the frame-share pacing of the game loop */
     addTime(hours) { if (this.bankrupt || !(hours > 0) || this.speed === 0) return; this.acc = Math.min(this.acc + hours, this.cfg.TIME.liveBacklogHours || 4); }
-    run(hours, budgetMs) {                                                         // the lab calls this with real time x speed; whole hours only, the remainder waits for the next call
+    run(hours, budgetMs, clock) {                                                         // the lab calls this with real time x speed; whole hours only, the remainder waits for the next call
       if (this.bankrupt || this.speed === 0) { this.settle(); return 0; } if (!(hours > 0)) { if (!this._hg || !(budgetMs > 0)) return 0; hours = 0; }      // hours = 0 with an open hour: just continue it
       /* budgetMs (the live game): every game hour is still computed in full and in order; a call stops starting new hours once it has used budgetMs, and the waiting time
          is capped at liveBacklogHours, so a device that cannot keep up runs at the speed it can (shown as the real speed) instead of freezing for seconds to catch up */
-      const live = budgetMs > 0, T = this.cfg.TIME; this.acc = Math.min(this.acc + hours, live ? (T.liveBacklogHours || 4) : T.maxCatchUpHours); let n = 0; const now = live ? (typeof performance !== 'undefined' ? () => performance.now() : () => Date.now()) : null, t0 = live ? now() : 0;
+      const live = budgetMs > 0, T = this.cfg.TIME; this.acc = Math.min(this.acc + hours, live ? (T.liveBacklogHours || 4) : T.maxCatchUpHours); let n = 0; let tick = 0; const now = !live ? null : clock || (() => ++tick), t0 = live ? now() : 0;      /* the clock is given by the caller (the lab passes its frame clock): the economy itself never reads the real clock; without one the budget counts chunks */
       if (!live) { this.settle(); while (this.acc >= 1 && n < T.maxStepsPerTick && !this.bankrupt) { this._tick(1); this.acc -= 1; n++; } return n; }
       /* live: an hour may be spread over several calls - it is opened (its hour taken from acc), advanced until the budget is spent, and continued by the next call */
       while (!this.bankrupt) {
