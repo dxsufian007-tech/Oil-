@@ -343,7 +343,8 @@
     }
 
     /* ---- save / load: compact, versioned, validated on load (nothing is trusted) */
-    toJSON() { return { v: 2, next: this.nextId, time: this.time, b: this.list().map(b => [b.id, b.d, b.x, b.y, b.r, b.st, b.c, b.t0, b.link || 0, b.field || 0, b.s ? JSON.parse(JSON.stringify(b.s)) : null, b.lv || 1].concat(b.rs ? [1] : [])) }; }   // rows stay 12 long; only a reserve tank carries a 13th field
+    toJSON(o) { const live = o && o.live; return { v: 2, next: this.nextId, time: this.time, b: this.list().map(b => [b.id, b.d, b.x, b.y, b.r, b.st, b.c, b.t0, b.link || 0, b.field || 0, b.s ? (live ? b.s : JSON.parse(JSON.stringify(b.s))) : null, b.lv || 1].concat(b.rs ? [1] : [])) }; }   // rows stay 12 long; only a reserve tank carries a 13th field
+    /* toJSON({ live: true }): the building states by reference, for a caller that turns it into text at once (the autosave) - the same text, without copying every state twice first */
     static fromJSON(ts, data, opts) {
       const s = new BuildingStore(ts, opts), rep = { loaded: 0, dropped: [] }; if (!data || (data.v !== 1 && data.v !== 2) || !Array.isArray(data.b)) return { store: s, report: { loaded: 0, dropped: ['badFormat'] } };
       s.time = data.time || 0; let maxId = 0;

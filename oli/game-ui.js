@@ -69,12 +69,14 @@ body:not(.dev) .panel{bottom:72px!important}body:not(.dev) #buildbar{bottom:72px
     let lv = S.level; if (UNLOCK) return 6;
     if (lv < 2 && c.revenue > 0) lv = 2; if (lv < 3 && lv >= 2 && c.well >= 2 && c.revenue >= 1e6) lv = 3; if (lv < 4 && lv >= 3 && c.sep > 0) lv = 4; if (lv < 5 && lv >= 4 && c.ref > 0) lv = 5; if (lv < 6 && lv >= 5 && c.revenue >= 5e6) lv = 6; return lv;
   }
+  let doneChk = false;
   function check() {
-    const l = lab(); if (!l || !l.restored) return; const c = counts(), lv = levelFor(c);
+    const l = lab(); if (!l || !l.restored) return; if (doneChk && S.level >= 6 && S.step >= GC.STEPS.length - 1) return;      /* perf: the top level and the last guide step are reached - nothing here can change any more (it counted every building and line every 0.7 s) */
+    const c = counts(), lv = levelFor(c);
     if (lv > S.level) { const was = S.level; S.level = lv; if (!UNLOCK) levelUp(lv, was); }
     let moved = false; while (S.step < GC.STEPS.length - 1 && PRED[GC.STEPS[S.step].id](c)) { S.step++; moved = true; }
     document.body.classList.toggle('lv-tabs', S.level >= 3); for (const t of ['contracts', 'loans']) { const b = document.querySelector('#es-tabs [data-tab=' + t + ']'); if (b) b.style.display = S.level >= 3 || UNLOCK ? '' : 'none'; }
-    if (moved) { lastMsg = ''; if (lab().save) lab().save(); } refreshGuide(c);
+    if (moved) { lastMsg = ''; if (lab().save) lab().save(); } refreshGuide(c); doneChk = true;
   }
   function guideText(c) {
     if (S.level >= 2 || S.step >= GC.STEPS.length - 1) { const g = GC.NEXT_GOAL[S.level]; return { text: S.step < GC.STEPS.length - 1 ? GC.STEPS[S.step].text : g, hint: S.step < GC.STEPS.length - 1 ? GC.STEPS[S.step].hint : 'المستوى ' + S.level + ': ' + GC.LEVELS[S.level - 1].name }; }
@@ -82,7 +84,7 @@ body:not(.dev) .panel{bottom:72px!important}body:not(.dev) #buildbar{bottom:72px
   }
   function refreshGuide(c) {
     const g = $('g-guide'); if (!g) return; const show = !S.hidden && lab() && lab().restored && !DEV && !UNLOCK; const gt = guideText(c || counts()); g.classList.toggle('show', !!show);
-    if (show) { g.querySelector('.tx').innerHTML = '🧭 ' + gt.text + '<small>' + (gt.hint || '') + '</small>'; }
+    if (show) { const h = '🧭 ' + gt.text + '<small>' + (gt.hint || '') + '</small>', tx = g.querySelector('.tx'); if (tx._h !== h) { tx.innerHTML = h; tx._h = h; } }      // perf: rewritten only when the text changes
     const pc = { drill: 'oil', wait: null, start: null, tank: 'storage', pipe: 'pipes', flow: null, sell: null, grow: 'oil' }[GC.STEPS[S.step].id];
     for (const b of $('g-nav').children) b.classList.toggle('pulse', !!show && S.level === 1 && b.dataset.cat === pc && S.cat !== pc);
   }

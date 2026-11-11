@@ -535,8 +535,8 @@
   function updateCash() { $('cash').textContent = fmt$(STORE.cash); EU.hud(); }
   /* test-only timing hook (window.__perfT exists only in the performance-test build): measures, never changes behaviour */
   function save() { const P = window.__perfT; if (!P) return save_(); const t = performance.now(); try { return save_(); } finally { P.save += performance.now() - t; P.saveN++; } }
-  function save_() { if (window.__noSave || !window.__lab || !window.__lab.restored || catching) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); const out = JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } });
-      try { const prev = localStorage.getItem(SAVE_KEY), now = Date.now(); if (prev && prev.length > 200 && now - bakAt > 60000) { localStorage.setItem(SAVE_KEY + '-bak', prev); bakAt = now; } } catch (_) { }   /* a rolling copy of the previous good save (at most once a minute) */
+  function save_() { if (window.__noSave || !window.__lab || !window.__lab.restored || catching) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); const out = JSON.stringify({ v: 2, store: STORE.toJSON({ live: true }), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } });
+      try { const now = Date.now(); if (now - bakAt > 60000) { const prev = localStorage.getItem(SAVE_KEY); if (prev && prev.length > 200) { localStorage.setItem(SAVE_KEY + '-bak', prev); bakAt = now; } } } catch (_) { }   /* a rolling copy of the previous good save (at most once a minute). perf: the previous save (megabytes) is read only when the copy is due, not on every save */
       localStorage.setItem(SAVE_KEY, out); window.__saveError = null; saveFailShown = false; } catch (e) { window.__saveError = String(e && e.message || e); if (!saveFailShown) { saveFailShown = true; try { toast('⚠ تعذّر حفظ اللعبة: ' + window.__saveError); } catch (_) { } } } }
   let bakAt = 0, saveFailShown = false, catching = false;
   /* Offline catch-up in short slices (never one long freeze): a progress bar is shown, the same ticks run in the same order, nothing is saved until it ends */
@@ -620,7 +620,11 @@
   /* The company is advanced in SMALL slices (about 16 times a second) instead of one burst every 250 ms: exactly the same whole game hours in the same order (run() keeps the remainder), but no single frame has to carry a whole burst - this is what keeps x5 / x10 smooth on a phone */
   let simLast = performance.now();
   const simPump = setInterval(() => { const now = performance.now(), dtS = Math.min(2, (now - simLast) / 1000); simLast = now; if (window.__homeOpen) return;      /* the main menu is open: the company waits */
-    if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) { const n = COMPANY.run(dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0), EC.TIME.liveBudgetMs || 20); realSpeed(n, now); } else realSpeed(0, now, true); }, 62);
+    if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) { const hrs = dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0);
+      if (now < simNext) { COMPANY.addTime(hrs); realSpeed(0, now); }                                 /* frame share: the map's turn - the time waits, nothing is skipped */
+      else { const t0 = performance.now(), n = COMPANY.run(hrs, EC.TIME.liveBudgetMs || 20), took = performance.now() - t0, sh = EC.TIME.liveShare || 0.5; simNext = t0 + took / sh; realSpeed(n, now); } }
+    else realSpeed(0, now, true); }, 62);
+  let simNext = 0;
   /* the speed really reached (game hours per real second / the hours per second of x1): shown next to the speed button when the device cannot keep up */
   const RS = { t0: performance.now(), h: 0 }; function realSpeed(n, now, idle) { if (idle) { RS.t0 = now; RS.h = 0; COMPANY.realSpeed = null; return; } RS.h += n; const el = now - RS.t0; if (el >= 2000) { COMPANY.realSpeed = RS.h / (el / 1000) / (24 / EC.TIME.dayRealSeconds); RS.t0 = now; RS.h = 0; } }
   const tick = setInterval(() => { if (!state.pipeMode && !state.pipeEdit && document.body.classList.contains('pipemode')) document.body.classList.remove('pipemode');      // self-heal: no pipe is being drawn, so the cards must be visible
@@ -629,7 +633,10 @@
     if (WP.ui.reserveLv !== COMPANY.reserve.lv) { WP.ui.reserveLv = COMPANY.reserve.lv; WP.markDirty(); } if (now - lastDraw > (COMPANY.speed >= 5 ? 960 : 480)) { lastDraw = now; const tu0 = PT ? performance.now() : 0; const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag) showBuilding(sel.id); const sg = visSig(); if (sg !== lastSig || animOn) { lastSig = sg; WP.markDirty(); } if (PT) { PT.ui += performance.now() - tu0; PT.uiN++; } }      // Stage 5 perf: the map is redrawn only when something it shows has changed (animation has its own timer)
   if (PT) { PT.tick += performance.now() - tk0; PT.tickN++; }
   }, EC.TIME.tickMs);
-  setInterval(() => { if (STORE.items.size || COMPANY.hours > 0) save(); }, 6000);                          // autosave: the company stamp is what the offline report measures from
+  /* autosave every 6 s - perf: not when nothing changed since the last save (a paused game), and spaced out when one save is costly (a very large company: at most ~2% of the time), yet at least once a minute */
+  let asSig = '', asAt = 0, asCost = 0; const autoSig = () => (STORE.rev | 0) + '/' + pipes.rev + '/' + COMPANY.hours + '/' + COMPANY.journal.n + '/' + STORE.cash + '/' + STORE.items.size;
+  setInterval(() => { if (!(STORE.items.size || COMPANY.hours > 0)) return; const now = performance.now(), sg = autoSig(), gap = now - asAt; if (sg === asSig && gap < 60000) return; if (gap < Math.max(5500, asCost * 50) && gap < 60000) return;
+    const t = performance.now(); save(); asCost = performance.now() - t; asAt = performance.now(); asSig = autoSig(); }, 6000);                          // autosave: the company stamp is what the offline report measures from
   document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); } else { simLast = performance.now(); const j = COMPANY.catchUpStart(Date.now()); if (j && j.job) runCatchUp(j, a => { if (a && a.ok) EU.showAway(a); save(); }); else if (j && j.ok) { EU.showAway(j); save(); } } });
   window.addEventListener('pagehide', () => save());
   EU.mount({ company: COMPANY, toast, onChange: () => save(), restart: () => newGame(), showZone: () => { const z = world.reserveZoneOfWorld(); if (z) { WP.goto(z.x + z.w / 2, z.y + z.h / 2, .5); toast('منطقة الاحتياطي الاستراتيجي (باللون الأصفر)'); } } });

@@ -415,7 +415,7 @@
       if (e.lvl && f.sv != null && this.ensure(far.b).vol != null) { const fs = this.ensure(far.b), fd = DEFS[far.b.d], fc = fd.capacity.value * levelOf(far.b).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
       const ratio = r / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * (e.line && CFG.PIPES[e.line.dia] ? CFG.PIPES[e.line.dia].fric : 1); let p = f.p - loss;
       if (p < 0) { r *= Math.max(0, f.p / (loss || 1)); p = 0; if (commit) e.lowP = true; }
-      if (r <= 1e-9) return 0; const acc = this.accept(far.b, far.port, Object.assign({}, f, { r, p }), commit, vis);
+      if (r <= 1e-9) return 0; const acc = this.accept(far.b, far.port, { ...f, r, p }, commit, vis);
       if (commit && acc > 0) { e.flow += acc; e.p = p; e.prod = f.prod; if (e.line) e.line.flow = e.flow; if (p > e.maxP) e.hiP = true; }
       return acc;
     }
@@ -424,7 +424,7 @@
       const outs = ports.filter(pid => this.edgeOf(b, pid)); if (!outs.length) return 0;
       if (outs.length === 1) return this.offer(b, outs[0], f, commit, vis);
       const probe = outs.map(pid => ({ pid, can: this.offer(b, pid, f, false, vis) })).sort((x, y) => x.can - y.can); let remain = f.r, left = probe.length, total = 0;
-      for (const o of probe) { const take = Math.min(o.can, remain / left); remain -= take; left--; if (take > 1e-9) total += commit ? this.offer(b, o.pid, Object.assign({}, f, { r: take }), true, vis) : take; }
+      for (const o of probe) { const take = Math.min(o.can, remain / left); remain -= take; left--; if (take > 1e-9) total += commit ? this.offer(b, o.pid, { ...f, r: take }, true, vis) : take; }
       return total;
     }
     ok(b) { return b.st === 'OPERATIONAL'; }
@@ -450,19 +450,19 @@
           case 'pump': {
             const c0 = def.params, cap = c0.maxFlow * levelOf(b).capacityMultiplier; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;
             if (f.p < c0.minInletPsi) { if (commit) { s._lowIn = true; } break; }
-            const room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; const boost = s.boost * levelOf(b).pressureMultiplier * s.eff * levelOf(b).efficiencyMultiplier * eco(b); const outs = dcOf(def).outs, ff = Object.assign({}, f, { r: Math.min(f.r, room), p: f.p + boost }); acc = outs.length > 1 ? this.split(b, outs, ff, commit, vis) : this.offer(b, outs[0] || 'OUTPUT', ff, commit, vis);
+            const room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; const boost = s.boost * levelOf(b).pressureMultiplier * s.eff * levelOf(b).efficiencyMultiplier * eco(b); const outs = dcOf(def).outs, ff = { ...f, r: Math.min(f.r, room), p: f.p + boost }; acc = outs.length > 1 ? this.split(b, outs, ff, commit, vis) : this.offer(b, outs[0] || 'OUTPUT', ff, commit, vis);
             if (commit && acc > 0) { s._in = (s._in || 0) + acc; s.pOut = f.p + boost; }
             break;
           }
           case 'valve': {
             const mode = s.mode, open = mode === 'OPEN' ? 1 : mode === 'PARTIAL' ? s.opening : 0; s._off = Math.max(s._off || 0, f.r); if (open <= 0) { if (commit) s._shut = true; break; }
-            const lossP = 1 + 80 * Math.pow(1 - open, 2); acc = this.offer(b, 'OUT', Object.assign({}, f, { r: Math.min(f.r, def.params.maxFlow * open), p: f.p - lossP }), commit, vis);
+            const lossP = 1 + 80 * Math.pow(1 - open, 2); acc = this.offer(b, 'OUT', { ...f, r: Math.min(f.r, def.params.maxFlow * open), p: f.p - lossP }, commit, vis);
             if (commit && acc > 0) { s._in = (s._in || 0) + acc; }
             break;
           }
           case 'junction': {
             const cap = def.params.maxTotalFlow, room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); const outs = notInExcept(def, port);
-            acc = this.split(b, outs, Object.assign({}, f, { r: Math.min(f.r, room), p: f.p - 1 }), commit, vis); if (commit && acc > 0) { s._in = (s._in || 0) + acc; if (f.p > def.params.pressureLimit) s._hiP = true; }
+            acc = this.split(b, outs, { ...f, r: Math.min(f.r, room), p: f.p - 1 }, commit, vis); if (commit && acc > 0) { s._in = (s._in || 0) + acc; if (f.p > def.params.pressureLimit) s._hiP = true; }
             break;
           }
           case 'central': { const cn = this.net.central, st = cn && cn.stOf(b.id); if (!st) break; s._off = Math.max(s._off || 0, f.r); acc = cn.deliver(this, st, CEN.CH_OF_PORT[port], f, commit, vis, port); if (commit && acc > 0) { s._in = (s._in || 0) + acc; (s._ch = s._ch || {})[CEN.CH_OF_PORT[port]] = ((s._ch || {})[CEN.CH_OF_PORT[port]] || 0) + acc; } break; }
