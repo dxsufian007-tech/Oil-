@@ -1,0 +1,15 @@
+const fs = require('fs');
+function patch(file, pairs) { let s = fs.readFileSync(file, 'utf8'); for (const [a, b] of pairs) { const n = s.split(a).length - 1; if (n !== 1) throw new Error(file + ' ' + n + ': ' + a.slice(0, 80)); s = s.replace(a, () => b); } fs.writeFileSync(file, s); console.log('patched', file); }
+patch('/tmp/wt-b2/oli/economy.js', [
+  ["o.throughputDay = thr;", "o.throughputDay = thr; o.byproductDay = pr.BYPRODUCT || 0; o.residueDay = pr.RESIDUE || 0; o.fuelDay = pr.FUEL || 0;"],
+  ["residue: this.qty2.RESIDUE, residueValue: Math.max(0, this.journal.bal.INV_RESIDUE) };", "residue: this.qty2.RESIDUE, residueValue: Math.max(0, this.journal.bal.INV_RESIDUE), fuelBurned: (this.led.life.produced.FUEL || 0), fuelCost: Math.max(0, this.journal.bal.EXP_FUEL) };"],
+]);
+patch('/tmp/wt-b2/oli/economy-ui.js', [
+  ["  function rInventory() {\n    return CO.inventory().map(v => ",
+   "  function rByproducts() {\n    const bp = CO.byproducts();\n    return '<div class=\"es-card\"><div class=\"es-prod\"><span class=\"dot\" style=\"background:#9a7ec8\"></span><span class=\"nm\">By-products</span><b>' + n0(bp.qty) + ' bbl</b></div>' + kv('By-product in stock', n0(bp.qty) + ' bbl') + kv('Cost per bbl', '$' + bp.unitCost.toFixed(2)) + kv('Sale price', '$' + bp.price.toFixed(2)) + kv('Book value', M(bp.value))\n      + '<div class=\"es-row\"><button data-act=\"sellbp\"' + (bp.qty > 0.5 ? '' : ' disabled') + ' style=\"' + (bp.qty > 0.5 ? 'background:#2f9e5a;border-color:#2f9e5a;color:#fff' : '') + '\">SELL ALL BY-PRODUCT</button></div>'\n      + kv('Residue (not for sale)', n0(bp.residue) + ' bbl · value ' + M(bp.residueValue)) + kv('Internal fuel burned (expense)', n0(bp.fuelBurned) + ' bbl · ' + M(bp.fuelCost)) + '</div>';\n  }\n  function rInventory() {\n    return rByproducts() + CO.inventory().map(v => "],
+  ["    else if (a === 'prodr') prodRange = v;", "    else if (a === 'sellbp') { const r = CO.sellByproduct(CO.qty2.BYPRODUCT); msg = r.ok ? 'Sold ' + n0(r.qty) + ' By-products · +' + M(r.net) : 'Cannot sell: ' + r.reason; }\n    else if (a === 'prodr') prodRange = v;"],
+  ["    if (o.type === 'refinery') { rows.push(['Revenue (products)', M(o.productRevenueDay) + '/day'],", "    if (o.type === 'refinery') rows.push(['By-product made', n0(o.byproductDay) + ' bbl/day'], ['Residue made (not for sale)', n0(o.residueDay) + ' bbl/day'], ['Internal fuel burned', n0(o.fuelDay) + ' bbl/day']);\n    if (o.type === 'refinery') { rows.push(['Revenue (products)', M(o.productRevenueDay) + '/day'],"],
+]);
+patch('/tmp/wt-b2/oli/ar-dict.js', [
+  ["'Current volume': 'الكمية الحالية',", "'By-products': 'المنتجات الثانوية', 'By-product in stock': 'منتج ثانوي بالمخزون', 'Cost per bbl': 'التكلفة للبرميل', 'Sale price': 'سعر البيع', 'Book value': 'القيمة الدفترية', 'SELL ALL BY-PRODUCT': 'بيع كل المنتج الثانوي', 'Residue (not for sale)': 'بقايا (غير قابلة للبيع)', 'Internal fuel burned (expense)': 'وقود داخلي محروق (مصروف)', 'By-product made': 'منتج ثانوي منتَج', 'Residue made (not for sale)': 'بقايا منتَجة (غير قابلة للبيع)', 'Internal fuel burned': 'وقود داخلي محروق',\n    'Current volume': 'الكمية الحالية',"],
+]);

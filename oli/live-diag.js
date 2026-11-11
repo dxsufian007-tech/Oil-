@@ -27,12 +27,12 @@
     el = document.createElement('div'); el.id = 'live-diag'; el.setAttribute('dir', 'rtl');
     el.style.cssText = 'position:fixed;left:6px;right:6px;bottom:6px;max-height:55vh;overflow:auto;z-index:99;background:rgba(8,14,24,.94);color:#e6f0ff;font:12px/1.5 system-ui,sans-serif;border:1px solid #4a6a9a;border-radius:10px;padding:8px;white-space:pre-wrap';
     el.innerHTML = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><b style="flex:1">📊 تشخيص الأداء (قياس فقط)</b><button class="cp" style="min-height:36px">نسخ</button><button class="x" style="min-height:36px">إغلاق</button></div>'
-      + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"><b style="width:100%">قياس الهاتف (P0، قياس فقط)</b><button class="p0a" style="min-height:36px">قدرات الجهاز</button><button class="p0b" style="min-height:36px">شبكة الحفظ</button><button class="p0c" style="min-height:36px">قياس الحفظ</button><button class="p0d" style="min-height:36px">Workers ومعايرة</button><button class="p0e" style="min-height:36px">قياس 20 ث</button></div><pre class="p0" dir="ltr" style="margin:0 0 6px;white-space:pre-wrap;font:11px/1.45 ui-monospace,monospace;color:#cfe">اضغط الأزرار: كل نتيجة تظهر هنا وتُنسخ مع «نسخ»</pre><div class="now"></div><hr style="border-color:#334"><div class="rows" style="opacity:.9"></div>';
+      + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"><b style="width:100%">قياس الهاتف (P0، قياس فقط)</b><button class="p0a" style="min-height:36px">قدرات الجهاز</button><button class="p0b" style="min-height:36px">شبكة الحفظ</button><button class="p0c" style="min-height:36px">قياس الحفظ</button><button class="p0d" style="min-height:36px">Workers ومعايرة</button><button class="p0e" style="min-height:36px">قياس 20 ث</button><button class="p0f" style="min-height:36px">تشريح الساعة (~60 ث)</button><button class="p0g" style="min-height:36px">تصدير الحفظ</button></div><pre class="p0" dir="ltr" style="margin:0 0 6px;white-space:pre-wrap;font:11px/1.45 ui-monospace,monospace;color:#cfe">اضغط الأزرار: كل نتيجة تظهر هنا وتُنسخ مع «نسخ»</pre><div class="now"></div><hr style="border-color:#334"><div class="rows" style="opacity:.9"></div>';
     document.body.appendChild(el); el.querySelector('.x').onclick = () => { el.style.display = 'none'; };
     el.querySelector('.cp').onclick = () => { const t = 'OLI live diagnostics · ' + (window.OLI_VERSION || '') + '\n' + P0TEXT() + '\n' + el.querySelector('.now').textContent + '\n\n' + rows.join('\n\n'); try { navigator.clipboard.writeText(t).then(() => { el.querySelector('.cp').textContent = 'تم النسخ'; }, () => fallback(t)); } catch (_) { fallback(t); } };
     const out = t => { el.querySelector('.p0').textContent = (el.querySelector('.p0').dataset.k ? el.querySelector('.p0').textContent + '\n\n' : '') + t; el.querySelector('.p0').dataset.k = 1; };
     const bind = (c, f) => { el.querySelector(c).onclick = async function () { const b = this; b.disabled = true; try { out(await f()); } catch (e) { out('خطأ: ' + (e && e.message || e)); } b.disabled = false; }; };
-    bind('.p0a', P0.caps); bind('.p0b', P0.topo); bind('.p0c', P0.saveTest); bind('.p0d', P0.workers); bind('.p0e', () => P0.run(20));
+    bind('.p0a', P0.caps); bind('.p0b', P0.topo); bind('.p0c', P0.saveTest); bind('.p0d', P0.workers); bind('.p0e', () => P0.run(20)); bind('.p0f', () => P0.anatomy()); bind('.p0g', () => P0.exportSave());
     render(); }
   function fallback(t) { const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'width:100%;height:120px'; el.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (_) { } }
   // press and hold the speed button about a second (a short tap still changes the speed as before)
@@ -47,11 +47,11 @@
      P0 - what this phone really is and does (MEASUREMENT ONLY: nothing here changes the game; every result is a text the owner can paste).
      capabilities | the real save's network (buildings, fields, largest coupled block) | the save's cost | Workers and a CPU calibration | a 20 s run (fps, stalls, hour cost).
      The only hook is a wrapper around Company.run that times each call (it passes every argument and the result through untouched). */
-  const P0R = { caps: '', topo: '', save: '', workers: '', run: '' }, P0TEXT = () => ['caps', 'topo', 'save', 'workers', 'run'].map(k => P0R[k]).filter(Boolean).join('\n\n');
+  const P0R = { caps: '', topo: '', save: '', workers: '', run: '', anat: '', save2: '' }, P0TEXT = () => ['caps', 'topo', 'save', 'workers', 'run', 'anat', 'save2'].map(k => P0R[k]).filter(Boolean).join('\n\n');
   const HR = { costs: [], carry: 0, calls: 0, ms: 0, max: 0 };              // per game hour: milliseconds spent by Company.run until that hour was complete
   function hookRun() { const C = lab() && lab().company; if (!C || C.__p0 || typeof C.run !== 'function') return; C.__p0 = 1; const r0 = C.run;
     C.run = function () { const h0 = this.hours, t0 = performance.now(), r = r0.apply(this, arguments), dt = performance.now() - t0; HR.calls++; HR.ms += dt; if (dt > HR.max) HR.max = dt; HR.carry += dt; const k = this.hours - h0;
-      if (k > 0) { const per = HR.carry / k; for (let i = 0; i < k && i < 4; i++) HR.costs.push(per); HR.carry = 0; if (HR.costs.length > 1500) HR.costs.splice(0, HR.costs.length - 1200); } return r; }; }
+      if (k > 0) { const per = HR.carry / k; for (let i = 0; i < k && i < 4; i++) { HR.costs.push(per); HR.seq = (HR.seq | 0) + 1; } HR.carry = 0; if (HR.costs.length > 1500) HR.costs.splice(0, HR.costs.length - 1200); } return r; }; }
   const pct = (a, p) => { if (!a.length) return NaN; const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p / 100 * s.length))]; };
   const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN, F = (v, d = 1) => v == null || !isFinite(v) ? '—' : (+v).toFixed(d);
   const CAL = n => { let s = 0, x = 1.1; const m = new Map(); for (let i = 0; i < n; i++) { x = x * 1.0000001 + Math.sqrt(i & 1023); s += x % 7; if ((i & 63) === 0) m.set(i & 4095, { a: i, b: s }); const o = { a: i, b: x, c: s }, o2 = { ...o, d: 1 }; s += o2.a * 1e-9; } return s; };
@@ -101,5 +101,70 @@
       'تكلفة ساعة المحاكاة (ms، ' + costs.length + ' ساعة): متوسط ' + F(mean(costs)) + ' · P50 ' + F(pct(costs, 50)) + ' · P95 ' + F(pct(costs, 95)) + ' · الأكبر ' + F(costs.length ? Math.max(...costs) : NaN) + ' | زمن المحاكاة المستهلك: ' + F(((D1.runMs || 0) - ru0) / el, 0) + ' ms كل ثانية',
       'الرسم: إعادات رسم الخريطة ' + F(((W1.draws | 0) - dr0) / el) + '/ث | إطارات ' + F(((W1.rafs | 0) - raf0) / el) + '/ث', 'ذاكرة JS: ' + (mem1 == null ? '—' : F(mem0 / 1048576) + ' → ' + F(mem1 / 1048576) + ' MB'),
       'نصيحة: لقياس مفيد شغّل اللعبة ×1 ثم ×10 (20 ث لكل منهما) مرة والخريطة ثابتة ومرة وأنت تحرّكها.'].join('\n'); };
-  window.OliLiveDiag = { p0: P0, p0text: P0TEXT, open, rows: () => rows.slice(), snap };
+  /* ------------------------------------------------------------------------------------------------------------------------------
+     Phase A - where does one game hour go? (MEASUREMENT ONLY.  Nothing here changes the game: the wrappers call the original function with the same
+     this/arguments, return its result untouched, and are removed when the measurement ends.)
+     Overhead control: (1) wrappers exist ONLY during the measurement; (2) count-only wrappers (a counter increment) for the first pass; (3) in the timed pass
+     functions that are called more than TIMED_MAX times per hour are NOT timed (their time stays inside their caller's "own time", which is honest, instead of
+     being inflated by timer cost and timer coarseness); (4) A-B-A windows: hour cost with no wrappers / with wrappers / without again, so the overhead is
+     measured on the same save and the same device, not assumed; (5) the timer resolution and the per-call wrapper cost are measured and printed. */
+  const PA = { text: '', busy: false }, TIMED_MAX = 1000;
+  const protosOf = L => { const C = L.company, o = { Company: Object.getPrototypeOf(C), Sim: Object.getPrototypeOf(C.sim), Store: Object.getPrototypeOf(C.store), Market: C.market && Object.getPrototypeOf(C.market) };
+    const cn = C.net && C.net.central; if (cn) o.CentralNet = Object.getPrototypeOf(cn); if (C.net) o.PipeNet = Object.getPrototypeOf(C.net); return o; };
+  const SKIP = new Set(['constructor', 'run', 'toJSON', 'fromJSON', 'settle']);
+  function install(L, mode, want) {            /* mode: 'count' | 'timed'. returns {stats, remove} */
+    const stats = new Map(), stack = [], undo = []; let on = true, fd = 0;
+    for (const [cn, P] of Object.entries(protosOf(L))) { if (!P) continue; for (const name of Object.getOwnPropertyNames(P)) { if (SKIP.has(name)) continue; const d = Object.getOwnPropertyDescriptor(P, name); if (!d || typeof d.value !== 'function') continue;
+        const orig = d.value; if (want && !want(cn + '.' + name)) continue; if (orig.constructor && orig.constructor.name === 'GeneratorFunction') continue; const key = cn + '.' + name, s = { calls: 0, incl: 0, excl: 0, timedCalls: 0 }; stats.set(key, s);
+        P[name] = function () { s.calls++; if (s.flow) { if (fd++ > 0 || !s.timed) { try { return orig.apply(this, arguments); } finally { fd--; } } const t0 = performance.now(); try { return orig.apply(this, arguments); } finally { const dt = performance.now() - t0; fd--; s.incl += dt; s.timedCalls++; } } if (mode === 'count' || !s.timed) return orig.apply(this, arguments);
+          const fr = { s, child: 0 }; stack.push(fr); const t0 = performance.now(); try { return orig.apply(this, arguments); } finally { const dt = performance.now() - t0; stack.pop(); s.incl += dt; s.excl += dt - fr.child; s.timedCalls++; if (stack.length) stack[stack.length - 1].child += dt; else s.top = (s.top || 0) + dt; } };
+        undo.push(() => { P[name] = orig; }); } }
+    return { stats, remove() { if (!on) return; on = false; for (const u of undo) u(); } }; }
+  const waitHours = (L, ms) => new Promise(res => { const C = L.company, h0 = C.hours, q0 = HR.seq | 0, t0 = performance.now(), tm = setInterval(() => { if (performance.now() - t0 >= ms) { clearInterval(tm); res({ hours: C.hours - h0, costs: ((HR.seq | 0) - q0) > 0 ? HR.costs.slice(-Math.min(HR.costs.length, (HR.seq | 0) - q0)) : [], ms: performance.now() - t0 }); } }, 200); });
+  PA.run = async function () { const L = lab(); if (!L || !L.company) return 'اللعبة لم تُحمَّل بعد'; if (PA.busy) return 'قياس جارٍ'; const C = L.company; if (C.speed === 0 || C.bankrupt) return 'اللعبة متوقفة (السرعة 0): شغّلها ×1 أو أعلى ثم أعد القياس'; PA.busy = true; hookRun();
+    const lines = ['== تشريح الساعة (' + (window.OLI_VERSION || '') + ') | مبانٍ ' + L.store.items.size + ' | سرعة ×' + C.speed + ' =='];
+    try {
+      /* timer + wrapper calibration (so the reader can judge the numbers) */
+      let res = [], last = performance.now(); for (let i = 0; i < 4000 && res.length < 40; i++) { const t = performance.now(); if (t !== last) { res.push(t - last); last = t; } }
+      const base = { f() { return 1; } }, orig = base.f; let x = 0; const n = 2e5; let t = performance.now(); for (let i = 0; i < n; i++) x += orig(); const plain = performance.now() - t;
+      const st = []; base.f = function () { const fr = { child: 0 }; st.push(fr); const t0 = performance.now(); try { return orig.apply(this, arguments); } finally { const dt = performance.now() - t0; st.pop(); x += dt; } }; t = performance.now(); for (let i = 0; i < n; i++) x += base.f(); const timedPer = (performance.now() - t - plain) / n * 1000;
+      lines.push('دقة المؤقّت performance.now: أصغر خطوة ≈ ' + F(res.length ? Math.min(...res.filter(v => v > 0)) * 1000 : NaN, 0) + ' µs | كلفة غلاف مُوقَّت لكل نداء ≈ ' + F(timedPer, 2) + ' µs (تُحتسب في الجداول: لذلك لا نوقّت ما يُنادى > ' + TIMED_MAX + ' مرة/ساعة)');
+      const win = async (label, ms) => { const r = await waitHours(L, ms); const c = r.costs; lines.push(label + ': ' + r.hours + ' ساعة في ' + F(r.ms / 1000, 0) + ' ث | تكلفة الساعة متوسط ' + F(mean(c)) + ' · P50 ' + F(pct(c, 50)) + ' · P95 ' + F(pct(c, 95)) + ' ms'); return { ...r, mean: mean(c), p50: pct(c, 50) }; };
+      const A1 = await win('A1 (بلا أغلفة)', 10000);
+      const cnt = install(L, 'count'); const hc0 = C.hours, R0 = HR.ms; const W1 = await win('عدّ فقط', 6000); cnt.remove(); const hCnt = Math.max(1, C.hours - hc0);
+      const calls = new Map([...cnt.stats].map(([k, s]) => [k, s.calls / hCnt]));
+      const lowCalls = k => (calls.get(k) || 0) > 0 && (calls.get(k) || 0) <= TIMED_MAX; const tim = install(L, 'timed', lowCalls); for (const s of tim.stats.values()) s.timed = true;
+      const h1 = C.hours, R1 = HR.ms; const B = await win('B (مُوقَّتة للقليلة النداء فقط)', 12000); tim.remove();
+      const hT = Math.max(1, C.hours - h1), runMs = HR.ms - R1;
+      const FLOW = new Set(['Sim.split', 'Sim.offer', 'Sim.accept', 'Sim.refine', 'Sim.separate']);
+      const tim3 = install(L, 'timed', k => FLOW.has(k) || (k.startsWith('CentralNet.') && lowCalls(k))); for (const [k, s] of tim3.stats) { s.timed = true; if (FLOW.has(k)) s.flow = true; } const h3 = C.hours, R3 = HR.ms; const D = await win('D (مدخل التدفق + المركزية)', 14000); tim3.remove(); const hD = Math.max(1, C.hours - h3), runD = HR.ms - R3;
+      const A2 = await win('A2 (بلا أغلفة)', 10000);
+      const a = (A1.mean + A2.mean) / 2, ov = (B.mean - a) / a * 100, ovC = (D.mean - a) / a * 100, ovN = (W1.mean - a) / a * 100; lines.push('حمل الأدوات على تكلفة الساعة (مقابل متوسط A1/A2 = ' + F(a) + ' ms): عدّ فقط ' + F(ovN, 1) + '% · B ' + F(ov, 1) + '% · D ' + F(ovC, 1) + '% | بين A1 و A2 نفسها: ' + F((A2.mean - A1.mean) / A1.mean * 100, 1) + '% (هذا هو ضجيج الجهاز: أي فرق أقل منه ليس حمل الأداة)');
+      /* table */
+      const rows2 = [...tim.stats].map(([k, s]) => ({ k, calls: calls.get(k) || 0, timed: !!s.timed, incl: s.incl / hT, excl: s.excl / hT, top: (s.top || 0) / hT })).filter(r => r.calls > 0);
+      const topSum = rows2.reduce((p, r) => p + r.top, 0), tot = runMs / hT;
+      lines.push('', 'ساعة كاملة (من نافذة B): ' + F(tot) + ' ms | ما نُودي من جسم المولّد مباشرة (قابل للقياس): ' + F(topSum) + ' ms = ' + F(topSum / tot * 100, 0) + '% | الباقي ' + F(tot - topSum) + ' ms = كود جسم _tickGen / stepGen نفسه (حلقات المباني داخل الجسم) + الأغلفة غير المُوقَّتة');
+      { const g = k => tim3.stats.get(k), per = x => x / hD; const fl = [...FLOW].map(k => ({ k, i: per(g(k) ? g(k).incl : 0), c: calls.get(k) || 0 })); const flowTop = fl.reduce((p, r) => p + r.i, 0), cent = [...tim3.stats].filter(([k, s]) => k.startsWith('CentralNet.') && s.timed), cIncl = cent.reduce((p, [k, s]) => p + s.top / hD, 0), cEx = cent.reduce((p, [k, s]) => p + s.excl / hD, 0), totD = runD / hD;
+        lines.push('', '== التقسيم (نافذة D، ساعة = ' + F(totD) + ' ms شاملة حمل الأداة ' + F(ovC, 0) + '%) ==', 'شجرة التدفق (split/offer/accept/refine/separate من المدخل الخارجي فقط، تشمل كل ما تحتها بما فيها المركزية): ' + F(flowTop) + ' ms = ' + F(flowTop / totD * 100, 0) + '% من الساعة', 'المركزية CentralNet.* (ذاتي مجموع الدوال المُوقَّتة): ' + F(cEx) + ' ms = ' + F(cEx / totD * 100, 1) + '% | ما نُودي منها خارج شجرة التدفق: ' + F(cIncl) + ' ms | أكثر المركزية ذاتيًا: ' + (cent.sort((p, q) => q[1].excl - p[1].excl).slice(0, 4).map(([k, s]) => k + ' ' + F(s.excl / hD, 2) + 'ms/' + F(calls.get(k) || 0, 0) + 'نداء').join(' · ') || '—'), 'الباقي (اقتصاد/مخزن/جسم الساعة) = ' + F(totD - flowTop) + ' ms = ' + F((totD - flowTop) / totD * 100, 0) + '%', 'تفصيل مداخل التدفق: ' + fl.map(r => r.k + ' ' + F(r.i, 2) + 'ms (' + F(r.c, 0) + ' نداء/ساعة)').join(' · ')); }
+      lines.push('جدول (لكل ساعة): الدالة | نداءات/ساعة | شاملة ms | ذاتية ms | % من الساعة (ذاتية)');
+      for (const r of rows2.filter(r => r.timed).sort((p, q) => q.excl - p.excl).slice(0, 25)) lines.push(r.k + ' | ' + F(r.calls, 1) + ' | ' + F(r.incl, 2) + ' | ' + F(r.excl, 2) + ' | ' + F(r.excl / tot * 100, 1) + '%');
+      const sh = rows2.filter(r => r.timed && r.excl / tot >= 0.02).sort((p, q) => q.excl - p.excl); let cum = 0, set = []; const exSum = rows2.filter(r => r.timed).reduce((p, r) => p + r.excl, 0); const own = Math.max(0, tot - exSum);
+      lines.push('الوقت الذاتي = مجموع ذاتي المُوقَّتات ' + F(exSum) + ' ms + جسم المولّد/غير المُوقَّت ' + F(own) + ' ms');
+      const all = rows2.filter(r => r.timed).concat([{ k: '«جسم المولّد + الدوال المُنادَاة كثيرًا (غير مُوقَّتة)»', excl: own, calls: 0 }]).sort((p, q) => q.excl - p.excl); for (const r of all) { cum += r.excl; set.push(r.k + ' ' + F(r.excl / tot * 100, 0) + '%'); if (cum / tot >= 0.8) break; }
+      lines.push('المجموعة التي تستهلك ≥80% من الساعة (ذاتيًا): ' + set.join(' ← '));
+      lines.push('الدوال الأكثر نداءً/ساعة (عدّ فقط، لا زمن): ' + [...calls].sort((p, q) => q[1] - p[1]).slice(0, 15).filter(e => e[1] > 0).map(e => e[0] + ' ' + F(e[1], 0)).join(' · '));
+      const cn = C.net && C.net.central, sz = ['مبانٍ ' + L.store.items.size, 'حواف ' + (L.sim && L.sim.edges ? L.sim.edges.size : (C.sim.edges ? C.sim.edges.size : '—')), 'أنابيب ' + (C.net.lines ? C.net.lines.size : '—')]; if (cn) sz.push('مركزية: محطات ' + cn.st.size + ' · مقاطع ' + cn.seg.size + ' · مضخات ' + cn.pumps.size); lines.push('الأحجام: ' + sz.join(' · '));
+      lines.push('القراءة: «ذاتية» = وقت الدالة بلا ما نادته. إن كانت النتيجة ≥80% في CentralNet.* فالعنق شبكة المركزية؛ إن كانت في Sim.offer/accept/split/ensure/edgeOf فهو تدفق النفط؛ وإن كان «جسم المولّد» فهو حلقات الاقتصاد داخل الساعة.');
+    } catch (e) { lines.push('خطأ: ' + (e && e.message || e)); } PA.busy = false; return P0R.anat = PA.text = lines.join('\n'); };
+  /* export of the real save: the exact string the game wrote (read from localStorage, not rebuilt), gzip+base64 when available, with a SHA-256 */
+  PA.export = async function () { let k = null, v = null; try { for (let i = 0; i < localStorage.length; i++) { const key = localStorage.key(i), s = localStorage.getItem(key); if (s && s.charCodeAt(0) === 123 && /^\{"v":2,/.test(s) && (!v || s.length > v.length) && !/-bak$/.test(key)) { k = key; v = s; } } } catch (e) { return 'تعذّرت قراءة التخزين: ' + e.message; }
+    if (!v) return 'لم أجد حفظًا'; const b = new TextEncoder().encode(v); let out = b, kind = 'json'; try { if (typeof CompressionStream !== 'undefined') { const cs = new Blob([b]).stream().pipeThrough(new CompressionStream('gzip')); out = new Uint8Array(await new Response(cs).arrayBuffer()); kind = 'gzip'; } } catch (_) { }
+    let hash = '—'; try { const h = new Uint8Array(await crypto.subtle.digest('SHA-256', b)); hash = [...h].map(x => x.toString(16).padStart(2, '0')).join(''); } catch (_) { }
+    let b64 = ''; for (let i = 0; i < out.length; i += 0x8000) b64 += String.fromCharCode.apply(null, out.subarray(i, i + 0x8000)); b64 = btoa(b64); PA.b64 = b64;
+    const info = 'مفتاح الحفظ ' + k + ' | الحجم الخام ' + b.length + ' بايت | ' + kind + ' ' + out.length + ' بايت | base64 ' + b64.length + ' حرف | SHA-256 للنص الخام ' + hash; let how = '';
+    try { const f = new File([out], 'oli-save.' + (kind === 'gzip' ? 'json.gz' : 'json'), { type: 'application/octet-stream' }); if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: 'OLI save' }); how = ' | تمت المشاركة كملف'; } } catch (e) { how = ' | المشاركة لم تتم (' + (e && e.name) + ')'; }
+    if (!how.includes('كملف')) { try { await navigator.clipboard.writeText(b64); how += ' | نُسخ base64 إلى الحافظة'; } catch (_) { how += ' | تعذّر النسخ: الصق من الحقل أدناه'; const ta = document.createElement('textarea'); ta.value = b64; ta.style.cssText = 'width:100%;height:80px'; if (el) el.appendChild(ta); } }
+    return P0R.save2 = '== تصدير الحفظ ==\n' + info + how; };
+  PA.install = install; P0.anatomy = PA.run; P0.exportSave = PA.export;
+  window.OliLiveDiag = { pa: PA, p0: P0, p0text: P0TEXT, open, rows: () => rows.slice(), snap };
 })();
