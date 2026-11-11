@@ -47,10 +47,10 @@ console.log('REFINERY ACCOUNTING TESTS');
   const json = JSON.parse(JSON.stringify(x.co.toJSON())); T('12 by-product and residue quantities are saved', json.qty2 && json.qty2.BYPRODUCT > 0 && json.qty2.RESIDUE > 0, json.qty2);
 }
 // 13. no chemicals: the refinery does not run and draws no crude
-{ const x = build(); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const t0 = tankSum(x.cts), q0 = (x.co.qty.CRUDE + x.co.bq);
+{ const x = build(); for (const m of ['CHEM', 'OPS']) x.co.setAutoBuy(m, { on: false }); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const t0 = tankSum(x.cts), q0 = (x.co.qty.CRUDE + x.co.bq);
   const a = runHours(x, 24, false); T('13 without chemicals and operating materials the refinery draws no crude and books no output', near(tankSum(x.cts), t0, 1e-9) && a.feed === 0 && a.GASOLINE === 0 && a.loss === 0 && x.co.matLimit === 0, { t0, now: tankSum(x.cts), feed: a.feed }); }
 // 14. partial chemicals: throughput is capped by the stock before any crude is drawn
-{ const x = build(); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const ch = x.co.buy('CHEM', 2000, 'A', 'CASH'); if (!ch.ok) throw new Error('chem ' + ch.reason); x.co.buy('OPS', 500, 'A', 'CASH'); x.co.sync();
+{ const x = build(); for (const m of ['CHEM', 'OPS']) x.co.setAutoBuy(m, { on: false }); for (let i = 0; i < 3; i++) x.co.buy('CRUDE', 250000, 'A'); x.co.sync(); const ch = x.co.buy('CHEM', 2000, 'A', 'CASH'); if (!ch.ok) throw new Error('chem ' + ch.reason); x.co.buy('OPS', 500, 'A', 'CASH'); x.co.sync();
   const a = runHours(x, 24, false), cap = (2000 / (0.36 / 1)); // CHEM use is 0.36 kg per bbl
   T('14 materials cap the throughput: the feed never exceeds what the chemicals allow (' + Math.round(a.feed) + ' bbl)', a.feed <= 2000 / 0.36 + 1e-6 && a.feed > 0, { feed: a.feed, limit: 2000 / 0.36 }); }
 // 15. save and load keep the books

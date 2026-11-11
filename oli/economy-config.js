@@ -94,7 +94,12 @@
     MATERIALS: ['CHEM', 'PARTS', 'OPS'],                                              // chemicals · spare parts · operating materials (stock pools, not tanks)
     MATERIAL_LABEL: { CHEM: 'مواد كيميائية', PARTS: 'قطع غيار', OPS: 'مواد تشغيل' },
     MATERIAL_UNIT: { CHEM: 'kg', PARTS: 'pcs', OPS: 'unit' },                         // the unit each price refers to (UI keys: u.kg, u.pcs, u.unit)
-    MATERIAL_STORE: { CHEM: 20000, PARTS: 200, OPS: 5000 },                           // warehouse capacity per material, in its unit: a purchase above it is refused
+    MATERIAL_STORE: { CHEM: 500000, PARTS: 200, OPS: 100000 },                        // warehouse capacity per material, in its unit: a purchase above it is refused (owner, Nov 2026: CHEM 20,000 -> 500,000 kg, OPS 5,000 -> 100,000 units)
+    // warehouse upgrades (owner, Nov 2026: capacity must be upgradable): each level adds `add` units for `cost` dollars (a fixed asset, like the reserve works). PLACEHOLDER costs, easy to change here.
+    WAREHOUSE_UPGRADE: { maxLevel: 5, CHEM: { add: 250000, cost: 2000000 }, OPS: { add: 50000, cost: 1500000 }, PARTS: { add: 100, cost: 250000 } },
+    // automatic purchasing of materials (owner, Nov 2026). Per material: on/off; reorder point and target stock, in DAYS of the current need when the player leaves them empty
+    // (need = what the operating consumers use per day at their present operating limit); maxQty per order (0 = up to the target); maxSpendDay (0 = no cap). It buys through buy() like the player does.
+    AUTOBUY: { CHEM: { on: true, reorderDays: 3, targetDays: 10 }, OPS: { on: true, reorderDays: 3, targetDays: 10 }, PARTS: { on: false, reorderDays: 3, targetDays: 10 }, logMax: 100 },
     MATERIAL_PRICE: { CHEM: 2.5, PARTS: 1200, OPS: 40 },                             // editable starting prices ($ per unit): change them here, the engine reads them
     MATERIAL_USE: { CHEM: { per: 'refinedBbl', qty: 0.36 }, OPS: { per: 'refinedBbl', qty: 0.002 }, PARTS: { per: 'repair', qty: 1 }, REPAIR_OPS: { per: 'repair', qty: 2 } },   // units used: chemicals 0.36 per refined bbl (= 0.90 $/bbl at 2.5 $/unit, the existing cost); operating materials 0.002 per bbl; one spare part per repair
     SUPPLIERS: [

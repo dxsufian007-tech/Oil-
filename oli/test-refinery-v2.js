@@ -124,8 +124,8 @@ CHK('2b efficiency limits the crude taken in: less power, less processed', SMALL
 } finally { BC.REFINERY.physicalLoss = old; } }
 
 /* 10. a purchase of chemicals lifts the refinery limit at once (not at the next hourly tick) */
-{ const P = plant('x', fullCfg()), co = P.co; for (const ct of P.cts) co.buy('CRUDE', 250000, 'A', 'CASH'); co.sync(); const s = P.sim.ensure(P.ref); co.advanceHours(1);
-  CHK('10 no chemicals: the refinery is held (limit 0, nothing processed)', s.matLim === 0 && co.refLast && co.refLast.feed === 0, { lim: s.matLim, feed: co.refLast && co.refLast.feed });
+{ const P = plant('x', fullCfg()), co = P.co; for (const m of ['CHEM', 'OPS']) co.setAutoBuy(m, { on: false }); for (const ct of P.cts) co.buy('CRUDE', 250000, 'A', 'CASH'); co.sync(); const s = P.sim.ensure(P.ref); co.advanceHours(1);
+  CHK('10 (automatic purchasing off) no chemicals: the refinery is held (limit 0, nothing processed)', s.matLim === 0 && co.refLast && co.refLast.feed === 0, { lim: s.matLim, feed: co.refLast && co.refLast.feed });
   co.buy('CHEM', 20000, 'A', 'CASH'); co.buy('OPS', 5000, 'A', 'CASH');
   CHK('10 after buying chemicals the limit is lifted immediately, before any tick', s.matLim === 1, s.matLim);
   P.sim.run(1); CHK('10 the simulator now runs the refinery on the new stock', P.sim.status(P.ref) === 'RUNNING', P.sim.status(P.ref)); }

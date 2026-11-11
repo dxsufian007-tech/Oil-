@@ -23,6 +23,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   await co(() => { for (const x of ['CRUDE', 'GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS']) __lab.company.setMode(x, 'WAIT'); });
   const cash0 = await co(() => __lab.store.cash);
   const refSt = () => co(() => { const l = __lab, r = l.store.list().find(b => /refinery/.test(b.d)); return { st: l.sim.status(r), mat: l.company.matLimit }; });
+  await co(() => { for (const m of ['CHEM', 'OPS']) __lab.company.setAutoBuy(m, { on: false }); });   // automatic purchasing off: this part checks the hand-managed path
   await co(() => __lab.company.advanceHours(24)); const noMat = await refSt();
   ok(noMat.st === 'NO_MATERIALS' && noMat.mat === 0, 'with no chemicals the refinery says it lacks materials, not "no oil reaches it" (' + noMat.st + ')');
   ok(await restock() === null, 'chemicals and operating materials are bought'); await co(() => __lab.company.advanceHours(24)); ok((await refSt()).st === 'RUNNING', 'after buying them the same refinery runs'); for (let d = 0; d < 10; d++) { const why = await restock(); if (why) { ok(false, 'restock failed: ' + why); } await co(() => __lab.company.advanceHours(24)); }

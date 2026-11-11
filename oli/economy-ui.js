@@ -173,6 +173,28 @@
       h += '<div class="es-row" style="margin:8px 0;padding:8px 0;border-bottom:1px solid #0002"><div><b>' + names[it] + '</b> <span class="es-sm">المخزون ' + n0(have) + ' ' + uOf(it) + '</span><div class="es-sm">' + n0(q) + ' ' + uOf(it) + ' × ' + qt.unitPrice.toFixed(2) + ' + نقل ' + M(qt.freight) + ' + رسوم ' + M(qt.fee) + ' = <b>' + M(qt.total) + '</b></div>'
         + (it === 'CRUDE' && !CO.tradeTanks().length ? '<div class="es-sm neg">النفط المشترى لا يدخل مخزن الإنتاج: ابنِ مخزنًا تجاريًا (غير موصول بالأنابيب) أو مخزن تجارة ونقل</div>' : room < q ? '<div class="es-sm neg">لا توجد سعة كافية في الخزانات (' + n0(room) + ' متاح)</div>' : '') + '</div>'
         + '<button data-act="buy" data-p="' + it + '" data-q="' + q + '"' + (room < q ? ' disabled' : '') + '>شراء</button></div>'; }
+    return h + abHtml();
+  }
+  /* automatic purchasing of materials + warehouse levels (economy.js: autoBuyInfo / setAutoBuy / upgradeWarehouse) */
+  const AB_REASON = { cash: 'الرصيد لا يكفي', budget: 'بلغ سقف الإنفاق اليومي', room: 'المستودع ممتلئ', bankrupt: 'الشركة مفلسة' };
+  function abHtml() {
+    if (!CO.autoBuyInfo) return ''; const U = { kg: 'كغ', pcs: 'قطعة', unit: 'وحدة' }, t = h0 => { const d = Math.floor(h0 / 24) + 1, hh = Math.floor(h0 % 24); return 'يوم ' + d + ' · ' + String(hh).padStart(2, '0') + ':00'; };
+    let h = '<h5 style="margin:16px 0 6px">🔁 الشراء التلقائي للمواد والمستودعات</h5><div class="es-sm">تشتري اللعبة المادة تلقائياً عندما ينزل المخزون تحت «حد إعادة الطلب» حتى يصل إلى «المستوى المستهدف»، من أرخص مورد (السعر + النقل + الرسوم)، نقداً من رصيد الشركة. الحقل الفارغ = تلقائي حسب الاستهلاك اليومي الحالي.</div>';
+    for (const m of EC.MATERIALS) { const i = CO.autoBuyInfo(m), u = U[i.unit] || i.unit, w = CO.warehouseUpgradeInfo(m), f = i.fail;
+      h += '<div class="es-card" style="margin:8px 0" data-ab="' + m + '"><div class="es-row"><b>' + i.label + '</b><button data-act="abon" data-p="' + m + '" class="' + (i.on ? 'on' : '') + '">' + (i.on ? '✅ الشراء التلقائي مفعّل' : '⏸ الشراء التلقائي متوقف') + '</button></div>'
+        + '<div class="es-sm">المخزون <b>' + n0(i.stock) + '</b> من ' + n0(i.capacity) + ' ' + u + ' · الاستهلاك الفعلي ' + n0(i.usedDay) + ' ' + u + '/يوم · حاجة المنشآت بنسبة تشغيلها الحالية ' + n0(i.needDay) + ' ' + u + '/يوم · '
+        + (i.daysLeft == null ? 'لا توجد منشأة تستهلكها الآن (لا يُشترى شيء)' : 'يكفي ' + (i.daysLeft >= 999 ? 'أكثر من 999' : (Math.round(i.daysLeft * 10) / 10)) + ' يوم') + '</div>'
+        + (f && i.on ? '<div class="es-sm neg">⚠ تعذّر الشراء التلقائي: ' + (AB_REASON[f.reason] || f.reason) + (f.reason === 'cash' && f.need ? ' (المطلوب ≈ ' + M(f.need) + '، المتاح ' + M(f.cash || 0) + ')' : '') + '</div>' : '')
+        + '<div class="es-grid" style="margin-top:6px">'
+        + '<label class="es-sm">حد إعادة الطلب (' + u + ')<input id="ab-' + m + '-reorder" class="es-in" type="number" inputmode="numeric" min="0" placeholder="تلقائي: ' + n0(i.reorderAuto ? i.reorder : i.needDay * i.reorderDays) + ' (' + i.reorderDays + ' أيام)" value="' + (i.reorderAuto ? '' : Math.round(i.reorder)) + '"></label>'
+        + '<label class="es-sm">المستوى المستهدف (' + u + ')<input id="ab-' + m + '-target" class="es-in" type="number" inputmode="numeric" min="0" placeholder="تلقائي: ' + n0(i.targetAuto ? i.target : i.needDay * i.targetDays) + ' (' + i.targetDays + ' أيام)" value="' + (i.targetAuto ? '' : Math.round(i.target)) + '"></label>'
+        + '<label class="es-sm">أقصى كمية للطلب الواحد (' + u + ')<input id="ab-' + m + '-maxQty" class="es-in" type="number" inputmode="numeric" min="0" placeholder="بلا حد" value="' + (i.maxQty || '') + '"></label>'
+        + '<label class="es-sm">الحد الأقصى للإنفاق اليومي ($)<input id="ab-' + m + '-maxSpendDay" class="es-in" type="number" inputmode="numeric" min="0" placeholder="بلا حد" value="' + (i.maxSpendDay || '') + '"></label></div>'
+        + '<div class="es-row"><button data-act="abset" data-p="' + m + '">💾 حفظ الإعدادات</button><span class="es-sm">أُنفق اليوم ' + M(i.spentToday) + '</span></div>'
+        + (w ? '<div class="es-row" style="margin-top:6px"><span class="es-sm">المستودع: المستوى ' + w.level + ' من ' + w.maxLevel + ' · السعة ' + n0(w.capacity) + ' ' + u + '</span>' + (w.next != null ? '<button data-act="whup" data-p="' + m + '">⬆ توسيع إلى ' + n0(w.next) + ' · ' + M(w.cost) + '</button>' : '<span class="es-sm">أعلى مستوى</span>') + '</div>' : '')
+        + '</div>'; }
+    const L = CO.autoBuyLog(10);
+    h += '<div class="es-sm" style="margin:8px 0 4px"><b>سجل الشراء التلقائي</b> (آخر ' + L.length + ')</div>' + (L.length ? L.map(e => '<div class="es-sm' + (e.ok ? '' : ' neg') + '">' + t(e.t) + ' · ' + (EC.MATERIAL_LABEL[e.item] || e.item) + ' · ' + (e.ok ? n0(e.qty) + ' × ' + (e.unit || 0).toFixed(2) + ' = ' + M(e.total) + ' · ' + e.supplier + (e.partial ? ' (جزئي: الرصيد لا يكفي للكمية كلها)' : '') : 'تعذّر: ' + (AB_REASON[e.reason] || e.reason)) + '</div>').join('') : '<div class="es-sm">لا توجد عمليات بعد.</div>');
     return h;
   }
   /* employees: headcount vs need, training, hours, and what the crew does to output */
@@ -443,6 +465,9 @@
     else if (a === 'dismiss') { const r = CO.dismiss(p, 1); msg = r.ok ? 'Dismissed · payroll ' + M(r.payroll) + '/month' : 'Nobody to dismiss'; }
     else if (a === 'train') { const r = CO.train(p); msg = r.ok ? 'Training done · −' + M(r.cost) : r.reason === 'cash' ? 'Not enough cash for training' : 'Nobody to train'; }
     else if (a === 'hours') { const cur = CO.hr[p].hours; const r = CO.setHours(p, cur + (+el.dataset.d)); msg = r.ok ? 'Weekly hours: ' + r.hours : 'Cannot change hours'; }
+    else if (a === 'abon') { const i = CO.autoBuyInfo(p); CO.setAutoBuy(p, { on: !i.on }); msg = (EC.MATERIAL_LABEL[p] || p) + ': ' + (!i.on ? 'تم تفعيل الشراء التلقائي' : 'تم إيقاف الشراء التلقائي'); }
+    else if (a === 'abset') { const g = k => { const x = $('ab-' + p + '-' + k); return x ? (x.value.trim() === '' ? null : x.value) : undefined; }; CO.setAutoBuy(p, { reorder: g('reorder'), target: g('target'), maxQty: g('maxQty'), maxSpendDay: g('maxSpendDay') }); if (document.activeElement) document.activeElement.blur(); msg = 'حُفظت إعدادات الشراء التلقائي · ' + (EC.MATERIAL_LABEL[p] || p); }
+    else if (a === 'whup') { const r = CO.upgradeWarehouse(p); msg = r.ok ? 'تم توسيع المستودع إلى ' + n0(r.capacity) + ' · ' + M(r.cost) : r.reason === 'cash' ? 'الرصيد لا يكفي لتوسيع المستودع (' + M(r.need) + ')' : 'المستودع في أعلى مستوى'; }
     else if (a === 'buy') { const r = CO.buy(p, +el.dataset.q, buySup, buyTerms); msg = r.ok ? 'Bought ' + n0(r.qty) + ' · ' + M(r.cost) + (r.terms === 'CREDIT' ? ' (آجل)' : '') : r.reason === 'cash' ? 'Not enough cash' : r.reason === 'noTradeTank' ? 'لا يوجد مخزن تجاري أو تجارة لاستقبال النفط المشترى' : r.reason === 'noRoom' ? 'Not enough tank room' : r.reason === 'noCredit' ? 'This supplier sells for cash only' : 'Purchase refused: ' + r.reason; }
     else if (a === 'stsec') { stSec = v; $('es-body').scrollTop = 0; }
     else if (a === 'rvgo') { close(); if (opts.showZone) opts.showZone(); return; }

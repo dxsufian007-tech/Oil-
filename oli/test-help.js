@@ -18,7 +18,7 @@ console.log('1. every building in the game has a full help sheet before it is bu
   T('1b the twelve sections are the requested ones, in order', H.SECTIONS.map(s => s[2]).join('|') === 'وظيفة المعدة|طريقة التشغيل|المدخلات|المخرجات|الطاقة الإنتاجية|متطلبات البناء|التوصيلات|الكفاءة|التكاليف|حالة المعدة|المشاكل والحلول|مثال عملي');
   const ref = H.definition(ctx(g), 'refinery_l'), cap = BC.REFINERY.sizes.L.cap;
   T('1c numbers come from the config: large refinery capacity, cost and yields', has(ref, new RegExp(cap.toLocaleString('en-US'))) && has(ref, /\$400 مليون/) && has(ref, /45 بنزين · 30 ديزل · 10 وقود طائرات · 5 غاز/));
-  T('1d refinery materials per barrel come from economy-config', has(ref, new RegExp(String(EC.MATERIAL_USE.CHEM.qty) + ' كغ لكل برميل')) && has(ref, new RegExp((cap * EC.MATERIAL_USE.CHEM.qty).toLocaleString('en-US') + ' كغ كيماويات')) && has(ref, /اشترِ كيماويات ومواد تشغيل/));
+  T('1d refinery materials per barrel come from economy-config', has(ref, new RegExp(String(EC.MATERIAL_USE.CHEM.qty) + ' كغ لكل برميل')) && has(ref, new RegExp((cap * EC.MATERIAL_USE.CHEM.qty).toLocaleString('en-US') + ' كغ كيماويات')) && has(ref, /الشراء التلقائي/));
   const pu = H.definition(ctx(g), 'pump_station_s'); T('1e pump: max flow, boost range and minimum inlet from the config', has(pu, /5,000/) && has(pu, /100 و250/) && has(pu, /15 رطل/));
   const pd0 = H.definition(ctx(g), 'pipe'); T('1e2 the pipe card of the build menu has its own sheet (every diameter from the config)', pd0 && full(pd0) && clean(text(pd0)) && Object.keys(BC.PIPES).every(d => has(pd0, new RegExp(BC.PIPES[d].capacity.toLocaleString('en-US')))));
   const fake = 'help_probe_def'; B.define({ id: fake, name: 'Probe', category: 'PIPELINE', section: 'PIPELINE', family: 'PROBE', type: 'probe', footprint: [2, 2], cost: 123456, maintenanceCost: 10, operatingCost: 20, buildTime: 5, visual: 'valve', allowedTerrain: ['FLAT_DESERT'], maxSlope: 3, capacity: { value: 777, unit: 'bbl/day' }, connections: [] });
@@ -35,11 +35,12 @@ console.log('2. every placed building: live sheet, status and diagnosis');
   const en = placed.filter(b => /[A-Za-z]{4,}/.test(H.building(ctx(g), b).sec.state.join(' ').replace(/<[^>]+>/g, '').replace(/psi|CRUDE|LPG/g, ''))).map(b => b.d); T('2c the live state lines are all in Arabic (no English indicator names)', !en.length, en); }
 
 console.log('3. smart help: the reason and the fix follow the real state');
-{ const g = game(500e6), c = chain(g, true, false); for (const b of g.store.list()) g.sim.ensure(b);
+{ const g = game(500e6), c = chain(g, true, false); for (const m of ['CHEM', 'OPS']) g.co.setAutoBuy(m, { on: false }); for (const b of g.store.list()) g.sim.ensure(b);
   const w = c.wells[0]; g.sim.ensure(w).started = false; g.co.advanceHours(2);
   let d = H.building(ctx(g), w); T('3a stopped well: status «متوقف بأمرك», tells to press «ابدأ الإنتاج»', d.status.code === 'STOPPED' && d.issues.some(i => /ابدأ الإنتاج/.test(i.fix)), d.issues);
   for (const x of c.wells) g.sim.ensure(x).started = true;
   g.co.advanceHours(48); d = H.building(ctx(g), c.ref);
+  T('3b2 with automatic purchasing off the fix says to switch it on', d.issues.some(i => /الشراء التلقائي لـ«مواد كيميائية» متوقف/.test(i.fix)), d.issues);
   T('3b refinery without chemicals: NO_MATERIALS, names the missing materials with stock and daily need', g.sim.status(c.ref) === 'NO_MATERIALS' && d.issues.some(i => /كيماويات 0 كغ \(تحتاج 1,800 كغ\/يوم/.test(i.t) && /الشراء/.test(i.fix)), d.issues);
   stockUp(g.co); g.co.advanceHours(24); d = H.building(ctx(g), c.ref);
   T('3c with materials bought the same refinery runs (no material warning)', /RUNNING|OVER_CAPACITY|LOW_PRESSURE/.test(g.sim.status(c.ref)) && c.ref.s._in > 0 && !d.issues.some(i => /المواد لا تكفي/.test(i.t)), [g.sim.status(c.ref), d.issues]);

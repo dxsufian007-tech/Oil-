@@ -142,6 +142,7 @@
     _init() {
       this.water = { v: 1, produced: 0, sold: 0, revenue: 0, log: [], day: -1, today: 0, auto: { on: false, reserve: 0, day: -1, used: {}, sold: 0 } }; this.netOil = true; this.reserve = { v: 1, lv: 0, log: [] }; this._hookReserve();                       // the Strategic Reserve: one fixed zone, its open-area level and a small audit log
       const c = this.cfg; this.hours = 0; this.dayIdx = 0; this.acc = 0; this.market = new Market(c, null, this.mseed); this.assets = new Map(); this.loans = []; this.nextLoan = 1; this.closed = []; this.contracts = []; this.history = []; this.offers = []; this.nextContract = 1;
+      this.autoBuy = this._abDefaults(); this.whLv = {}; this.matHist = {};
       this.recv = []; this.nextRecv = 1; this.months = []; this.bsStart = null; this.qty = PZERO(); this.qty2 = { BYPRODUCT: 0, RESIDUE: 0 }; this.crudeShort = 0; this.crudeLoss = 0; this.bq = 0; this.explLog = []; this.bprod = {}; this.tradeLog = []; this.nextTrade = 1; this.boughtUsed = 0; this.refLast = null; this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.purchases = []; this.nextPur = 1; this.matLimit = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1; this.cutUntil = -1; this.powerBuy = false; this.pwStop = null; this.bsStart = null; this.central = null;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
       this.crng = new Rng(c.MARKET.seed ^ 0x5bd1e995); this.modes = {}; for (const p of SELL) this.modes[p] = c.AUTOSELL && c.AUTOSELL.defaultMode || 'SPOT'; this.tier = c.POWER.startTier; this.autoRepair = c.MAINTENANCE.autoRepair;
       const cash = isFinite(this.store.cash) ? this.store.cash : 0;
@@ -574,8 +575,60 @@
       return { ok: true, item, isProd, supplier: sup.id, supplierName: sup.name, qty: q, refPrice: ref, unitPrice: unit, gross, freight, fee, total, landedUnit: q > 0 ? total / q : unit, creditDays: sup.creditDays };
     }
     /* one row per material: quantity, unit, price, average cost (journal balance / quantity), value, warehouse room */
-    materialStatus() { return this.cfg.MATERIALS.map(m => { const q = this.mats[m] || 0, bal = Math.max(0, this.journal.bal[MATACC[m]]); return { item: m, qty: q, unit: this.cfg.MATERIAL_UNIT[m], price: this.cfg.MATERIAL_PRICE[m], avgCost: q > 0 ? bal / q : 0, value: bal, capacity: this.cfg.MATERIAL_STORE[m], room: Math.max(0, this.cfg.MATERIAL_STORE[m] - q) }; }); }
-    roomFor(p) { if (!SELL.includes(p)) return Math.max(0, this.cfg.MATERIAL_STORE[p] - (this.mats[p] || 0)); return Math.max(0, this.capacity(p) - this.physicalVol(p)); }
+    materialStatus() { return this.cfg.MATERIALS.map(m => { const q = this.mats[m] || 0, bal = Math.max(0, this.journal.bal[MATACC[m]]); return { item: m, qty: q, unit: this.cfg.MATERIAL_UNIT[m], price: this.cfg.MATERIAL_PRICE[m], avgCost: q > 0 ? bal / q : 0, value: bal, capacity: this.matCap(m), room: Math.max(0, this.matCap(m) - q), level: this.whLv[m] || 0 }; }); }
+    /* ---- material warehouses: base capacity + upgrade levels (a fixed asset, paid in cash) ---- */
+    matCap(m) { const U = this.cfg.WAREHOUSE_UPGRADE, u = U && U[m]; return (this.cfg.MATERIAL_STORE[m] || 0) + (u ? (this.whLv[m] || 0) * u.add : 0); }
+    warehouseUpgradeInfo(m) { const U = this.cfg.WAREHOUSE_UPGRADE, u = U && U[m], lv = this.whLv[m] || 0; if (!u) return null; const max = lv >= (U.maxLevel || 0); return { item: m, level: lv, maxLevel: U.maxLevel, capacity: this.matCap(m), next: max ? null : this.matCap(m) + u.add, cost: max ? null : u.cost }; }
+    upgradeWarehouse(m) {
+      const i = this.warehouseUpgradeInfo(m); if (!i) return { ok: false, reason: 'item' }; if (i.next == null) return { ok: false, reason: 'max' }; this.sync(); if (this.store.cash < i.cost) return { ok: false, reason: 'cash', need: i.cost };
+      this._post({ type: 'WAREHOUSE_UPGRADE', flow: 'INV', desc: 'Warehouse upgrade · ' + (this.cfg.MATERIAL_LABEL[m] || m) + ' · level ' + (i.level + 1) }, [['FIXED', i.cost], ['CASH', -i.cost]]);
+      this.whLv[m] = i.level + 1; this._event('info', 'تم توسيع مستودع ' + (this.cfg.MATERIAL_LABEL[m] || m) + ' إلى ' + Math.round(this.matCap(m)).toLocaleString('en-US') + ' · ' + fmtMoney(i.cost)); return { ok: true, level: this.whLv[m], capacity: this.matCap(m), cost: i.cost };
+    }
+    /* ---- automatic purchasing of materials: one setting per material, run every game hour BEFORE the refineries are gated, through buy() (same suppliers, prices, journal) ---- */
+    _abDefaults() { const A = this.cfg.AUTOBUY || {}, o = { log: [] }; for (const m of this.cfg.MATERIALS) { const d = A[m] || { on: false, reorderDays: 3, targetDays: 10 }; o[m] = { on: !!d.on, reorder: null, target: null, maxQty: 0, maxSpendDay: 0, day: -1, spent: 0, fail: null }; } return o; }
+    /* what the operating consumers of a material need per day now (their capacity x their operating limit x the use per unit). Extend here when new equipment uses materials. */
+    matNeedDay(m) {
+      const U = this.cfg.MATERIAL_USE[m]; if (!U) return 0; let n = 0;
+      if (U.per === 'refinedBbl') for (const b of this.store.list()) { if (DEFS[b.d].type !== 'refinery' || b.st !== 'OPERATIONAL') continue; const s = this.sim.ensure(b); n += this.sim.capOf(b) * Math.max(0, Math.min(1, s.opLimit == null ? 1 : s.opLimit)) * U.qty; }
+      return n;   // 'repair' materials: repairs are free and automatic now (no consumer) -> 0, never bought automatically
+    }
+    /* what was really used in the last 24 game hours (kept hour by hour by _drawMaterial) */
+    matUsedDay(m) { const h = this.matHist[m]; if (!h || !h.length) return 0; return h.reduce((a, x) => a + x, 0) * 24 / h.length; }
+    _matHour(used) { for (const m of this.cfg.MATERIALS) { const h = this.matHist[m] || (this.matHist[m] = []); h.push(used[m] || 0); if (h.length > 24) h.shift(); } }
+    autoBuyInfo(m) {
+      const A = this.cfg.AUTOBUY || {}, d = A[m] || { reorderDays: 3, targetDays: 10 }, s = this.autoBuy[m], need = this.matNeedDay(m), used = this.matUsedDay(m), cap = this.matCap(m), stock = this.mats[m] || 0;
+      const reorder = Math.min(cap, s.reorder != null ? s.reorder : need * d.reorderDays), target = Math.min(cap, Math.max(reorder, s.target != null ? s.target : need * d.targetDays)), rate = used > 1e-9 ? used : need;
+      const day = Math.floor(this.hours / 24), spentToday = s.day === day ? s.spent : 0;
+      return { item: m, on: s.on, stock, capacity: cap, needDay: need, usedDay: used, daysLeft: rate > 1e-9 ? stock / rate : null, reorder, target, reorderAuto: s.reorder == null, targetAuto: s.target == null, reorderDays: d.reorderDays, targetDays: d.targetDays,
+        maxQty: s.maxQty || 0, maxSpendDay: s.maxSpendDay || 0, spentToday, fail: s.fail, unit: this.cfg.MATERIAL_UNIT[m], label: this.cfg.MATERIAL_LABEL[m] };
+    }
+    /* settings: undefined = keep, null / '' = automatic (days of need), a number = fixed quantity / cap */
+    setAutoBuy(m, o) {
+      const s = this.autoBuy[m]; if (!s) return { ok: false, reason: 'item' }; o = o || {}; const num = v => v === null || v === '' ? null : Math.max(0, +v || 0);
+      if (o.on !== undefined) { s.on = !!o.on; s.fail = null; } if (o.reorder !== undefined) s.reorder = num(o.reorder); if (o.target !== undefined) s.target = num(o.target);
+      if (o.maxQty !== undefined) s.maxQty = num(o.maxQty) || 0; if (o.maxSpendDay !== undefined) s.maxSpendDay = num(o.maxSpendDay) || 0;
+      if (s.reorder != null && s.target != null && s.target < s.reorder) s.target = s.reorder; return Object.assign({ ok: true }, this.autoBuyInfo(m));
+    }
+    autoBuyLog(n) { return this.autoBuy.log.slice(-(n || 20)).reverse(); }
+    _abLog(e) { const L = this.autoBuy.log; L.push(Object.assign({ t: this.hours }, e)); const mx = (this.cfg.AUTOBUY && this.cfg.AUTOBUY.logMax) || 100; while (L.length > mx) L.shift(); }
+    _abFail(m, reason, extra) { const s = this.autoBuy[m], day = Math.floor(this.hours / 24); const first = !s.fail || s.fail.reason !== reason || s.fail.day !== day; s.fail = Object.assign({ reason, day, t: this.hours }, extra || {});
+      if (first) { this._abLog(Object.assign({ item: m, ok: false, reason }, extra || {})); this._event('warn', 'تعذّر الشراء التلقائي: ' + (this.cfg.MATERIAL_LABEL[m] || m) + ' · ' + ({ cash: 'الرصيد لا يكفي', budget: 'بلغ سقف الإنفاق اليومي', room: 'المستودع ممتلئ', bankrupt: 'الشركة مفلسة' })[reason]); } }
+    _autoBuy() {
+      if (this.bankrupt) return; const day = Math.floor(this.hours / 24);
+      for (const m of this.cfg.MATERIALS) {
+        const s = this.autoBuy[m]; if (!s || !s.on) continue; if (s.day !== day) { s.day = day; s.spent = 0; }
+        const i = this.autoBuyInfo(m); if (!(i.needDay > 1e-9) || i.stock > i.reorder + 1e-9) { if (i.stock > i.reorder) s.fail = null; continue; }      // nothing uses it, or the stock is above the reorder point: no purchase
+        let qty = Math.max(0, i.target - i.stock); if (s.maxQty > 0) qty = Math.min(qty, s.maxQty); qty = Math.min(qty, this.roomFor(m)); qty = Math.floor(qty * 1000) / 1000; if (!(qty > 1e-6)) { this._abFail(m, 'room'); continue; }
+        let best = null; for (const sp of this.cfg.SUPPLIERS) { const q = this.buyQuote(m, qty, sp.id); if (q.ok && (!best || q.landedUnit < best.landedUnit)) best = q; }      // the cheapest landed price (price + freight + fees), paid in cash
+        if (!best) continue; const unit = best.landedUnit;
+        if (s.maxSpendDay > 0) { const left = s.maxSpendDay - s.spent; if (left < unit) { this._abFail(m, 'budget', { cap: s.maxSpendDay }); continue; } qty = Math.min(qty, Math.floor(left / unit * 1000) / 1000); }
+        this.sync(); const cash = this.store.cash; if (cash < unit) { this._abFail(m, 'cash', { need: qty * unit, cash: Math.max(0, cash) }); continue; }
+        const partial = cash < qty * unit; if (partial) qty = Math.floor(cash / unit * 1000) / 1000 * 0.999;      // never more than the company has: buy what the cash allows now, the rest when cash returns
+        const r = this.buy(m, qty, best.supplier, 'CASH', { auto: true }); if (!r.ok) { this._abFail(m, r.reason === 'cash' ? 'cash' : r.reason === 'noRoom' ? 'room' : r.reason, {}); continue; }
+        s.spent += r.cost; this._abLog({ item: m, ok: true, qty: r.qty, total: r.cost, unit: r.unitCost, supplier: r.supplier, partial }); if (partial) this._abFail(m, 'cash', { need: Math.max(0, i.target - this.mats[m]) * unit, cash: Math.max(0, this.store.cash) }); else s.fail = null;
+      }
+    }
+    roomFor(p) { if (!SELL.includes(p)) return Math.max(0, this.matCap(p) - (this.mats[p] || 0)); return Math.max(0, this.capacity(p) - this.physicalVol(p)); }
     addTo(p, qty) {                                                                  // fills the emptiest operating tanks first; returns what fitted
       let left = qty; const tanks = this.tanksOf(p).filter(b => b.st === 'OPERATIONAL').map(b => ({ b, s: this.sim.ensure(b) })).sort((x, y) => x.s.vol - y.s.vol);
       for (const { b, s } of tanks) { if (left <= 1e-9) break; const room = DEFS[b.d].capacity.value - s.vol; if (room <= 0) continue; const put = Math.min(room, left); s.vol += put; left -= put; }
@@ -586,7 +639,7 @@
       this.matLimit = 1; { const MUg = this.cfg.MATERIAL_USE, rem = { CHEM: this.mats.CHEM || 0, OPS: this.mats.OPS || 0 }; for (const b of items) { if (DEFS[b.d].type !== 'refinery' || b.st !== 'OPERATIONAL') continue; const s = S.ensure(b), cap = S.capOf(b); let lim = 1;
         if (cap > 0) { const need = { CHEM: cap * dt * MUg.CHEM.qty, OPS: cap * dt * MUg.OPS.qty }; const fr = k => (need[k] > 0 ? Math.min(1, rem[k] / need[k]) : 1); lim = Math.min(fr('CHEM'), fr('OPS')); for (const k of ['CHEM', 'OPS']) rem[k] = Math.max(0, rem[k] - lim * need[k]); }
         s.matLim = lim; this.matLimit = Math.min(this.matLimit, lim); } } }
-    buy(item, qty, supplierId, terms) {
+    buy(item, qty, supplierId, terms, opts) {
       if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync();
       const qt = this.buyQuote(item, qty, supplierId); if (!qt.ok) return qt; if (!(qt.qty > 0)) return { ok: false, reason: 'nothingToBuy', quote: qt };
       const credit = terms === 'CREDIT'; if (credit && !(qt.creditDays > 0)) return { ok: false, reason: 'noCredit', quote: qt };
@@ -594,7 +647,7 @@
       if (item === 'CRUDE' && !this.tradeTanks().length) return { ok: false, reason: 'noTradeTank', quote: qt };           // bought oil needs a commercial or trade tank: never a tank fed by wells
       const room = item === 'CRUDE' ? this.tradeRoom() : this.roomFor(item); if (qt.qty > room + 1e-6) return { ok: false, reason: 'noRoom', room, quote: qt };
       const acc = item === 'CRUDE' ? 'INV_CRUDE_BUY' : qt.isProd ? INVACC[item] : MATACC[item], name = this.cfg.LABEL[item] || this.cfg.MATERIAL_LABEL[item];
-      const pur = { id: this.nextPur++, item, supplier: qt.supplierName, qty: qt.qty, unitPrice: qt.landedUnit, total: qt.total, terms: credit ? 'CREDIT' : 'CASH', receivedAt: this.hours, dueAt: credit ? this.hours + qt.creditDays * 24 : this.hours, paidAt: credit ? null : this.hours };
+      const pur = { id: this.nextPur++, item, supplier: qt.supplierName, qty: qt.qty, unitPrice: qt.landedUnit, total: qt.total, terms: credit ? 'CREDIT' : 'CASH', receivedAt: this.hours, dueAt: credit ? this.hours + qt.creditDays * 24 : this.hours, paidAt: credit ? null : this.hours }; if (opts && opts.auto) pur.auto = true;
       this.purchases.push(pur); if (this.purchases.length > 200) this.purchases.shift();
       if (credit) {
         this._post({ type: 'PURCHASE_CREDIT', desc: 'Purchase on credit · ' + name + ' · ' + qt.supplierName }, [[acc, qt.total], ['PAY_SUPPLIERS', -qt.total]]);
@@ -608,7 +661,7 @@
       } else if (qt.isProd) {
         const add = this.addTo(item, got); got = add; this.qty[item] += got; this.bprod[item] = (this.bprod[item] || 0) + got; this.market.engineBuy(item, null, got);      // bought products are remembered: auto-sell never touches them
       } else { this.mats[item] += got; if (item === 'CHEM' || item === 'OPS') this._gateMaterials(this.store.list(), 1 / 24); }
-      this._event('info', 'Purchase: ' + name + ' ' + Math.round(got).toLocaleString('en-US') + ' · ' + fmtMoney(qt.total));
+      this._event('info', (opts && opts.auto ? 'Auto purchase: ' : 'Purchase: ') + name + ' ' + Math.round(got).toLocaleString('en-US') + ' · ' + fmtMoney(qt.total));
       return { ok: true, item, qty: got, cost: qt.total, unitCost: got > 0 ? qt.total / qt.qty : qt.landedUnit, terms: credit ? 'CREDIT' : 'CASH', supplier: qt.supplierName };
     }
     /* materials are used from stock first, at their average cost; the shortfall is bought at the material's price in cash */
@@ -835,6 +888,7 @@
       if (!this.netOil) this._netOilMigrate();
       for (const b of items) { const s = S.ensure(b); s.ecoEff = this.effOf(b); }
       // refineries may only run on the chemicals and operating materials on hand; the limit is set BEFORE the simulator draws crude, so no crude leaves the tanks without being processed
+      this._autoBuy();                                                         // materials bought automatically first, so the refinery is not held back while the setting can restock it
       this._gateMaterials(items, dt);
       S.step(dt);
       const prod = PZERO(), refOut = { GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 }, crude = { operating: 0, maintenance: 0, energy: 0, lifting: 0 }, refin = { operating: 0, maintenance: 0, energy: 0, chem: 0, ops: 0 }, rf = { BYPRODUCT: 0, RESIDUE: 0, FUEL: 0, FLARED: 0 };
@@ -868,7 +922,7 @@
       // chemicals and operating materials: used from stock first (at average cost); only the shortfall is paid in cash at the material price
       const MU = C.MATERIAL_USE; let chemStock = 0, opsStock = 0; const chemCash = 0, opsCash = 0;
       // no chemicals or operating materials on hand: the refinery slows down to what the stock allows, and nothing is bought on its behalf
-      if (prod.THRU > 0) { const ch = this._drawMaterial('CHEM', prod.THRU * MU.CHEM.qty), op = this._drawMaterial('OPS', prod.THRU * MU.OPS.qty); chemStock = ch.cost; opsStock = op.cost; }
+      { const used = {}; if (prod.THRU > 0) { const ch = this._drawMaterial('CHEM', prod.THRU * MU.CHEM.qty), op = this._drawMaterial('OPS', prod.THRU * MU.OPS.qty); chemStock = ch.cost; opsStock = op.cost; used.CHEM = ch.qty; used.OPS = op.qty; } this._matHour(used); }
       refin.chem = chemStock + chemCash; refin.ops = opsStock + opsCash;
       const refCash = refin.operating + refin.maintenance + refin.energy + chemCash + opsCash, refCost = refCash + chemStock + opsStock;
       if (refCost > 0 && prod.THRU <= 0) { this._expense('operating', refin.operating, 'Refinery · idle operation'); this._expense('maintenance', refin.maintenance, 'Refinery · idle maintenance'); this._expense('energy', refin.energy, 'Refinery · idle energy'); }   // no crude processed this hour: a period cost, not carried in stock (otherwise it waits in WIP until the next barrel)
@@ -1046,6 +1100,7 @@
       /* things that silently stop crude from reaching the refinery: a refinery with no chemicals / operating materials, a broken building, repairs that cannot be paid for in spare parts */
       { const list = this.store.list(), refs = list.filter(b => DEFS[b.d].type === 'refinery' && b.st !== 'UNDER_CONSTRUCTION'), MU = this.cfg.MATERIAL_USE;
         if (refs.length && (this.matLimit || 0) <= 0) add('nomat', 'warn', 'REFINERY LACKS MATERIALS', 'buy chemicals and operating materials');
+        if (this.autoBuy) for (const m of this.cfg.MATERIALS) { const ab = this.autoBuy[m]; if (ab && ab.on && ab.fail) add('autobuy' + m, 'warn', 'تعذّر الشراء التلقائي', (this.cfg.MATERIAL_LABEL[m] || m) + ' · ' + ({ cash: 'الرصيد لا يكفي', budget: 'بلغ سقف الإنفاق اليومي', room: 'المستودع ممتلئ', bankrupt: 'الشركة مفلسة' })[ab.fail.reason]); }
       }
       for (const v of this.inventory()) {
         if (v.capacity > 0 && v.fill >= A.highInventoryFill) add('hiinv' + v.product, 'warn', 'HIGH INVENTORY', v.label + ' ' + Math.round(v.fill * 100) + '%');
@@ -1156,7 +1211,7 @@
     /* ---- save / load (the store and the pipes are saved by the lab as before; this is the company) ---- */
     toJSON() {
       return { v: 2, central: this.central, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0, a.useStart == null ? null : a.useStart]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
-        recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, reserve: this.reserve, water: this.water, netOil: this.netOil ? 1 : 0, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
+        autoBuy: this.autoBuy, whLv: this.whLv, matHist: this.matHist, recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, reserve: this.reserve, water: this.water, netOil: this.netOil ? 1 : 0, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
     }
     fromJSON(d) {
       this._restoreWear = true;
@@ -1168,6 +1223,7 @@
       this.recv = (d.recv || []).map(r => Object.assign({ late: false, payOn: r.due }, r)); this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.purchases = d.purchases || []; this.nextPur = d.nextPur || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy; this.bsStart = d.bsStart || null;
       if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); this.qty2 = Object.assign({ BYPRODUCT: 0, RESIDUE: 0 }, d.qty2 || {}); }
       this.water = Object.assign({ v: 1, produced: 0, sold: 0, revenue: 0, log: [], day: -1, today: 0 }, d.water || {}); this.water.auto = Object.assign({ on: false, reserve: 0, day: -1, used: {}, sold: 0 }, this.water.auto || {}); this.netOil = !!d.netOil; this.reserve = Object.assign({ v: 1, lv: 0, log: [] }, d.reserve || {}); { const z = this.reserveZone(); this.reserve.lv = Math.max(0, Math.min(z ? z.levels.length - 1 : 0, this.reserve.lv | 0)); if (!Array.isArray(this.reserve.log)) this.reserve.log = []; } this._hookReserve();   // an old save has no reserve: it starts closed at level 0, with nothing moved into it
+      { const ab = this._abDefaults(), sv = d.autoBuy || {}; for (const m of c.MATERIALS) if (sv[m]) ab[m] = Object.assign(ab[m], sv[m]); ab.log = Array.isArray(sv.log) ? sv.log : []; this.autoBuy = ab; this.whLv = Object.assign({}, d.whLv || {}); this.matHist = d.matHist || {}; }      // saves from before auto-buy: the default settings, warehouse level 0
       this.bq = d.bq || 0; this.explLog = d.explLog || []; this.bprod = d.bprod || {}; this.tradeLog = d.tradeLog || []; this.nextTrade = d.nextTrade || 1; this.boughtUsed = d.boughtUsed || 0;
       if (!d.journal) this._migrate();                                                         // a save from before the journal: the company starts from an opening balance sheet of what it holds now
       this.pw = { demand: 0, cap: c.POWER.tiers[this.tier].kw, factor: 1, limited: false }; this.mirror = this.store.cash; if (!this.bsStart) this.bsStart = this._snap(); this.away = null; this.events = []; this.seen = new Set(); this._refreshOffers(); this.computeStaff(); return true;

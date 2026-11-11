@@ -157,7 +157,7 @@
     refinery(C, def, L) {
       const P = def.params, R = C.BC.REFINERY, Y = R.yields, MU = C.EC && C.EC.MATERIAL_USE, ML = (C.EC && C.EC.MATERIAL_LABEL) || {}, s = L ? L.s : null, o = {};
       o.what = [infoOf(C, def.id).does || 'تحوّل النفط الخام إلى منتجات.', 'من كل 100 برميل خام: ' + n0(Y.GASOLINE) + ' بنزين · ' + n0(Y.DIESEL) + ' ديزل · ' + n0(Y.JET_FUEL) + ' وقود طائرات · ' + n0(Y.GAS) + ' غاز · ' + n0(Y.OTHER) + ' منتجات أخرى.'];
-      o.how = ['تُبنى داخل منطقة المصافي المسوّاة (القطاع D).', 'وصّل خزان خام (أو محطة الشبكة المركزية) إلى مدخل الخام.', 'وصّل كل مخرج منتج (بنزين/ديزل/وقود طائرات/غاز) بخزان من نفس المنتج.', (C.EC && C.EC.MATERIALS_REQUIRED !== false) ? 'اشترِ كيماويات ومواد تشغيل من «الشراء» قبل التشغيل.' : 'لا تحتاج شراء كيماويات أو مواد تشغيل: تعمل بدونها ولا تُحسب لها تكلفة.', 'زر «حد التشغيل» يحدد نسبة السعة المستخدمة: 100% ← 75% ← 50%.'];
+      o.how = ['تُبنى داخل منطقة المصافي المسوّاة (القطاع D).', 'وصّل خزان خام (أو محطة الشبكة المركزية) إلى مدخل الخام.', 'وصّل كل مخرج منتج (بنزين/ديزل/وقود طائرات/غاز) بخزان من نفس المنتج.', (C.EC && C.EC.MATERIALS_REQUIRED !== false) ? 'تحتاج كيماويات ومواد تشغيل في المخزون: فعّل «الشراء التلقائي» من ☰ ← «الشراء» (مفعّل افتراضياً) فتُشترى عند الحاجة، أو اشترِها يدوياً.' : 'لا تحتاج شراء كيماويات أو مواد تشغيل: تعمل بدونها ولا تُحسب لها تكلفة.', 'زر «حد التشغيل» يحدد نسبة السعة المستخدمة: 100% ← 75% ← 50%.'];
       o.in = ['نفط خام بضغط ' + n0(R.minInletPsi) + ' ' + PSI + ' على الأقل.'];
       if (MU) o.in.push((ML.CHEM || 'كيماويات') + ': ' + MU.CHEM.qty + ' كغ لكل برميل مكرَّر' + ((C.EC && C.EC.MATERIALS_REQUIRED !== false) ? '.' : ' (غير مطلوبة حالياً).'), (ML.OPS || 'مواد تشغيل') + ': ' + MU.OPS.qty + ' وحدة لكل برميل مكرَّر.');
       o.in.push('كهرباء: ' + n0(powerKW(C, def)) + ' كيلوواط عند الحمل الكامل.');
@@ -276,7 +276,7 @@
         const MU = C.EC && C.EC.MATERIAL_USE, co = C.company, cap = def.params.cap;
         if (st === 'NO_MATERIALS' || (s.matLim != null && s.matLim < 0.999)) {
           const mats = co && co.mats ? co.mats : {}, need = MU ? { CHEM: cap * MU.CHEM.qty, OPS: cap * MU.OPS.qty } : null;
-          add(s.matLim > 0 ? 'warn' : 'bad', 'المواد لا تكفي: تعمل بـ ' + pct(s.matLim || 0) + ' من سعتها.' + (need ? ' المخزون: كيماويات ' + n0(mats.CHEM) + ' كغ (تحتاج ' + n0(need.CHEM) + ' كغ/يوم عند السعة الكاملة) · مواد تشغيل ' + n0(mats.OPS) + ' وحدة (تحتاج ' + n1(need.OPS) + ' وحدة/يوم).' : ''), 'افتح ☰ ← «الشراء» واشترِ «مواد كيميائية» و«مواد تشغيل». يتحسن التشغيل فوراً عند وصولها.');
+          add(s.matLim > 0 ? 'warn' : 'bad', 'المواد لا تكفي: تعمل بـ ' + pct(s.matLim || 0) + ' من سعتها.' + (need ? ' المخزون: كيماويات ' + n0(mats.CHEM) + ' كغ (تحتاج ' + n0(need.CHEM) + ' كغ/يوم عند السعة الكاملة) · مواد تشغيل ' + n0(mats.OPS) + ' وحدة (تحتاج ' + n1(need.OPS) + ' وحدة/يوم).' : ''), abFix(C, co));
         }
         const miss = ['GASOLINE_OUT', 'DIESEL_OUT', 'JET_OUT', 'GAS_OUT'].filter(id => { const x = L.conn.find(y => y.c.id === id); return x && !x.e; });
         if (anyOut && miss.length) add('warn', 'مخارج غير موصولة: ' + miss.map(m => ({ GASOLINE_OUT: 'البنزين', DIESEL_OUT: 'الديزل', JET_OUT: 'وقود الطائرات', GAS_OUT: 'الغاز' })[m]).join('، ') + ' — نصيبها من الإنتاج لا يُخزَّن' + (miss.includes('GAS_OUT') ? ' (الغاز يُحرق)' : '') + '.', 'وصّل كل مخرج بخزان من نفس المنتج.');
@@ -291,6 +291,13 @@
     }
     if (!I.length) add('ok', st === 'RUNNING' ? 'تعمل بشكل طبيعي ولا توجد مشكلة.' : 'لا توجد مشكلة حالياً.', '');
     return I;
+  }
+  /* the fix for missing materials, from the auto-purchase settings when the economy has them */
+  function abFix(C, co) {
+    const base = 'افتح ☰ ← «الشراء» واشترِ «مواد كيميائية» و«مواد تشغيل». يتحسن التشغيل فوراً عند وصولها.'; if (!co || !co.autoBuyInfo) return base;
+    const R = { cash: 'الرصيد لا يكفي', budget: 'بلغ سقف الإنفاق اليومي', room: 'المستودع ممتلئ' }, parts = [];
+    for (const m of ['CHEM', 'OPS']) { const i = co.autoBuyInfo(m); if (!i.on) parts.push('الشراء التلقائي لـ«' + i.label + '» متوقف: فعّله من ☰ ← «الشراء» ← «الشراء التلقائي»'); else if (i.fail) parts.push('الشراء التلقائي لـ«' + i.label + '» مفعّل لكنه تعذّر: ' + (R[i.fail.reason] || i.fail.reason)); }
+    return parts.length ? parts.join(' · ') + '. أو اشترِ يدوياً من نفس الشاشة.' : 'الشراء التلقائي مفعّل وسيشتري في الساعة القادمة؛ أو اشترِ يدوياً من ☰ ← «الشراء».';
   }
   /* the refinery / separator outlet that takes nothing (set by the Sim in s._blkPort): a full tank, or a central channel with no receiving tank anywhere */
   function blockedOutlet(C, b, L) {
