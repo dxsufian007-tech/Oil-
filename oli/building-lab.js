@@ -620,7 +620,9 @@
   /* The company is advanced in SMALL slices (about 16 times a second) instead of one burst every 250 ms: exactly the same whole game hours in the same order (run() keeps the remainder), but no single frame has to carry a whole burst - this is what keeps x5 / x10 smooth on a phone */
   let simLast = performance.now();
   const simPump = setInterval(() => { const now = performance.now(), dtS = Math.min(2, (now - simLast) / 1000); simLast = now; if (window.__homeOpen) return;      /* the main menu is open: the company waits */
-    if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) COMPANY.run(dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0)); }, 62);
+    if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) { const n = COMPANY.run(dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0), EC.TIME.liveBudgetMs || 20); realSpeed(n, now); } else realSpeed(0, now, true); }, 62);
+  /* the speed really reached (game hours per real second / the hours per second of x1): shown next to the speed button when the device cannot keep up */
+  const RS = { t0: performance.now(), h: 0 }; function realSpeed(n, now, idle) { if (idle) { RS.t0 = now; RS.h = 0; COMPANY.realSpeed = null; return; } RS.h += n; const el = now - RS.t0; if (el >= 2000) { COMPANY.realSpeed = RS.h / (el / 1000) / (24 / EC.TIME.dayRealSeconds); RS.t0 = now; RS.h = 0; } }
   const tick = setInterval(() => { if (!state.pipeMode && !state.pipeEdit && document.body.classList.contains('pipemode')) document.body.classList.remove('pipemode');      // self-heal: no pipe is being drawn, so the cards must be visible
 
     const PT = window.__perfT, tk0 = PT ? performance.now() : 0, now = performance.now();

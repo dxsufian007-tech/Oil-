@@ -1173,8 +1173,12 @@
     togglePause() { return this.speed === 0 ? this.resume() : this.pause(); }
     faster() { const sp = this.cfg.TIME.speeds.filter(x => x > 0), cur = this.speed || this.lastSpeed || 1, i = sp.indexOf(cur); return this.setSpeed(sp[Math.min(sp.length - 1, i < 0 ? 0 : i + 1)]); }
     slower() { const sp = this.cfg.TIME.speeds.filter(x => x > 0), cur = this.speed || this.lastSpeed || 1, i = sp.indexOf(cur); return this.setSpeed(sp[Math.max(0, i < 0 ? 0 : i - 1)]); }
-    run(hours) {                                                                   // the lab calls this with real time x speed; whole hours only, the remainder waits for the next call
-      if (this.bankrupt || !(hours > 0) || this.speed === 0) return 0; this.acc = Math.min(this.acc + hours, this.cfg.TIME.maxCatchUpHours); let n = 0; while (this.acc >= 1 && n < this.cfg.TIME.maxStepsPerTick && !this.bankrupt) { this._tick(1); this.acc -= 1; n++; } return n;
+    run(hours, budgetMs) {                                                         // the lab calls this with real time x speed; whole hours only, the remainder waits for the next call
+      if (this.bankrupt || !(hours > 0) || this.speed === 0) return 0;
+      /* budgetMs (the live game): every game hour is still computed in full and in order; a call stops starting new hours once it has used budgetMs, and the waiting time
+         is capped at liveBacklogHours, so a device that cannot keep up runs at the speed it can (shown as the real speed) instead of freezing for seconds to catch up */
+      const live = budgetMs > 0, T = this.cfg.TIME; this.acc = Math.min(this.acc + hours, live ? (T.liveBacklogHours || 4) : T.maxCatchUpHours); let n = 0; const now = live ? (typeof performance !== 'undefined' ? () => performance.now() : () => Date.now()) : null, t0 = live ? now() : 0;
+      while (this.acc >= 1 && n < T.maxStepsPerTick && !this.bankrupt) { if (live && n > 0 && now() - t0 >= budgetMs) break; this._tick(1); this.acc -= 1; n++; } return n;
     }
 
     /* ---- offline simulation ---- */
