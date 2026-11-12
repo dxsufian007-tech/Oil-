@@ -4,7 +4,7 @@ name: OLI EMPIRE B5 phone-test build (B5 = B2 + B3a + B3b-1 receivers + B4 path 
 # Same package as the installed game (com.oli.olicentral, last installed update: central-update-apk.yml run 3 = versionCode 313),
 # same fixed signing key, a version code above every earlier build of that package: max(311 + latest central-update run, 313 + this workflow's run) = 314 on the first run.
 # The game's commit (the last commit that changed oli/) is stamped in the About page and in versionName.
-# B5 TEST build: B5 = B2 + B3a + B3b-1 receivers + B4 path cache for ban/bias/over + B5 heap Dijkstra. Built from perf/phaseB-b5-heap (content = that branch, nothing else); NOT merged anywhere, NOT a release.
+# B5 TEST build: B5 = B2 + B3a + B3b-1 receivers + B4 path cache for ban/bias/over + B5 heap Dijkstra. Built from perf/phaseB-b5-heap (content = that branch, nothing else); NOT merged anywhere, NOT a release (round 3).
 # Result: OliUpdate-B5-<commit>.apk committed to perf/phaseB-b5-apk (apk-out/) and attached as a build artifact. Touches no other workflow or branch.
 on:
   workflow_dispatch:
