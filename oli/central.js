@@ -242,7 +242,7 @@
       return n;
     }
   }
-  CentralNet.pcDefault = 0;      // the path cache mode a NEW network starts in (0 = off); the diagnostics panel can change it
+  CentralNet.pcDefault = 2;      // the path cache mode a NEW network starts in (2 = on, answers plain path calls from the cache; 0 = off = the B1 path, an instant fallback from the diagnostics panel)
   /* compact path: corner points */
   function pack(path) { const o = [path[0]]; for (let i = 1; i < path.length - 1; i++) { const a = path[i - 1], b = path[i], c = path[i + 1]; if ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]) !== 0) o.push(b); } if (path.length > 1) o.push(path[path.length - 1]); return o; }
   function unpack(c) { const o = [[c[0][0], c[0][1]]]; for (let i = 1; i < c.length; i++) { let [x, y] = o[o.length - 1]; const [X, Y] = c[i]; while (x !== X || y !== Y) { x += Math.sign(X - x); y += Math.sign(Y - y); o.push([x, y]); } } return o; }
