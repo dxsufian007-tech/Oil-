@@ -75,3 +75,11 @@ jobs:
         with:
           name: OliUpdate-perf-apk
           path: OliUpdate-perf-*.apk
+      - name: Put the APK on THIS test branch only (the artifact download is not reachable from the owner's sandbox)
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          mkdir -p apk-out && cp OliUpdate-perf-$SRC.apk apk-out/
+          git add apk-out/OliUpdate-perf-$SRC.apk
+          git commit -q -m "B1 test APK $SRC (not a release)"
+          git push origin HEAD:perf/phaseB-b1-apk
