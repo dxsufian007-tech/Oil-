@@ -188,7 +188,23 @@
       this._chFlow[ch] += acc; this._chP[ch] += pl.p * acc; this._chPw[ch] += acc;
     }
     /* the stations that can receive on this channel: they must own a branch (an edge) on the channel port and be operational */
+    /* B3b-1 (see docs/phaseB/B3b-receivers-deps.md): what is remembered is ONLY the list of stations that can possibly have an edge on this channel (per channel, valid for one value of sim / sim._eb / this.rev / this.st.size); the building, its state, the exception and the edge test are evaluated live on every call, exactly as in the full scan.
+     * A cheap per-call check compares every station's building id (s.b) with the snapshot taken when the lists were built: a station that changes its building without a rev bump (the game never does that) makes the code forget everything and scan. */
     receivers(sim, ch, exceptId, exceptPort) {
+      const ports = PORTS[ch]; if (!ports) return this._receiversScan(sim, ch, exceptId, exceptPort);      // not one of the channels: the old code, which fails the same way
+      const eb = sim._eb;
+      if (this._rcSim !== sim || this._rcEb !== eb || this._rcRev !== this.rev || this._rcN !== this.st.size) { this._rcSim = sim; this._rcEb = eb; this._rcRev = this.rev; this._rcN = this.st.size; this._rcL = Object.create(null); this._rcS = [...this.st.values()]; this._rcB = this._rcS.map(s => s.b); }
+      const S = this._rcS, B = this._rcB; for (let i = 0; i < S.length; i++) if (S[i].b !== B[i]) { this._rcRev = -1; return this._receiversScan(sim, ch, exceptId, exceptPort); }
+      let L = this._rcL[ch];
+      if (!L) { L = this._rcL[ch] = []; for (let i = 0; i < S.length; i++) { const s = S[i]; if (s.b == null) continue; const m = eb && eb.get(s.b); if (!m) continue; for (const port of ports) if (m[port]) { L.push(s); break; } } }
+      const out = [];
+      for (let i = 0; i < L.length; i++) {
+        const s = L[i], b = sim.store.get(s.b); if (!b || !sim.ok(b)) continue;
+        for (const port of ports) { if (s.id === exceptId && port === exceptPort) continue; if (sim.edgeOf(b, port)) out.push({ s, b, port }); }
+      }
+      return out;
+    }
+    _receiversScan(sim, ch, exceptId, exceptPort) {
       const out = []; for (const s of this.st.values()) { if (s.b == null) continue; const b = sim.store.get(s.b); if (!b || !sim.ok(b)) continue; for (const port of PORTS[ch]) { if (s.id === exceptId && port === exceptPort) continue; if (sim.edgeOf(b, port)) out.push({ s, b, port }); } } return out;
     }
     /* what the receiver at `d` can take of `want` (probe) or really takes (commit) */
