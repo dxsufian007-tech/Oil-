@@ -1,4 +1,4 @@
-name: OLI EMPIRE performance build as an UPDATE of the installed game (perf/architecture)
+name: OLI EMPIRE performance build as an UPDATE of the installed game (perf/architecture) - B1 test copy: artifact only, no publish step
 
 # The owner's request (Nov 11, 21:31): the performance build must install as an UPDATE over the game on the phone, keeping the save and the progress.
 # Same package as the installed game (com.oli.olicentral, last installed update: central-update-apk.yml run 3 = versionCode 313),
@@ -75,13 +75,3 @@ jobs:
         with:
           name: OliUpdate-perf-apk
           path: OliUpdate-perf-*.apk
-      - name: Publish on the branch perf-update-apk-build (earlier files kept)
-        run: |
-          F=OliUpdate-perf-$SRC.apk; mkdir -p /tmp/out && cp $F /tmp/out/
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          if git ls-remote --exit-code --heads origin perf-update-apk-build >/dev/null; then git fetch -q origin perf-update-apk-build && git checkout -q -f -B perf-update-apk-build FETCH_HEAD; else git checkout --orphan perf-update-apk-build && git rm -rf --quiet .; fi
-          cp /tmp/out/$F .
-          git add $F
-          git commit -q -m "OLI EMPIRE update APK (performance build) $SRC - not a release"
-          git push origin perf-update-apk-build

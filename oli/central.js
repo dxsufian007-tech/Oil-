@@ -23,12 +23,13 @@
   const lerp = (a, b, t) => a + (b - a) * t;
   const hash = (a, b, c) => { let h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
   const EPS = 1e-6;
+  const NCH = CHANNELS.length, CI = Object.create(null); CHANNELS.forEach((c, i) => { CI[c] = i; });      // perf: a number per channel, so the per-step usage lives in typed arrays instead of string-keyed Maps
 
   class CentralNet {
     constructor(W) {
       this.W = W; this.st = new Map(); this.seg = new Map(); this.pumps = new Map(); this.at = new Map(); this.cen = new Set(); this.cov = new Set(); this.rev = 0; this.nextSt = 1; this.nextSeg = 1; this.nextPump = 1; this.time = 0;
       this.ch = {}; for (const c of CHANNELS) this.ch[c] = { state: 'OPEN', flow: 0, pressure: 0, qty: 0, moved: 0, dir: 0, fault: false, cap: CLASS.capacity, maxP: CLASS.maxPressure, status: 'READY' };
-      this._used = null; this._adj = null; this._adjRev = -1; this._pused = new Map();
+      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this._pxCh = null; this._pxRev = -1; this._pxN = -1;
     }
     static k(W, x, y) { return y * W + x; }
     key(x, y) { return y * this.W + x; }
@@ -81,24 +82,32 @@
     /* ---------------------------------------------------------------- routing */
     _graph() {
       if (this._adjRev === this.rev && this._adj) return this._adj;
-      const adj = new Map(); for (const s of this.st.keys()) adj.set(s, []);
-      for (const g of this.seg.values()) { if (!adj.has(g.a) || !adj.has(g.b)) continue; adj.get(g.a).push({ g, to: g.b, dir: 1 }); adj.get(g.b).push({ g, to: g.a, dir: -1 }); }
+      const adj = new Map(), nix = new Map(), nid = [], A = []; for (const s of this.st.keys()) { const l = []; adj.set(s, l); nix.set(s, nid.length); nid.push(s); A.push(l); }
+      for (const g of this.seg.values()) { if (!adj.has(g.a) || !adj.has(g.b)) continue; const ix = this._ixOf(g.id); adj.get(g.a).push({ g, to: g.b, dir: 1, ix, tn: nix.get(g.b) }); adj.get(g.b).push({ g, to: g.a, dir: -1, ix, tn: nix.get(g.a) }); }
+      const N = nid.length; this._nix = nix; this._nid = nid; this._adjA = A; this._pd = new Float64Array(N); this._pe = new Array(N).fill(null); this._pn = new Int32Array(N); this._pdone = new Uint8Array(N);          // perf: station numbers + scratch arrays for path(), rebuilt with the graph
       this._adj = adj; this._adjRev = this.rev; return adj;
     }
-    usedOf(over, gid, ch) { const k = gid + '|' + ch; return (this._used.get(k) || 0) + (over ? (over.get(k) || 0) : 0); }
-    pusedOf(over, pid) { return (this._pused.get(pid) || 0) + (over ? (over.get('P' + pid) || 0) : 0); }
+    /* perf: a number per segment id, stable for the life of the net (an id keeps its slot even when the segment is removed, as the old string keys kept their values); the usage arrays grow with it */
+    _ixOf(gid) {
+      let i = this._six.get(gid);
+      if (i === undefined) { i = this._six.size; this._six.set(gid, i); const need = (i + 1) * NCH; if (this._used && this._used.length < need) { const grow = a => { const b = new Float64Array(Math.max(need, a.length * 2)); b.set(a); return b; }; this._used = grow(this._used); this._net = grow(this._net); } }
+      return i;
+    }
+    usedOf(over, gid, ch) { const ix = this._six.get(gid), ci = CI[ch]; const u = ci === undefined ? ((this._usedX && this._usedX.get(gid + '|' + ch)) || 0) : ix === undefined ? 0 : (this._used[ix * NCH + ci] || 0); return u + (over && over.size ? (over.get(gid + '|' + ch) || 0) : 0); }      // a channel that is not one of the six (the game never asks for one) keeps the old string-keyed Map, so even that case is identical to before
+    pusedOf(over, pid) { return (this._pused.get(pid) || 0) + (over && over.size ? (over.get('P' + pid) || 0) : 0); }
     /* the channel can carry nothing when it is closed or in fault */
     channelUp(ch) { const c = this.ch[ch]; return !!c && c.state === 'OPEN' && !c.fault; }
     segUp(g, ch) { return !g.fault[ch]; }
     /* Dijkstra by tile length over the segments that are up and still have capacity left in this step */
     path(ch, from, to, over, ban, bias) {
-      const adj = this._graph(); if (!adj.has(from) || !adj.has(to) || from === to) return null;
-      const dist = new Map([[from, 0]]), prev = new Map(), done = new Set(); const q = [[0, from]];
-      while (q.length) {
-        let bi = 0; for (let i = 1; i < q.length; i++) if (q[i][0] < q[bi][0]) bi = i; const [d, n] = q.splice(bi, 1)[0]; if (done.has(n)) continue; done.add(n); if (n === to) break;
-        for (const e of adj.get(n) || []) { if (!this.segUp(e.g, ch) || (ban && ban.has(e.g.id))) continue; if (CLASS.capacity - this.usedOf(over, e.g.id, ch) <= EPS) continue; const nd = d + e.g.path.length * (bias && this._hopPump({ g: e.g, dir: e.dir }, ch) ? 0.25 : 1); if (nd < (dist.has(e.to) ? dist.get(e.to) : Infinity)) { dist.set(e.to, nd); prev.set(e.to, { n, e }); q.push([nd, e.to]); } }
+      this._graph(); const nix = this._nix, fi = nix.get(from), ti = nix.get(to); if (fi === undefined || ti === undefined || from === to) return null;
+      const A = this._adjA, N = A.length, ci = CI[ch], U = this._used, hasOver = !!(over && over.size), dist = this._pd, prevE = this._pe, prevN = this._pn, done = this._pdone;
+      dist.fill(Infinity, 0, N); prevE.fill(null, 0, N); done.fill(0, 0, N); dist[fi] = 0; const qd = [0], qn = [fi];      // the queue keeps its order (insertion order, first minimum wins, splice): ties break exactly as before
+      while (qd.length) {
+        let bi = 0; for (let i = 1; i < qd.length; i++) if (qd[i] < qd[bi]) bi = i; const d = qd[bi], n = qn[bi]; qd.splice(bi, 1); qn.splice(bi, 1); if (done[n]) continue; done[n] = 1; if (n === ti) break;
+        const es = A[n]; for (let k = 0; k < es.length; k++) { const e = es[k]; if (!this.segUp(e.g, ch) || (ban && ban.has(e.g.id))) continue; let used = ci === undefined ? ((this._usedX && this._usedX.get(e.g.id + '|' + ch)) || 0) : (U[e.ix * NCH + ci] || 0); if (hasOver) used += (over.get(e.g.id + '|' + ch) || 0); if (CLASS.capacity - used <= EPS) continue; const nd = d + e.g.path.length * (bias && this._hopPump({ g: e.g, dir: e.dir }, ch) ? 0.25 : 1); if (nd < dist[e.tn]) { dist[e.tn] = nd; prevE[e.tn] = e; prevN[e.tn] = n; qd.push(nd); qn.push(e.tn); } }
       }
-      if (!prev.has(to)) return null; const hops = []; let c = to; while (c !== from) { const p = prev.get(c); hops.unshift({ g: p.e.g, dir: p.e.dir, from: p.n, to: c }); c = p.n; } return hops;
+      if (prevE[ti] === null) return null; const hops = []; let c = ti; while (c !== fi) { const e = prevE[c], pn = prevN[c]; hops.unshift({ g: e.g, dir: e.dir, from: this._nid[pn], to: this._nid[c] }); c = pn; } return hops;
     }
     /* rate, pressure at the far end: friction per segment (the same law as the old pipes), pump boosts at the stations passed, pump flow limit */
     plan(ch, from, to, r, p0, over) {
@@ -112,7 +121,10 @@
       return best;
     }
     /* the pump of a hop that really pushes THIS way (healthy and set to this direction); null = no boost (idle direction, or failed: the product passes the pump unboosted) */
-    _hopPump(h, ch) { for (const p of this.pumps.values()) if (p.seg === h.g.id && p.ch === ch && !p.fault && p.dir === h.dir) return p; return null; }
+    _hopPump(h, ch) {
+      if (this._pxRev !== this.rev || this._pxN !== this.pumps.size || !this._pxCh) { const m = new Map(); for (const p of this.pumps.values()) { let l = m.get(p.ch); if (!l) m.set(p.ch, l = []); l.push(p); } this._pxCh = m; this._pxRev = this.rev; this._pxN = this.pumps.size; }      // perf: only the pumps of this channel, in the same order; seg / fault / dir are still read live
+      const l = this._pxCh.get(ch); if (l) for (const p of l) if (p.seg === h.g.id && !p.fault && p.dir === h.dir) return p; return null;
+    }
     _planHops(ch, hops, r, p0, over) {
       let cap = Infinity; for (const h of hops) cap = Math.min(cap, CLASS.capacity - this.usedOf(over, h.g.id, ch));
       r = Math.min(r, cap); const nodes = [hops[0].from].concat(hops.map(h => h.to)), pumps = hops.map(h => this._hopPump(h, ch));
@@ -132,9 +144,9 @@
       }
       if (r <= EPS) return null; return { hops, r, p: pEnd, stats, nodes };
     }
-    begin(dt) { this._used = new Map(); this._pused = new Map(); this._net = new Map(); this.dt = dt; this.time += dt; for (const p of this.pumps.values()) { p.flow = 0; p.pIn = 0; p.pOut = 0; p.lowIn = false; } this._chFlow = {}; this._chP = {}; this._chPw = {}; for (const c of CHANNELS) { this._chFlow[c] = 0; this._chP[c] = 0; this._chPw[c] = 0; } }
+    begin(dt) { this._graph(); const need = Math.max(this._six.size, 1) * NCH; if (this._used && this._used.length >= need) { this._used.fill(0); this._net.fill(0); } else { this._used = new Float64Array(need); this._net = new Float64Array(need); } this._pused = new Map(); this._usedX = new Map(); this._netX = new Map(); this.dt = dt; this.time += dt; for (const p of this.pumps.values()) { p.flow = 0; p.pIn = 0; p.pOut = 0; p.lowIn = false; } this._chFlow = {}; this._chP = {}; this._chPw = {}; for (const c of CHANNELS) { this._chFlow[c] = 0; this._chP[c] = 0; this._chPw[c] = 0; } }
     _apply(ch, pl, acc) {
-      for (const h of pl.hops) { const k = h.g.id + '|' + ch; this._used.set(k, (this._used.get(k) || 0) + acc); this._net.set(k, (this._net.get(k) || 0) + acc * h.dir); }
+      for (const h of pl.hops) { if (CI[ch] === undefined) { const k = h.g.id + '|' + ch; this._usedX.set(k, (this._usedX.get(k) || 0) + acc); this._netX.set(k, (this._netX.get(k) || 0) + acc * h.dir); continue; } const i = this._ixOf(h.g.id) * NCH + CI[ch]; this._used[i] = (this._used[i] || 0) + acc; this._net[i] = (this._net[i] || 0) + acc * h.dir; }
       for (const [pu, pin, pout, on] of pl.stats) { pu.flow += on ? acc : 0; if (on) { this._pused.set(pu.id, (this._pused.get(pu.id) || 0) + acc); pu.pIn = pin; pu.pOut = pout; } else pu.lowIn = true; }
       this._chFlow[ch] += acc; this._chP[ch] += pl.p * acc; this._chPw[ch] += acc;
     }
@@ -165,7 +177,7 @@
     }
     end() {
       const dt = this.dt || 0;
-      for (const g of this.seg.values()) for (const c of CHANNELS) { const k = g.id + '|' + c, u = this._used.get(k) || 0, n = this._net.get(k) || 0; g.f[c].flow = u; g.f[c].net = n; }
+      for (const g of this.seg.values()) { const ix = this._six.get(g.id); for (const c of CHANNELS) { const i = ix === undefined ? -1 : ix * NCH + CI[c], u = i < 0 ? 0 : (this._used[i] || 0), n = i < 0 ? 0 : (this._net[i] || 0); g.f[c].flow = u; g.f[c].net = n; } }
       for (const c of CHANNELS) {
         const ch = this.ch[c], fl = this._chFlow[c]; ch.flow = fl; ch.moved += fl * dt; ch.pressure = this._chPw[c] > 0 ? this._chP[c] / this._chPw[c] : 0;
         let tiles = 0, loadQ = 0, netSum = 0, absSum = 0; for (const g of this.seg.values()) { const u = g.f[c].flow, t = g.path.length; tiles += t; loadQ += t * BORE_BBL * Math.min(1, u / CLASS.capacity); netSum += g.f[c].net; absSum += u; }
