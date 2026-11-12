@@ -23,6 +23,7 @@
   const lerp = (a, b, t) => a + (b - a) * t;
   const hash = (a, b, c) => { let h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
   const EPS = 1e-6;
+  const H_D = [], H_S = [], H_N = [];      // B5 scratch heap for _pathCore (never held across a call)
   const PH_U = [], PH_P = [];      // B3a scratch for _planHops (never held across a call)
   const NCH = CHANNELS.length, CI = Object.create(null); CHANNELS.forEach((c, i) => { CI[c] = i; });      // perf: a number per channel, so the per-step usage lives in typed arrays instead of string-keyed Maps
 
@@ -115,10 +116,15 @@
     _pathCore(ch, from, to, over, ban, bias) {
       this._graph(); const nix = this._nix, fi = nix.get(from), ti = nix.get(to); if (fi === undefined || ti === undefined || from === to) return null;
       const A = this._adjA, N = A.length, ci = CI[ch], U = this._used, hasOver = !!(over && over.size), dist = this._pd, prevE = this._pe, prevN = this._pn, done = this._pdone;
-      dist.fill(Infinity, 0, N); prevE.fill(null, 0, N); done.fill(0, 0, N); dist[fi] = 0; const qd = [0], qn = [fi];      // the queue keeps its order (insertion order, first minimum wins, splice): ties break exactly as before
-      while (qd.length) {
-        let bi = 0; for (let i = 1; i < qd.length; i++) if (qd[i] < qd[bi]) bi = i; const d = qd[bi], n = qn[bi]; qd.splice(bi, 1); qn.splice(bi, 1); if (done[n]) continue; done[n] = 1; if (n === ti) break;
-        const es = A[n]; for (let k = 0; k < es.length; k++) { const e = es[k]; if (!this.segUp(e.g, ch) || (ban && ban.has(e.g.id))) continue; let used = ci === undefined ? ((this._usedX && this._usedX.get(e.g.id + '|' + ch)) || 0) : (U[e.ix * NCH + ci] || 0); if (hasOver) used += (over.get(e.g.id + '|' + ch) || 0); if (CLASS.capacity - used <= EPS) continue; const nd = d + e.g.path.length * (bias && this._hopPump({ g: e.g, dir: e.dir }, ch) ? 0.25 : 1); if (nd < dist[e.tn]) { dist[e.tn] = nd; prevE[e.tn] = e; prevN[e.tn] = n; qd.push(nd); qn.push(e.tn); } }
+      dist.fill(Infinity, 0, N); prevE.fill(null, 0, N); done.fill(0, 0, N); dist[fi] = 0;
+      /* B5: binary heap ordered by (distance, insertion number).  The old array queue took the FIRST minimum in insertion order, i.e. the smallest (distance, insertion number) pair, so the pop order, the ties and the stale entries are exactly the same. */
+      const HD = H_D, HS = H_S, HN = H_N; let hl = 0, seq = 0;
+      HD[0] = 0; HS[0] = seq++; HN[0] = fi; hl = 1;
+      while (hl > 0) {
+        const d = HD[0], n = HN[0]; hl--;
+        if (hl > 0) { const xd = HD[hl], xs = HS[hl], xn = HN[hl]; let i = 0; for (;;) { let c = 2 * i + 1; if (c >= hl) break; const r = c + 1; if (r < hl && (HD[r] < HD[c] || (HD[r] === HD[c] && HS[r] < HS[c]))) c = r; if (HD[c] < xd || (HD[c] === xd && HS[c] < xs)) { HD[i] = HD[c]; HS[i] = HS[c]; HN[i] = HN[c]; i = c; } else break; } HD[i] = xd; HS[i] = xs; HN[i] = xn; }
+        if (done[n]) continue; done[n] = 1; if (n === ti) break;
+        const es = A[n]; for (let k = 0; k < es.length; k++) { const e = es[k]; if (!this.segUp(e.g, ch) || (ban && ban.has(e.g.id))) continue; let used = ci === undefined ? ((this._usedX && this._usedX.get(e.g.id + '|' + ch)) || 0) : (U[e.ix * NCH + ci] || 0); if (hasOver) used += (over.get(e.g.id + '|' + ch) || 0); if (CLASS.capacity - used <= EPS) continue; const nd = d + e.g.path.length * (bias && this._hopPump({ g: e.g, dir: e.dir }, ch) ? 0.25 : 1); if (nd < dist[e.tn]) { dist[e.tn] = nd; prevE[e.tn] = e; prevN[e.tn] = n; const sq = seq++; let i = hl++; while (i > 0) { const pa = (i - 1) >> 1; if (HD[pa] > nd || (HD[pa] === nd && HS[pa] > sq)) { HD[i] = HD[pa]; HS[i] = HS[pa]; HN[i] = HN[pa]; i = pa; } else break; } HD[i] = nd; HS[i] = sq; HN[i] = e.tn; } }
       }
       if (prevE[ti] === null) return null; const hops = []; let c = ti; while (c !== fi) { const e = prevE[c], pn = prevN[c]; hops.unshift({ g: e.g, dir: e.dir, from: this._nid[pn], to: this._nid[c] }); c = pn; } return hops;
     }
