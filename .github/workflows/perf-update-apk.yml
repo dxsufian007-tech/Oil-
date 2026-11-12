@@ -1,15 +1,15 @@
-name: OLI EMPIRE B2 release build (B1 + path cache ON by default) as an UPDATE of the installed game
+name: OLI EMPIRE B6 phone-test build (B6 = B2 + B3a + B3b-1 receivers + B4 path cache for ban/bias/over + B5 heap Dijkstra + B6 plan memo) as an UPDATE of the installed game - test only
 
 # The owner's request (Nov 11, 21:31): the performance build must install as an UPDATE over the game on the phone, keeping the save and the progress.
 # Same package as the installed game (com.oli.olicentral, last installed update: central-update-apk.yml run 3 = versionCode 313),
 # same fixed signing key, a version code above every earlier build of that package: max(311 + latest central-update run, 313 + this workflow's run) = 314 on the first run.
 # The game's commit (the last commit that changed oli/) is stamped in the About page and in versionName.
-# B2 official build: B1 numeric indices + the path cache (pcMode 2 by default; 0 = instant fallback from the diagnostics panel). Built from release/perf-b2; NOT merged into feature/central-network or main.
-# Result: OliUpdate-B2-<commit>.apk committed to release/perf-b2 (apk-out/) and attached as a build artifact. Touches no other workflow or branch.
+# B6 TEST build: B6 = B2 + B3a + B3b-1 receivers + B4 path cache for ban/bias/over + B5 heap Dijkstra + B6 plan memo. Built from perf/phaseB-b6-plan (content = that branch, nothing else); NOT merged anywhere, NOT a release.
+# Result: OliUpdate-B6-<commit>.apk committed to perf/phaseB-b6-apk (apk-out/) and attached as a build artifact. Touches no other workflow or branch.
 on:
   workflow_dispatch:
   push:
-    branches: [release/perf-b2]
+    branches: [perf/phaseB-b6-apk]
     paths: ['.github/workflows/perf-update-apk.yml']
 
 permissions:
@@ -56,30 +56,30 @@ jobs:
           VC=$((311 + LAST)); OWN=$((313 + ${{ github.run_number }})); [ "$OWN" -gt "$VC" ] && VC=$OWN; [ "$VC" -gt 313 ] || VC=314
           echo "latest central-update run $LAST -> versionCode $VC"
           sed -i "s/versionCode [0-9]*/versionCode $VC/" oli/android/app/build.gradle
-          sed -i "s/versionName \"[^\"]*\"/versionName \"1.2-b2-$SRC\"/" oli/android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.2-b6-$SRC\"/" oli/android/app/build.gradle
           grep -n "versionCode\|versionName" oli/android/app/build.gradle
       - name: Build the APK
         working-directory: oli/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
-      - run: cp oli/android/app/build/outputs/apk/debug/app-debug.apk OliUpdate-B2-$SRC.apk
+      - run: cp oli/android/app/build/outputs/apk/debug/app-debug.apk OliUpdate-B6-$SRC-r${{ github.run_number }}.apk
       - name: Check the signature (otherwise the phone refuses the update) and the package
         run: |
-          F=OliUpdate-B2-$SRC.apk; BT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+          F=OliUpdate-B6-$SRC-r${{ github.run_number }}.apk; BT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
           ${BT}apksigner verify --print-certs $F | tee /tmp/certs.txt
           grep -qi "SHA-256 digest: 3f5e924227aef8c5d1783ae6677db8b9b0a36a1c7b086b457133e6a4375e1aaf" /tmp/certs.txt || { echo "APK is NOT signed with the fixed key"; exit 1; }
           ${BT}aapt dump badging $F | head -3
           ls -l $F
       - uses: actions/upload-artifact@v4
         with:
-          name: OliUpdate-B2-apk
-          path: OliUpdate-B2-*.apk
+          name: OliUpdate-B6-apk
+          path: OliUpdate-B6-*.apk
       - name: Put the APK on THIS test branch only (the artifact download is not reachable from the owner's sandbox)
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          mkdir -p apk-out && cp OliUpdate-B2-$SRC.apk apk-out/
-          git add apk-out/OliUpdate-B2-$SRC.apk
-          git commit -q -m "B2 release APK $SRC"
-          git push origin HEAD:release/perf-b2
+          mkdir -p apk-out && cp OliUpdate-B6-$SRC-r${{ github.run_number }}.apk apk-out/
+          git add apk-out/OliUpdate-B6-$SRC-r${{ github.run_number }}.apk
+          git commit -q -m "B6 test APK $SRC (not a release)"
+          git push origin HEAD:perf/phaseB-b6-apk
