@@ -5,7 +5,7 @@
    Targeted scenarios T1..T9 are followed by a long random phase.  exit code != 0 = a stale or wrong answer was found.
    node plan-guard.js   (ROOT = tree under test, SAVE = the real save, ITER = random operations, default 5000, SEED) */
 const path = require('path'), ROOT = process.env.ROOT || path.join(__dirname, '../../..'), C = require(path.join(ROOT, 'central.js')), { build } = require('./realload.js');
-const { g } = build(); const cn = g.net.central; cn.begin(0.05);
+const { g } = build(); const cn = g.net.central; cn.setCacheMode(+(process.env.PCMODE || 2)); cn.begin(0.05);
 const CAP = C.CLASS.capacity, CH = C.CHANNELS, EPS = 1e-6; let seed = +(process.env.SEED || 11); const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296, pick = a => a[Math.floor(rnd() * a.length)];
 const bits = x => typeof x === 'number' ? Buffer.from(new Float64Array([x]).buffer).toString('hex') : String(x);
 const canon = pl => !pl ? 'null' : JSON.stringify({ h: pl.hops.map(h => [h.g.id, h.dir, h.from, h.to]), r: bits(pl.r), p: bits(pl.p), n: pl.nodes, st: pl.stats.map(([pu, a, b, on]) => [pu.id, bits(a), bits(b), on]) });
@@ -72,4 +72,4 @@ for (let it = 0; it < +(process.env.ITER || 5000); it++) {
   else if (r < .985) { const ps = pumps(); if (ps.length) { const p = pick(ps); cn.setPumpDir(p.id, rnd() < .5 ? 1 : -1); } }
   else { for (const id of segs()) cn.setFault(id, ch, false); for (const p of pumps()) cn.setPumpFault(p.id, false); }
 }
-console.log('plan-guard: checks', n, 'failures', bad); process.exit(bad ? 1 : 0);
+console.log('plan-guard: checks', n, 'failures', bad, 'memo', JSON.stringify(cn.plStats)); process.exit(bad || cn.plStats.mismatch ? 1 : 0);

@@ -158,7 +158,7 @@
     /* rate, pressure at the far end: friction per segment (the same law as the old pipes), pump boosts at the stations passed, pump flow limit */
     /* B6 (docs/phaseB/B6-plan-memo.md): plan() is a pure function of (ch, from, to, r, p0), the graph and pump structure (this.rev), begin() (this._plE) and a snapshot of the channel's pumps (fault, dir, segment, boost, efficiency - compared at every lookup, because a pump's fields are plain properties that tests write directly) and the usage of THIS channel (this._plV[ci], raised by every _apply on it).
      * The answer of the last call of a (channel, from, to) pair is kept with that stamp and returned, frozen, while the stamp and r / p0 (Object.is) are unchanged.  Calls with an `over` that has entries, from === to and non-channel names are never memoised.
-     * Same switch as the path cache: pcMode 0 = off, 1 = shadow (always recompute and compare), 2 = on. */
+     * Same switch as the path cache: pcMode 0 = off, 1 = shadow (always recompute, compare, and keep the stored answers FROZEN so a caller that wrote into one fails loudly), 2 = on (answers shared as they are: freezing every miss cost about 8 ms/h of 70). */
     plan(ch, from, to, r, p0, over) {
       const m = this.pcMode, ci = CI[ch]; if (m === 0 || ci === undefined || from === to || (over && over.size)) { if (m !== 0) this.plStats.bypass++; return this._planCore(ch, from, to, r, p0, over); }
       this._graph(); const nix = this._nix, fi = nix.get(from), ti = nix.get(to), S = this.plStats; if (fi === undefined || ti === undefined) { S.bypass++; return this._planCore(ch, from, to, r, p0, over); }
@@ -168,7 +168,7 @@
       if (ok && m === 2) { S.hit++; return e.res; }
       const res = this._planCore(ch, from, to, r, p0, over);
       if (ok) { S.verified++; if (!this._plSame(res, e.res)) S.mismatch++; } else S.miss++;
-      if (res) { Object.freeze(res.hops); for (const h of res.hops) Object.freeze(h); for (const t of res.stats) Object.freeze(t); Object.freeze(res.stats); Object.freeze(res.nodes); Object.freeze(res); }
+      if (res && m === 1) { Object.freeze(res.hops); for (const h of res.hops) Object.freeze(h); for (const t of res.stats) Object.freeze(t); Object.freeze(res.stats); Object.freeze(res.nodes); Object.freeze(res); }
       if (e === undefined) { e = { ep: 0, v: 0, r: 0, p: 0, res: null, pf: [] }; M.set(k, e); } e.ep = this._plE; e.v = this._plV[ci]; e.r = r; e.p = p0; e.res = res; this._plPumpsSnap(e, this._pxList(ch)); return res;
     }
     _plPumpsSame(pf, l) {
