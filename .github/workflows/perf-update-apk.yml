@@ -1,4 +1,4 @@
-name: OLI EMPIRE performance build as an UPDATE of the installed game (perf/architecture) - B1 test copy: artifact only, no publish step
+name: OLI EMPIRE performance build as an UPDATE of the installed game (perf/architecture) - B1 test copy, artifact only
 
 # The owner's request (Nov 11, 21:31): the performance build must install as an UPDATE over the game on the phone, keeping the save and the progress.
 # Same package as the installed game (com.oli.olicentral, last installed update: central-update-apk.yml run 3 = versionCode 313),
