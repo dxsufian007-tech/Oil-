@@ -43,7 +43,9 @@ for (const [ch, a, b] of pairs.slice(0, 25)) { cn.begin(0.05); for (let i = 0; i
 for (const [ch, a, b] of pairs.slice(0, 25)) { cn.begin(0.05); const pl = cmp('T2 fill', ch, a, b, 125000, 58, null); apply(ch, pl, 1); cmp('T2 used', ch, a, b, 125000, 58, null); cn.begin(0.05); cmp('T2 after begin', ch, a, b, 125000, 58, null); }
 /* T3: pump fault / pump direction / pump usage on a path with a pump */
 for (const [ch, a, b, pl0] of pumpPairs) { cn.begin(0.05); const pu = pl0.stats[0][0]; cmp('T3 before', ch, a, b, 125000, 58, null); cn.setPumpFault(pu.id, true); cmp('T3 pump fault', ch, a, b, 125000, 58, null); cn.setPumpFault(pu.id, false); cmp('T3 pump ok', ch, a, b, 125000, 58, null);
-  const pl = cmp('T3 pump used', ch, a, b, 250000, 58, null); apply(ch, pl, 1); cmp('T3 after pump usage', ch, a, b, 250000, 58, null); cn.setPumpDir(pu.id, -pu.dir); cmp('T3 dir flipped', ch, a, b, 125000, 58, null); cn.setPumpDir(pu.id, -pu.dir); cmp('T3 dir back', ch, a, b, 125000, 58, null); }
+  const pl = cmp('T3 pump used', ch, a, b, 250000, 58, null); apply(ch, pl, 1); cmp('T3 after pump usage', ch, a, b, 250000, 58, null); cn.setPumpDir(pu.id, -pu.dir); cmp('T3 dir flipped', ch, a, b, 125000, 58, null); cn.setPumpDir(pu.id, -pu.dir); cmp('T3 dir back', ch, a, b, 125000, 58, null);
+  /* direct writes of the plain fields (the old tests do this: p.fault = true), no method, no rev bump */
+  pu.fault = true; cmp('T3 direct fault', ch, a, b, 125000, 58, null); pu.fault = false; cmp('T3 direct repair', ch, a, b, 125000, 58, null); const d0 = pu.dir; pu.dir = -d0; cmp('T3 direct dir', ch, a, b, 125000, 58, null); pu.dir = d0; cmp('T3 direct dir back', ch, a, b, 125000, 58, null); }
 /* T4: faults (rev bump) and null answers: the memo must not keep a null / non-null answer */
 for (const [ch, a, b, pl0] of pairs.slice(0, 25)) { cn.begin(0.05); cmp('T4 before', ch, a, b, 125000, 58, null); for (const h of pl0.hops) cn.setFault(h.g.id, ch, true); cmp('T4 all faulted (null?)', ch, a, b, 125000, 58, null); cmp('T4 again', ch, a, b, 3000, 58, null); for (const h of pl0.hops) cn.setFault(h.g.id, ch, false); cmp('T4 cleared', ch, a, b, 125000, 58, null); cn.setFault(pl0.hops[0].g.id, ch, true); cmp('T4 first faulted', ch, a, b, 125000, 58, null); cn.setFault(pl0.hops[0].g.id, ch, false); }
 /* T5: an apply on ANOTHER channel must not change the answers of this one (and the answer must still be right) */
@@ -64,6 +66,8 @@ for (let it = 0; it < +(process.env.ITER || 5000); it++) {
   else if (r < .78) flipHop(ch, pick(segs()), rnd() < .6);
   else if (r < .86) cn.begin(0.05);
   else if (r < .92) { const ps = pumps(); if (ps.length) cn.setPumpFault(pick(ps).id, rnd() < .5); }
+  else if (r < .94) { const ps = pumps(); if (ps.length) pick(ps).fault = rnd() < .5; }
+  else if (r < .955) { const ps = pumps(); if (ps.length) pick(ps).dir = rnd() < .5 ? 1 : -1; }
   else if (r < .96) cn.setFault(pick(segs()), ch, rnd() < .5);
   else if (r < .985) { const ps = pumps(); if (ps.length) { const p = pick(ps); cn.setPumpDir(p.id, rnd() < .5 ? 1 : -1); } }
   else { for (const id of segs()) cn.setFault(id, ch, false); for (const p of pumps()) cn.setPumpFault(p.id, false); }

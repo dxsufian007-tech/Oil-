@@ -8,12 +8,13 @@ M = {
  'P1 _apply does not invalidate the channel': ("      if (CI[ch] !== undefined) this._plV[CI[ch]]++;      // B6: every use of this channel invalidates its memoised plans\n", ""),
  'P2 rev ignored': ("if (this._plRev !== this.rev) {", "if (false) {"),
  'P3 begin() does not invalidate': ("begin(dt) { this._plE++; this._graph();", "begin(dt) { this._graph();"),
- 'P4 setPumpFault does not invalidate': ("p.fault = !!on; this._plE++; return true; }", "p.fault = !!on; return true; }"),
- 'P5 key ignores r': ("&& Object.is(e.r, r) && Object.is(e.p, p0);", "&& Object.is(e.p, p0);"),
- 'P6 key ignores p0': ("&& Object.is(e.r, r) && Object.is(e.p, p0);", "&& Object.is(e.r, r);"),
+ 'P4 pump snapshot ignores the fault flag': ("if (pf[j] !== p.fault || pf[j + 1] !== p.dir", "if (pf[j + 1] !== p.dir"),
+ 'P5 key ignores r': ("&& Object.is(e.r, r) && Object.is(e.p, p0) &&", "&& Object.is(e.p, p0) &&"),
+ 'P6 key ignores p0': ("&& Object.is(e.r, r) && Object.is(e.p, p0) &&", "&& Object.is(e.r, r) &&"),
  'P7 over with entries is memoised': ("from === to || (over && over.size)) { if (m !== 0) this.plStats.bypass++;", "from === to) { if (m !== 0) this.plStats.bypass++;"),
- 'P8 null answers are not stored': ("e.r = r; e.p = p0; e.res = res; return res;", "e.r = r; e.p = p0; if (res) e.res = res; return res;"),
+ 'P8 null answers are not stored': ("e.r = r; e.p = p0; e.res = res; this._plPumpsSnap", "e.r = r; e.p = p0; if (res) e.res = res; this._plPumpsSnap"),
  'P9 stamp of the wrong channel': None,
+ 'P10 pump snapshot ignores the direction (extra)': ("|| pf[j + 1] !== p.dir ||", "||"),
 }
 env = {**os.environ, 'NODE_OPTIONS': '--preserve-symlinks --preserve-symlinks-main'}
 bad = 0

@@ -77,7 +77,7 @@
     /* Forward (+1) pushes product along the pump's segment from its end a to its end b, Reverse (-1) from b to a: suction and discharge swap sides */
     setPumpDir(id, dir) { const p = this.pumps.get(id); if (!p || (dir !== 1 && dir !== -1)) return false; const g = this.seg.get(p.seg); if (!g || (g.a !== p.st && g.b !== p.st)) return false; p.dir = dir; this.rev++; return true; }
     pumpsOn(g, ch) { const o = []; for (const p of this.pumps.values()) if (p.seg === g.id && p.ch === ch) o.push(p); return o; }
-    setPumpFault(id, on) { const p = this.pumps.get(id); if (!p) return false; p.fault = !!on; this._plE++; return true; }
+    setPumpFault(id, on) { const p = this.pumps.get(id); if (!p) return false; p.fault = !!on; return true; }
     setChannel(ch, state) { const c = this.ch[ch]; if (!c || !['OPEN', 'CLOSED'].includes(state)) return false; c.state = state; return true; }
     setChannelFault(ch, on) { const c = this.ch[ch]; if (!c) return false; c.fault = !!on; return true; }
 
@@ -156,7 +156,7 @@
       else this._pcStore(res);
     }
     /* rate, pressure at the far end: friction per segment (the same law as the old pipes), pump boosts at the stations passed, pump flow limit */
-    /* B6 (docs/phaseB/B6-plan-memo.md): plan() is a pure function of (ch, from, to, r, p0), the graph and pump structure (this.rev), the pump faults / begin() (this._plE) and the usage of THIS channel (this._plV[ci], raised by every _apply on it).
+    /* B6 (docs/phaseB/B6-plan-memo.md): plan() is a pure function of (ch, from, to, r, p0), the graph and pump structure (this.rev), begin() (this._plE) and a snapshot of the channel's pumps (fault, dir, segment, boost, efficiency - compared at every lookup, because a pump's fields are plain properties that tests write directly) and the usage of THIS channel (this._plV[ci], raised by every _apply on it).
      * The answer of the last call of a (channel, from, to) pair is kept with that stamp and returned, frozen, while the stamp and r / p0 (Object.is) are unchanged.  Calls with an `over` that has entries, from === to and non-channel names are never memoised.
      * Same switch as the path cache: pcMode 0 = off, 1 = shadow (always recompute and compare), 2 = on. */
     plan(ch, from, to, r, p0, over) {
@@ -164,12 +164,21 @@
       this._graph(); const nix = this._nix, fi = nix.get(from), ti = nix.get(to), S = this.plStats; if (fi === undefined || ti === undefined) { S.bypass++; return this._planCore(ch, from, to, r, p0, over); }
       let M = this._plM[ci]; if (this._plRev !== this.rev) { for (let i = 0; i < NCH; i++) this._plM[i] = null; this._plRev = this.rev; M = null; } if (!M) M = this._plM[ci] = new Map();
       const k = fi * nix.size + ti; let e = M.get(k); S.calls++;
-      const ok = e !== undefined && e.ep === this._plE && e.v === this._plV[ci] && Object.is(e.r, r) && Object.is(e.p, p0);
+      const ok = e !== undefined && e.ep === this._plE && e.v === this._plV[ci] && Object.is(e.r, r) && Object.is(e.p, p0) && this._plPumpsSame(e.pf, this._pxList(ch));
       if (ok && m === 2) { S.hit++; return e.res; }
       const res = this._planCore(ch, from, to, r, p0, over);
       if (ok) { S.verified++; if (!this._plSame(res, e.res)) S.mismatch++; } else S.miss++;
       if (res) { Object.freeze(res.hops); for (const h of res.hops) Object.freeze(h); for (const t of res.stats) Object.freeze(t); Object.freeze(res.stats); Object.freeze(res.nodes); Object.freeze(res); }
-      if (e === undefined) { e = { ep: 0, v: 0, r: 0, p: 0, res: null }; M.set(k, e); } e.ep = this._plE; e.v = this._plV[ci]; e.r = r; e.p = p0; e.res = res; return res;
+      if (e === undefined) { e = { ep: 0, v: 0, r: 0, p: 0, res: null, pf: [] }; M.set(k, e); } e.ep = this._plE; e.v = this._plV[ci]; e.r = r; e.p = p0; e.res = res; this._plPumpsSnap(e, this._pxList(ch)); return res;
+    }
+    _plPumpsSame(pf, l) {
+      const n = l === undefined ? 0 : l.length; if (pf.length !== 5 * n) return false;
+      for (let i = 0, j = 0; i < n; i++, j += 5) { const p = l[i]; if (pf[j] !== p.fault || pf[j + 1] !== p.dir || pf[j + 2] !== p.seg || !Object.is(pf[j + 3], p.boost) || !Object.is(pf[j + 4], p.eff)) return false; }
+      return true;
+    }
+    _plPumpsSnap(e, l) {
+      const n = l === undefined ? 0 : l.length, pf = e.pf; pf.length = 5 * n;
+      for (let i = 0, j = 0; i < n; i++, j += 5) { const p = l[i]; pf[j] = p.fault; pf[j + 1] = p.dir; pf[j + 2] = p.seg; pf[j + 3] = p.boost; pf[j + 4] = p.eff; }
     }
     _plSame(a, b) {
       if (a === null || b === null) return a === b; if (!Object.is(a.r, b.r) || !Object.is(a.p, b.p) || a.hops.length !== b.hops.length || a.stats.length !== b.stats.length || a.nodes.length !== b.nodes.length) return false;
@@ -188,9 +197,12 @@
       return best;
     }
     /* the pump of a hop that really pushes THIS way (healthy and set to this direction); null = no boost (idle direction, or failed: the product passes the pump unboosted) */
-    _hopPump(h, ch) {
+    _pxList(ch) {
       if (this._pxRev !== this.rev || this._pxN !== this.pumps.size || !this._pxCh) { const m = new Map(); for (const p of this.pumps.values()) { let l = m.get(p.ch); if (!l) m.set(p.ch, l = []); l.push(p); } this._pxCh = m; this._pxRev = this.rev; this._pxN = this.pumps.size; }      // perf: only the pumps of this channel, in the same order; seg / fault / dir are still read live
-      const l = this._pxCh.get(ch); if (l) for (const p of l) if (p.seg === h.g.id && !p.fault && p.dir === h.dir) return p; return null;
+      return this._pxCh.get(ch);
+    }
+    _hopPump(h, ch) {
+      const l = this._pxList(ch); if (l) for (const p of l) if (p.seg === h.g.id && !p.fault && p.dir === h.dir) return p; return null;
     }
     _planHops(ch, hops, r, p0, over) {
       /* B3a: the same arithmetic in the same order as before (bit-identical); only the bookkeeping changed - the per-hop used value is read once instead of once per iteration, no closure or helper arrays per call, the constants are read once */
