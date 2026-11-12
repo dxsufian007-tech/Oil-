@@ -158,7 +158,7 @@
       if (this._pxRev !== this.rev || this._pxN !== this.pumps.size || !this._pxCh) { const m = new Map(); for (const p of this.pumps.values()) { let l = m.get(p.ch); if (!l) m.set(p.ch, l = []); l.push(p); } this._pxCh = m; this._pxRev = this.rev; this._pxN = this.pumps.size; }      // perf: only the pumps of this channel, in the same order; seg / fault / dir are still read live
       const l = this._pxCh.get(ch); if (l) for (const p of l) if (p.seg === h.g.id && !p.fault && p.dir === h.dir) return p; return null;
     }
-    _planHops(ch, hops, r, p0, over) {
+    _planHopsB3a(ch, hops, r, p0, over) {
       /* B3a: the same arithmetic in the same order as before (bit-identical); only the bookkeeping changed - the per-hop used value is read once instead of once per iteration, no closure or helper arrays per call, the constants are read once */
       const n = hops.length, CAPC = CLASS.capacity, FPT = SIM.frictionPsiPerTile, FEXP = SIM.frictionExp, FRIC = CLASS.fric, U = PH_U, P = PH_P;
       let cap = Infinity; for (let i = 0; i < n; i++) { const u = this.usedOf(over, hops[i].g.id, ch); U[i] = u; cap = Math.min(cap, CAPC - u); }
@@ -179,6 +179,26 @@
         pEnd = p; if (ok) break; if (r <= EPS) { for (let i = 0; i < n; i++) P[i] = null; return null; }
       }
       for (let i = 0; i < n; i++) P[i] = null;
+      if (r <= EPS) return null; return { hops, r, p: pEnd, stats, nodes };
+    }
+    /* B2's _planHops, kept verbatim for the diagnostics A/B switch (never the default) */
+    _planHopsB2(ch, hops, r, p0, over) {
+      let cap = Infinity; for (const h of hops) cap = Math.min(cap, CLASS.capacity - this.usedOf(over, h.g.id, ch));
+      r = Math.min(r, cap); const nodes = [hops[0].from].concat(hops.map(h => h.to)), pumps = hops.map(h => this._hopPump(h, ch));
+      pumps.forEach(pu => { if (pu) r = Math.min(r, Math.max(0, PU.maxFlow - this.pusedOf(over, pu.id))); });
+      if (r <= EPS) return null; let pEnd = 0, stats = null;
+      for (let it = 0; it < 6; it++) {
+        let p = p0, ok = true; stats = [];
+        for (let i = 0; i < hops.length; i++) {
+          const h = hops[i], pu = pumps[i], atStart = pu && pu.st === h.from;                                              // mounted at the start of the hop: it pushes into the pipe (before the friction); at the end: it pulls from the pipe (after it)
+          const boost = () => {      /* never above the pipe class's maximum pressure */  if (p >= PU.minInletPsi) { const add = Math.min(pu.boost * pu.eff, Math.max(0, CLASS.maxPressure - p)); stats.push([pu, p, p + add, true]); p += add; } else stats.push([pu, p, p, false]); };
+          if (atStart) boost();
+          const ratio = (this.usedOf(over, h.g.id, ch) + r) / CLASS.capacity, loss = h.g.path.length * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * CLASS.fric;
+          if (p - loss < 0) { r *= Math.max(0, p / (loss || 1)); ok = false; break; } p -= loss;
+          if (pu && !atStart) boost();
+        }
+        pEnd = p; if (ok) break; if (r <= EPS) return null;
+      }
       if (r <= EPS) return null; return { hops, r, p: pEnd, stats, nodes };
     }
     begin(dt) { this._graph(); const need = Math.max(this._six.size, 1) * NCH; if (this._used && this._used.length >= need) { this._used.fill(0); this._net.fill(0); } else { this._used = new Float64Array(need); this._net = new Float64Array(need); } this._pused = new Map(); this._usedX = new Map(); this._netX = new Map(); if (this.pcMode) { this._pcClearAll('begin'); for (const g of this.seg.values()) if (!Object.isFrozen(g.fault)) { Object.freeze(g.fault); this.pcStats.tamper++; this._pcClearAll('fault'); } } this.dt = dt; this.time += dt; for (const p of this.pumps.values()) { p.flow = 0; p.pIn = 0; p.pOut = 0; p.lowIn = false; } this._chFlow = {}; this._chP = {}; this._chPw = {}; for (const c of CHANNELS) { this._chFlow[c] = 0; this._chP[c] = 0; this._chPw[c] = 0; } }
@@ -247,6 +267,7 @@
       return n;
     }
   }
+  CentralNet.prototype._planHops = CentralNet.prototype._planHopsB3a;      // the default; the diagnostics panel can switch to _planHopsB2 (same results, same order) to measure A/B on the phone
   CentralNet.pcDefault = 2;      // the path cache mode a NEW network starts in (2 = on, answers plain path calls from the cache; 0 = off = the B1 path, an instant fallback from the diagnostics panel)
   /* compact path: corner points */
   function pack(path) { const o = [path[0]]; for (let i = 1; i < path.length - 1; i++) { const a = path[i - 1], b = path[i], c = path[i + 1]; if ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]) !== 0) o.push(b); } if (path.length > 1) o.push(path[path.length - 1]); return o; }
