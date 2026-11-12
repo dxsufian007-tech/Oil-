@@ -30,7 +30,7 @@
     constructor(W) {
       this.W = W; this.st = new Map(); this.seg = new Map(); this.pumps = new Map(); this.at = new Map(); this.cen = new Set(); this.cov = new Set(); this.rev = 0; this.nextSt = 1; this.nextSeg = 1; this.nextPump = 1; this.time = 0;
       this.ch = {}; for (const c of CHANNELS) this.ch[c] = { state: 'OPEN', flow: 0, pressure: 0, qty: 0, moved: 0, dir: 0, fault: false, cap: CLASS.capacity, maxP: CLASS.maxPressure, status: 'READY' };
-      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
+      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcX = -1; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
     }
     static k(W, x, y) { return y * W + x; }
     key(x, y) { return y * this.W + x; }
@@ -108,7 +108,7 @@
     }
     /* 0 = off (instant return to the plain computation), 1 = shadow (compare only), 2 = on.  Changing the mode empties the cache and resets its counters. */
     setCacheMode(m) {
-      m = m === 2 ? 2 : m === 1 ? 1 : 0; this.pcMode = m; this.pcStats = null; for (let i = 0; i < NCH; i++) this._pcA[i] = null; this._pcRev = -1;
+      m = m === 2 ? 2 : m === 1 ? 1 : 0; this.pcMode = m; this.pcStats = null; for (let i = 0; i < NCH; i++) { this._pcA[i] = null; this._pcB[i] = null; } this._pcRev = -1;
       for (const g of this.seg.values()) { if (m) { if (!Object.isFrozen(g.fault)) Object.freeze(g.fault); } else if (Object.isFrozen(g.fault)) g.fault = Object.assign({}, g.fault); }
       return m;
     }
@@ -126,17 +126,24 @@
      * A cached path is valid while: the graph is the same (rev: stations, segments, pumps, faults and pump directions all bump it), nothing in this step has made a segment of the channel
      * saturated / free (_apply watches the capacity test of every hop it loads), and the call is the plain one (no ban, no bias, no `over`).  begin() starts a clean step. */
     _pcNewStats() { return { calls: 0, nonChannel: 0, ban: 0, bias: 0, over: 0, cacheable: 0, lookupHit: 0, miss: 0, verified: 0, mismatch: 0, first: [], clears: { begin: 0, rev: 0, fault: 0 }, invalSat: 0, entries: 0, tamper: 0 }; }
-    _pcClearAll(why) { for (let i = 0; i < NCH; i++) this._pcA[i] = null; (this.pcStats || (this.pcStats = this._pcNewStats())).clears[why]++; }
+    _pcClearAll(why) { for (let i = 0; i < NCH; i++) { this._pcA[i] = null; this._pcB[i] = null; } (this.pcStats || (this.pcStats = this._pcNewStats())).clears[why]++; }
     /* the cached answer for this exact call: undefined = unknown (miss or not cacheable), null = cached "no path", an array = the cached hops */
     _pcLookup(ch, from, to, over, ban, bias) {
       const st = this.pcStats || (this.pcStats = this._pcNewStats()); st.calls++; this._pcK = -1;
-      const ci = CI[ch]; if (ci === undefined) return void (st.nonChannel++); if (ban) return void (st.ban++); if (bias) return void (st.bias++); if (over && over.size) return void (st.over++);
+      const ci = CI[ch]; if (ci === undefined) return void (st.nonChannel++); this._pcX = -1;
+      /* B4: the searches plan() makes when the shortest path cannot carry everything - the route that uses the pumps (bias) and one route per segment of the first path that avoids it (ban, exactly one segment) - are cached too, in their own key space (this._pcB), and an `over` that does not change the capacity predicate of any segment gives the same answer as no `over` (the search only ever asks "is capacity - used <= EPS", never for the value).  Same invalidation as the plain entries. */
+      let sub = 0; if (ban) { if (bias || ban.size !== 1) return void (st.ban++); sub = -1; } else if (bias) sub = 1;
+      if (over && over.size && !this._overKeepsPredicate(over)) return void (st.over++);
+      if (sub !== 0) { this._graph(); const fi = this._nix.get(from), ti = this._nix.get(to); if (fi === undefined || ti === undefined || from === to) return undefined; if (sub === -1) { let id; for (const x of ban) id = x; const bx = this._six.get(id); if (bx === undefined) return void (st.ban++); sub = bx + 2; }
+        st.cacheable++; if (this._pcRev !== this.rev) { this._pcClearAll('rev'); this._pcRev = this.rev; } let m = this._pcB[ci]; if (!m) m = this._pcB[ci] = new Map(); const kx = (fi * this._adjA.length + ti) * (this._six.size + 3) + sub; this._pcX = kx; this._pcCi = ci; const e = m.get(kx); if (e === undefined) { st.miss++; return undefined; } st.lookupHit++; return e === 0 ? null : e; }
       this._graph(); const fi = this._nix.get(from), ti = this._nix.get(to); if (fi === undefined || ti === undefined || from === to) return undefined;
       st.cacheable++; if (this._pcRev !== this.rev) { this._pcClearAll('rev'); this._pcRev = this.rev; }
       const N = this._adjA.length; let a = this._pcA[ci]; if (!a) a = this._pcA[ci] = new Array(N * N); const k = fi * N + ti; this._pcCi = ci; this._pcK = k;
       const e = a[k]; if (e === undefined) { st.miss++; return undefined; } st.lookupHit++; return e === 0 ? null : e;
     }
-    _pcStore(res) { if (this._pcK < 0) return; if (this.pcMode === 2 && res) { for (const h of res) Object.freeze(h); Object.freeze(res); } const a = this._pcA[this._pcCi]; if (a && a[this._pcK] === undefined) { a[this._pcK] = res === null ? 0 : res; this.pcStats.entries++; } }
+    _pcStore(res) { if (this._pcX >= 0) { const kx = this._pcX; this._pcX = -1; if (this.pcMode === 2 && res) { for (const h of res) Object.freeze(h); Object.freeze(res); } const m = this._pcB[this._pcCi]; if (m && !m.has(kx)) { m.set(kx, res === null ? 0 : res); this.pcStats.entries++; } return; } if (this._pcK < 0) return; if (this.pcMode === 2 && res) { for (const h of res) Object.freeze(h); Object.freeze(res); } const a = this._pcA[this._pcCi]; if (a && a[this._pcK] === undefined) { a[this._pcK] = res === null ? 0 : res; this.pcStats.entries++; } }
+    /* B4: true when `over` leaves the capacity predicate (capacity - used <= EPS) of every segment it mentions as it is without `over` (the other segments are not mentioned, so they cannot differ); a pump key ('P' + id, no '|') or a key of a segment that is not indexed / a channel that is not one of the six answers "no" or is skipped exactly as in the old code path */
+    _overKeepsPredicate(over) { const U = this._used; for (const [k, v] of over) { const bar = k.lastIndexOf('|'); if (bar < 0) continue; const ix = this._six.get(k.slice(0, bar)), ci = CI[k.slice(bar + 1)]; if (ix === undefined || ci === undefined) return false; const base = U[ix * NCH + ci] || 0; if ((CLASS.capacity - base <= EPS) !== (CLASS.capacity - (base + v) <= EPS)) return false; } return true; }
     _pcShadow(ch, from, to, over, ban, bias, res) {
       const got = this._pcLookup(ch, from, to, over, ban, bias), st = this.pcStats;
       if (got !== undefined) { st.verified++; let same = got === res || (got !== null && res !== null && got.length === res.length); if (same && got !== res) for (let i = 0; i < got.length; i++) { const x = got[i], y = res[i]; if (x.g !== y.g || x.dir !== y.dir || x.from !== y.from || x.to !== y.to) { same = false; break; } } if (!same) { st.mismatch++; if (st.first.length < 5) st.first.push({ ch, from, to, cached: got ? got.map(h => h.g.id).join() : null, real: res ? res.map(h => h.g.id).join() : null }); } }
@@ -183,7 +190,7 @@
     }
     begin(dt) { this._graph(); const need = Math.max(this._six.size, 1) * NCH; if (this._used && this._used.length >= need) { this._used.fill(0); this._net.fill(0); } else { this._used = new Float64Array(need); this._net = new Float64Array(need); } this._pused = new Map(); this._usedX = new Map(); this._netX = new Map(); if (this.pcMode) { this._pcClearAll('begin'); for (const g of this.seg.values()) if (!Object.isFrozen(g.fault)) { Object.freeze(g.fault); this.pcStats.tamper++; this._pcClearAll('fault'); } } this.dt = dt; this.time += dt; for (const p of this.pumps.values()) { p.flow = 0; p.pIn = 0; p.pOut = 0; p.lowIn = false; } this._chFlow = {}; this._chP = {}; this._chPw = {}; for (const c of CHANNELS) { this._chFlow[c] = 0; this._chP[c] = 0; this._chPw[c] = 0; } }
     _apply(ch, pl, acc) {
-      for (const h of pl.hops) { if (CI[ch] === undefined) { const k = h.g.id + '|' + ch; this._usedX.set(k, (this._usedX.get(k) || 0) + acc); this._netX.set(k, (this._netX.get(k) || 0) + acc * h.dir); continue; } const i = this._ixOf(h.g.id) * NCH + CI[ch]; const was = this.pcMode ? CLASS.capacity - (this._used[i] || 0) <= EPS : false; this._used[i] = (this._used[i] || 0) + acc; this._net[i] = (this._net[i] || 0) + acc * h.dir; if (this.pcMode && was !== (CLASS.capacity - this._used[i] <= EPS)) { this._pcA[CI[ch]] = null; if (this.pcStats) this.pcStats.invalSat++; } }
+      for (const h of pl.hops) { if (CI[ch] === undefined) { const k = h.g.id + '|' + ch; this._usedX.set(k, (this._usedX.get(k) || 0) + acc); this._netX.set(k, (this._netX.get(k) || 0) + acc * h.dir); continue; } const i = this._ixOf(h.g.id) * NCH + CI[ch]; const was = this.pcMode ? CLASS.capacity - (this._used[i] || 0) <= EPS : false; this._used[i] = (this._used[i] || 0) + acc; this._net[i] = (this._net[i] || 0) + acc * h.dir; if (this.pcMode && was !== (CLASS.capacity - this._used[i] <= EPS)) { this._pcA[CI[ch]] = null; this._pcB[CI[ch]] = null; if (this.pcStats) this.pcStats.invalSat++; } }
       for (const [pu, pin, pout, on] of pl.stats) { pu.flow += on ? acc : 0; if (on) { this._pused.set(pu.id, (this._pused.get(pu.id) || 0) + acc); pu.pIn = pin; pu.pOut = pout; } else pu.lowIn = true; }
       this._chFlow[ch] += acc; this._chP[ch] += pl.p * acc; this._chPw[ch] += acc;
     }
