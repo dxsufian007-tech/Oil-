@@ -31,7 +31,7 @@
     constructor(W) {
       this.W = W; this.st = new Map(); this.seg = new Map(); this.pumps = new Map(); this.at = new Map(); this.cen = new Set(); this.cov = new Set(); this.rev = 0; this.nextSt = 1; this.nextSeg = 1; this.nextPump = 1; this.time = 0;
       this.ch = {}; for (const c of CHANNELS) this.ch[c] = { state: 'OPEN', flow: 0, pressure: 0, qty: 0, moved: 0, dir: 0, fault: false, cap: CLASS.capacity, maxP: CLASS.maxPressure, status: 'READY' };
-      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcX = -1; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
+      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcX = -1; this._plE = 0; this._plV = [0, 0, 0, 0, 0, 0]; this._plM = [null, null, null, null, null, null]; this._plRev = -1; this.plStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0 }; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
     }
     static k(W, x, y) { return y * W + x; }
     key(x, y) { return y * this.W + x; }
@@ -77,7 +77,7 @@
     /* Forward (+1) pushes product along the pump's segment from its end a to its end b, Reverse (-1) from b to a: suction and discharge swap sides */
     setPumpDir(id, dir) { const p = this.pumps.get(id); if (!p || (dir !== 1 && dir !== -1)) return false; const g = this.seg.get(p.seg); if (!g || (g.a !== p.st && g.b !== p.st)) return false; p.dir = dir; this.rev++; return true; }
     pumpsOn(g, ch) { const o = []; for (const p of this.pumps.values()) if (p.seg === g.id && p.ch === ch) o.push(p); return o; }
-    setPumpFault(id, on) { const p = this.pumps.get(id); if (!p) return false; p.fault = !!on; return true; }
+    setPumpFault(id, on) { const p = this.pumps.get(id); if (!p) return false; p.fault = !!on; this._plE++; return true; }
     setChannel(ch, state) { const c = this.ch[ch]; if (!c || !['OPEN', 'CLOSED'].includes(state)) return false; c.state = state; return true; }
     setChannelFault(ch, on) { const c = this.ch[ch]; if (!c) return false; c.fault = !!on; return true; }
 
@@ -109,7 +109,7 @@
     }
     /* 0 = off (instant return to the plain computation), 1 = shadow (compare only), 2 = on.  Changing the mode empties the cache and resets its counters. */
     setCacheMode(m) {
-      m = m === 2 ? 2 : m === 1 ? 1 : 0; this.pcMode = m; this.pcStats = null; for (let i = 0; i < NCH; i++) { this._pcA[i] = null; this._pcB[i] = null; } this._pcRev = -1;
+      m = m === 2 ? 2 : m === 1 ? 1 : 0; this.pcMode = m; this._plE++; this._plM = [null, null, null, null, null, null]; this.pcStats = null; for (let i = 0; i < NCH; i++) { this._pcA[i] = null; this._pcB[i] = null; } this._pcRev = -1;
       for (const g of this.seg.values()) { if (m) { if (!Object.isFrozen(g.fault)) Object.freeze(g.fault); } else if (Object.isFrozen(g.fault)) g.fault = Object.assign({}, g.fault); }
       return m;
     }
@@ -156,7 +156,28 @@
       else this._pcStore(res);
     }
     /* rate, pressure at the far end: friction per segment (the same law as the old pipes), pump boosts at the stations passed, pump flow limit */
+    /* B6 (docs/phaseB/B6-plan-memo.md): plan() is a pure function of (ch, from, to, r, p0), the graph and pump structure (this.rev), the pump faults / begin() (this._plE) and the usage of THIS channel (this._plV[ci], raised by every _apply on it).
+     * The answer of the last call of a (channel, from, to) pair is kept with that stamp and returned, frozen, while the stamp and r / p0 (Object.is) are unchanged.  Calls with an `over` that has entries, from === to and non-channel names are never memoised.
+     * Same switch as the path cache: pcMode 0 = off, 1 = shadow (always recompute and compare), 2 = on. */
     plan(ch, from, to, r, p0, over) {
+      const m = this.pcMode, ci = CI[ch]; if (m === 0 || ci === undefined || from === to || (over && over.size)) { if (m !== 0) this.plStats.bypass++; return this._planCore(ch, from, to, r, p0, over); }
+      this._graph(); const nix = this._nix, fi = nix.get(from), ti = nix.get(to), S = this.plStats; if (fi === undefined || ti === undefined) { S.bypass++; return this._planCore(ch, from, to, r, p0, over); }
+      let M = this._plM[ci]; if (this._plRev !== this.rev) { for (let i = 0; i < NCH; i++) this._plM[i] = null; this._plRev = this.rev; M = null; } if (!M) M = this._plM[ci] = new Map();
+      const k = fi * nix.size + ti; let e = M.get(k); S.calls++;
+      const ok = e !== undefined && e.ep === this._plE && e.v === this._plV[ci] && Object.is(e.r, r) && Object.is(e.p, p0);
+      if (ok && m === 2) { S.hit++; return e.res; }
+      const res = this._planCore(ch, from, to, r, p0, over);
+      if (ok) { S.verified++; if (!this._plSame(res, e.res)) S.mismatch++; } else S.miss++;
+      if (res) { Object.freeze(res.hops); for (const h of res.hops) Object.freeze(h); for (const t of res.stats) Object.freeze(t); Object.freeze(res.stats); Object.freeze(res.nodes); Object.freeze(res); }
+      if (e === undefined) { e = { ep: 0, v: 0, r: 0, p: 0, res: null }; M.set(k, e); } e.ep = this._plE; e.v = this._plV[ci]; e.r = r; e.p = p0; e.res = res; return res;
+    }
+    _plSame(a, b) {
+      if (a === null || b === null) return a === b; if (!Object.is(a.r, b.r) || !Object.is(a.p, b.p) || a.hops.length !== b.hops.length || a.stats.length !== b.stats.length || a.nodes.length !== b.nodes.length) return false;
+      for (let i = 0; i < a.hops.length; i++) { const x = a.hops[i], y = b.hops[i]; if (x.g !== y.g || x.dir !== y.dir || x.from !== y.from || x.to !== y.to) return false; }
+      for (let i = 0; i < a.stats.length; i++) { const x = a.stats[i], y = b.stats[i]; if (x[0] !== y[0] || !Object.is(x[1], y[1]) || !Object.is(x[2], y[2]) || x[3] !== y[3]) return false; }
+      for (let i = 0; i < a.nodes.length; i++) if (a.nodes[i] !== b.nodes[i]) return false; return true;
+    }
+    _planCore(ch, from, to, r, p0, over) {
       if (from === to) return r > EPS ? { hops: [], r, p: p0, stats: [], nodes: [from] } : null;                         // two branches on the SAME station: the product passes through the station itself (no trunk)
       const first = this.path(ch, from, to, over); if (!first) return null; let best = this._planHops(ch, first, r, p0, over);
       if (!best || best.r < r - 1e-6) {                                                                                  // the shortest path cannot carry it all (capacity, pressure, a pump pushing the other way): try the loop paths that avoid one of its segments
@@ -194,8 +215,9 @@
       for (let i = 0; i < n; i++) P[i] = null;
       if (r <= EPS) return null; return { hops, r, p: pEnd, stats, nodes };
     }
-    begin(dt) { this._graph(); const need = Math.max(this._six.size, 1) * NCH; if (this._used && this._used.length >= need) { this._used.fill(0); this._net.fill(0); } else { this._used = new Float64Array(need); this._net = new Float64Array(need); } this._pused = new Map(); this._usedX = new Map(); this._netX = new Map(); if (this.pcMode) { this._pcClearAll('begin'); for (const g of this.seg.values()) if (!Object.isFrozen(g.fault)) { Object.freeze(g.fault); this.pcStats.tamper++; this._pcClearAll('fault'); } } this.dt = dt; this.time += dt; for (const p of this.pumps.values()) { p.flow = 0; p.pIn = 0; p.pOut = 0; p.lowIn = false; } this._chFlow = {}; this._chP = {}; this._chPw = {}; for (const c of CHANNELS) { this._chFlow[c] = 0; this._chP[c] = 0; this._chPw[c] = 0; } }
+    begin(dt) { this._plE++; this._graph(); const need = Math.max(this._six.size, 1) * NCH; if (this._used && this._used.length >= need) { this._used.fill(0); this._net.fill(0); } else { this._used = new Float64Array(need); this._net = new Float64Array(need); } this._pused = new Map(); this._usedX = new Map(); this._netX = new Map(); if (this.pcMode) { this._pcClearAll('begin'); for (const g of this.seg.values()) if (!Object.isFrozen(g.fault)) { Object.freeze(g.fault); this.pcStats.tamper++; this._pcClearAll('fault'); } } this.dt = dt; this.time += dt; for (const p of this.pumps.values()) { p.flow = 0; p.pIn = 0; p.pOut = 0; p.lowIn = false; } this._chFlow = {}; this._chP = {}; this._chPw = {}; for (const c of CHANNELS) { this._chFlow[c] = 0; this._chP[c] = 0; this._chPw[c] = 0; } }
     _apply(ch, pl, acc) {
+      if (CI[ch] !== undefined) this._plV[CI[ch]]++;      // B6: every use of this channel invalidates its memoised plans
       for (const h of pl.hops) { if (CI[ch] === undefined) { const k = h.g.id + '|' + ch; this._usedX.set(k, (this._usedX.get(k) || 0) + acc); this._netX.set(k, (this._netX.get(k) || 0) + acc * h.dir); continue; } const i = this._ixOf(h.g.id) * NCH + CI[ch]; const was = this.pcMode ? CLASS.capacity - (this._used[i] || 0) <= EPS : false; this._used[i] = (this._used[i] || 0) + acc; this._net[i] = (this._net[i] || 0) + acc * h.dir; if (this.pcMode && was !== (CLASS.capacity - this._used[i] <= EPS)) { this._pcA[CI[ch]] = null; this._pcB[CI[ch]] = null; if (this.pcStats) this.pcStats.invalSat++; } }
       for (const [pu, pin, pout, on] of pl.stats) { pu.flow += on ? acc : 0; if (on) { this._pused.set(pu.id, (this._pused.get(pu.id) || 0) + acc); pu.pIn = pin; pu.pOut = pout; } else pu.lowIn = true; }
       this._chFlow[ch] += acc; this._chP[ch] += pl.p * acc; this._chPw[ch] += acc;
