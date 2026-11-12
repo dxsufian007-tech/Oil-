@@ -1,0 +1,11 @@
+/* Phase A: overhead of the wrappers on the central + real-field scene, many paired blocks in one process (see overhead-browser.js).   ROOT=<oli dir> node overhead-node.js ROUNDS HOURS */
+const path = require('path'), ROOT = process.env.ROOT || path.join(__dirname, '../../..'), ROUNDS = +process.argv[2] || 60, HRS = +process.argv[3] || 24;
+global.window = global; global.document = { addEventListener() { }, createElement() { return { style: {}, setAttribute() { }, appendChild() { }, querySelector() { return null; }, addEventListener() { } }; }, body: { appendChild() { } } };
+const si = global.setInterval; global.setInterval = () => 0; require(path.join(ROOT, 'live-diag.js')); global.setInterval = si; const PA = window.OliLiveDiag.pa;
+const { g, co } = require('./scene-central.js').build(), L = { company: co, store: g.store, sim: g.sim }; co.advanceHours(24);
+const cnt = PA.install(L, PA.cfg.count()); co.advanceHours(8); cnt.remove(); const calls = new Map([...cnt.stats].map(([k, s]) => [k, s.calls / 8]));
+const mk = { A: null, T1: () => PA.install(L, PA.cfg.t1()), T2: () => PA.install(L, PA.cfg.t2(calls, 5000)) }, rows = [];
+for (let r = 0; r < ROUNDS; r++) { const row = { A: [], T1: [], T2: [] }; for (const m of ['A', 'A', 'T1', 'T2'].sort(() => Math.random() - 0.5)) { const inst = mk[m] ? mk[m]() : null; co.advanceHours(1); const t0 = performance.now(); co.advanceHours(HRS); const dt = (performance.now() - t0) / HRS; if (inst) inst.remove(); row[m].push(dt); } rows.push(row); }
+const stat = k => { const x = rows.map(row => row[k][0] / (row.A.reduce((p, v) => p + v, 0) / row.A.length) - 1), m = x.reduce((p, v) => p + v, 0) / x.length, sd = Math.sqrt(x.reduce((p, v) => p + (v - m) * (v - m), 0) / (x.length - 1)); return { mean: +(m * 100).toFixed(1), se: +(sd / Math.sqrt(x.length) * 100).toFixed(1) }; };
+const aAll = rows.flatMap(r => r.A), am = aAll.reduce((p, v) => p + v, 0) / aAll.length;
+console.log(JSON.stringify({ scene: 'central+fields', buildings: g.store.items.size, rounds: ROUNDS, hoursPerBlock: HRS, hourMsUnwrapped: +am.toFixed(2), centralCallsPerHour: +(calls.get('CentralNet.toStation') || 0).toFixed(1), overheadT1: stat('T1'), overheadT2: stat('T2') }));
