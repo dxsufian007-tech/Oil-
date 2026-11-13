@@ -5,7 +5,7 @@ import os, subprocess, sys
 T = os.path.abspath(sys.argv[1]); W = os.path.abspath(sys.argv[2]); SEEDS = sys.argv[3].split(','); STEPS = sys.argv[4] if len(sys.argv) > 4 else '100'; TOOLS = os.path.join(T, 'docs/phaseB/tools'); REALSEEDS = (sys.argv[5] if len(sys.argv) > 5 else '1,2,3').split(','); REALSTEPS = sys.argv[6] if len(sys.argv) > 6 else '30'
 C = open(os.path.join(T, 'central.js')).read(); I = open(os.path.join(T, 'industry.js')).read()
 SITES = ["this._cv++; const acc = this.offer(b, 'WATER_OUT'", "this._cv++; const acc = this.split(b, ports, { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, p: SIM.tankHeadPsi }", "this._cv++; const acc = this.split(b, ports, { prod: P.CRUDE", "this._cv++; const acc = this.split(b, tOuts"]
-M = [   # (name, file, old, new)
+M0 = [   # (name, file, old, new)
  ('D2 accept commit does not invalidate', 'I', "vis.delete(b.id); if (commit && acc > 0) this._cv++; }", "vis.delete(b.id); }"),
  ('D3 step start does not invalidate', 'I', "let Y = 0; this._cv++;", "let Y = 0;"),
  ('D4a top-level site: water draw', 'I', SITES[0], SITES[0].replace("this._cv++; ", "")),
@@ -26,19 +26,33 @@ M = [   # (name, file, old, new)
  ('D16 pIn of pumps not recorded', 'I', "s._off = Math.max(s._off || 0, f.r); s.pIn = f.p; if (this._fxr) this._fxr.push(s, 0, f.p);\n            if (f.p < c0.minInletPsi)", "s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;\n            if (f.p < c0.minInletPsi)"),
  ('D17 graph rev ignored', 'C', "if (this._dmRev !== this.rev) {", "if (false) {"),
 ]
+M = [(n, [(f, a, b)]) for n, f, a, b in M0]
+def sub(name, file, old, new): return (name, file, old, new)
+# combined mutants: every single invalidation below is redundant with another one (see the report); the GROUP is what keeps the memo exact
+ALLSITES = [(('I', x, x.replace("this._cv++; ", ""))) for x in SITES] + [('I', "let Y = 0; this._cv++;", "let Y = 0;")]
+M += [
+ ('C1 no commit-time invalidation (accept exit + _apply)', [('I', "vis.delete(b.id); if (commit && acc > 0) this._cv++; }", "vis.delete(b.id); }"), ('C', "this._dv++; if (CI[ch] !== undefined)", "if (CI[ch] !== undefined)")]),
+ ('C2 no top-level invalidation (step start + 4 sites)', ALLSITES),
+ ('C3 no invalidation at all', [('I', "vis.delete(b.id); if (commit && acc > 0) this._cv++; }", "vis.delete(b.id); }"), ('C', "this._dv++; if (CI[ch] !== undefined)", "if (CI[ch] !== undefined)")] + ALLSITES),
+ ('C4 no accept exit bump and no step/site bumps (apply kept)', [('I', "vis.delete(b.id); if (commit && acc > 0) this._cv++; }", "vis.delete(b.id); }")] + ALLSITES),
+]
 env = {**os.environ, 'NODE_OPTIONS': '--preserve-symlinks --preserve-symlinks-main'}
 only = os.environ.get('ONLY'); bad = 0
-for n, f, a, b in M:
+for n, edits in M:
     if only and n.split()[0] not in only.split(','): continue
-    src = C if f == 'C' else I; assert src.count(a) == 1, (n, src.count(a))
     d = os.path.join(W, n.split()[0]); os.makedirs(d, exist_ok=True)
     for e in os.listdir(T):
         l = os.path.join(d, e)
         if e not in ('central.js', 'industry.js') and not os.path.lexists(l): os.symlink(os.path.join(T, e), l)
-    open(os.path.join(d, 'central.js'), 'w').write(src.replace(a, b) if f == 'C' else C); open(os.path.join(d, 'industry.js'), 'w').write(src.replace(a, b) if f == 'I' else I)
+    cs, is_ = C, I
+    for f, a, b in edits:
+        src = cs if f == 'C' else is_; assert src.count(a) == 1, (n, a[:50], src.count(a)); src = src.replace(a, b)
+        if f == 'C': cs = src
+        else: is_ = src
+    open(os.path.join(d, 'central.js'), 'w').write(cs); open(os.path.join(d, 'industry.js'), 'w').write(is_)
     det = False; last = 'all seeds equal'
     import json
-    runs = [('realfuzz.js', sd, REALSTEPS, {}) for sd in REALSEEDS] + [('simfuzz.js', sd, STEPS, {'DENSE': '1'}) for sd in SEEDS]
+    runs = [('dmseq.js', str(sd), '400', {}) for sd in range(1, 9)] + [('realfuzz.js', sd, REALSTEPS, {'CAPSCALE': cs}) for cs in ('0.05', '0.01') for sd in REALSEEDS] + [('simfuzz.js', sd, STEPS, {'DENSE': '1'}) for sd in SEEDS]
     for script, sd, st, ex in runs:
         outs = []
         for dm in ('0', '1', '2'):

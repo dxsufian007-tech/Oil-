@@ -29,7 +29,7 @@ function build(seed, opt) {
   const nSink = (opt.dense ? 30 : 14) + Math.floor(rnd() * 12);
   for (let i = 0; i < nSink; i++) {
     const s = pick(ids), { sb, ports } = stPorts(g, s, 'CRUDE'); if (!ports.length) continue; const ap = ports[0], kind = pick(['tank', 'tank', 'valve', 'junction', 'pump', 'separator', 'separator', 'refinery', 'refinery', 'group', 'jc']);
-    const sink = (anchor, aport, np) => { const t = attach2(g, TANKM.CRUDE, anchor, aport, np || TIN, 36, rnd); if (t) { g.sim.ensure(t).vol = Math.floor(rnd() * 100000); info.sinkB.push([t, s]); } return t; };
+    const sink = (anchor, aport, np) => { const t = attach2(g, TANKM.CRUDE, anchor, aport, np || TIN, 36, rnd); if (t) { g.sim.ensure(t).vol = opt.tight ? Math.floor(B.DEFS[TANKM.CRUDE].capacity.value * (.55 + rnd() * .45)) : Math.floor(rnd() * 100000); info.sinkB.push([t, s]); } return t; };
     if (kind === 'tank') { if (sink(sb, ap)) note('tank'); }
     else if (kind === 'valve') { const v = attach2(g, 'valve', sb, ap, TIN, 36, rnd); if (v) { const t = sink(v, 'OUT'); if (t) { const st = g.sim.ensure(v); const m = rnd(); st.mode = m < .6 ? 'OPEN' : m < .85 ? 'PARTIAL' : 'CLOSED'; st.opening = .2 + rnd() * .7; note('valve'); } } }
     else if (kind === 'junction') { const j = attach2(g, 'junction', sb, ap, 'PORT_W', 36, rnd); if (j) { let n = 0; for (const p of ['PORT_E', 'PORT_N', 'PORT_S']) if (rnd() < .7 && sink(j, p)) n++; if (n) note('junction'); } }
@@ -50,4 +50,4 @@ function build(seed, opt) {
   }
   return { g, rnd, info };
 }
-module.exports = { build, rng, attach2, K };
+module.exports = { build, rng, attach2, join, stPorts, K };

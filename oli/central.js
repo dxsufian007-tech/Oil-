@@ -127,7 +127,7 @@
         if (done[n]) continue; done[n] = 1; if (n === ti) break;
         const es = A[n]; for (let k = 0; k < es.length; k++) { const e = es[k]; if (!this.segUp(e.g, ch) || (ban && ban.has(e.g.id))) continue; let used = ci === undefined ? ((this._usedX && this._usedX.get(e.g.id + '|' + ch)) || 0) : (U[e.ix * NCH + ci] || 0); if (hasOver) used += (over.get(e.g.id + '|' + ch) || 0); if (CLASS.capacity - used <= EPS) continue; const nd = d + e.g.path.length * (bias && this._hopPump({ g: e.g, dir: e.dir }, ch) ? 0.25 : 1); if (nd < dist[e.tn]) { dist[e.tn] = nd; prevE[e.tn] = e; prevN[e.tn] = n; const sq = seq++; let i = hl++; while (i > 0) { const pa = (i - 1) >> 1; if (HD[pa] > nd || (HD[pa] === nd && HS[pa] > sq)) { HD[i] = HD[pa]; HS[i] = HS[pa]; HN[i] = HN[pa]; i = pa; } else break; } HD[i] = nd; HS[i] = sq; HN[i] = e.tn; } }
       }
-      if (prevE[ti] === null) return null; const hops = []; let c = ti; while (c !== fi) { const e = prevE[c], pn = prevN[c]; hops.unshift({ g: e.g, dir: e.dir, from: this._nid[pn], to: this._nid[c] }); c = pn; } return hops;
+      if (prevE[ti] === null) return null; const hops = []; let c = ti; while (c !== fi) { const e = prevE[c], pn = prevN[c]; hops.unshift({ g: e.g, dir: e.dir, from: this._nid[pn], to: this._nid[c], ix: e.ix }); c = pn; } return hops;
     }
     /* ---- B2 shadow cache (pcMode 1 = compare only; nothing is ever answered from it).
      * A cached path is valid while: the graph is the same (rev: stations, segments, pumps, faults and pump directions all bump it), nothing in this step has made a segment of the channel
@@ -208,9 +208,11 @@
     _planHops(ch, hops, r, p0, over) {
       /* B3a: the same arithmetic in the same order as before (bit-identical); only the bookkeeping changed - the per-hop used value is read once instead of once per iteration, no closure or helper arrays per call, the constants are read once */
       const n = hops.length, CAPC = CLASS.capacity, FPT = SIM.frictionPsiPerTile, FEXP = SIM.frictionExp, FRIC = CLASS.fric, U = PH_U, P = PH_P;
-      let cap = Infinity; for (let i = 0; i < n; i++) { const u = this.usedOf(over, hops[i].g.id, ch); U[i] = u; cap = Math.min(cap, CAPC - u); }
+      /* B7e: the used value of a hop is read straight from the usage array when `over` is empty (usedOf adds nothing then: u + 0 is u), and the channel's pump list is fetched once instead of once per hop (the same first match, in the same order) */
+      const ci = CI[ch], UA = this._used, fastU = ci !== undefined && !(over && over.size), PL = this._pxList(ch);
+      let cap = Infinity; for (let i = 0; i < n; i++) { const h = hops[i], u = fastU && h.ix !== undefined ? (UA[h.ix * NCH + ci] || 0) : this.usedOf(over, h.g.id, ch); U[i] = u; cap = Math.min(cap, CAPC - u); }
       r = Math.min(r, cap);
-      for (let i = 0; i < n; i++) { const pu = this._hopPump(hops[i], ch); P[i] = pu; if (pu) r = Math.min(r, Math.max(0, PU.maxFlow - this.pusedOf(over, pu.id))); }
+      for (let i = 0; i < n; i++) { const h = hops[i]; let pu = null; if (PL) for (let j = 0; j < PL.length; j++) { const p = PL[j]; if (p.seg === h.g.id && !p.fault && p.dir === h.dir) { pu = p; break; } } P[i] = pu; if (pu) r = Math.min(r, Math.max(0, PU.maxFlow - this.pusedOf(over, pu.id))); }
       if (r <= EPS) { for (let i = 0; i < n; i++) P[i] = null; return null; }
       const nodes = new Array(n + 1); nodes[0] = hops[0].from; for (let i = 0; i < n; i++) nodes[i + 1] = hops[i].to;
       const MINP = PU.minInletPsi, MAXP = CLASS.maxPressure; let pEnd = 0, stats = null;
@@ -257,14 +259,16 @@
     }
     /* what the receiver at `d` can take of `want` (probe) or really takes (commit) */
     toStation(sim, ch, srcId, d, want, f, commit, vis, over) {
-      let got = 0, remaining = want, guard = 0;
+      /* B7e: the same arithmetic and the same calls in the same order.  The probe-mode bookkeeping of what this probe already used (`over`, a Map with a string key per hop) is read ONLY by the next iteration of this loop, so it is
+       * written only when there is a next iteration (the Map is created then; a caller's own Map is used as before); the flow copy is an object spread (same keys, same order as Object.assign({}, f, {r, p})). */
+      let got = 0, remaining = want, guard = 0; const sid = d.s.id, db = d.b, dp = d.port;
       while (remaining > EPS && guard++ < 6) {
-        const pl = this.plan(ch, srcId, d.s.id, remaining, f.p, commit ? null : over); if (!pl) break;
-        const probeAcc = sim.offer(d.b, d.port, Object.assign({}, f, { r: pl.r, p: pl.p }), commit, vis);
+        const pl = this.plan(ch, srcId, sid, remaining, f.p, commit ? null : over); if (!pl) break;
+        const probeAcc = sim.offer(db, dp, { ...f, r: pl.r, p: pl.p }, commit, vis);
         if (probeAcc <= EPS) break;
         if (commit) this._apply(ch, pl, probeAcc);
-        else { for (const h of pl.hops) { const k = h.g.id + '|' + ch; over.set(k, (over.get(k) || 0) + probeAcc); } for (const [pu, , , on] of pl.stats) if (on) over.set('P' + pu.id, (over.get('P' + pu.id) || 0) + probeAcc); }
         got += probeAcc; remaining -= probeAcc; if (probeAcc < pl.r - 1e-6) break;
+        if (!commit && remaining > EPS && guard < 6) { if (!over) over = new Map(); for (const h of pl.hops) { const k = h.g.id + '|' + ch; over.set(k, (over.get(k) || 0) + probeAcc); } for (const [pu, , , on] of pl.stats) if (on) over.set('P' + pu.id, (over.get('P' + pu.id) || 0) + probeAcc); }
       }
       return got;
     }
@@ -283,7 +287,7 @@
     }
     _probeRaw(sim, src, ch, f, vis, port) {      // the original code: null = no receiver at all
       const rcv = this.receivers(sim, ch, src.id, port); if (!rcv.length) return null;
-      return rcv.map(d => ({ d, can: this.toStation(sim, ch, src.id, d, f.r, f, false, vis, new Map()) })).filter(o => o.can > EPS).sort((a, b) => a.can - b.can);
+      return rcv.map(d => ({ d, can: this.toStation(sim, ch, src.id, d, f.r, f, false, vis, null) })).filter(o => o.can > EPS).sort((a, b) => a.can - b.can);
     }
     _probeRec(sim, src, ch, f, vis, port) {     // _probeRaw + the recording of the non-idempotent writes (returns [probe, effects])
       const prev = sim._fxr, rec = []; sim._fxr = rec; let p; try { p = this._probeRaw(sim, src, ch, f, vis, port); } finally { sim._fxr = prev; }

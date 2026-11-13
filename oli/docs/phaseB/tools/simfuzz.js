@@ -1,7 +1,7 @@
 /* B7: ROOT=<oli dir> SEED=n STEPS=m [DM=0|1|2] node simfuzz.js  -> one JSON line: digest of the full Sim + central state after every step, and the deliver-memo stats.
  * The same seed on two roots must print the same digest (ORIGINAL / B6 vs B7).  Between steps a seeded sequence of player-like operations runs (valve modes, pump faults / directions, channel open/close, segment faults). */
 const path = require('path'), crypto = require('crypto'), ROOT = process.env.ROOT, SEED = +(process.env.SEED || 1), STEPS = +(process.env.STEPS || 200), DM = process.env.DM;
-const S = require('./simscene.js'), { g, rnd, info } = S.build(SEED, { dense: !!process.env.DENSE }), cn = g.cn, sim = g.sim;
+const S = require('./simscene.js'), { g, rnd, info } = S.build(SEED, { dense: !!process.env.DENSE, tight: !!process.env.TIGHT }), cn = g.cn, sim = g.sim;
 if (DM !== undefined && cn.setDeliverMode) cn.setDeliverMode(+DM);
 const bits = x => typeof x === 'number' ? Buffer.from(new Float64Array([x]).buffer).toString('hex') : String(x);
 const rep = (k, v) => typeof v === 'number' ? (Object.is(v, -0) ? '-0' : Number.isFinite(v) ? bits(v) : String(v)) : v === undefined ? '~' : v;
