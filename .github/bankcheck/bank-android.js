@@ -1,0 +1,36 @@
+// OLI EMPIRE official APK on a real Android system: the game starts, the banking section opens and every tab works (real touch events), no JavaScript errors.
+const CDP = require('chrome-remote-interface'), fs = require('fs'); const sleep = ms => new Promise(r => setTimeout(r, ms)); const res = [];
+const check = (n, ok, i) => { res.push(!!ok); console.log((ok ? 'PASS ' : 'FAIL ') + n + (i ? ' - ' + i : '')); };
+setTimeout(() => { console.log('FAIL watchdog'); process.exit(0); }, 9 * 60 * 1000);
+(async () => {
+  let t = null; for (let i = 0; i < 30 && !t; i++) { try { t = (await CDP.List({ port: 9222 })).find(x => x.type === 'page'); } catch (e) {} if (!t) await sleep(1500); }
+  if (!t) { console.log('FAIL no WebView page'); return; }
+  const c = await CDP({ port: 9222, target: t, local: true }), { Runtime, Page, Input } = c; await Runtime.enable(); await Page.enable(); const errs = [];
+  Runtime.exceptionThrown(e => errs.push('exception: ' + (e.exceptionDetails.exception && e.exceptionDetails.exception.description || e.exceptionDetails.text))); Runtime.consoleAPICalled(e => { if (e.type === 'error') errs.push(e.args.map(a => a.value || a.description).join(' ')); });
+  const ev = async x => { const r = await Runtime.evaluate({ expression: '(async () => { ' + x + ' })()', awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+  const shot = async n => { try { const r = await Page.captureScreenshot({ format: 'png' }); fs.writeFileSync('results/' + n + '.png', Buffer.from(r.data, 'base64')); } catch (e) {} };
+  const touch = (type, x, y) => Input.dispatchTouchEvent({ type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1, radiusX: 12, radiusY: 12, force: 1 }] });
+  const tap = async sel => { const p = await ev(`const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; e.scrollIntoView({ block: 'center' }); await new Promise(r => setTimeout(r, 250)); const b = e.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2];`); if (!p) throw new Error('no element ' + sel); await touch('touchStart', p[0], p[1]); await sleep(70); await touch('touchEnd'); await sleep(450); };
+  const body = () => ev('return document.getElementById("es-body") ? document.getElementById("es-body").innerText : "";');
+  let up = false; for (let i = 0; i < 90 && !up; i++) { up = await ev('return !!window.__wp;').catch(() => false); if (!up) await sleep(1000); } check('the game starts in the WebView', up); if (!up) return;
+  console.log('ENV ' + JSON.stringify(await ev('return { ua: navigator.userAgent, w: innerWidth, h: innerHeight, home: !!document.getElementById("h-cont"), lab: !!window.__lab };'))); await shot('01-start');
+  if (await ev('return !!document.getElementById("h-cont") && !window.__lab;').catch(() => false)) { await tap('#h-cont').catch(e => console.log('home tap: ' + e.message)); await sleep(3000); await shot('02-after-home'); }
+  let lab = false; for (let i = 0; i < 90 && !lab; i++) { lab = await ev('return !!(window.__lab && __lab.restored);').catch(() => false); if (!lab) await sleep(1000); }
+  if (!lab) { await ev('localStorage.setItem("oli-labui","1");').catch(() => {}); await Page.reload(); for (let i = 0; i < 90 && !lab; i++) { lab = await ev('return !!(window.__lab && __lab.restored);').catch(() => false); if (!lab) await sleep(1000); } }
+  check('the game world and company are loaded', lab); if (!lab) { await shot('03-notready'); return; }
+  await ev('__lab.company.speed = 0;'); await shot('03-game');
+  check('the economy menu button is present', await ev('return !!document.getElementById("eh-menu");')); await tap('#eh-menu'); await sleep(600);
+  await tap('#es-tabs [data-tab=company]'); check('Company tab offers BANKING & CAPITAL MARKETS', await ev('return !!document.querySelector("[data-act=screen][data-v=bank]");'));
+  await tap('[data-act=screen][data-v=bank]'); let b = await body(); await shot('04-bank-overview');
+  check('overview opens with the Base Rate and the banks (real data)', /BANKING & CAPITAL MARKETS/.test(b) && /%/.test(b) && b.length > 200, b.slice(0, 120).replace(/\n/g, ' | '));
+  const fits = () => ev('const e = document.getElementById("es-body"); return e.scrollWidth <= e.clientWidth + 1;');
+  for (const tb of ['loans', 'credit', 'bonds', 'log', 'overview']) { await tap('[data-act=bkTab][data-v=' + tb + ']'); const x = await body(); await shot('05-bank-' + tb); check('tab "' + tb + '" renders and fits the screen width', x.length > 40 && await fits(), x.slice(0, 80).replace(/\n/g, ' | ')); }
+  await tap('[data-act=bkTab][data-v=bonds]'); check('bond market lists the 18 bonds', (await ev('return document.querySelectorAll("#es-body table tr").length;')) === 19);
+  const s0 = await ev('return JSON.stringify(__lab.company.toJSON());'); await tap('[data-act=bkTab][data-v=loans]'); check('viewing changes nothing in the company', (await ev('return JSON.stringify(__lab.company.toJSON());')) === s0);
+  const live = await ev(`const c = __lab.company; c.injectEquity(2e9, 'device test'); const r = c.takeBankLoan('COMMERCIAL', 'WORKING_CAPITAL', 1e7, 12, { purpose: 'device test' }); c.advanceHours(24 * 35); const a = c.audit(); return { ok: r.ok, audit: a.ok, gap: Math.round(c.balanceSheet().gap), bank: c.bank.audit().ok };`);
+  check('a real bank loan on the device: made, one month served, all books balanced', live.ok && live.audit && live.gap === 0 && live.bank, JSON.stringify(live));
+  await tap('[data-act=bkTab][data-v=loans]'); await shot('06-bank-loans-live'); check('the loan appears in the loans tab', /12/.test(await body()));
+  await tap('#es-close').catch(() => {}); await sleep(300);
+  check('no JavaScript errors', errs.length === 0, errs.slice(0, 3).join(' | '));
+  console.log('SUMMARY ' + res.filter(Boolean).length + '/' + res.length + ' PASS'); await c.close();
+})().catch(e => console.log('FAIL crashed: ' + e.message));
