@@ -14,12 +14,16 @@ setTimeout(() => { console.log('FAIL watchdog'); process.exit(0); }, 9 * 60 * 10
   const body = () => ev('return document.getElementById("es-body") ? document.getElementById("es-body").innerText : "";');
   let up = false; for (let i = 0; i < 90 && !up; i++) { up = await ev('return !!window.__wp;').catch(() => false); if (!up) await sleep(1000); } check('the game starts in the WebView', up); if (!up) return;
   console.log('ENV ' + JSON.stringify(await ev('return { ua: navigator.userAgent, w: innerWidth, h: innerHeight, home: !!document.getElementById("h-cont"), lab: !!window.__lab };'))); await shot('01-start');
-  if (await ev('return !!document.getElementById("h-cont") && !window.__lab;').catch(() => false)) { await tap('#h-cont').catch(e => console.log('home tap: ' + e.message)); await sleep(3000); await shot('02-after-home'); }
+  const homeOpen = () => ev('const r = document.getElementById("home") || document.querySelector(".home, #home-root, [id^=home]"); return !!window.__homeOpen;').catch(() => false);
+  console.log('home open at start: ' + await homeOpen());
+  if (await homeOpen()) { await tap('#h-cont').catch(e => console.log('home tap: ' + e.message)); await sleep(3000); await shot('02-after-home'); }
   let lab = false; for (let i = 0; i < 90 && !lab; i++) { lab = await ev('return !!(window.__lab && __lab.restored);').catch(() => false); if (!lab) await sleep(1000); }
   if (!lab) { await ev('localStorage.setItem("oli-labui","1");').catch(() => {}); await Page.reload(); for (let i = 0; i < 90 && !lab; i++) { lab = await ev('return !!(window.__lab && __lab.restored);').catch(() => false); if (!lab) await sleep(1000); } }
   check('the game world and company are loaded', lab); if (!lab) { await shot('03-notready'); return; }
+  if (await homeOpen()) { await tap('#h-cont').catch(e => console.log('home tap2: ' + e.message)); await sleep(2500); }
+  console.log('home open after: ' + await homeOpen());
   await ev('__lab.company.speed = 0;'); await shot('03-game');
-  check('the economy menu button is present', await ev('return !!document.getElementById("eh-menu");')); await tap('#eh-menu'); await sleep(600);
+  check('the economy menu button is present', await ev('return !!document.getElementById("eh-menu");')); await tap('#eh-menu'); await sleep(600); console.log('sheet open: ' + await ev('return document.getElementById("eco-sheet") && document.getElementById("eco-sheet").classList.contains("open");') + ' tabs: ' + await ev('return [...document.querySelectorAll("#es-tabs [data-tab]")].map(e => e.dataset.tab).join();'));
   await tap('#es-tabs [data-tab=company]'); check('Company tab offers BANKING & CAPITAL MARKETS', await ev('return !!document.querySelector("[data-act=screen][data-v=bank]");'));
   await tap('[data-act=screen][data-v=bank]'); let b = await body(); await shot('04-bank-overview');
   check('overview opens with the Base Rate and the banks (real data)', /BANKING & CAPITAL MARKETS/.test(b) && /%/.test(b) && b.length > 200, b.slice(0, 120).replace(/\n/g, ' | '));
