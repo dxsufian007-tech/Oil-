@@ -183,7 +183,7 @@
           else if (a in EXPKEY) { const k = EXPKEY[a]; L[k] += v; L.pl[k] += v; }
           else if (a in REVKEY) { L.revenue -= v; L[REVKEY[a]] -= v; }
           else if (a === 'FIXED') L.capex += v;
-          else if (a === 'LOANS') { if (v < 0) L.loansIn -= v; else L.principal += v; }
+          else if (a === 'LOANS' || a === 'BANK_LOANS') { if (v < 0) L.loansIn -= v; else L.principal += v; }
           else if (a === 'EQUITY') { if (v < 0) L.equityIn -= v; }
         }
         if (meta.inc) for (const k of Object.keys(meta.inc)) L[k] += meta.inc[k];   // incurred production costs (capitalised, so not in the profit)
@@ -201,7 +201,7 @@
     balanceSheet() {
       const bs = this.journal.balanceSheet(), b = this.journal.bal, inv = this.inventoryBook(), fixedNet = b.FIXED + b.ACC_DEP;
       return { cash: b.CASH, receivables: b.AR, inventory: inv, inventoryByProduct: Object.assign(Object.fromEntries(SELL.map(p => [p, b[INVACC[p]]])), { CRUDE_BOUGHT: b.INV_CRUDE_BUY || 0, RESERVE: b.INV_RESERVE || 0 }), wip: b.INV_WIP, fixedCost: b.FIXED, accumulatedDepreciation: b.ACC_DEP, fixedNet,
-        totalAssets: bs.assets, payroll: -b.PAY_PAYROLL, tax: -b.PAY_TAX, loans: -b.LOANS, totalLiabilities: bs.liabilities, paidIn: bs.paidIn, result: bs.result, totalEquity: bs.equity, gap: bs.gap };
+        totalAssets: bs.assets, payroll: -b.PAY_PAYROLL, tax: -b.PAY_TAX, loans: -b.LOANS, bankLoans: -b.BANK_LOANS, accruedBank: -b.ACCRUED_INT, totalLiabilities: bs.liabilities, paidIn: bs.paidIn, result: bs.result, totalEquity: bs.equity, gap: bs.gap };
     }
     inventoryBook() { let v = 0; for (const p of SELL) v += this.journal.bal[INVACC[p]]; return v + (this.journal.bal.INV_CRUDE_BUY || 0) + (this.journal.bal.INV_RESERVE || 0); }
     /* lifting cost of a well relative to the old flat cost: its field's cost per barrel (deeper = dearer) and the pressure the field has left; 1 for wells without field data */

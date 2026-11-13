@@ -37,6 +37,8 @@
     PAY_TAX: ['liab', 'Tax payable'],
     PAY_SUPPLIERS: ['liab', 'Payables to suppliers (purchases on credit)'],
     LOANS: ['liab', 'Loans'],
+    BANK_LOANS: ['liab', 'Bank loans (banking layer)'],                       // Banking Phase 2: loans from the three banks; the old LOANS account stays exactly the old loans
+    ACCRUED_INT: ['liab', 'Accrued bank interest (not yet paid)'],
     EQUITY: ['equity', 'Paid-in capital'],
     REV_SPOT: ['rev', 'Sales · spot'],
     REV_BYPRODUCT: ['rev', 'Sales · by-products'],
@@ -66,6 +68,7 @@
   };
   const KINDS = Object.keys(ACC);
   const EPS = 1e-6, MAX_LOG = 300;
+  const OPTIONAL = ['BANK_LOANS', 'ACCRUED_INT'];                                   // accounts added after the first saves: written to a save only while they hold money, so a company that never used a bank saves exactly as before
 
   class Journal {
     constructor() {
@@ -99,7 +102,7 @@
       const equity = paidIn + result;
       return { assets, liabilities: liab, equity, paidIn, result, gap: assets - liab - equity };
     }
-    toJSON() { return { bal: Object.assign({}, this.bal), n: this.n, log: this.log.slice(-MAX_LOG) }; }
+    toJSON() { const bal = Object.assign({}, this.bal); for (const k of OPTIONAL) if (bal[k] === 0) delete bal[k]; return { bal, n: this.n, log: this.log.slice(-MAX_LOG) }; }
     static fromJSON(d) {
       const j = new Journal(); if (!d || !d.bal) return j;
       for (const k of KINDS) j.bal[k] = +d.bal[k] || 0; j.n = d.n || 0; j.log = Array.isArray(d.log) ? d.log.slice(-MAX_LOG) : []; return j;
