@@ -1,0 +1,44 @@
+name: Network Diagnostics APK device test (Android 14)
+on:
+  push:
+    branches: [ci/diag-apk-device-test]
+    paths: ['.github/diagcheck/**', '.github/workflows/diag-apk-device-test.yml']
+permissions:
+  contents: write
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the official APK (release official-459685a-r3)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download official-459685a-r3 --pattern 'OliEmpire-*.apk' --output OliEmpire.apk --repo ${{ github.repository }}; ls -l OliEmpire.apk; sha256sum OliEmpire.apk
+      - run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules; sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-save chrome-remote-interface@0.33.2
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          heap-size: 576M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash .github/diagcheck/run.sh
+      - name: Report
+        if: always()
+        run: |
+          for f in install package diag-attempt1 kill-reason diag pid pid-after logcat-errors; do echo "=== $f"; cat results/$f.txt 2>/dev/null | head -60; done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag-device-results
+          path: results
