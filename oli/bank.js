@@ -34,14 +34,15 @@
   }
 
   const qKey = day => { const d = CAL.dateOfDay(day); return d.year * 4 + Math.floor((d.month - 1) / 3); };
-  const TX = { OPEN: 1, DUE_PAID: 2, ARREARS: 3, ARREARS_PAID: 4, REPRICE: 5, PREPAY: 6, RESCHEDULE: 7, CLOSE: 8, LIEN: 9, RELEASE: 10, MARGIN_CALL: 11, MARGIN_CLEAR: 12, MARGIN_EXPIRED: 13, RATING: 14 };
+  const TX = { OPEN: 1, DUE_PAID: 2, ARREARS: 3, ARREARS_PAID: 4, REPRICE: 5, PREPAY: 6, RESCHEDULE: 7, CLOSE: 8, LIEN: 9, RELEASE: 10, MARGIN_CALL: 11, MARGIN_CLEAR: 12, MARGIN_EXPIRED: 13, RATING: 14, FEE: 15, STAGE: 16, PLAN_OFFER: 17, PLAN_ACCEPT: 18, PLAN_EXPIRE: 19, PLAN_DONE: 20, ENFORCE: 21, CHARGEOFF: 22, CRISIS: 23 };
+  const tot = it => LE.r2(it.int + it.prin + (it.fee || 0));
 
   class Bank {
     /* cfg = the economy config (BANKS); day = the company day the banks open on (the first deposit growth comes one month later) */
     constructor(cfg, day) {
       this.cfg = cfg || EC; this.lastDay = day | 0; this.books = {}; this.log = []; this.hist = [];
       for (const id of IDS) this._open(id);
-      this.rate = new BR.BaseRate(this.cfg, qKey(day | 0)); this.loans = []; this.tx = []; this.nextLoan = 1; this.nextTx = 1; this.svcDay = day | 0; this.liens = []; this.nextLien = 1; this.credit = { score: null, grade: null, parts: null, day: -1, hist: [], prod: [], cf: [] };      // Phase 3: liens (every lien ever made) and the credit rating.  Phase 2: Phase 2: the Base Rate, the loan book (every loan ever made, open or closed) and the permanent transaction record
+      this.rate = new BR.BaseRate(this.cfg, qKey(day | 0)); this.loans = []; this.tx = []; this.nextLoan = 1; this.nextTx = 1; this.svcDay = day | 0; this.liens = []; this.nextLien = 1; this.crisis = { at: -1, n: 0 }; this.credit = { score: null, grade: null, parts: null, day: -1, hist: [], prod: [], cf: [] };      // Phase 3: liens (every lien ever made) and the credit rating.  Phase 2: Phase 2: the Base Rate, the loan book (every loan ever made, open or closed) and the permanent transaction record
     }
     get B() { return this.cfg.BANKS; }
     _open(id) {
@@ -108,11 +109,12 @@
     bankDebt() { let d = 0; for (const l of this.loans) if (l.status === 'ACTIVE') d += l.bal; return d; }
     /* the part of the loan book that falls due within a year (for the current-liabilities figure) */
     dueWithinYear() { let d = 0; for (const l of this.loans) if (l.status === 'ACTIVE') d += Math.min(l.bal, (l.pmt || 0) * 12 / l.fm); return d; }
-    arrearsTotal() { let t = 0; for (const l of this.loans) if (l.status === 'ACTIVE') for (const a of l.arrears) t += a.int + a.prin; return LE.r2(t); }
+    arrearsTotal() { let t = 0; for (const l of this.loans) if (l.status === 'ACTIVE') for (const a of l.arrears) t += a.int + a.prin + (a.fee || 0); return LE.r2(t); }
     /* may this loan be made?  spec = { bank, type, amount, term, freq, grace }; ctx = { riskDebt, riskBase } (the company's debt without the Central loan, and its assets + stock + cash without the Central network) */
     assess(spec, ctx) {
       const freq = spec.freq || 'M', grace = spec.grace | 0, v = LE.validate(this.cfg, spec.bank, spec.type, spec.amount, spec.term, freq, grace); if (!v.ok) return v;
       const c = this.canLend(spec.bank, spec.amount); if (!c.ok) return c;
+      if (ctx && ctx.restricted) return { ok: false, reason: 'RESTRICTED' };
       const L = this.cfg.BANK_LOANS; if (ctx && (ctx.riskDebt + spec.amount) > L.maxDebtRatio * Math.max(0, ctx.riskBase) + 1e-6) return { ok: false, reason: 'RISK' };
       const T = this.cfg.LOAN_TYPES[spec.type], CL = this.cfg.COLLATERAL; let cap = null;
       if (T.lock === 'COLLATERAL' && CL && CL.enabled) {
@@ -132,13 +134,19 @@
       return { ok: true, loan: lo, rate: a.rate, payment: lo.pmt };
     }
     _settle(l, item, io, code) {                                   // the company pays an instalment item: cash out for it, the bank receives it
-      const k = this.books[l.bank], tot = LE.r2(item.int + item.prin);
-      if (item.int > 0) io.payInt(item.int, l); if (item.prin > 0) io.payPrin(item.prin, l);
-      k.post([['CASH', tot], ['LOANS', -item.prin], ['RETAINED', -item.int]]);
-      l.bal = LE.r2(l.bal - item.prin); l.paidInt = LE.r2(l.paidInt + item.int); l.paidPrin = LE.r2(l.paidPrin + item.prin); this._tx(code, l, item.int, item.prin);
+      const k = this.books[l.bank], fee = item.fee || 0, all = LE.r2(item.int + item.prin + fee);
+      if (item.int > 0) io.payInt(item.int, l); if (fee > 0) io.payInt(fee, l); if (item.prin > 0) io.payPrin(item.prin, l);
+      k.post([['CASH', all], ['LOANS', -item.prin], ['RETAINED', -(item.int + fee)]]);
+      l.bal = LE.r2(l.bal - item.prin); l.paidInt = LE.r2(l.paidInt + item.int); if (fee > 0) l.paidFee = LE.r2((l.paidFee || 0) + fee); l.paidPrin = LE.r2(l.paidPrin + item.prin); this._tx(code, l, item.int, item.prin);
+    }
+    /* an instalment the cash cannot cover: it becomes arrears (no cash is taken).  The late fee is charged ONCE on this instalment (2% of it); it is not compounded and never repeated for it. */
+    _late(l, item, io, day) {
+      const D = this.cfg.DEFAULT; item.fee = LE.r2(D.feeRate * (item.int + item.prin)); if (item.fee > 0) io.accrue(item.fee, l);
+      l.arrears.push(item); this._tx('ARREARS', l, item.int, item.prin); if (item.fee > 0) this._tx('FEE', l, item.fee, 0, day);
+      if (l.plan && l.plan.status === 'ACTIVE') { l.plan.status = 'BREACHED'; this._tx('STAGE', l, l.stage | 0, 5, day); l.stage = 5; l.stageDay = day; l.enforce = true; this._rec(l.bank, 'PLAN_BREACH', 'Restructuring plan breached · loan ' + l.id, 0); }
     }
     _afterPay(l) {
-      if (l.bal < 0.005 && l.accr < 0.005 && !l.arrears.length) { l.bal = 0; l.status = 'CLOSED'; l.closedDay = this.svcDay; this._unlienAll(l); l.call = null; this._tx('CLOSE', l, l.paidInt, l.paidPrin); this._rec(l.bank, 'LOAN_CLOSE', 'Loan ' + l.id + ' closed', 0); }
+      if (l.bal < 0.005 && l.accr < 0.005 && !l.arrears.length) { l.bal = 0; l.status = 'CLOSED'; l.closedDay = this.svcDay; this._unlienAll(l); l.call = null; l.stage = 0; l.enforce = false; this._tx('CLOSE', l, l.paidInt, l.paidPrin); this._rec(l.bank, 'LOAN_CLOSE', 'Loan ' + l.id + ' closed', 0); }
     }
     /* the month end of every open loan (called once a month by Company._monthEnd; a day already done is ignored).  io = the company side: { cash(), accrue(amt, loan), payInt(amt, loan), payPrin(amt, loan) } */
     serviceMonth(day, io) {
@@ -146,10 +154,10 @@
       for (const l of this.loans) {
         if (l.status !== 'ACTIVE') continue; n++;
         l.m++; const intr = LE.monthInterest(l); l.af = 0; if (intr > 0) { io.accrue(intr, l); l.accr = LE.r2(l.accr + intr); }
-        while (l.arrears.length && io.cash() >= l.arrears[0].int + l.arrears[0].prin - 1e-9) { const it = l.arrears.shift(); this._settle(l, it, io, 'ARREARS_PAID'); }      // overdue items first, oldest first, whole items only
+        while (l.arrears.length && io.cash() >= tot(l.arrears[0]) - 1e-9) { const it = l.arrears.shift(); this._settle(l, it, io, 'ARREARS_PAID'); }      // overdue items first, oldest first, whole items only
         if (LE.isDueMonth(l)) {
           const ap = l.arrears.reduce((a, x) => a + x.prin, 0), d = LE.dueOf(l, ap), item = { day, int: d.interest, prin: d.prin }; l.accr = 0;
-          if (item.int > 0 || item.prin > 0) { if (!l.arrears.length && io.cash() >= item.int + item.prin - 1e-9) this._settle(l, item, io, 'DUE_PAID'); else { l.arrears.push(item); this._tx('ARREARS', l, item.int, item.prin); } }
+          if (item.int > 0 || item.prin > 0) { if (!l.arrears.length && io.cash() >= item.int + item.prin - 1e-9) this._settle(l, item, io, 'DUE_PAID'); else this._late(l, item, io, day); }
         }
         this._afterPay(l);
       }
@@ -165,7 +173,7 @@
     /* early repayment: amount = null repays everything.  Needs cash for the principal, the interest accrued to date, the overdue items and the fee.  io adds { fee(amt, loan), partInt(amt, loan) } */
     prepay(id, amount, io, frac) {
       const l = this.loans.find(x => x.id === id); if (!l || l.status !== 'ACTIVE') return { ok: false, reason: 'noLoan' };
-      const arrearsTot = l.arrears.reduce((a, x) => a + x.int + x.prin, 0), arrPrin = l.arrears.reduce((a, x) => a + x.prin, 0), free = LE.r2(l.bal - arrPrin);
+      const arrearsTot = l.arrears.reduce((a, x) => a + tot(x), 0), arrPrin = l.arrears.reduce((a, x) => a + x.prin, 0), free = LE.r2(l.bal - arrPrin);
       const a = amount == null ? free : LE.r2(amount); if (!(a > 0) || a > free + 1e-6) return { ok: false, reason: 'amount' };
       const full = a >= free - 0.005, partInt = LE.r2(l.bal * l.rate / 12 * frac * (1 - l.af)), fee = LE.r2(a * this.cfg.BANK_LOANS.prepayFee);
       const need = a + l.accr + arrearsTot + partInt + fee; if (io.cash() < need - 1e-6) return { ok: false, reason: 'cash', need };
@@ -195,6 +203,7 @@
       for (const l of this.loans) if (l.status === 'ACTIVE') arrNow += l.arrears.length;
       let on0 = 0, out0 = 0; for (const r of c.cf) { on0 += r[0]; out0 += r[1]; }
       const r = CR.score({ onTime: on, late, arrearsNow: arrNow, opMargin: c.cf.length && out0 > 0 ? on0 / out0 : null, debtToAssets: inp.debtToAssets == null ? null : inp.debtToAssets, netMargin: inp.netMargin == null ? null : inp.netMargin, currentRatio: inp.currentRatio == null ? null : inp.currentRatio, prodCV: CR.cv(c.prod) }, C);
+      const pen = (C.stagePenalty || {})[this.worstStage()] || 0; if (pen) r.score = Math.max(0, r.score - pen);
       const g = CR.gradeOf(r.score, C), prev = c.score; c.score = r.score; c.parts = r.parts; c.day = day;
       if (g !== c.grade) { this._tx('RATING', null, prev == null ? 0 : prev, r.score, day); c.grade = g; }
       c.hist.push([day, r.score]); while (c.hist.length > 240) c.hist.shift(); return r;
@@ -264,18 +273,77 @@
       }
       return n;
     }
+    /* ======== Phase 4: default stages, restructuring, asset recovery ======== */
+    activeCount() { let n = 0; for (const l of this.loans) if (l.status === 'ACTIVE') n++; return n; }
+    worstStage() { let w = 0; for (const l of this.loans) if (l.status === 'ACTIVE' && (l.stage | 0) > w) w = l.stage | 0; return w; }
+    lateCount(l, day, win) { let n = 0; for (let i = this.tx.length - 1; i >= 0; i--) { const t = this.tx[i]; if (t[1] < day - win) break; if (t[2] === TX.ARREARS && t[3] === l.id) n++; } return n; }
+    /* once a day (Company._newDay): the five stages from the delay of the oldest unpaid instalment.  Stages only rise while the arrears last; paid up = back to 0.  Returns the loans whose collateral must now be enforced. */
+    defaults(day) {
+      day |= 0; const D = this.cfg.DEFAULT, out = []; if (day <= (this.defDay == null ? -1 : this.defDay)) return out; this.defDay = day; this.chg = [];
+      for (const l of this.loans) {
+        if (l.status !== 'ACTIVE') continue; const old = l.stage | 0;
+        if (!l.arrears.length) { if (old) { this._tx('STAGE', l, old, 0, day); l.stage = 0; l.stageDay = day; l.enforce = false; } this._plan(l, day); continue; }
+        const d = day - l.arrears[0].day; let st = d > D.stage5Days ? 5 : d > D.stage4Days ? 4 : d > D.stage3Days ? 3 : (d > D.stage2Days || this.lateCount(l, day, D.lateWindowDays) >= D.lateCount) ? 2 : 1;
+        if (l.plan && l.plan.status === 'BREACHED') st = 5; if (this.crisis.at >= 0 && st < 4) st = 4; if (st < old) st = old;
+        if (st !== old) {
+          this._tx('STAGE', l, old, st, day); this.chg.push([l.id, old, st]); l.stage = st; l.stageDay = day; this._rec(l.bank, 'STAGE', 'Loan ' + l.id + ' stage ' + st, 0);
+          if (st === 4) this._offer(l, day); if (st === 5) l.enforce = true;
+        }
+        this._plan(l, day); if (l.enforce) out.push(l);
+      }
+      return out;
+    }
+    /* the company has been in negative cash for 40 days: every open loan moves to stage 4 and gets the restructuring offer (60 days to accept) */
+    crisisStart(day) { for (const l of this.loans) { if (l.status !== 'ACTIVE') continue; const old = l.stage | 0; if (old < 4) { this._tx('STAGE', l, old, 4, day); l.stage = 4; l.stageDay = day; } if (!l.plan || l.plan.status !== 'OFFERED') this._offer(l, day); } this._tx('CRISIS', null, this.crisis.n, 0, day); }
+    /* the plan clock: an unaccepted offer lapses after the window; an accepted plan is done after its period without a breach */
+    _plan(l, day) {
+      const p = l.plan; if (!p) return;
+      if (p.status === 'OFFERED' && day > p.expires) { p.status = 'EXPIRED'; this._tx('PLAN_EXPIRE', l, p.expires, 0, day); }
+      else if (p.status === 'ACTIVE' && day >= p.until) { p.status = 'DONE'; this._tx('PLAN_DONE', l, 0, 0, day); }
+    }
+    /* the bank's offer at stage 4: (a) a longer term, (b) a lower instalment (interest only for a time).  The owner has 60 days to accept. */
+    _offer(l, day) {
+      const D = this.cfg.DEFAULT, T = this.cfg.LOAN_TYPES[l.type], R = l.term - l.m, ext = Math.min(R * D.extendFactor, T.maxMonths - l.m), opts = [];
+      const ex = Math.floor(ext / l.fm) * l.fm; if (ex > R) opts.push({ kind: 'EXTEND', months: ex });
+      opts.push({ kind: 'LOWER', graceMonths: D.lowerGraceMonths });
+      l.plan = { day, expires: day + D.planWindowDays, status: 'OFFERED', options: opts, until: null, kind: null }; this._tx('PLAN_OFFER', l, D.planWindowDays, opts.length, day);
+    }
+    /* accept the offer: the unpaid interest and fees are capitalised (company: ACCRUED_INT -> BANK_LOANS, io.capitalize), the arrears are cleared, the schedule is re-based.  The new payments are watched for a period; a miss is a breach (stage 5). */
+    acceptPlan(id, kind, io, day) {
+      const l = this.loans.find(x => x.id === id); if (!l || l.status !== 'ACTIVE') return { ok: false, reason: 'noLoan' }; const p = l.plan, D = this.cfg.DEFAULT;
+      if (!p || p.status !== 'OFFERED') return { ok: false, reason: 'noOffer' }; if (day > p.expires) return { ok: false, reason: 'expired' };
+      const o = p.options.find(x => x.kind === kind); if (!o) return { ok: false, reason: 'option' };
+      let cap = 0; for (const it of l.arrears) cap += it.int + (it.fee || 0); cap = LE.r2(cap);
+      if (cap > 0) { io.capitalize(cap, l); this.books[l.bank].post([['LOANS', cap], ['RETAINED', -cap]]); l.bal = LE.r2(l.bal + cap); }
+      l.arrears = []; l.accr = 0;
+      if (o.kind === 'EXTEND') l.term = l.m + o.months; else l.grace = l.m + o.graceMonths;
+      l.pmt = LE.pmtFor(l); p.status = 'ACTIVE'; p.kind = kind; p.accepted = day; p.until = day + D.planActiveDays; l.stage = 0; l.stageDay = day; l.enforce = false; l.restr = (l.restr | 0) + 1;
+      this._tx('PLAN_ACCEPT', l, cap, o.kind === 'EXTEND' ? o.months : o.graceMonths, day); this._rec(l.bank, 'PLAN_ACCEPT', 'Loan ' + l.id + ' restructured (' + kind + ')', cap); return { ok: true, kind, capitalised: cap, payment: l.pmt, term: l.term };
+    }
+    /* collateral enforcement, step 1: the bank takes the lien (forced release, recorded).  The company then sells the asset and calls forceRepay with the proceeds. */
+    forceRelease(lienId) { const x = this.liens.find(y => y.id === lienId && y.status === 'ACTIVE'); if (!x) return null; const l = this.loan(x.loan); x.status = 'RELEASED'; x.relDay = this.svcDay; x.forced = true; this._tx('ENFORCE', l, x.id, 1, this.svcDay); return x; }
+    /* step 2: the proceeds repay the loan: overdue items first (oldest first, whole items), then principal.  Never more than `budget`.  Returns the amount used. */
+    forceRepay(l, io, budget) {
+      let used = 0;
+      while (l.arrears.length && budget - used >= tot(l.arrears[0]) - 1e-9) { const it = l.arrears.shift(); used += tot(it); this._settle(l, it, io, 'ARREARS_PAID'); }
+      if (!l.arrears.length) { const prin = LE.r2(Math.min(budget - used, l.bal)); if (prin > 0.005) { used += prin; this._settle(l, { int: 0, prin }, io, 'PREPAY'); if (l.bal > 0.005) l.pmt = LE.pmtFor(l); } }
+      this._afterPay(l); return LE.r2(used);
+    }
+    /* the company is bankrupt: what the banks cannot recover is a credit loss, deducted from their capital */
+    chargeOffAll(day) { let n = 0; for (const l of this.loans) { if (l.status !== 'ACTIVE') continue; const loss = LE.r2(l.bal); this.books[l.bank].post([['RETAINED', loss], ['LOANS', -loss]]); l.status = 'LOSS'; l.lossDay = day | 0; this._tx('CHARGEOFF', l, loss, 0, day); this._rec(l.bank, 'CREDIT_LOSS', 'Loan ' + l.id + ' written off', loss); n++; } return n; }
     /* the loan register: every loan ever made (open and closed), with its permanent history in tx */
     loan(id) { return this.loans.find(x => x.id === id) || null; }
     toJSON() {
       const b = {}; for (const id of IDS) b[id] = { bal: Object.assign({}, this.books[id].bal), n: this.books[id].n };
-      return { v: 3, liens: this.liens, nextLien: this.nextLien, credit: this.credit, lastDay: this.lastDay, banks: b, log: this.log, hist: this.hist, rate: this.rate.toJSON(), loans: this.loans, tx: this.tx, nextLoan: this.nextLoan, nextTx: this.nextTx, svcDay: this.svcDay };
+      return { v: 4, crisis: this.crisis, defDay: this.defDay == null ? -1 : this.defDay, liens: this.liens, nextLien: this.nextLien, credit: this.credit, lastDay: this.lastDay, banks: b, log: this.log, hist: this.hist, rate: this.rate.toJSON(), loans: this.loans, tx: this.tx, nextLoan: this.nextLoan, nextTx: this.nextTx, svcDay: this.svcDay };
     }
     static fromJSON(d, cfg, day) {
-      if (!d || (d.v !== 1 && d.v !== 2 && d.v !== 3) || !d.banks) return new Bank(cfg, day);
+      if (!d || (d.v < 1 || d.v > 4) || !d.banks) return new Bank(cfg, day);
       const bk = new Bank(cfg, d.lastDay | 0);
       for (const id of IDS) { const s = d.banks[id], k = new BankBook(); if (s && s.bal) { for (const a of KEYS) k.bal[a] = +s.bal[a] || 0; k.n = s.n | 0; bk.books[id] = k; } else { bk.books[id] = null; } }
       bk.log = Array.isArray(d.log) ? d.log : []; bk.hist = Array.isArray(d.hist) ? d.hist : [];
       if (d.v >= 2) { bk.rate = BR.BaseRate.fromJSON(d.rate, bk.cfg, qKey(d.svcDay | 0)); bk.loans = Array.isArray(d.loans) ? d.loans : []; bk.tx = Array.isArray(d.tx) ? d.tx : []; bk.nextLoan = d.nextLoan || 1; bk.nextTx = d.nextTx || 1; bk.svcDay = d.svcDay | 0; }
+      if (d.v >= 4) { bk.crisis = Object.assign({ at: -1, n: 0 }, d.crisis || {}); bk.defDay = d.defDay == null ? -1 : d.defDay; }
       if (d.v >= 3) { bk.liens = Array.isArray(d.liens) ? d.liens : []; bk.nextLien = d.nextLien || 1; if (d.credit) bk.credit = Object.assign(bk.credit, d.credit); }
       if (d.v === 1) { bk.rate = new BR.BaseRate(bk.cfg, qKey(day | 0)); bk.svcDay = day | 0; bk.rate.emaDay = (day | 0) - 1; }                       // a Phase 1 save: no loans yet, the Base Rate starts from today
       for (const id of IDS) if (!bk.books[id]) bk._open(id);                      // a bank missing from the save opens fresh (never an error)

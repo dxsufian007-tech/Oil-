@@ -109,8 +109,10 @@
     CREDIT: { weights: { pay: 0.30, cf: 0.25, debt: 0.15, prof: 0.15, liq: 0.10, stab: 0.05 }, arrearsPenalty: 0.25, historyMonths: 24, keepMonths: 6, cfMonths: 3,
       limits: { opMargin: [-0.2, 0.3], debtToAssets: [0.1, 0.8], netMargin: [-20, 20], currentRatio: [0.5, 2.0], prodCV: [0.1, 0.6] },
       neutral: { pay: 0.8, cf: 0.5, debt: 0.7, prof: 0.5, liq: 0.5, stab: 0.7 },
-      grades: [{ id: 'A', min: 700, premium: 0 }, { id: 'B', min: 550, premium: 0.0025 }, { id: 'C', min: 400, premium: 0.0075 }, { id: 'D', min: 250, premium: 0.015 }, { id: 'E', min: 0, premium: 0.03 }], premiumOn: true },
+      grades: [{ id: 'A', min: 700, premium: 0 }, { id: 'B', min: 550, premium: 0.0025 }, { id: 'C', min: 400, premium: 0.0075 }, { id: 'D', min: 250, premium: 0.015 }, { id: 'E', min: 0, premium: 0.03 }], premiumOn: true, stagePenalty: { 2: 100, 3: 200, 4: 300, 5: 400 } },
     /* collateral: LTV = loan balance / collateral value.  max = the most a loan may be at origination; call = above this the bank issues a Margin Call.  Oil inventory: 50% of the value, 2 years (the OIL_INVENTORY type).  The strategic reserve is NOT collateral. */
+    /* Banking Phase 4: the five default stages (delay of the oldest unpaid instalment), the 2% late fee (once per late instalment), the 60-day restructuring window.  Day counts are the approved ones; the plan options and the rating penalty are assumptions. */
+    DEFAULT: { feeRate: 0.02, stage2Days: 30, lateWindowDays: 180, lateCount: 2, stage3Days: 60, stage4Days: 90, stage5Days: 180, planWindowDays: 60, planActiveDays: 360, extendFactor: 2, lowerGraceMonths: 12, crisisWindowDays: 60 },
     COLLATERAL: { enabled: true, ltv: { ASSET: { max: 0.60, call: 0.75 }, OIL: { max: 0.50, call: 0.60 } }, cureDays: 30, kinds: { SECURED: ['ASSET'], OIL_INVENTORY: ['OIL'] } },
     FINANCE: { emergencyAfterDays: 5, pressureAfterDays: 15, bankruptAfterDays: 40 },
     RISK: { liquidityMonths: 1, debtRatio: 0.5, costRatio: 0.9, salesDrop: 0.15 },      // financial stress indicators: a month of fixed costs in cash, debt above half of the assets, costs above 90% of sales, sales falling 15% a month

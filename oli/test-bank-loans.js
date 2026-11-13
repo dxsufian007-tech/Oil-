@@ -81,7 +81,7 @@ console.log('I. a month the cash cannot cover: arrears, never negative cash');
 { const c = fresh(), { co, bank } = c, l = co.takeBankLoan('COMMERCIAL', 'WORKING_CAPITAL', 1e8, 24).loan; c.g.store.cash = 0; co.mirror = 0; co.journal.bal.CASH = 0;
   const j0 = JSON.stringify([c.J().PAY_PAYROLL]); nextMonth(co); const cashA = c.g.store.cash;
   ok(l.arrears.length === 1 && cashA >= -1e6 && l.paidInt === 0 && l.paidPrin === 0, 'I1 the instalment is recorded as arrears and the loan cash was not paid out', [l.arrears.length, cashA]);
-  ok(near(-c.J().ACCRUED_INT, l.accr + l.arrears.reduce((a, x) => a + x.int, 0), 1e-9) && near(sumBal(bank), -c.J().BANK_LOANS, 1e-12), 'I2 the unpaid interest stays a liability (ACCRUED_INT) and the principal stays in the balance: nothing is lost');
+  ok(near(-c.J().ACCRUED_INT, l.accr + l.arrears.reduce((a, x) => a + x.int + (x.fee || 0), 0), 1e-9) && near(sumBal(bank), -c.J().BANK_LOANS, 1e-12), 'I2 the unpaid interest stays a liability (ACCRUED_INT) and the principal stays in the balance: nothing is lost');
   nextMonth(co); ok(l.arrears.length === 2 && l.arrears.reduce((a, x) => a + x.prin, 0) <= l.bal, 'I3 the next month adds a second item; the principal in arrears never exceeds the balance (no double counting)');
   co.injectEquity(1e9, 'rescue'); nextMonth(co); ok(l.arrears.length === 0 && l.paidPrin > 0, 'I4 when cash is back the overdue items are paid first, oldest first, then the current one');
   const b1 = l.bal; for (let i = 0; i < 24; i++) nextMonth(co); ok(l.status === 'CLOSED' && Math.abs(l.bal) < 1e-3 && Math.abs(c.J().ACCRUED_INT) < 1e-3 && Math.abs(c.J().BANK_LOANS) < 1e-3 && b1 > 0, 'I5 the loan finishes at zero with nothing left'); }

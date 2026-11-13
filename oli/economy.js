@@ -1018,7 +1018,7 @@
       return out;
     }
     _newDay() {
-      this.bank.daily(this.dayIdx, this.market.price.CRUDE); if (this.bank.hasLiens()) this.bank.margin(this.dayIdx, this._valuer());                          // banks: the daily EMA of the crude price for the Base Rate (one multiply-add)
+      this.bank.daily(this.dayIdx, this.market.price.CRUDE); if (this.bank.hasLiens()) this.bank.margin(this.dayIdx, this._valuer()); if (this.bank.loans.length) this._bankDaily();                          // banks: the daily EMA of the crude price for the Base Rate (one multiply-add)
       // Month-end charges (salaries, running costs, loans, tax) belong to the day that ENDS the month: they are booked before that day is closed.
       if (CAL.isMonthStart(this.dayIdx)) this._monthEnd();                                 // the real calendar decides: the 1st of a month closes the month before it
       const cash = this.store.cash; this.days.push(Object.assign({ d: this.dayIdx - 1 }, (() => { const c = calc(this.led.day, cash); return { revenue: c.revenue, expenses: c.expenses, profit: c.netProfit, cashIn: c.cash.in, cashOut: c.cash.out, storage: this.led.day.storage, opex: c.opex + c.variable }; })()));
@@ -1065,6 +1065,7 @@
       f.indicators = this.riskIndicators(); f.score = f.indicators.filter(i => i.on).length;
       if (cash >= 0 || !isFinite(cash)) { f.negHours = 0; f.state = 'OK'; f.stage = f.score >= 3 ? 'PRESSURE' : f.score >= 1 ? 'WARNING' : 'NORMAL'; return; }
       f.negHours += h; const days = f.negHours / 24;
+      if (days >= F.bankruptAfterDays && this.bank.activeCount() > 0) { this._bankCrisis(); return; }          // bank loans exist: 40 days of negative cash is not an immediate bankruptcy (restructuring first)
       if (days >= F.bankruptAfterDays) { this.bankrupt = true; f.state = 'BANKRUPT'; f.stage = 'BANKRUPT'; this._event('crit', 'BANKRUPTCY'); return; }
       if (days >= F.pressureAfterDays) { f.state = 'DEBT_PRESSURE'; f.stage = 'DEFAULT'; return; }
       if (days >= F.emergencyAfterDays) { const E = this.cfg.LOANS.emergency, used = this.loans.filter(l => l.kind === 'EMERGENCY').reduce((a, l) => a + l.remaining, 0), room = E.limit - used;
@@ -1078,7 +1079,7 @@
     bankDebt() { return this.bank.bankDebt(); }
     _monthFrac() { const d = CAL.fromHours(this.hours); return Math.min(1, ((d.day - 1) * 24 + d.hour + d.minute / 60) / (d.daysInMonth * 24)); }
     /* the company's risk position for a new bank loan: debt without the Central loan, against assets (without the Central network) + stock + cash */
-    bankRiskCtx() { const cl = this.centralLoan(), cen = cl && this.loans.includes(cl) ? cl.remaining : 0; return { riskDebt: this.debt() - cen + this.bankDebt(), riskBase: this.assetsTotal() - this.centralValue() + this.inventoryValue() + Math.max(0, this.store.cash), val: this._valuer() }; }
+    bankRiskCtx() { const cl = this.centralLoan(), cen = cl && this.loans.includes(cl) ? cl.remaining : 0; return { riskDebt: this.debt() - cen + this.bankDebt(), riskBase: this.assetsTotal() - this.centralValue() + this.inventoryValue() + Math.max(0, this.store.cash), val: this._valuer(), restricted: this.fin.negHours >= this.cfg.FINANCE.pressureAfterDays * 24 || this.bank.worstStage() >= 3 }; }
     /* what the collateral is worth now (the bank layer asks; it never reads the company itself).  The strategic reserve is not here: it is never collateral. */
     _valuer() { const me = this; return { asset: id => { const b = me.store.get(id); return b ? me.assetValue(b) : null; }, oil: p => SELL.includes(p) ? { avail: me.available(p), price: me.unitPrice(p) } : null }; }
     _creditMonth(c) {
@@ -1089,12 +1090,40 @@
     bankCollateralOf(id) { const l = this.bank.loan(id); return l ? this.bank.collateralOf(l, this._valuer()) : null; }
     addBankCollateral(id, items) { this.sync(); return this.bank.addCollateral(id, items, this._valuer(), this.dayIdx); }
     releaseBankLien(lienId, opts) { this.sync(); return this.bank.release(lienId, this._valuer(), this._bankIO(), this._monthFrac(), opts); }
+    /* ---- Banking Phase 4: default stages, restructuring, collateral enforcement (bank.js decides, the company does the selling and the bookkeeping) ---- */
+    _bankDaily() {
+      const B = this.bank; if (B.crisis.at >= 0 && this.store.cash >= 0) B.crisis.at = -1;               // the ladder is over: cash is back
+      for (const l of B.defaults(this.dayIdx)) this._enforceLoan(l);
+      for (const [id, o, n] of B.chg || []) this._event(n >= 4 ? 'crit' : 'warn', n === 0 ? 'Bank loan ' + id + ': back to normal' : 'Bank loan ' + id + ': default stage ' + n);
+    }
+    _harm(x) { if (x.kind === 'OIL') return 0; const b = this.store.get(x.ref); return !b ? 0 : this.sim.status(b) === 'RUNNING' ? 2 : 1; }          // least operational harm first: oil in the tank, then idle assets, then running ones
+    _lienOrder(list) { return list.slice().sort((a, b) => this._harm(a) - this._harm(b) || this._valueOf(b) - this._valueOf(a) || a.id - b.id); }
+    _valueOf(x) { return this.bank._value(x, this._valuer()); }
+    _enforceLien(x) {
+      const B = this.bank, l = B.loan(x.loan), r = B.forceRelease(x.id); if (!r || !l) return 0; this.sync(); const c0 = this.store.cash;
+      if (x.kind === 'OIL') { const q = Math.min(x.qty, this.available(x.ref)); if (q > 1e-6) this.sell(x.ref, q, 'RESCUE'); }
+      else { const b = this.store.get(x.ref); if (b) { const price = Math.max(0, this.assetValue(b) * this.cfg.RESCUE.assetSaleRatio); this._saleOverride = price; try { this.store.demolish(x.ref, { building: true, pipes: true }); } finally { this._saleOverride = null; } } }
+      const got = this.store.cash - c0; if (got > 0.005 && l.status === 'ACTIVE') B.forceRepay(l, this._bankIO(), got); this._event('warn', 'Collateral enforced · loan ' + l.id + ' · ' + x.kind + ' ' + x.ref); return got;
+    }
+    _enforceLoan(l) {                                                               // stage 5: take the collateral, least harm first, until the arrears are paid
+      for (const x of this._lienOrder(this.bank.activeLiens(l.id))) { if (l.status !== 'ACTIVE' || !l.arrears.length) break; this._enforceLien(x); }
+      l.enforce = false; if (l.status === 'ACTIVE' && l.arrears.length) { l.liq = true; this.bank._rec(l.bank, 'LIQUIDATION', 'Loan ' + l.id + ': collateral exhausted, arrears remain', 0); }
+    }
+    _assetRecovery() { const all = this._lienOrder(this.bank.activeLiens()); for (const x of all) { if (this.store.cash >= 0) break; this._enforceLien(x); } }
+    _bankCrisis() {
+      const f = this.fin, B = this.bank, D = this.cfg.DEFAULT;
+      if (B.crisis.at < 0) { B.crisis.at = this.hours; B.crisis.n++; B.crisisStart(this.dayIdx); this._event('crit', 'Restructuring window opened'); this._assetRecovery(); }
+      f.state = 'DEBT_PRESSURE'; f.stage = 'RESTRUCTURING'; if (this.store.cash >= 0) return;
+      if (this.hours - B.crisis.at >= D.crisisWindowDays * 24) { this._assetRecovery(); if (this.store.cash < 0) { this.bankrupt = true; f.state = 'BANKRUPT'; f.stage = 'BANKRUPT'; B.chargeOffAll(this.dayIdx); this._event('crit', 'BANKRUPTCY'); } }
+    }
+    acceptRestructuring(id, kind) { this.sync(); return this.bank.acceptPlan(id, kind, this._bankIO(), this.dayIdx); }
     _bankIO() {
       const me = this;
       return { cash: () => me.store.cash,
         accrue(a, l) { me._post({ type: 'BANK_INT_ACCRUED', flow: 'NONE', desc: 'Bank interest accrued · loan ' + l.id }, [['EXP_INTEREST', a], ['ACCRUED_INT', -a]]); },
         payInt(a, l) { me._post({ type: 'BANK_INT_PAID', flow: 'OP', desc: 'Bank interest paid · loan ' + l.id }, [['ACCRUED_INT', a], ['CASH', -a]]); },
         payPrin(a, l) { me._post({ type: 'BANK_PRINCIPAL', flow: 'FIN', desc: 'Bank loan principal · loan ' + l.id }, [['BANK_LOANS', a], ['CASH', -a]]); },
+        capitalize(a, l) { me._post({ type: 'BANK_INT_CAPITALISED', flow: 'NONE', desc: 'Unpaid interest and fees added to the loan · loan ' + l.id }, [['ACCRUED_INT', a], ['BANK_LOANS', -a]]); },
         partInt(a, l) { me._expense('interest', a, 'Bank interest to date · loan ' + l.id); }, fee(a, l) { me._expense('interest', a, 'Bank loan fee · loan ' + l.id); } };
     }
     _bankMonth() {
