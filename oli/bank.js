@@ -315,7 +315,7 @@
       const o = p.options.find(x => x.kind === kind); if (!o) return { ok: false, reason: 'option' };
       let cap = 0; for (const it of l.arrears) cap += it.int + (it.fee || 0); cap = LE.r2(cap);
       if (cap > 0) { io.capitalize(cap, l); this.books[l.bank].post([['LOANS', cap], ['RETAINED', -cap]]); l.bal = LE.r2(l.bal + cap); }
-      l.arrears = []; l.accr = 0;
+      l.arrears = [];
       if (o.kind === 'EXTEND') l.term = l.m + o.months; else l.grace = l.m + o.graceMonths;
       l.pmt = LE.pmtFor(l); p.status = 'ACTIVE'; p.kind = kind; p.accepted = day; p.until = day + D.planActiveDays; l.stage = 0; l.stageDay = day; l.enforce = false; l.restr = (l.restr | 0) + 1;
       this._tx('PLAN_ACCEPT', l, cap, o.kind === 'EXTEND' ? o.months : o.graceMonths, day); this._rec(l.bank, 'PLAN_ACCEPT', 'Loan ' + l.id + ' restructured (' + kind + ')', cap); return { ok: true, kind, capitalised: cap, payment: l.pmt, term: l.term };
