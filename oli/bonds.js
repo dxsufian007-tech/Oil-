@@ -62,7 +62,7 @@
 
     /* ---- buy / sell (the market is the counterparty; it always trades at the bid / ask) ---- */
     buy(id, units, day, base, io) {
-      const b = this.bond(id), C = this.C; if (!b || b.status !== 'LISTED') return { ok: false, reason: 'noBond' }; if (this.issuers[b.issuer].status !== 'ACTIVE') return { ok: false, reason: 'DEFAULTED' };
+      const b = this.bond(id), C = this.C; if (!b) return { ok: false, reason: 'noBond' }; if (this.issuers[b.issuer].status !== 'ACTIVE') return { ok: false, reason: 'DEFAULTED' }; if (b.status !== 'LISTED') return { ok: false, reason: 'noBond' };
       units = Math.floor(units); if (!(units >= 1)) return { ok: false, reason: 'units' }; const q = this.quote(b, day, base), cost = r2(units * C.unitFace * q.ask);
       if (cost < C.minTrade) return { ok: false, reason: 'MIN_TRADE' }; if (io.cash() < cost - 1e-6) return { ok: false, reason: 'cash', need: cost };
       io.invest(cost, 'Bond ' + b.issuer + ' #' + b.id); let p = this.holding(id); if (!p) { p = { bond: id, units: 0, carry: 0, acc0: 0, rec: null }; this.pos.push(p); }
