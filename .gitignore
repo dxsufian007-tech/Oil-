@@ -1,0 +1,6 @@
+
+# personal game saves used by the repeatable real-save diagnostics test: NEVER committed
+oli/local-saves/
+local-saves/
+*realsave*.json
+*.oli-save.json

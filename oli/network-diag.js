@@ -17,8 +17,8 @@
   const OK_COLOR = '#34c759', NEAR_CAP = 0.95;
   const KIND_AR = {
     OPEN_END: 'اتصال مفقود', MISSING_BUILDING: 'اتصال بعنصر محذوف', BAD_PORT: 'منفذ غير صالح', WRONG_POINT: 'متصل بنقطة خاطئة', BROKEN_PATH: 'أنبوب مقطوع المسار', PATH_BLOCKED: 'مسار يعبر منشأة',
-    TILE_SHARED: 'تعارض: بلاطة مشتركة', PORT_TWICE: 'تعارض: منفذ مستخدم مرتين', PRODUCT_MISMATCH: 'منتج غير متوافق', WRONG_DIRECTION: 'اتجاه تدفق خاطئ', CLOSED_LINE: 'مسار مغلق', SELF_LOOP: 'أنبوب يعود إلى نفس العنصر',
-    OVER_CAPACITY: 'تجاوز سعة الأنبوب', NEAR_CAPACITY: 'اختناق (قرب السعة)', HIGH_PRESSURE: 'ضغط مرتفع', LOW_PRESSURE: 'ضغط منخفض',
+    TILE_SHARED: 'تعارض: بلاطة مشتركة', PORT_TWICE: 'تعارض: منفذ مستخدم مرتين', PRODUCT_MISMATCH: 'منتج غير متوافق', WRONG_DIRECTION: 'اتجاه تدفق خاطئ', OFFER_EXCEEDS: 'مؤشر: عرض لحظي فوق السعة', CLOSED_LINE: 'مسار مغلق', SELF_LOOP: 'أنبوب يعود إلى نفس العنصر',
+    OVER_CAPACITY: 'تجاوز سعة الأنبوب', NEAR_CAPACITY: 'اختناق (قرب السعة)', HIGH_PRESSURE: 'مؤشر: ضغط مرتفع', LOW_PRESSURE: 'ضغط منخفض',
     DEAD_END: 'مسار لا يصل إلى وجهته', ISOLATED: 'عنصر معزول', NO_INPUT: 'مدخل غير موصول', NO_OUTPUT: 'مخرج غير موصول', NO_SUPPLY: 'مستهلك بلا مصدر', PUMP_DISCONNECTED: 'مضخة غير متصلة',
     PUMP_OVERLOAD: 'تجاوز سعة العنصر', ELEMENT_OVERLOAD: 'تجاوز سعة العنصر', VALVE_CLOSED: 'صمام مغلق', VALVE_FAULT: 'صمام معطل', VALVE_PARTIAL: 'صمام نصف مفتوح', OUT_OF_SERVICE: 'عنصر خارج الخدمة',
     BLOCKED: 'تدفق محجوب', TANK_FULL: 'خزان ممتلئ', FACING_MISMATCH: 'منفذان متقابلان غير متوافقين', JUNCTION_USELESS: 'تفرع بلا فائدة', BRANCH_NO_EXIT: 'تفرع بلا مخرج'
@@ -29,6 +29,7 @@
   const nameOf = b => DEFS[b.d].name + ' #' + b.id;
   const pipeLabel = L => 'PIPE-' + L.id;
   const isPass = t => t === 'pump' || t === 'valve' || t === 'junction';
+  const SAT = 0.95, histText = (h, code, id) => { const r = h[code + '|' + id], n = (h.__scans || 0) + 1; return 'ظهر في ' + ((r ? r.hit : 0) + 1) + ' من ' + n + ' فحوص في هذه الجلسة.'; };
   const isTerminal = (b, d) => d.type === 'tank' || d.type === 'gas' || d.type === 'refinery' || (d.type === 'pump' && d.family === 'WATER_PUMP') || d.type === 'central';
 
   function run(store, net, opts) {
@@ -80,7 +81,7 @@
     const lineProblem = new Set();            // lines carrying at least one finding (for the healthy count)
     const pAccess = (ref) => { const p = ref && ports.get(pk(ref.b, ref.port)); return p || null; };
     for (const L of lines) {
-      const path = L.path || [], first = path[0], last = path[path.length - 1], mid = lineMid(L), me = lEl(L), flag = f => { lineProblem.add(L.id); return add(f); };
+      const path = L.path || [], first = path[0], last = path[path.length - 1], mid = lineMid(L), me = lEl(L), flag = f => { if (!f.indicator) lineProblem.add(L.id); return add(f); };
       const ends = { a: L.a ? byId.get(L.a.b) : null, b: L.b ? byId.get(L.b.b) : null };
       if (!L.a || !L.b) {                                          // an open pipeline: one end is on a free tile
         const missing = !L.a ? 'a' : 'b', have = missing === 'a' ? L.b : L.a, hb = have && byId.get(have.b), pt = missing === 'a' ? first : last, hp = have && ports.get(pk(have.b, have.port));
@@ -113,9 +114,10 @@
       if (L.a.b === L.b.b) flag({ code: 'SELF_LOOP', severity: 'LOW', confirmed: false, element: me, x: mid.x, y: mid.y, prev: endLabel(L.a, L), next: endLabel(L.b, L), cause: pipeLabel(L) + ' يبدأ وينتهي في نفس المنشأة ' + nameOf(ends.a) + '.', effect: 'تدوير داخلي بلا فائدة.', fix: 'احذف الأنبوب إن لم يكن مقصوداً.', evidence: { line: L.id } });
       if (L.open === false) { const stor = DEFS[ends.a.d].type === 'tank' && DEFS[ends.b.d].type === 'tank'; flag({ code: 'CLOSED_LINE', severity: stor ? 'LOW' : 'MEDIUM', confirmed: false, element: me, x: mid.x, y: mid.y, prev: endLabel(L.a, L), next: endLabel(L.b, L), cause: 'صمام ' + pipeLabel(L) + ' مغلق (open = false).', effect: 'لا يمر عبره تدفق' + (stor ? ' (الربط التلقائي بين الخزانات المتجاورة يبدأ مغلقاً)' : '') + '.', fix: 'افتح الخط إن كنت تريد مرور التدفق.', evidence: { line: L.id } }); }
       if (solved) { const sp = PIPES[L.dia] || { capacity: 0, maxPressure: 0 }, fl = L.flow || 0, use = sp.capacity ? fl / sp.capacity : 0;
-        if (L.over) flag({ code: 'OVER_CAPACITY', severity: 'HIGH', element: me, x: mid.x, y: mid.y, prev: endLabel(L.a, L), next: endLabel(L.b, L), cause: 'سجّل المحرك على ' + pipeLabel(L) + ' أن المعروض عليه تجاوز سعته المتاحة (القطر ' + L.dia + ' سعته ' + nf(sp.capacity) + '؛ التدفق المعتمد حالياً ' + nf(fl) + ' برميل/يوم = ' + Math.round(use * 100) + '%). لا تُحدَّد من البيانات المتاحة الذروة اللحظية التي سبّبت ذلك.', effect: 'الكمية الزائدة عن سعة الأنبوب في لحظة العرض لا تمر؛ التدفق الفعلي المعتمد هو الرقم المذكور.', fix: 'ارفع قطر الأنبوب أو وزّع التدفق على أنبوب آخر.', evidence: { line: L.id, flow: fl, cap: sp.capacity } });
+        if (L.over && use >= SAT) flag({ code: 'OVER_CAPACITY', severity: 'HIGH', element: me, x: mid.x, y: mid.y, prev: endLabel(L.a, L), next: endLabel(L.b, L), cause: 'تدفق ' + pipeLabel(L) + ' (' + nf(fl) + ' برميل/يوم) يبلغ ' + Math.round(use * 100) + '% من سعة القطر ' + L.dia + ' (' + nf(sp.capacity) + ') والمحرك سجّل تجاوزاً: الأنبوب مشبع فعلاً.', effect: 'يحدّ الأنبوب التدفق عند سعته: الكمية الزائدة لا تمر.', fix: 'ارفع قطر الأنبوب أو وزّع التدفق على أنبوب آخر.', evidence: { line: L.id, flow: fl, cap: sp.capacity, use } });
+        else if (L.over) flag({ code: 'OFFER_EXCEEDS', severity: 'LOW', confirmed: false, indicator: true, element: me, x: mid.x, y: mid.y, prev: endLabel(L.a, L), next: endLabel(L.b, L), cause: 'سجّل المحرك في آخر خطوة محاكاة أن ما عُرض على ' + pipeLabel(L) + ' تجاوز سعته (القطر ' + L.dia + ' سعته ' + nf(sp.capacity) + ')، لكن التدفق الفعلي ' + nf(fl) + ' برميل/يوم = ' + Math.round(use * 100) + '% فقط. المحرك يرفع هذا العلم لحظة العرض (حتى في فحوصه التجريبية) قبل أن يوزّع الكمية على المستقبِلين، فهو تجاوز لحظي في العرض وليس تشبعاً مستمراً.', effect: 'لا نقص مثبت في التدفق: الكمية الفعلية أقل بكثير من السعة.' + (opts.history ? ' ' + histText(opts.history, 'OFFER_EXCEEDS', L.id) : ''), fix: 'لا إجراء مطلوب إلا إذا تكرر ظهوره عبر فحوص متتالية مع ارتفاع التدفق نحو السعة.', evidence: { line: L.id, flow: fl, cap: sp.capacity, use } });
         else if (use >= NEAR_CAP) flag({ code: 'NEAR_CAPACITY', severity: 'LOW', confirmed: false, element: me, x: mid.x, y: mid.y, prev: endLabel(L.a, L), next: endLabel(L.b, L), cause: 'تدفق ' + pipeLabel(L) + ' يبلغ ' + Math.round(use * 100) + '% من سعته (' + nf(fl) + ' من ' + nf(sp.capacity) + ').', effect: 'قرب الاختناق: أي زيادة في الإنتاج ستُحجب.', fix: 'فكّر في رفع القطر قبل زيادة الإنتاج.', evidence: { line: L.id, flow: fl, cap: sp.capacity } });
-        if (L.hiP) flag({ code: 'HIGH_PRESSURE', severity: 'MEDIUM', element: me, x: mid.x, y: mid.y, prev: endLabel(L.a, L), next: endLabel(L.b, L), cause: 'ضغط ' + pipeLabel(L) + ' (' + nf(L.pressure || 0) + ' psi) يتجاوز حدّه ' + nf(sp.maxPressure) + ' psi.', effect: 'ضغط فوق تصنيف الأنبوب حسب المحرك؛ لا يُسجَّل أي نقص في التدفق بسببه (مؤشر وليس انقطاعاً).', fix: 'ارفع قطر الأنبوب أو خفّض ضغط المضخة قبله.', evidence: { line: L.id, p: L.pressure, max: sp.maxPressure } });
+        if (L.hiP) flag({ code: 'HIGH_PRESSURE', severity: 'LOW', confirmed: false, indicator: true, element: me, x: mid.x, y: mid.y, prev: endLabel(L.a, L), next: endLabel(L.b, L), cause: 'ضغط ' + pipeLabel(L) + ' (' + nf(L.pressure || 0) + ' psi) يتجاوز حدّه ' + nf(sp.maxPressure) + ' psi.', effect: 'مؤشر وليس عطلاً: ضغط فوق تصنيف الأنبوب حسب المحرك، ولا يُسجَّل أي نقص في التدفق بسببه ما لم يثبت العكس.', fix: 'ارفع قطر الأنبوب أو خفّض ضغط المضخة قبله.', evidence: { line: L.id, p: L.pressure, max: sp.maxPressure } });
         if (L.lowP) flag({ code: 'LOW_PRESSURE', severity: 'MEDIUM', element: me, x: mid.x, y: mid.y, prev: endLabel(L.a, L), next: endLabel(L.b, L), cause: 'ضغط الدخول لا يكفي لدفع التدفق عبر ' + pipeLabel(L) + ' (طول ' + path.length + ' بلاطة، ضغط ' + nf(L.pressure || 0) + ' psi).', effect: 'ينخفض التدفق عبر هذا الأنبوب عن المطلوب.', fix: 'أضف مضخة قبله أو قصّر المسار أو ارفع القطر.', evidence: { line: L.id, p: L.pressure } }); }
     }
     /* a port named by two lines */
@@ -188,14 +190,15 @@
     }
 
     /* ---------- numbering: by severity, then by id ---------- */
-    faults.sort((a, b) => sevOf(a.severity) - sevOf(b.severity) || (a.confirmed === b.confirmed ? 0 : a.confirmed ? -1 : 1) || a.id - b.id);
+    const grp = f => f.indicator ? 2 : f.confirmed ? 0 : 1;
+    faults.sort((a, b) => grp(a) - grp(b) || sevOf(a.severity) - sevOf(b.severity) || a.id - b.id);
     faults.forEach((f, i) => { f.no = i + 1; });
     for (const f of faults) if (f.code === 'BLOCKED') { f.cause = f.cause.replace(/رقم ([\d، ]+)/, (m, ids) => 'رقم ' + ids.split('، ').map(id => { const o = faults.find(z => z.id === +id); return o ? o.no : id; }).join('، ')); }
-    const confirmed = faults.filter(f => f.confirmed), warnings = faults.filter(f => !f.confirmed);
+    const confirmed = faults.filter(f => f.confirmed), warnings = faults.filter(f => !f.confirmed && !f.indicator), indicators = faults.filter(f => f.indicator);
     const dockEdges = [...dock].filter(([k, k2]) => k < k2).length, connections = lines.length + dockEdges, healthyLines = lines.filter(L => !lineProblem.has(L.id)).map(L => L.id);
     const healthyBuildings = items.filter(b => DEFS[b.d] && DEFS[b.d].type !== 'central' && !buildingProblem.has(b.id)).length, nb = items.filter(b => DEFS[b.d] && DEFS[b.d].type !== 'central').length;
     const total = lines.length + nb, healthy = healthyLines.length + healthyBuildings;
-    const stats = { buildings: nb, lines: lines.length, docked: dockEdges, checked: total, connections, healthyConnections: healthyLines.length + dockEdges, faults: confirmed.length, warnings: warnings.length, critical: faults.filter(f => f.severity === 'CRITICAL').length,
+    const stats = { buildings: nb, lines: lines.length, docked: dockEdges, checked: total, connections, healthyConnections: healthyLines.length + dockEdges, faults: confirmed.length, warnings: warnings.length, indicators: indicators.length, critical: faults.filter(f => f.severity === 'CRITICAL').length,
       health: total ? Math.round(healthy / total * 1000) / 10 : 100, healthyElements: healthy, solved };
     return { faults, stats, healthyLines, notes, SEV, OK_COLOR };
   }

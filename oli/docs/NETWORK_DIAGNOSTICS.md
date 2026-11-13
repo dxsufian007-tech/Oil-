@@ -33,6 +33,35 @@ Health % = elements (buildings + pipes) with no finding / elements checked.
 ## Read-only guarantee and cost
 Tests compare the full saved state (buildings, lines, flows, cash, sim dirty flag) before and after a scan. It runs only when the player taps «فحص الشبكة» / «إعادة الفحص». 4,032 elements: ~80 ms. Capacity / pressure checks use the last simulation solve; if the simulation is stale the report says so.
 
+## Central network inspector (network-diag-central.js)
+
+An independent read-only inspector for the Central Hybrid Network (stations, segments, central pumps, six channels). It reads `net.central` and the store, builds its own indexes (it does not even touch the net's caches) and never calls the planner, so flow and simulation results are untouched. `diag-ui.js` merges both reports into one numbered list with its own Central block and a filter (all / oil / Central); Central segments are drawn on the map (green = sound, coloured = fault) and a tap jumps to the segment, station or pump.
+
+| Finding | Class | Basis |
+|---|---|---|
+| segment end station missing | CRITICAL, confirmed | structure |
+| channel recorded as faulty | CRITICAL, confirmed | engine state |
+| segment recorded faulty (per channel) | HIGH if no alternative path, MEDIUM if a loop carries the flow | engine state + graph |
+| channel partitioned by faulty segments | HIGH, confirmed (names the faulty segments) | graph |
+| pump faulty / no station / no segment / segment not touching its station | HIGH, confirmed | structure / state |
+| station without building, building without station, damaged station, isolated station (with branches) | HIGH, confirmed | structure |
+| trunk split into islands, channel closed, gap in the drawing, path across a building, near capacity, low suction pressure | warning | review needed |
+| segment end away from its station, channel pressure above rating | indicator | no proven effect on flow |
+
+Not reported because the engine does not model it: leaks / losses, and pressure per segment (the engine keeps pressure per channel only).
+
+## Over capacity: instant offer vs sustained saturation
+
+The engine raises `over` on a line inside `offer()` when the rate OFFERED to the pipe exceeds its room (`cap - flow`) - before water-filling shares the oil among receivers and also during probe calls - so the flag can be set while the committed flow is far below capacity. The inspector therefore reports `OVER_CAPACITY` (confirmed, HIGH) only when the flag AND at least 95% of the capacity in real flow agree; otherwise it is the indicator `OFFER_EXCEEDS` (instant offer) and shows how often it was seen across the scans of the session. On the real save PIPE-221/222 (stations #242/#244 to tank #243) carry 10,798 of 30,000 bbl/day (36%); over 48 simulated hours the flag was up only during the first 10 steps (the flow decaying from 10,708 to 9,255) and never again: a transient surge, not saturation.
+
+## High pressure
+
+`HIGH_PRESSURE` (engine flag `hiP`: pressure above the pipe rating) is an indicator, not a fault: it is counted apart, never lowers the health figure and is listed last. It becomes a finding to act on only once an effect on flow is shown.
+
+## Repeatable real-save test
+
+`oli/local-saves/` is git-ignored (so are `*realsave*.json`): put a personal save there and run `npm run test:realsave` (`SAVE=<path>` works too; `VERBOSE=1` prints every finding). Export: in the game page console `copy(localStorage.getItem('oli-lab-v2'))` and paste into `oli/local-saves/realsave.json`. The test asserts invariants that hold for any save (read-only, one indicator per engine flag, Central elements all counted, only structural / recorded-state findings confirmed), injects deliberate Central faults into the in-memory copy (the file is never written) and checks each is found at the right place. `test-network-diag-real.js` does the same in the real page with screenshots (`SAVE=... SHOTS=dir`).
+
 ## Real-save validation (244 buildings, 234 pipes, 7,137 Central tiles)
 
 Run with `SAVE=<realsave.json> node test-network-diag-real.js` (skipped without a save). Findings after calibration on the real save:
@@ -42,7 +71,7 @@ Run with `SAVE=<realsave.json> node test-network-diag-real.js` (skipped without 
 - Central stations are hand-off points: they are terminals and sources, never dead ends or "no supply".
 
 ### NOT covered
-- The Central Hybrid Network (segments, stations, central pumps, its tiles): flow past or inside the Central stations is not verified; it has its own system.
+- Flow decisions inside the Central planner (routing, water-filling): only the structure, recorded faults and the engine's own channel figures are checked; the oil network scan does not follow oil through Central stations (they are hand-off points).
 - There is no leak/loss model in the engine, so none is reported.
 - Capacity/pressure checks mirror the last simulation solve (peak offered flow within a step is not recoverable from stored data).
 - Unused optional ports are not reported.
