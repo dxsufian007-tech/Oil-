@@ -11,10 +11,10 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - name: Download the official APK (release official-459685a-r3)
+      - name: Download the official APK (release official-9a1292c-r4)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download official-459685a-r3 --pattern 'OliEmpire-*.apk' --output OliEmpire.apk --repo ${{ github.repository }}; ls -l OliEmpire.apk; sha256sum OliEmpire.apk
+        run: gh release download official-9a1292c-r4 --pattern 'OliEmpire-*.apk' --output OliEmpire.apk --repo ${{ github.repository }}; ls -l OliEmpire.apk; sha256sum OliEmpire.apk
       - run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules; sudo udevadm trigger --name-match=kvm
