@@ -20,22 +20,25 @@ setTimeout(() => { console.log('FAIL watchdog'); process.exit(0); }, 9 * 60 * 10
   if (await ev('return !!document.querySelector("#eco-away.open");')) await tapUntil('#away-ok', '!document.querySelector("#eco-away.open")', 4);
   await ev('__lab.company.speed = 0;'); await sleep(1000);
   const built = await ev('const d = await __lab.buildDemo(); __lab.company.advanceHours(24); return { ok: d.ok, total: d.total, pipelines: d.pipelines };'); check('a real oil chain is built in the game', built.ok && built.total === 12, JSON.stringify(built));
-  const J0 = await ev('return JSON.stringify({ n: __lab.pipes.toJSON(), cash: __lab.store.cash, h: __lab.company.hours });');
+  const J0 = await ev('return JSON.stringify({ n: __lab.pipes.toJSON(), b: __lab.store.items.size });');
     check('the dev toolbar button is NOT what the player uses (hidden)', await ev('return document.getElementById("ndBtn").getBoundingClientRect().width === 0;'));
   await tapUntil('#eh-menu', 'document.getElementById("eco-sheet").classList.contains("open")'); await tapUntil('#es-tabs [data-tab=company]', 'document.getElementById("es-netdiag")'); check('the Company tab offers «فاحص الشبكة»', await ev('return !!document.getElementById("es-netdiag");')); await shot('02a-company-tab');
   await tapUntil('#es-netdiag', 'document.querySelector("#ndPanel .nd-sum")', 5); await sleep(800); await shot('02-panel');
   let r = await S(); console.log('oil scan: ' + JSON.stringify(r && r.s)); check('the oil network is scanned from the touch: at least the 12 buildings and 11 pipes, 0 faults', r && r.s.buildings >= 12 && r.s.lines >= 11 && r.s.faults === 0, JSON.stringify(r && r.s));
-  check('the Central network is scanned too: its own block shows stations, segments, pumps and channels', r && r.c && r.c.present && r.c.stations > 0 && r.c.segments > 0 && r.c.pumps > 0 && r.c.channels === 6 && r.c.checked === r.c.stations + r.c.segments + r.c.pumps + 6, JSON.stringify(r && r.c));
-  const cen0 = r && r.c;
-  check('the scan changed nothing in the game', (await ev('return JSON.stringify({ n: __lab.pipes.toJSON(), cash: __lab.store.cash, h: __lab.company.hours });')) === J0);
+  check('no Central block while there is no Central network', r && r.c && r.c.present === false);
+  check('the scan changed nothing in the game', (await ev('return JSON.stringify({ n: __lab.pipes.toJSON(), b: __lab.store.items.size });')) === J0);
   /* break the oil network (detach one pipe) and add a small Central network with deliberate faults */
   const inj = await ev(`const L = [...__lab.pipes.lines.values()][5]; L.b = null; __lab.pipes.rev++;
-    const C = __lab.pipes.central, g = [...C.seg.values()].find(z => z.kind === 'main'), pu = [...C.pumps.values()][0]; C.setFault(g.id, 'GASOLINE', true); C.setPumpFault(pu.id, true); C.setChannel('DIESEL', 'CLOSED');
-    return { pipe: L.id, seg: g.id, pump: pu.id };`);
+    const C = __lab.pipes.central || (__lab.pipes.central = new OliCentral.CentralNet(__lab.pipes.W)); const [x0, y0] = [L.path[0][0] + 30, L.path[0][1] + 30];
+    const mkc = (id, x, y) => { C.addStation({ id, x, y }); const cl = []; for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) cl.push([x + i, y + j]); C.claimFootprint(id, cl); }; mkc('DA', x0, y0); mkc('DB', x0 + 20, y0); mkc('DC', x0 + 20, y0 + 20);
+    const row = (a, b, c, d) => { const p = []; let x = a, y = b; p.push([x, y]); while (x !== c) { x += Math.sign(c - x); p.push([x, y]); } while (y !== d) { y += Math.sign(d - y); p.push([x, y]); } return p; };
+    C.addSeg({ id: 'DS1', kind: 'main', a: 'DA', b: 'DB', path: row(x0 + 3, y0 + 1, x0 + 19, y0 + 1) }); C.addSeg({ id: 'DS2', kind: 'main', a: 'DB', b: 'DC', path: row(x0 + 21, y0 + 3, x0 + 21, y0 + 19) });
+    C.addPump({ id: 'DP1', st: 'DA', ch: 'CRUDE', seg: 'DS1', dir: 1 }); C.setFault('DS2', 'GASOLINE', true); C.setPumpFault('DP1', true); C.setChannel('DIESEL', 'CLOSED');
+    return { pipe: L.id, seg: 'DS2', pump: 'DP1' };`);
   await sleep(500); check('after a change the panel says the result is stale', /تغيّرت الشبكة منذ آخر فحص/.test(await ev('__netdiag.render(); return __netdiag.panel.textContent;')));
   await tapUntil('#ndPanel [data-nd=scan]', 'document.querySelector("#ndPanel .nd-cen")', 5); await sleep(800); r = await S(); console.log('after: ' + JSON.stringify(r));
-  check('the Central network is scanned again with the same element count', r.c && cen0 && r.c.checked === cen0.checked, JSON.stringify(r.c));
-  check('the Central faults are found: a segment and a pump (confirmed), the DIESEL channel closed (warning)', r.c.faults >= cen0.faults + 2 && r.c.warnings >= cen0.warnings + 1, JSON.stringify(r.c));
+  check('the Central network is scanned: 3 stations, 2 segments, 1 pump, 6 channels = 12 elements', r.c && r.c.present && r.c.stations === 3 && r.c.segments === 2 && r.c.pumps === 1 && r.c.checked === 12, JSON.stringify(r.c));
+  check('the Central faults are found: segment DS2 and pump DP1 (confirmed), the DIESEL channel closed (warning)', r.c.faults >= 2 && r.c.warnings >= 1, JSON.stringify(r.c));
   check('the detached oil pipe is found (confirmed)', r.s.faults >= 1, JSON.stringify(r.s)); await shot('03-panel-faults');
   const list = await ev('return JSON.stringify(__netdiag.st.rep.faults.map(f => ({ no: f.no, code: f.code, id: f.element.id, x: f.x, y: f.y, conf: f.confirmed, cen: !!f.central })));'), F = JSON.parse(list);
   for (const [code, id, shotName] of [['OPEN_END', inj.pipe, '04-jump-oil-pipe'], ['C_SEG_FAULT', inj.seg, '05-jump-central-segment'], ['C_PUMP_FAULT', inj.pump, '06-jump-central-pump']]) {
