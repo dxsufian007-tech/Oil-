@@ -522,7 +522,7 @@
 
     /* ---- financial ratios (Phase 13). Averages use the balance at the start and at the end of the period. null = not available (zero denominator) ---- */
     _snap() {
-      const bs = this.balanceSheet(), suppliers = -this.journal.bal.PAY_SUPPLIERS, loansDue = this.loans.reduce((a, l) => a + Math.min(l.remaining, l.payment * this.cfg.TIME.monthsPerYear), 0);
+      const bs = this.balanceSheet(), suppliers = -this.journal.bal.PAY_SUPPLIERS, loansDue = this.loans.reduce((a, l) => a + Math.min(l.remaining, l.payment * this.cfg.TIME.monthsPerYear), 0) + this.bank.dueWithinYear();
       return { assets: bs.totalAssets, equity: bs.totalEquity, liabilities: bs.totalLiabilities, current: bs.cash + bs.receivables + bs.inventory, currentLiab: bs.payroll + bs.tax + suppliers + loansDue };
     }
     _ratios(c, start, end) {
@@ -1018,6 +1018,7 @@
       return out;
     }
     _newDay() {
+      this.bank.daily(this.dayIdx, this.market.price.CRUDE);                          // banks: the daily EMA of the crude price for the Base Rate (one multiply-add)
       // Month-end charges (salaries, running costs, loans, tax) belong to the day that ENDS the month: they are booked before that day is closed.
       if (CAL.isMonthStart(this.dayIdx)) this._monthEnd();                                 // the real calendar decides: the 1st of a month closes the month before it
       const cash = this.store.cash; this.days.push(Object.assign({ d: this.dayIdx - 1 }, (() => { const c = calc(this.led.day, cash); return { revenue: c.revenue, expenses: c.expenses, profit: c.netProfit, cashIn: c.cash.in, cashOut: c.cash.out, storage: this.led.day.storage, opex: c.opex + c.variable }; })()));
@@ -1045,6 +1046,7 @@
         l.intPaid = (l.intPaid || 0) + intr; l.prinPaid = (l.prinPaid || 0) + prin; l.accrFrac = 0;
         l.remaining -= prin; l.paid++; if (l.remaining < 0.5 || last) { this.loans = this.loans.filter(x => x !== l); this.closed.unshift(l); }
       }
+      this._bankMonth();                                                              // 4b. the new bank loans: interest accrues, instalments are paid from cash that exists (else arrears), then the quarterly Base Rate review and repricing
       // 5. income tax: accrued on taxable profit, paid from the tax payable (losses carry forward)
       const M = calc(this.led.month, this.store.cash), taxable = M.revenue - (M.variable + M.opex + M.interest);
       if (taxable < 0) { if (C.TAX.lossCarryForward) this.taxCarry += -taxable; }
@@ -1071,12 +1073,37 @@
       f.state = 'WARNING'; f.stage = 'LIQUIDITY';
     }
     /* the seven financial stages are driven by these indicators (plus the cash rules in _finance) */
+    /* ---- Banking Phase 2: loans from the three banks (bank.js / loans-engine.js).  The loans live in the banking layer; the company books its side in BANK_LOANS / ACCRUED_INT / EXP_INTEREST / CASH.  The old loans[] and debt() are untouched. ---- */
+    bankDebt() { return this.bank.bankDebt(); }
+    _monthFrac() { const d = CAL.fromHours(this.hours); return Math.min(1, ((d.day - 1) * 24 + d.hour + d.minute / 60) / (d.daysInMonth * 24)); }
+    /* the company's risk position for a new bank loan: debt without the Central loan, against assets (without the Central network) + stock + cash */
+    bankRiskCtx() { const cl = this.centralLoan(), cen = cl && this.loans.includes(cl) ? cl.remaining : 0; return { riskDebt: this.debt() - cen + this.bankDebt(), riskBase: this.assetsTotal() - this.centralValue() + this.inventoryValue() + Math.max(0, this.store.cash) }; }
+    _bankIO() {
+      const me = this;
+      return { cash: () => me.store.cash,
+        accrue(a, l) { me._post({ type: 'BANK_INT_ACCRUED', flow: 'NONE', desc: 'Bank interest accrued · loan ' + l.id }, [['EXP_INTEREST', a], ['ACCRUED_INT', -a]]); },
+        payInt(a, l) { me._post({ type: 'BANK_INT_PAID', flow: 'OP', desc: 'Bank interest paid · loan ' + l.id }, [['ACCRUED_INT', a], ['CASH', -a]]); },
+        payPrin(a, l) { me._post({ type: 'BANK_PRINCIPAL', flow: 'FIN', desc: 'Bank loan principal · loan ' + l.id }, [['BANK_LOANS', a], ['CASH', -a]]); },
+        partInt(a, l) { me._expense('interest', a, 'Bank interest to date · loan ' + l.id); }, fee(a, l) { me._expense('interest', a, 'Bank loan fee · loan ' + l.id); } };
+    }
+    _bankMonth() {
+      this.bank.serviceMonth(this.dayIdx, this._bankIO());
+      this.bank.quarterly(this.dayIdx, this.market.engine ? this.market.engine.indus : 0);
+    }
+    bankQuote(bankId, type, amount, months, opts) { opts = opts || {}; return this.bank.assess({ bank: bankId, type, amount, term: months, freq: opts.freq, grace: opts.grace }, this.bankRiskCtx()); }
+    takeBankLoan(bankId, type, amount, months, opts) {
+      opts = opts || {}; if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync();
+      const r = this.bank.originate({ bank: bankId, type, amount, term: months, freq: opts.freq, grace: opts.grace, purpose: opts.purpose }, this.bankRiskCtx(), this.dayIdx, this._monthFrac()); if (!r.ok) return r;
+      this._cashIn('BANK_LOAN_IN', r.loan.bal, (opts.purpose || 'Bank loan') + ' · ' + bankId + ' · loan ' + r.loan.id, 'BANK_LOANS', 'FIN'); return r;
+    }
+    prepayBankLoan(id, amount) { this.sync(); return this.bank.prepay(id, amount, this._bankIO(), this._monthFrac()); }
+    rescheduleBankLoan(id, months) { this.sync(); return this.bank.reschedule(id, months, this._bankIO()); }
     riskIndicators() {
       const F = this.cfg.FIXED, RK = this.cfg.RISK, r7 = this.recent(7), r30 = this.recent(30), m = this.months, bs = this.balanceSheet(), wells = this.store.list().filter(b => DEFS[b.d].type === 'well' && b.st === 'OPERATIONAL').length;
       const monthlyFixed = this.staff.payroll + F.adminBase, debtBase = bs.fixedNet + bs.inventory, crudeRecent = this.prodHist.slice(-24).reduce((a, r) => a + r[0], 0);
       return [
         { key: 'liquidity', on: this.store.cash < monthlyFixed * RK.liquidityMonths, label: 'Low liquidity' },
-        { key: 'debt', on: debtBase > 0 ? this.debt() / debtBase > RK.debtRatio : this.debt() > 0, label: 'Debt build-up' },
+        { key: 'debt', on: debtBase > 0 ? (this.debt() + this.bankDebt()) / debtBase > RK.debtRatio : (this.debt() + this.bankDebt()) > 0, label: 'Debt build-up' },
         { key: 'salary', on: this.fin.lateSalary, label: 'Late salaries' },
         { key: 'loan', on: this.fin.missed > 0, label: 'Late loan installments' },
         { key: 'losses', on: m.length >= 2 && m.slice(-2).every(x => x.profit < 0), label: 'Repeated losses' },
