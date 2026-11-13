@@ -1,0 +1,78 @@
+name: OLI EMPIRE official update APK from main (B7e engine) - installs over com.oli.olicentral, same fixed key
+
+# Official build of main after the owner approved B7e (Nov 13). Package com.oli.olicentral, same fixed signing key, version code 337 + this workflow's run number (above every earlier build, B7e test = 337).
+# Result: OliEmpire-<commit>-r<run>.apk attached to a GitHub release (tag official-<commit>-r<run>) and as a build artifact. Touches no other workflow.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/official-update-apk.yml']
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The game's commit (the last commit that changed oli/)
+        run: echo "SRC=$(git log -1 --format=%h --abbrev=7 -- oli)" >> $GITHUB_ENV
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install dependencies and run the game tests
+        working-directory: oli
+        run: |
+          npm ci
+          npm test
+      - name: Copy the web game into the Android project as the installed app (com.oli.olicentral, OLI EMPIRE)
+        working-directory: oli
+        run: |
+          ID=com.oli.olicentral; OLI_DEMO=1 OLI_BUILD=$SRC node build-www-map.js
+          grep -o "OLI_VERSION=\"[^\"]*\"" www/index.html; grep -q "· $SRC" www/index.html || { echo "the About stamp is not $SRC"; exit 1; }
+          sed -i "s/\"appId\": \"com.oli.oilgame\"/\"appId\": \"$ID\"/" capacitor.config.json
+          npx cap sync android
+          sed -i "s/applicationId \"com.oli.oilgame\"/applicationId \"$ID\"/" android/app/build.gradle
+          grep -q "applicationId \"$ID\"" android/app/build.gradle || { echo "package id is not $ID"; exit 1; }
+      - name: Same signing key, version code above every earlier build of com.oli.olicentral
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ~/.android
+          cp .github/signing/debug.keystore ~/.android/debug.keystore
+          VC=$((337 + ${{ github.run_number }}))
+          echo "versionCode $VC"
+          sed -i "s/versionCode [0-9]*/versionCode $VC/" oli/android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.3-$SRC\"/" oli/android/app/build.gradle
+          grep -n "versionCode\|versionName" oli/android/app/build.gradle
+      - name: Build the APK
+        working-directory: oli/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+      - run: cp oli/android/app/build/outputs/apk/debug/app-debug.apk OliEmpire-$SRC-r${{ github.run_number }}.apk
+      - name: Check the signature (otherwise the phone refuses the update) and the package
+        run: |
+          F=OliEmpire-$SRC-r${{ github.run_number }}.apk; BT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+          ${BT}apksigner verify --print-certs $F | tee /tmp/certs.txt
+          grep -qi "SHA-256 digest: 3f5e924227aef8c5d1783ae6677db8b9b0a36a1c7b086b457133e6a4375e1aaf" /tmp/certs.txt || { echo "APK is NOT signed with the fixed key"; exit 1; }
+          ${BT}aapt dump badging $F | head -3
+          ls -l $F
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OliEmpire-apk
+          path: OliEmpire-*.apk
+      - name: Publish the APK as a GitHub release asset (the link the owner gets)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          F=OliEmpire-$SRC-r${{ github.run_number }}.apk
+          gh release create "official-$SRC-r${{ github.run_number }}" "$F" --target "${{ github.sha }}" --title "OLI EMPIRE official $SRC (B7e engine)" --notes "Official update build of main at $SRC. com.oli.olicentral, fixed key, versionCode $((337 + ${{ github.run_number }}))."
