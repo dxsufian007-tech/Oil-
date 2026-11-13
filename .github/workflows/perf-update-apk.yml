@@ -81,5 +81,5 @@ jobs:
           git config user.email "actions@github.com"
           mkdir -p apk-out && cp OliUpdate-B7e-$SRC-r${{ github.run_number }}.apk apk-out/
           git add apk-out/OliUpdate-B7e-$SRC-r${{ github.run_number }}.apk
-          git commit -q -m "B6 test APK $SRC (not a release)"
+          git commit -q -m "B7e test APK $SRC (not a release)"
           git push origin HEAD:perf/phaseB-b7e-apk
