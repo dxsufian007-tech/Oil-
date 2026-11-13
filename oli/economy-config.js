@@ -83,6 +83,45 @@
     // ---- finance
     LOANS: { baseRate: 0.07, riskMax: 0.06, terms: [12, 24, 48, 60], amounts: [5000000, 10000000, 25000000, 50000000, 100000000, 250000000], maxDebtRatio: 0.5, prepayFee: 0.01,
       emergency: { rate: 0.18, term: 12, limit: 20000000, minAmount: 2000000, cover: 1.5 } },
+    // ---- banking system (Phase 1 "Banking Foundation"; owner approved the numbers, Nov 2026). A layer ABOVE the company: three independent banks with their own books.
+    //      Every number is editable here. capital / deposits / liquidity are the OPENING balances (applied when a bank is first created); the ratios and caps are read live.
+    //      liquidity = cash the bank holds; reserveRatio x deposits of it is the compulsory reserve (never lent); lendable = liquidity - reserve (the reserve is part of the liquidity, never added to it again).
+    BANKS: { reserveRatio: 0.15, depositGrowthPerMonth: 0.003,
+      banks: {
+        COMMERCIAL: { label: 'البنك التجاري', capital: 1000000000, deposits: 4000000000, liquidity: 1600000000, singleLoanCap: 250000000, maxLeverage: 8, spread: 0.015, types: ['WORKING_CAPITAL', 'OIL_INVENTORY', 'SECURED', 'EMERGENCY'] },
+        INDUSTRIAL: { label: 'بنك الاستثمار الصناعي', capital: 2500000000, deposits: 2000000000, liquidity: 1800000000, singleLoanCap: 1500000000, maxLeverage: 6, spread: 0.010, types: ['EQUIPMENT', 'EXPANSION', 'SECURED'] },
+        STRATEGIC: { label: 'بنك التنمية الاستراتيجي', capital: 5000000000, deposits: 1000000000, liquidity: 3000000000, singleLoanCap: 3000000000, maxLeverage: 4, spread: 0.005, types: ['EXPANSION', 'PROJECT_FINANCE', 'EQUIPMENT'] } } },     // spread = the bank's margin over the Base Rate; types = the loan types the bank offers (its own risk policy)
+    // Banking Phase 2: the Base Rate (owner-approved design, Nov 2026): reviewed every quarter from three indicators; every number is here
+    BASE_RATE: { start: 0.04, min: 0.01, max: 0.12, mode: 'AUTO', slope: 0.04, wP: 0.40, wL: 0.25, wA: 0.35, priceRef: 72, priceBand: 0.20, priceEma: 360, liqTarget: 0.75, liqBand: 0.25, actBand: 0.03,
+      smooth: 0.5, dead: 0.005, deadRev: 0.0075, step: 0.005, tick: 0.0025, cool: 2, reviewMonths: [1, 4, 7, 10], loanMin: 0.02, loanMax: 0.18,
+      surcharge: [{ enterBelow: 0.50, add: 0.0025, exitAt: 0.55 }, { enterBelow: 0.20, add: 0.0050, exitAt: 0.25 }] },        // bank liquidity surcharge tiers: ratio = lendable now / lendable at opening (from this config); tier 1 at < 0.50 (leaves at >= 0.55), tier 2 at < 0.20 (leaves to tier 1 at >= 0.25)
+    // the seven loan types: maxMonths = the longest term; premium = the loan-risk premium over Base + bank spread; lock = why a type cannot be taken yet (COLLATERAL: Phase 3, OWNER_APPROVAL: the owner has to approve the Emergency loan first)
+    LOAN_TYPES: {
+      WORKING_CAPITAL: { label: 'رأس مال عامل', maxMonths: 24, premium: 0.005, lock: null },
+      EXPANSION: { label: 'توسع', maxMonths: 720, premium: 0.0075, lock: null },
+      EQUIPMENT: { label: 'معدات', maxMonths: 360, premium: 0.005, lock: null },
+      SECURED: { label: 'قرض مضمون', maxMonths: 480, premium: -0.005, lock: 'COLLATERAL' },
+      OIL_INVENTORY: { label: 'تمويل مخزون نفطي', maxMonths: 24, premium: 0.0025, lock: 'COLLATERAL' },
+      EMERGENCY: { label: 'طوارئ', maxMonths: 12, premium: 0.03, lock: 'OWNER_APPROVAL' },
+      PROJECT_FINANCE: { label: 'تمويل مشاريع', maxMonths: 720, premium: 0.01, lock: null } },
+    BANK_LOANS: { maxDebtRatio: 0.5, minAmount: 1000000, maxGraceMonths: 60, freqMonths: { M: 1, Q: 3, A: 12 }, prepayFee: 0, rescheduleFee: 0.005 },   // risk limit: debt (without the Central loan) after the loan <= 50% of assets (without the Central network) + stock + cash; early repayment is free (the spec names no fee); rescheduling costs 0.5% of the balance (the same fee as the old rescheduling)
+    /* Banking Phase 3: credit rating (credit.js) - the six approved weights; the linear limits, neutral values, grades and premiums are config assumptions */
+    CREDIT: { weights: { pay: 0.30, cf: 0.25, debt: 0.15, prof: 0.15, liq: 0.10, stab: 0.05 }, arrearsPenalty: 0.25, historyMonths: 24, keepMonths: 6, cfMonths: 3,
+      limits: { opMargin: [-0.2, 0.3], debtToAssets: [0.1, 0.8], netMargin: [-20, 20], currentRatio: [0.5, 2.0], prodCV: [0.1, 0.6] },
+      neutral: { pay: 0.8, cf: 0.5, debt: 0.7, prof: 0.5, liq: 0.5, stab: 0.7 },
+      grades: [{ id: 'A', min: 700, premium: 0 }, { id: 'B', min: 550, premium: 0.0025 }, { id: 'C', min: 400, premium: 0.0075 }, { id: 'D', min: 250, premium: 0.015 }, { id: 'E', min: 0, premium: 0.03 }], premiumOn: true, stagePenalty: { 2: 100, 3: 200, 4: 300, 5: 400 } },
+    /* collateral: LTV = loan balance / collateral value.  max = the most a loan may be at origination; call = above this the bank issues a Margin Call.  Oil inventory: 50% of the value, 2 years (the OIL_INVENTORY type).  The strategic reserve is NOT collateral. */
+    /* Banking Phase 5: the bond market.  Config assumptions (the spec names no numbers): unit face 1,000; coupons twice a year in steps of 0.125%; the credit spread grows with the square of (1000 - score) / 1000; the term premium rises towards +2% with a 8-year time constant */
+    BUILD_FINANCE: { ltc: 0.7, maxLtc: 0.8, minLoan: 1000000, bank: 'STRATEGIC', type: 'PROJECT_FINANCE', term: 120 },
+    BONDS: { seed: 20261113, unitFace: 1000, minTrade: 10000, couponStep: 0.00125, spreadBase: 0.002, spreadK: 0.10, termMax: 0.02, termTau: 8,
+      bidAsk: { GOV: 0.001, CORP: 0.003, HY: 0.008 }, recovery: { CORP: 0.5, HY: 0.35 }, recoveryDelay: 6, relistMonths: 36, relistScore: 0.8, pdK: 4.8e-6, pdScale: 100, revert: 0.1, noise: 12, rateSens: 600, scoreMin: 100,
+      minIssue: 5e6, maxIssue: 500e6, minTerm: 12, maxTerm: 360, minScore: 400, issueFee: 0.01, issuePremium: 0.0025,
+      issuers: [{ id: 'GOV', name: 'الخزانة الحكومية', cls: 'GOV', score: 950, terms: [24, 60, 120, 360] }, { id: 'CORP_A', name: 'الخليج للبتروكيماويات', cls: 'CORP', score: 780, terms: [36, 84, 120] },
+        { id: 'CORP_B', name: 'أطلس للتكرير', cls: 'CORP', score: 700, terms: [36, 60, 120] }, { id: 'CORP_C', name: 'الشمال للطاقة والمرافق', cls: 'CORP', score: 640, terms: [24, 60, 96] },
+        { id: 'HY_A', name: 'الحدود للحفر', cls: 'HY', score: 420, terms: [24, 60] }, { id: 'HY_B', name: 'دلتا البحرية', cls: 'HY', score: 340, terms: [24, 48, 72] }] },
+    /* Banking Phase 4: the five default stages (delay of the oldest unpaid instalment), the 2% late fee (once per late instalment), the 60-day restructuring window.  Day counts are the approved ones; the plan options and the rating penalty are assumptions. */
+    DEFAULT: { feeRate: 0.02, stage2Days: 30, lateWindowDays: 180, lateCount: 2, stage3Days: 60, stage4Days: 90, stage5Days: 180, planWindowDays: 60, planActiveDays: 360, extendFactor: 2, lowerGraceMonths: 12, crisisWindowDays: 60 },
+    COLLATERAL: { enabled: true, ltv: { ASSET: { max: 0.60, call: 0.75 }, OIL: { max: 0.50, call: 0.60 } }, cureDays: 30, kinds: { SECURED: ['ASSET'], OIL_INVENTORY: ['OIL'] } },
     FINANCE: { emergencyAfterDays: 5, pressureAfterDays: 15, bankruptAfterDays: 40 },
     RISK: { liquidityMonths: 1, debtRatio: 0.5, costRatio: 0.9, salesDrop: 0.15 },      // financial stress indicators: a month of fixed costs in cash, debt above half of the assets, costs above 90% of sales, sales falling 15% a month
     AUTOSELL: { trigger: 0.8, target: 0.5, minPriceRatio: 0.92, force: 0.98, defaultMode: 'SPOT' },       // SPOT mode: above `trigger` fill sell down to `target`, unless the price is below minPriceRatio x base (then wait) or the tank is `force` full

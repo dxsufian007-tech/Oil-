@@ -7,9 +7,9 @@
  * No DOM here (economy-ui.js is the screen).  Everything the player can tune is in economy-config.js.
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./buildings.js'), require('./building-config.js'), require('./industry.js'), require('./economy-config.js'), require('./ledger.js'), require('./game-calendar.js'), require('./oil-engine.js'));
-  else root.OliEconomy = factory(root.OliBuildings, root.OliBuildingConfig, root.OliIndustry, root.OliEconomyConfig, root.OliLedger, root.OliCalendar, root.OliOilEngine);
-})(typeof self !== 'undefined' ? self : this, function (B, BC, I, EC, LG, CAL, OE) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./buildings.js'), require('./building-config.js'), require('./industry.js'), require('./economy-config.js'), require('./ledger.js'), require('./game-calendar.js'), require('./oil-engine.js'), require('./bank.js'));
+  else root.OliEconomy = factory(root.OliBuildings, root.OliBuildingConfig, root.OliIndustry, root.OliEconomyConfig, root.OliLedger, root.OliCalendar, root.OliOilEngine, root.OliBank);
+})(typeof self !== 'undefined' ? self : this, function (B, BC, I, EC, LG, CAL, OE, BK) {
   'use strict';
   const DEFS = B.DEFS, SELL = EC.PRODUCTS, clamp = (v, a, b) => v < a ? a : v > b ? b : v, r2 = v => Math.round(v * 100) / 100;
   const hash = (a, b, c) => { let h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
@@ -141,7 +141,8 @@
     }
     _init() {
       this._hg = null; this.water = { v: 1, produced: 0, sold: 0, revenue: 0, log: [], day: -1, today: 0, auto: { on: false, reserve: 0, day: -1, used: {}, sold: 0 } }; this.netOil = true; this.reserve = { v: 1, lv: 0, log: [] }; this._hookReserve();                       // the Strategic Reserve: one fixed zone, its open-area level and a small audit log
-      const c = this.cfg; this.hours = 0; this.dayIdx = 0; this.acc = 0; this.market = new Market(c, null, this.mseed); this.assets = new Map(); this.loans = []; this.nextLoan = 1; this.closed = []; this.contracts = []; this.history = []; this.offers = []; this.nextContract = 1;
+      const c = this.cfg; this.bank = new BK.Bank(c, 0);                                // the banking layer (bank.js): independent books, never touches the company cash or journal
+      this.hours = 0; this.dayIdx = 0; this.acc = 0; this.market = new Market(c, null, this.mseed); this.assets = new Map(); this.loans = []; this.nextLoan = 1; this.closed = []; this.contracts = []; this.history = []; this.offers = []; this.nextContract = 1;
       this.autoBuy = this._abDefaults(); this.whLv = {}; this.matHist = {};
       this.recv = []; this.nextRecv = 1; this.months = []; this.bsStart = null; this.qty = PZERO(); this.qty2 = { BYPRODUCT: 0, RESIDUE: 0 }; this.crudeShort = 0; this.crudeLoss = 0; this.bq = 0; this.explLog = []; this.bprod = {}; this.tradeLog = []; this.nextTrade = 1; this.boughtUsed = 0; this.refLast = null; this.mats = MZERO(); this.payables = []; this.nextPay = 1; this.purchases = []; this.nextPur = 1; this.matLimit = 1; this.hr = HRZERO(); this.staffF = 1; this.engMult = 1; this.teamEff = 1; this.cutUntil = -1; this.powerBuy = false; this.pwStop = null; this.bsStart = null; this.central = null;                                                            // qty = book quantity of each stock pool (its cost is in the journal)
       this.crng = new Rng(c.MARKET.seed ^ 0x5bd1e995); this.modes = {}; for (const p of SELL) this.modes[p] = c.AUTOSELL && c.AUTOSELL.defaultMode || 'SPOT'; this.tier = c.POWER.startTier; this.autoRepair = c.MAINTENANCE.autoRepair;
@@ -156,7 +157,7 @@
     _wrap() {                                                                       // every purchase / demolition goes through the journal (the store and its validation are not changed)
       const st = this.store; if (st.__eco) { st.__eco = this; return; } st.__eco = this; const place = st.place.bind(st), dem = st.demolish.bind(st);
       st.place = (...a) => { const me = st.__eco; me.sync(); const r = place(...a); if (r.ok) { me.assets.set(r.building.id, { cost: r.cost, t: me.hours, dep: 0, useStart: null }); if (r.cost > 0) me._post({ type: 'BUILD', flow: 'INV', desc: DEFS[r.building.d].name }, [['FIXED', r.cost], ['CASH', -r.cost]], { cashApplied: true }); } return r; };
-      st.demolish = (...a) => { const me = st.__eco; me.sync(); const rec = me.assets.get(a[0]), r = dem(...a);
+      st.demolish = (...a) => { const me = st.__eco; if (me.bank && me.bank.assetPledged(a[0])) return { ok: false, reason: 'pledged' }; me.sync(); const rec = me.assets.get(a[0]), r = dem(...a);
         if (r.ok) { let refund = r.refund || 0; if (me._saleOverride != null && isFinite(st.cash)) { st.cash += me._saleOverride - refund; refund = me._saleOverride; }   // a sale brings the sale price, not the demolition refund
           me._dispose(rec, refund); me.assets.delete(a[0]); r.refund = refund; } return r; };
     }
@@ -182,7 +183,7 @@
           else if (a in EXPKEY) { const k = EXPKEY[a]; L[k] += v; L.pl[k] += v; }
           else if (a in REVKEY) { L.revenue -= v; L[REVKEY[a]] -= v; }
           else if (a === 'FIXED') L.capex += v;
-          else if (a === 'LOANS') { if (v < 0) L.loansIn -= v; else L.principal += v; }
+          else if (a === 'LOANS' || a === 'BANK_LOANS' || a === 'BOND_DEBT') { if (v < 0) L.loansIn -= v; else L.principal += v; }
           else if (a === 'EQUITY') { if (v < 0) L.equityIn -= v; }
         }
         if (meta.inc) for (const k of Object.keys(meta.inc)) L[k] += meta.inc[k];   // incurred production costs (capitalised, so not in the profit)
@@ -200,7 +201,7 @@
     balanceSheet() {
       const bs = this.journal.balanceSheet(), b = this.journal.bal, inv = this.inventoryBook(), fixedNet = b.FIXED + b.ACC_DEP;
       return { cash: b.CASH, receivables: b.AR, inventory: inv, inventoryByProduct: Object.assign(Object.fromEntries(SELL.map(p => [p, b[INVACC[p]]])), { CRUDE_BOUGHT: b.INV_CRUDE_BUY || 0, RESERVE: b.INV_RESERVE || 0 }), wip: b.INV_WIP, fixedCost: b.FIXED, accumulatedDepreciation: b.ACC_DEP, fixedNet,
-        totalAssets: bs.assets, payroll: -b.PAY_PAYROLL, tax: -b.PAY_TAX, loans: -b.LOANS, totalLiabilities: bs.liabilities, paidIn: bs.paidIn, result: bs.result, totalEquity: bs.equity, gap: bs.gap };
+        totalAssets: bs.assets, payroll: -b.PAY_PAYROLL, tax: -b.PAY_TAX, loans: -b.LOANS, bankLoans: -b.BANK_LOANS, bondDebt: -(b.BOND_DEBT || 0), bondInvest: b.BOND_INV || 0, accruedBank: -b.ACCRUED_INT, totalLiabilities: bs.liabilities, paidIn: bs.paidIn, result: bs.result, totalEquity: bs.equity, gap: bs.gap };
     }
     inventoryBook() { let v = 0; for (const p of SELL) v += this.journal.bal[INVACC[p]]; return v + (this.journal.bal.INV_CRUDE_BUY || 0) + (this.journal.bal.INV_RESERVE || 0); }
     /* lifting cost of a well relative to the old flat cost: its field's cost per barrel (deeper = dearer) and the pressure the field has left; 1 for wells without field data */
@@ -521,7 +522,7 @@
 
     /* ---- financial ratios (Phase 13). Averages use the balance at the start and at the end of the period. null = not available (zero denominator) ---- */
     _snap() {
-      const bs = this.balanceSheet(), suppliers = -this.journal.bal.PAY_SUPPLIERS, loansDue = this.loans.reduce((a, l) => a + Math.min(l.remaining, l.payment * this.cfg.TIME.monthsPerYear), 0);
+      const bs = this.balanceSheet(), suppliers = -this.journal.bal.PAY_SUPPLIERS, loansDue = this.loans.reduce((a, l) => a + Math.min(l.remaining, l.payment * this.cfg.TIME.monthsPerYear), 0) + this.bank.dueWithinYear();
       return { assets: bs.totalAssets, equity: bs.totalEquity, liabilities: bs.totalLiabilities, current: bs.cash + bs.receivables + bs.inventory, currentLiab: bs.payroll + bs.tax + suppliers + loansDue };
     }
     _ratios(c, start, end) {
@@ -684,7 +685,7 @@
     }
     sell(p, qty, kind, opts) {                                                       // opts.source (crude only): 'OWN' = produced crude, 'BOUGHT' = bought crude, omitted = the mixture
       const src = p === 'CRUDE' && opts && opts.source ? opts.source : null; if (src && src !== 'OWN' && src !== 'BOUGHT') return { ok: false, reason: 'source' };
-      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; if (!SELL.includes(p)) return { ok: false, reason: 'product' }; this.sync(); const qt = this.quote(p, qty, src); if (!(qty > 0) || qt.qty <= 1e-6) return { ok: false, reason: 'nothingToSell' }; if (qty > qt.available + 1e-6) return { ok: false, reason: 'notEnough', quote: qt };
+      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; if (!SELL.includes(p)) return { ok: false, reason: 'product' }; const pl = this.bank.oilPledged(p); if (pl > 0) { const free = Math.max(0, this.available(p) - pl); if (kind === 'AUTO' || kind === 'RESCUE') qty = Math.min(qty, free); else if (qty > free + 1e-6) return { ok: false, reason: 'pledged', free }; } this.sync(); const qt = this.quote(p, qty, src); if (!(qty > 0) || qt.qty <= 1e-6) return { ok: false, reason: 'nothingToSell' }; if (qty > qt.available + 1e-6) return { ok: false, reason: 'notEnough', quote: qt };
       const got = this.removeFrom(p, qt.qty, p === 'CRUDE' ? (src || 'ALL') : undefined), take = this._lastTake, gross = got * qt.unitPrice, fee = gross * this.cfg.FEES.spot;
       this._post({ type: 'SALE_SPOT', flow: 'OP', desc: 'Spot sale · ' + p, src: kind || 'SPOT' }, [['CASH', gross], ['REV_SPOT', -gross]]);   // revenue exists only when the product is sold
       this._expense('fees', fee, 'Spot sale fee');
@@ -1017,6 +1018,7 @@
       return out;
     }
     _newDay() {
+      this.bank.daily(this.dayIdx, this.market.price.CRUDE); if (this.bank.hasLiens()) this.bank.margin(this.dayIdx, this._valuer()); if (this.bank.loans.length) this._bankDaily();                          // banks: the daily EMA of the crude price for the Base Rate (one multiply-add)
       // Month-end charges (salaries, running costs, loans, tax) belong to the day that ENDS the month: they are booked before that day is closed.
       if (CAL.isMonthStart(this.dayIdx)) this._monthEnd();                                 // the real calendar decides: the 1st of a month closes the month before it
       const cash = this.store.cash; this.days.push(Object.assign({ d: this.dayIdx - 1 }, (() => { const c = calc(this.led.day, cash); return { revenue: c.revenue, expenses: c.expenses, profit: c.netProfit, cashIn: c.cash.in, cashOut: c.cash.out, storage: this.led.day.storage, opex: c.opex + c.variable }; })()));
@@ -1025,6 +1027,7 @@
     }
     _monthEnd() {
       this.fin.lateSalary = false; this.fin.missed = 0;                              // these flags describe the month that is closing
+      this.bank.monthly(this.dayIdx, this.hours);                                   // banks: deposits grow once a month (a day already done is ignored); no company money moves
       const C = this.cfg, F = C.FIXED, assets = this.assetsTotal() - this.centralValue(), pipes = this.pipeValue(), tier = C.POWER.tiers[this.tier];
       // 1. salaries: the expense was booked every hour, the cash leaves now
       const owed = -this.journal.bal.PAY_PAYROLL; if (owed > 0.005) { const before = this.store.cash; this._post({ type: 'PAYROLL_PAID', flow: 'OP', desc: 'Salaries paid' }, [['PAY_PAYROLL', owed], ['CASH', -owed]]); if (before < owed) this.fin.lateSalary = true; }
@@ -1043,6 +1046,7 @@
         l.intPaid = (l.intPaid || 0) + intr; l.prinPaid = (l.prinPaid || 0) + prin; l.accrFrac = 0;
         l.remaining -= prin; l.paid++; if (l.remaining < 0.5 || last) { this.loans = this.loans.filter(x => x !== l); this.closed.unshift(l); }
       }
+      this._bankMonth();                                                              // 4b. the new bank loans: interest accrues, instalments are paid from cash that exists (else arrears), then the quarterly Base Rate review and repricing
       // 5. income tax: accrued on taxable profit, paid from the tax payable (losses carry forward)
       const M = calc(this.led.month, this.store.cash), taxable = M.revenue - (M.variable + M.opex + M.interest);
       if (taxable < 0) { if (C.TAX.lossCarryForward) this.taxCarry += -taxable; }
@@ -1051,6 +1055,7 @@
       // 6. close the month
       const cash = this.store.cash, closed = calc(this.led.month, cash), endSnap = this._snap(), startSnap = this.bsStart || endSnap;
       closed.ratios = this._ratios(closed, startSnap, endSnap); this.bsStart = endSnap;                                   // ratios use the average of the start and end balances
+      this._creditMonth(closed);                                                       // 6a. the monthly credit rating (before the production figure is dropped)
       this.lastMonth = closed; delete this.lastMonth.L.produced; this.led.month = ledger(cash);
       this.months.push({ n: this.months.length + 1, dayIdx: this.dayIdx, revenue: closed.revenue, expenses: closed.expenses, profit: closed.netProfit, cashIn: closed.cash.in, cashOut: closed.cash.out, cashEnd: cash }); while (this.months.length > 24) this.months.shift();
       if (CAL.isYearStart(this.dayIdx)) this.led.year = ledger(cash);
@@ -1060,6 +1065,7 @@
       f.indicators = this.riskIndicators(); f.score = f.indicators.filter(i => i.on).length;
       if (cash >= 0 || !isFinite(cash)) { f.negHours = 0; f.state = 'OK'; f.stage = f.score >= 3 ? 'PRESSURE' : f.score >= 1 ? 'WARNING' : 'NORMAL'; return; }
       f.negHours += h; const days = f.negHours / 24;
+      if (days >= F.bankruptAfterDays && this.bank.activeCount() > 0) { this._bankCrisis(); return; }          // bank loans exist: 40 days of negative cash is not an immediate bankruptcy (restructuring first)
       if (days >= F.bankruptAfterDays) { this.bankrupt = true; f.state = 'BANKRUPT'; f.stage = 'BANKRUPT'; this._event('crit', 'BANKRUPTCY'); return; }
       if (days >= F.pressureAfterDays) { f.state = 'DEBT_PRESSURE'; f.stage = 'DEFAULT'; return; }
       if (days >= F.emergencyAfterDays) { const E = this.cfg.LOANS.emergency, used = this.loans.filter(l => l.kind === 'EMERGENCY').reduce((a, l) => a + l.remaining, 0), room = E.limit - used;
@@ -1069,12 +1075,114 @@
       f.state = 'WARNING'; f.stage = 'LIQUIDITY';
     }
     /* the seven financial stages are driven by these indicators (plus the cash rules in _finance) */
+    /* ---- Banking Phase 2: loans from the three banks (bank.js / loans-engine.js).  The loans live in the banking layer; the company books its side in BANK_LOANS / ACCRUED_INT / EXP_INTEREST / CASH.  The old loans[] and debt() are untouched. ---- */
+    bankDebt() { return this.bank.bankDebt() + this.bank.bonds.debt(); }
+    _monthFrac() { const d = CAL.fromHours(this.hours); return Math.min(1, ((d.day - 1) * 24 + d.hour + d.minute / 60) / (d.daysInMonth * 24)); }
+    /* the company's risk position for a new bank loan: debt without the Central loan, against assets (without the Central network) + stock + cash */
+    bankRiskCtx() { const cl = this.centralLoan(), cen = cl && this.loans.includes(cl) ? cl.remaining : 0; return { riskDebt: this.debt() - cen + this.bankDebt(), riskBase: this.assetsTotal() - this.centralValue() + this.inventoryValue() + Math.max(0, this.store.cash), val: this._valuer(), restricted: this.fin.negHours >= this.cfg.FINANCE.pressureAfterDays * 24 || this.bank.worstStage() >= 3 }; }
+    /* what the collateral is worth now (the bank layer asks; it never reads the company itself).  The strategic reserve is not here: it is never collateral. */
+    _valuer() { const me = this; return { asset: id => { const b = me.store.get(id); return b ? me.assetValue(b) : null; }, oil: p => SELL.includes(p) ? { avail: me.available(p), price: me.unitPrice(p) } : null }; }
+    _creditMonth(c) {
+      const f = c.cash && c.cash.flows && c.cash.flows.OP, r = c.ratios || {}, L = c.L || {};
+      this.bank.rateMonth(this.dayIdx, { opNet: f ? f.net : 0, opOut: f ? f.out : 0, crude: L.produced ? L.produced.CRUDE : 0, netMargin: r.netMargin, currentRatio: r.currentRatio, debtToAssets: r.debtToAssets });
+    }
+    creditScore() { return this.bank.credit.score; }
+    bankCollateralOf(id) { const l = this.bank.loan(id); return l ? this.bank.collateralOf(l, this._valuer()) : null; }
+    addBankCollateral(id, items) { this.sync(); return this.bank.addCollateral(id, items, this._valuer(), this.dayIdx); }
+    releaseBankLien(lienId, opts) { this.sync(); return this.bank.release(lienId, this._valuer(), this._bankIO(), this._monthFrac(), opts); }
+    /* ---- Banking Phase 4: default stages, restructuring, collateral enforcement (bank.js decides, the company does the selling and the bookkeeping) ---- */
+    _bankDaily() {
+      const B = this.bank; if (B.crisis.at >= 0 && this.store.cash >= 0) B.crisis.at = -1;               // the ladder is over: cash is back
+      for (const l of B.defaults(this.dayIdx)) this._enforceLoan(l);
+      for (const [id, o, n] of B.chg || []) this._event(n >= 4 ? 'crit' : 'warn', n === 0 ? 'Bank loan ' + id + ': back to normal' : 'Bank loan ' + id + ': default stage ' + n);
+    }
+    _harm(x) { if (x.kind === 'OIL') return 0; const b = this.store.get(x.ref); return !b ? 0 : this.sim.status(b) === 'RUNNING' ? 2 : 1; }          // least operational harm first: oil in the tank, then idle assets, then running ones
+    _lienOrder(list) { return list.slice().sort((a, b) => this._harm(a) - this._harm(b) || this._valueOf(b) - this._valueOf(a) || a.id - b.id); }
+    _valueOf(x) { return this.bank._value(x, this._valuer()); }
+    _enforceLien(x) {
+      const B = this.bank, l = B.loan(x.loan), r = B.forceRelease(x.id); if (!r || !l) return 0; this.sync(); const c0 = this.store.cash;
+      if (x.kind === 'OIL') { const q = Math.min(x.qty, this.available(x.ref)); if (q > 1e-6) this.sell(x.ref, q, 'RESCUE'); }
+      else { const b = this.store.get(x.ref); if (b) { const price = Math.max(0, this.assetValue(b) * this.cfg.RESCUE.assetSaleRatio); this._saleOverride = price; try { this.store.demolish(x.ref, { building: true, pipes: true }); } finally { this._saleOverride = null; } } }
+      const got = this.store.cash - c0; if (got > 0.005 && l.status === 'ACTIVE') B.forceRepay(l, this._bankIO(), got); this._event('warn', 'Collateral enforced · loan ' + l.id + ' · ' + x.kind + ' ' + x.ref); return got;
+    }
+    _enforceLoan(l) {                                                               // stage 5: take the collateral, least harm first, until the arrears are paid
+      for (const x of this._lienOrder(this.bank.activeLiens(l.id))) { if (l.status !== 'ACTIVE' || !l.arrears.length) break; this._enforceLien(x); }
+      l.enforce = false; if (l.status === 'ACTIVE' && l.arrears.length) { l.liq = true; this.bank._rec(l.bank, 'LIQUIDATION', 'Loan ' + l.id + ': collateral exhausted, arrears remain', 0); }
+    }
+    _assetRecovery() { const all = this._lienOrder(this.bank.activeLiens()); for (const x of all) { if (this.store.cash >= 0) break; this._enforceLien(x); } }
+    _bankCrisis() {
+      const f = this.fin, B = this.bank, D = this.cfg.DEFAULT;
+      if (B.crisis.at < 0) { B.crisis.at = this.hours; B.crisis.n++; B.crisisStart(this.dayIdx); this._event('crit', 'Restructuring window opened'); this._assetRecovery(); }
+      f.state = 'DEBT_PRESSURE'; f.stage = 'RESTRUCTURING'; if (this.store.cash >= 0) return;
+      if (this.hours - B.crisis.at >= D.crisisWindowDays * 24) { this._assetRecovery(); if (this.store.cash < 0) { this.bankrupt = true; f.state = 'BANKRUPT'; f.stage = 'BANKRUPT'; B.chargeOffAll(this.dayIdx); this._event('crit', 'BANKRUPTCY'); } }
+    }
+    acceptRestructuring(id, kind) { this.sync(); return this.bank.acceptPlan(id, kind, this._bankIO(), this.dayIdx); }
+    /* ---- Banking Phase 5: bonds (bonds.js).  The company side of every bond operation is booked here. ---- */
+    _bondIO() {
+      const me = this;
+      return { cash: () => me.store.cash,
+        invest(a, d) { me._post({ type: 'BOND_BUY', flow: 'INV', desc: d }, [['BOND_INV', a], ['CASH', -a]]); },
+        divest(p, c, d) { const g = Math.round((p - c) * 100) / 100, L = [['CASH', p], ['BOND_INV', -c]]; if (g > 0) L.push(['REV_OTHER', -g]); else if (g < 0) L.push(['EXP_DISPOSAL', -g]); me._post({ type: 'BOND_SELL', flow: 'INV', desc: d }, L); },
+        recover(p, c, d) { this.divest(p, c, d); },
+        couponIn(cash, inc, a0, d) { const L = [['CASH', cash]]; if (inc > 0) L.push(['REV_OTHER', -inc]); if (a0 > 0) L.push(['BOND_INV', -a0]); me._post({ type: 'BOND_COUPON', flow: 'OP', desc: d }, L); },
+        impair(a, d) { me._post({ type: 'BOND_IMPAIR', flow: 'NONE', desc: d }, [['EXP_DISPOSAL', a], ['BOND_INV', -a]]); },
+        issue(face, fee, d) { me._post({ type: 'BOND_ISSUE', flow: 'FIN', desc: d }, [['CASH', face], ['BOND_DEBT', -face]]); if (fee > 0) me._expense('interest', fee, 'Bond issue fee'); },
+        couponOut(a, d) { me._post({ type: 'BOND_COUPON_OUT', flow: 'OP', desc: d }, [['EXP_INTEREST', a], ['CASH', -a]]); },
+        accrueCoupon(a, d) { me._post({ type: 'BOND_COUPON_ACCRUED', flow: 'NONE', desc: d }, [['EXP_INTEREST', a], ['ACCRUED_INT', -a]]); },
+        payAccrued(a, d) { me._post({ type: 'BOND_COUPON_PAID', flow: 'OP', desc: d }, [['ACCRUED_INT', a], ['CASH', -a]]); },
+        repay(a, d) { me._post({ type: 'BOND_PRINCIPAL', flow: 'FIN', desc: d }, [['BOND_DEBT', a], ['CASH', -a]]); } };
+    }
+    bondList() { const B = this.bank.bonds, base = this.bank.rate.rate; return B.listed().map(b => B.quote(b, this.dayIdx, base)); }
+    bondQuote(id) { const B = this.bank.bonds, b = B.bond(id); return b ? B.quote(b, this.dayIdx, this.bank.rate.rate) : null; }
+    buyBond(id, units) { if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); return this.bank.bonds.buy(id, units, this.dayIdx, this.bank.rate.rate, this._bondIO()); }
+    sellBond(id, units) { if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); return this.bank.bonds.sell(id, units, this.dayIdx, this.bank.rate.rate, this._bondIO()); }
+    issueBondQuote(term, amount) { return this.bank.bonds.issueQuote(term, amount, this.bank.credit.score, this.bank.rate.rate, this.bankRiskCtx()); }
+    issueBond(term, amount, opts) { if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); return this.bank.bonds.issue(term, amount, this.bank.credit.score, this.bank.rate.rate, this.dayIdx, this.bankRiskCtx(), this._bondIO(), opts && opts.purpose); }
+    _bankIO() {
+      const me = this;
+      return { cash: () => me.store.cash,
+        accrue(a, l) { me._post({ type: 'BANK_INT_ACCRUED', flow: 'NONE', desc: 'Bank interest accrued · loan ' + l.id }, [['EXP_INTEREST', a], ['ACCRUED_INT', -a]]); },
+        payInt(a, l) { me._post({ type: 'BANK_INT_PAID', flow: 'OP', desc: 'Bank interest paid · loan ' + l.id }, [['ACCRUED_INT', a], ['CASH', -a]]); },
+        payPrin(a, l) { me._post({ type: 'BANK_PRINCIPAL', flow: 'FIN', desc: 'Bank loan principal · loan ' + l.id }, [['BANK_LOANS', a], ['CASH', -a]]); },
+        capitalize(a, l) { me._post({ type: 'BANK_INT_CAPITALISED', flow: 'NONE', desc: 'Unpaid interest and fees added to the loan · loan ' + l.id }, [['ACCRUED_INT', a], ['BANK_LOANS', -a]]); },
+        partInt(a, l) { me._expense('interest', a, 'Bank interest to date · loan ' + l.id); }, fee(a, l) { me._expense('interest', a, 'Bank loan fee · loan ' + l.id); } };
+    }
+    _bankMonth() {
+      this.bank.serviceMonth(this.dayIdx, this._bankIO());
+      this.bank.quarterly(this.dayIdx, this.market.engine ? this.market.engine.indus : 0);
+      this.bank.bonds.monthly(this.dayIdx, this.bank.rate.rate, this._bondIO());                // Phase 5: coupons, maturities, issuer scores and defaults
+    }
+    bankQuote(bankId, type, amount, months, opts) { opts = opts || {}; return this.bank.assess({ bank: bankId, type, amount, term: months, freq: opts.freq, grace: opts.grace, collateral: opts.collateral }, this.bankRiskCtx()); }
+    takeBankLoan(bankId, type, amount, months, opts) {
+      opts = opts || {}; if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync();
+      const r = this.bank.originate({ bank: bankId, type, amount, term: months, freq: opts.freq, grace: opts.grace, purpose: opts.purpose, collateral: opts.collateral }, this.bankRiskCtx(), this.dayIdx, this._monthFrac()); if (!r.ok) return r;
+      this._cashIn('BANK_LOAN_IN', r.loan.bal, (opts.purpose || 'Bank loan') + ' · ' + bankId + ' · loan ' + r.loan.id, 'BANK_LOANS', 'FIN'); return r;
+    }
+    /* Phase 7: construction financed by a bank loan.  The loan pays for part of the building (loan-to-cost, default 70%, at most 80%); the rest comes from cash.
+       The money goes through the Journal (loan in, then BUILD) - the building is placed through the wrapped store.place, so sync() never sees it as pipeline works. */
+    buildFinanced(defId, x, y, r, opts) {
+      opts = opts || {}; if (this.bankrupt) return { ok: false, reason: 'bankrupt' };
+      const F = this.cfg.BUILD_FINANCE || { ltc: 0.7, maxLtc: 0.8, minLoan: 1000000, bank: 'STRATEGIC', type: 'PROJECT_FINANCE', term: 120 };
+      const ltc = opts.ltc == null ? F.ltc : opts.ltc; if (!(ltc > 0) || ltc > F.maxLtc + 1e-9) return { ok: false, reason: 'ltc', max: F.maxLtc };
+      this.sync(); const v = this.store.validate(defId, x, y, r, { ignoreCash: true }); if (!v.ok) return v;
+      const cost = v.cost, amount = Math.max(F.minLoan, Math.round(cost * ltc)), own = cost - amount;
+      if (!(cost > 0) || amount > cost) return { ok: false, reason: 'tooSmall', cost, min: F.minLoan };
+      if (isFinite(this.store.cash) && this.store.cash < own - 1e-6) return { ok: false, reason: 'cash', need: own, cost };
+      const bank = opts.bank || F.bank, type = opts.type || F.type, term = opts.term || F.term;
+      const q = this.bankQuote(bank, type, amount, term, { freq: opts.freq, grace: opts.grace }); if (!q.ok) return q;
+      const ln = this.takeBankLoan(bank, type, amount, term, { freq: opts.freq, grace: opts.grace, purpose: 'Construction · ' + DEFS[defId].name }); if (!ln.ok) return ln;
+      const p = this.store.place(defId, x, y, r, opts.place);
+      if (!p.ok) { const rr = this.prepayBankLoan(ln.loan.id, null); return { ok: false, reason: 'placeFailed', cause: p.reason, refunded: !!(rr && rr.ok) }; }
+      return { ok: true, building: p.building, cost, loan: ln.loan, financed: amount, own, rate: ln.rate };
+    }
+    prepayBankLoan(id, amount) { this.sync(); return this.bank.prepay(id, amount, this._bankIO(), this._monthFrac()); }
+    rescheduleBankLoan(id, months) { this.sync(); return this.bank.reschedule(id, months, this._bankIO()); }
     riskIndicators() {
       const F = this.cfg.FIXED, RK = this.cfg.RISK, r7 = this.recent(7), r30 = this.recent(30), m = this.months, bs = this.balanceSheet(), wells = this.store.list().filter(b => DEFS[b.d].type === 'well' && b.st === 'OPERATIONAL').length;
       const monthlyFixed = this.staff.payroll + F.adminBase, debtBase = bs.fixedNet + bs.inventory, crudeRecent = this.prodHist.slice(-24).reduce((a, r) => a + r[0], 0);
       return [
         { key: 'liquidity', on: this.store.cash < monthlyFixed * RK.liquidityMonths, label: 'Low liquidity' },
-        { key: 'debt', on: debtBase > 0 ? this.debt() / debtBase > RK.debtRatio : this.debt() > 0, label: 'Debt build-up' },
+        { key: 'debt', on: debtBase > 0 ? (this.debt() + this.bankDebt()) / debtBase > RK.debtRatio : (this.debt() + this.bankDebt()) > 0, label: 'Debt build-up' },
         { key: 'salary', on: this.fin.lateSalary, label: 'Late salaries' },
         { key: 'loan', on: this.fin.missed > 0, label: 'Late loan installments' },
         { key: 'losses', on: m.length >= 2 && m.slice(-2).every(x => x.profit < 0), label: 'Repeated losses' },
@@ -1234,12 +1342,13 @@
     toJSON() {
       this.settle();                                                         // a save never holds half an hour
       return { v: 2, central: this.central, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0, a.useStart == null ? null : a.useStart]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
-        autoBuy: this.autoBuy, whLv: this.whLv, matHist: this.matHist, pwState: { factor: this.pw.factor, stop: this.pwStop == null ? null : this.pwStop }, recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, reserve: this.reserve, water: this.water, netOil: this.netOil ? 1 : 0, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
+        autoBuy: this.autoBuy, whLv: this.whLv, matHist: this.matHist, pwState: { factor: this.pw.factor, stop: this.pwStop == null ? null : this.pwStop }, recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, reserve: this.reserve, water: this.water, netOil: this.netOil ? 1 : 0, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, bank: this.bank.toJSON(), speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
     }
     fromJSON(d) {
       this._hg = null; this._restoreWear = true;
       if (!d || (d.v !== 1 && d.v !== 2)) return false; const c = this.cfg;
-      this.central = d.central || null; this.hours = d.hours || 0; this.dayIdx = d.dayIdx || 0; this.acc = 0; this.market = new Market(c, d.market); this.assets = new Map((d.assets || []).map(a => [a[0], { cost: a[1], t: a[2], dep: a[3] || 0, useStart: a.length > 4 ? a[4] : a[2] }])); /* saves before Phase 14: in use from the purchase */ this.loans = d.loans || []; this.nextLoan = d.nextLoan || 1; this.closed = d.closed || [];
+      this.central = d.central || null; this.hours = d.hours || 0; this.dayIdx = d.dayIdx || 0; this.bank = BK.Bank.fromJSON(d.bank, c, d.dayIdx || 0);   // an old save has no `bank`: the banks open fresh on today's day
+       this.acc = 0; this.market = new Market(c, d.market); this.assets = new Map((d.assets || []).map(a => [a[0], { cost: a[1], t: a[2], dep: a[3] || 0, useStart: a.length > 4 ? a[4] : a[2] }])); /* saves before Phase 14: in use from the purchase */ this.loans = d.loans || []; this.nextLoan = d.nextLoan || 1; this.closed = d.closed || [];
       this.contracts = d.contracts || []; this.history = d.history || []; this.offers = d.offers || []; this.nextContract = d.nextContract || 1; this.crng = new Rng(d.crng || 1); this.modes = Object.assign(this.modes, d.modes || {}); this.tier = d.tier || 0; this.autoRepair = d.autoRepair !== false;
       this.led = d.led || this.led; for (const k of ['day', 'month', 'year', 'life']) { const L = Object.assign(ledger(0), this.led[k]); L.produced = Object.assign(PZERO(), L.produced); L.sold = Object.assign(SZERO(), L.sold); L.pl = Object.assign(ledger(0).pl, L.pl || {}); L.cf = Object.assign(ledger(0).cf, L.cf || {}); this.led[k] = L; }
       this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.dlog = d.dlog || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSpeed = d.lastSpeed > 0 ? d.lastSpeed : (this.speed > 0 ? this.speed : 1); this.lastSim = d.savedAt == null ? null : d.savedAt;

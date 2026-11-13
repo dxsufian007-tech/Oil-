@@ -92,7 +92,7 @@
       + '<div class="es-card"><h5>صافي الربح أو الخسارة (آخر شهر مغلق)</h5><div class="es-big ' + cl(netLast || 0) + '">' + (netLast == null ? '—' : sg(netLast)) + '</div><div class="es-sm">' + (netLast == null ? 'يظهر بعد إغلاق أول شهر' : arrowAr(netLast, netPrev)) + '</div></div>'
       + '</div>';
     // the two financial screens (performance chart, cash flow)
-    h += '<div class="es-grid"><button data-act="screen" data-v="perf" style="min-height:64px;font-size:15px">📈 الأداء المالي<div class="es-sm">الإيرادات · المصروفات · الربح</div></button><button data-act="screen" data-v="cash" style="min-height:64px;font-size:15px">💵 التدفق النقدي<div class="es-sm">الداخل · الخارج · الرصيد</div></button></div>';
+    h += '<div class="es-grid"><button data-act="screen" data-v="perf" style="min-height:64px;font-size:15px">📈 الأداء المالي<div class="es-sm">الإيرادات · المصروفات · الربح</div></button><button data-act="screen" data-v="cash" style="min-height:64px;font-size:15px">💵 التدفق النقدي<div class="es-sm">الداخل · الخارج · الرصيد</div></button></div><div class="es-grid"><button data-act="screen" data-v="bank" style="min-height:64px;font-size:15px;grid-column:1/-1">🏦 المصارف وأسواق المال<div class="es-sm">BANKING &amp; CAPITAL MARKETS · القروض · التصنيف · السندات</div></button></div>';
     // cost breakdown
     const src = lm ? lm.L : s.month.L, sh = costShares(src);
     h += card('تكاليف التشغيل · ' + (lm ? 'آخر شهر مغلق' : 'الشهر الحالي'), sh.rows.length ? sh.rows.map(r => kv(r[0], M(r[1]) + ' · ' + Math.round(r[1] / sh.tot * 100) + '%')).join('') : '<div class="es-sm">لا توجد تكاليف مسجلة بعد.</div>');
@@ -263,6 +263,7 @@
     if (subScreen === 'staff') return rStaff();
     if (subScreen === 'buy') return rBuy();
     const FUI = typeof window !== 'undefined' && window.OliFinanceUI; if (FUI && (subScreen === 'perf' || subScreen === 'cash')) return '<button data-act="screen" data-v="">← العودة للوحة الشركة</button><h5 style="margin:8px 0">' + (subScreen === 'perf' ? 'الأداء المالي' : 'التدفق النقدي') + '</h5>' + (subScreen === 'perf' ? FUI.perf(CO) : FUI.cash(CO));
+    const KUI = typeof window !== 'undefined' && window.OliBankingUI; if (KUI && subScreen === 'bank') return '<button data-act="screen" data-v="">← العودة للوحة الشركة</button><h5 style="margin:8px 0">المصارف وأسواق المال</h5>' + KUI.html(CO);
     if (subScreen === 'budget') return rBudget();
     if (subScreen === 'log') return rJournal();
     if (subScreen === 'report') return rFinReport();
@@ -435,6 +436,7 @@
   function act(e) {
     const el = e.target.closest('[data-act]'); if (!el || el.disabled) return; const a = el.dataset.act, v = el.dataset.v, p = el.dataset.p, id = +el.dataset.id; let msg = null, redo = true;
     const BUI = typeof window !== 'undefined' && window.OliMarketUI; if (BUI && a === 'mkGo') { e.stopPropagation(); const g = el.dataset.v.split(':'); if (g[0] === 'sell') { sellP = g[1]; sellQ = null; tab = 'sell'; } else tab = 'storage'; subScreen = ''; render(true); return; }
+    const KUI = typeof window !== 'undefined' && window.OliBankingUI; if (KUI && KUI.ACTS.includes(a)) { e.stopPropagation(); if (KUI.act(a, el, CO)) render(true); return; }
     const FUI = typeof window !== 'undefined' && window.OliFinanceUI; if (FUI && FUI.ACTS.includes(a)) { e.stopPropagation(); if (FUI.act(a, el, CO)) render(true); return; }
     if (BUI && BUI.ACTS.includes(a)) { e.stopPropagation(); if (BUI.act(a, el, CO)) render(true); return; }      // the oil market screen
     if (a === 'range') range = +v; else if (a === 'pick') { mkt = p; } else if (a === 'mode') { CO.setMode(p, v); msg = EC.LABEL[p] + ': ' + v; e.stopPropagation(); }
