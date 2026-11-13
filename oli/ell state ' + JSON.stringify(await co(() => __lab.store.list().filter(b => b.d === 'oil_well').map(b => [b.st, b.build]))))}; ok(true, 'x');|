@@ -1,1 +1,0 @@
-  { const gt = await txt('#g-guide'); if (!gt.includes('جارٍ الحفر')) console.log('GUIDE WAS: ' + JSON.stringify(gt) + '  await shot('g-04-well-building');

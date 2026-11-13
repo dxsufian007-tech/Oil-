@@ -110,10 +110,10 @@ ok((await txt('#g-guide')).includes('جارٍ الحفر'), 'the guide says the 
   await tap('#eh-menu'); ok((await p.locator('#es-new').count()) === 1 && /لعبة جديدة/.test(await p.innerText('#es-new')), 'the menu has a «🔄 لعبة جديدة» button');
   await tap('#es-new'); ok((await co(() => __lab.store.list().length)) > 0 && /تأكيد/.test(await p.innerText('#es-new')), 'the first tap only asks for confirmation (nothing is erased)');
   await tap('#es-new'); await p.waitForTimeout(400);
-  ok(await co(() => __lab.store.list().length === 0 && __lab.pipes.lines.size === 0 && __lab.GU.level() === 1 && __lab.GU.step() === 0 && Math.round(__lab.store.cash) === 10000000), 'the second tap starts a new game: no buildings, no pipes, level 1, $10M');
+  ok(await co(() => __lab.store.list().every(b => b.d === 'central_station') && __lab.pipes.lines.size === 0 && __lab.GU.level() === 1 && __lab.GU.step() === 0 && Math.abs(__lab.store.cash - 500e6) < 5e6), 'the second tap starts a new game: only the central network stations, no pipes, level 1, $500M (the network is bought with a bank loan)');
   await p.waitForFunction(() => /لديك حقل نفط/.test(document.getElementById('g-guide').innerText), null, { timeout: 15000 }).catch(() => {});
   ok(!(await co(() => document.getElementById('eco-sheet').classList.contains('open'))) && (await p.innerText('#g-guide')).includes('لديك حقل نفط'), 'the menu closes and the guide starts again from the first step');
-  await p.reload(); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 }); ok(await co(() => __lab.store.list().length === 0 && __lab.GU.level() === 1), 'after a reload the new game is still empty (the old save is gone)');
+  await p.reload(); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 }); ok(await co(() => __lab.store.list().every(b => b.d === 'central_station') && __lab.GU.level() === 1), 'after a reload the new game is still empty (the old save is gone)');
   ok(errs.length === 0, 'no console / page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
   await b.close(); srv.close(); console.log('\nGAME (ARABIC / EASY) TESTS PASSED (' + n + ' checks)');
 })().catch(e => { console.log('FAILED: ' + e.message.split('\n')[0]); process.exit(1); });

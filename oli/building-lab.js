@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const WP = window.__wp, B = OliBuildings, I = OliIndustry, BC = OliBuildingConfig, A = OliBuildingArt, world = WP.world, ctx = WP.ctx, cam = WP.cam, hooks = WP.hooks, CFG = OliWorld.CONFIG, cv = document.getElementById('c');
-  const GC = OliGameConfig, GU = window.OliGameUI, AR = window.OliAR, ts = B.fromWorld(world), qsL = new URLSearchParams(location.search), EC = OliEconomyConfig, EU = OliEconomyUI, START_CASH = qsL.get('cash') ? +qsL.get('cash') : window.OLI_DEMO ? 1e8 : EC.START_CASH, STORE = new B.BuildingStore(ts, { cash: START_CASH }), pipes = new I.PipeNet(world.W), SIM = new I.Sim(STORE, pipes), WW = world.W, SAVE_KEY = 'oli-lab-v2', COMPANY = new OliEconomy.Company(STORE, pipes, SIM, { marketSeed: qsL.get('mseed') ? +qsL.get('mseed') : qsL.get('lab') ? 0 : (Math.random() * 4294967295) >>> 0 }), DEMO_CAPITAL = 260e6;
+  const CEN = window.OliCentral || null, CUI = window.OliCentralUI || null, GC = OliGameConfig, GU = window.OliGameUI, AR = window.OliAR, ts = B.fromWorld(world), qsL = new URLSearchParams(location.search), EC = OliEconomyConfig, EU = OliEconomyUI, START_CASH = qsL.get('cash') ? +qsL.get('cash') : window.OLI_DEMO ? 1e8 : EC.START_CASH, STORE = new B.BuildingStore(ts, { cash: START_CASH }), pipes = new I.PipeNet(world.W), SIM = new I.Sim(STORE, pipes), WW = world.W, SAVE_KEY = 'oli-lab-v2', COMPANY = new OliEconomy.Company(STORE, pipes, SIM, { marketSeed: qsL.get('mseed') ? +qsL.get('mseed') : qsL.get('lab') ? 0 : (Math.random() * 4294967295) >>> 0 }), DEMO_CAPITAL = 260e6;
   const $ = id => document.getElementById(id), fmt$ = n => '$' + Math.round(n).toLocaleString('en-US'), nameOf = id => (GC.INFO[id] && GC.INFO[id].name) || B.DEFS[id].name;
   const CAT = { EXTRACTION: '#d9962b', PIPELINE: '#4f8fc0', CRUDE_STORAGE: '#8f9aa6', PROCESSING: '#6faa7d', PRODUCT_STORAGE: '#c86a5a', WATER: '#4aa9d6' }, SECTIONS = ['EXTRACTION', 'PIPELINE', 'CRUDE STORAGE', 'PROCESSING', 'PRODUCT STORAGE', 'WATER'], STCOL = { RUNNING: '#8dffb0', READY: '#cfd8e3', OFFLINE: '#9aa4ae', UNDER_CONSTRUCTION: '#f0be28', DEPLETED: '#ff9a3a', BLOCKED: '#ff8a80', NO_INPUT: '#ffd27a', NO_MATERIALS: '#ff9a3a', NO_OUTPUT: '#ffd27a', LOW_PRESSURE: '#ffd27a', HIGH_PRESSURE: '#ff9a3a', OVER_CAPACITY: '#ff9a3a', MAINTENANCE: '#8fc4ff', DAMAGED: '#ff6a5a' };
   const REASON = { landForSea: 'المنشأة البحرية تُبنى على الماء فقط', zoneSeparation: 'مخزن احتياطي ومخزن تجاري: لا يُربطان تلقائياً', alreadyConnected: 'هاتان المنشأتان متصلتان بالفعل', exists: 'هذا الاتجاه موصول بالفعل', noSpot: 'لا يوجد مكان صالح لوصلة على هذا الخط', pipeSmall: 'قطر الأنبوب أصغر من تدفق المصدر', reserveBounds: 'داخل منطقة الاحتياطي: الخزان يجب أن يقع كاملاً داخل المساحة المفتوحة (وسّع المنطقة لفتح مساحة أكبر)', reserveOnly: 'منطقة الاحتياطي الاستراتيجي (C3 كاملة) للتخزين فقط: لا تُبنى فيها آبار ولا مصافٍ ولا مبانٍ تجارية. المسموح: خزانات الاحتياطي والمضخات والصمامات ونقاط الربط', reserveNotEmpty: 'لا يُهدم خزان احتياطي فيه نفط: اسحبه أو بِعه أولاً', reserveMove: 'لا يُنقل الخزان بين المخزون التجاري والاحتياطي بالسحب؛ ابنِ خزاناً جديداً في المكان المناسب', outside: 'خارج حدود الخريطة', water: 'لا يمكن البناء على الماء', terrain: 'أرض غير مناسبة لهذا المبنى', slope: 'الأرض شديدة الانحدار', overlap: 'يتداخل مع مبنى آخر', tooClose: 'قريب جدًا من منشأة أخرى (اترك مربعًا فارغًا)', CLEARANCE: 'قريب جدًا من منشأة أخرى (اترك مربعًا فارغًا)', OVERLAP: 'يتداخل مع مبنى آخر', TERRAIN: 'أرض غير مناسبة لهذا المبنى', ZONE: 'المصفاة تُبنى داخل المنطقة البنفسجية المتقطعة (منطقة المصافي) — اضغط «مكان آخر»', OIL: 'يجب أن يكون فوق حقل نفط صالح للحفر', CONNECTION: 'نقطة اتصال محجوبة', PRODUCT: 'منتجات غير متوافقة', RULE: 'غير مسموح هنا', LOADING: 'جارٍ تحميل هذا الجزء من الخريطة…',
@@ -26,7 +26,7 @@
     g.scale(2, 2); A.draw(g, d.visual, { ox: W / 2 + (fh - fw) * 16 * zz, oy: H - 6 - (fw + fh) * 16 * zz, z: zz, r: 0, w: fw, h: fh, t: .4, fill: .6, state: 'OPERATIONAL' });
     const s = document.createElement('span'); s.textContent = d.name.replace(' (small)', ' S').replace(' (medium)', ' M').replace(' (large)', ' L').replace('Gas / LPG Sphere', 'Gas/LPG Tank'); b.appendChild(s); const q = document.createElement('i'); q.textContent = fmtC(d) + ' · ' + fw + '×' + fh; b.appendChild(q); return b;
   }
-  function showSection(sec) { section = sec; pal.innerHTML = ''; for (const id of B.ORDER) if (B.DEFS[id].section === sec) pal.appendChild(chipFor(id)); pal.scrollLeft = 0; for (const t of tabs.children) t.classList.toggle('on', t.dataset.sec === sec); }
+  function showSection(sec) { section = sec; pal.innerHTML = ''; for (const id of B.ORDER) if (B.DEFS[id].section === sec && id !== 'central_station') pal.appendChild(chipFor(id)); pal.scrollLeft = 0; for (const t of tabs.children) t.classList.toggle('on', t.dataset.sec === sec); }
   for (const sec of SECTIONS) { const t = document.createElement('button'); t.textContent = sec; t.dataset.sec = sec; t.onclick = () => showSection(sec); tabs.appendChild(t); }
   showSection(SECTIONS[0]);
   function toast(m) { state.toast = m; state.toastAt = performance.now(); const t = $('toast'); t.textContent = m; t.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => { t.style.opacity = 0; }, 2600); }
@@ -61,7 +61,7 @@
 
   function beginDrag(id, e, touch, from) {
     const r = state.rot[id] || 0, g = { def: id, r, x: 0, y: 0, from, pid: e.pointerId, touch }; state.pending = null; hideBar(); const a = anchorFor(id, r, e.clientX, e.clientY, touch); g.x = a.x; g.y = a.y; state.drag = evaluate(g); state.sel = null; WP.markDirty();
-    $('info').innerHTML = '<h4>' + nameOf(id) + '</h4><span class="k">حرّك إصبعك فوق الخريطة: الأخضر = يمكن البناء، الأحمر = لا يمكن.</span>';
+    $('info').dataset.hk = 'd:' + id; $('info').innerHTML = '<h4>' + nameOf(id) + '</h4><span class="k">حرّك إصبعك فوق الخريطة: الأخضر = يمكن البناء، الأحمر = لا يمكن.</span>';
   }
   function moveDrag(e) {
     const g = state.drag; if (!g) return; const a = g.from === 'ghost' ? { x: Math.round(WP.toTile(e.clientX, e.clientY - (g.touch ? 58 : 0)).x - g.grab.x), y: Math.round(WP.toTile(e.clientX, e.clientY - (g.touch ? 58 : 0)).y - g.grab.y) } : anchorFor(g.def, g.r, e.clientX, e.clientY, g.touch);
@@ -72,7 +72,7 @@
     if (g.over || e.clientY > innerHeight - 140) { state.pending = null; hideBar(); toast('تم الإلغاء'); WP.markDirty(); return; }
     state.pending = { def: g.def, x: g.x, y: g.y, r: g.r, verdict: g.verdict, snapped: g.snapped, aligned: g.aligned }; showBar(); WP.markDirty();
   }
-  function cancelAll(silent) { if (state.pipeEdit) { state.pipeEdit = null; try { document.body.classList.remove('pipemode'); } catch (e) { } } state.drag = null; state.pending = null; state.pipeDrag = null; state.pipeMode = null; hideBar(); if (!silent) toast('تم الإلغاء'); WP.markDirty(); }
+  function cancelAll(silent) { state.pipeEdit = null; try { document.body.classList.remove('pipemode'); } catch (e) { }      /* leaving pipe drawing by ANY way (a bottom-bar button, a new build...) brings the info cards back: the class used to stay and hid every card until a restart */ state.drag = null; state.pending = null; state.pipeDrag = null; state.pipeMode = null; hideBar(); if (!silent) toast('تم الإلغاء'); WP.markDirty(); }
 
   /* a pending ghost can be dragged again by touching it (everything else still pans the map) */
   window.addEventListener('pointerdown', e => {
@@ -127,7 +127,7 @@
   /* ------------------------------------------------------------ existing buildings: panel, demolish */
   const M = n => n >= 1e6 ? '$' + (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + 'M' : n >= 1e3 ? '$' + Math.round(n / 1e3) + 'k' : '$' + n;
   function showDefinition(id) {
-    const d = B.DEFS[id], req = [d.requires.oilField ? 'on a drillable oil field' : '', d.zone ? 'inside the ' + d.zone.toLowerCase() + ' zone' : ''].filter(Boolean), ports = d.connections.filter(c => c.kind === 'pipe' && !c.reserved).map(c => c.id.replace(/_/g, ' ').toLowerCase() + (c.product && c.product !== '*' ? ' (' + BC.PRODUCT_LABEL[c.product].toLowerCase() + ')' : '')).join(', ');
+    $('info').dataset.hk = 'd:' + id; const d = B.DEFS[id], req = [d.requires.oilField ? 'on a drillable oil field' : '', d.zone ? 'inside the ' + d.zone.toLowerCase() + ' zone' : ''].filter(Boolean), ports = d.connections.filter(c => c.kind === 'pipe' && !c.reserved).map(c => c.id.replace(/_/g, ' ').toLowerCase() + (c.product && c.product !== '*' ? ' (' + BC.PRODUCT_LABEL[c.product].toLowerCase() + ')' : '')).join(', ');
     $('info').innerHTML = '<h4>' + d.name + ' <span class="k">' + d.section + '</span></h4><span class="k">' + d.footprint.join('×') + ' tiles · build ' + (d.type === 'well' ? '$250k–1.5M' : M(d.cost)) + ' · runs ' + M(d.operatingCost) + '/day · upkeep ' + M(d.maintenanceCost) + '/day · ' + d.capacity.value.toLocaleString('en-US') + ' ' + d.capacity.unit
       + '<br>Ports: ' + ports + (d.safetyZone ? '<br>Safety zone: ' + d.safetyZone + ' tile' : '') + (req.length ? '<br>Needs: ' + req.join(', ') : '') + '</span><div class="k" style="margin-top:6px">Drag it onto the map.</div>';
   }
@@ -145,7 +145,7 @@
       const b = STORE.get(id); state.sel = id; $('info').innerHTML = '<h4>' + (b ? nameOf(b.d) : '') + '</h4><span class="k">تعذّر عرض التفاصيل الكاملة: ' + String(e && e.message || e).slice(0, 90) + '</span>'; try { console.error('showBuilding', e && e.stack); } catch (_) {} WP.markDirty(); }
   }
   function showBuilding_(id) {
-    const b = STORE.get(id); if (!b) return; state.sel = id; const d = B.DEFS[b.d], st = SIM.status(b), ind = SIM.indicators(b), warn = SIM.warnings(b), list = showAll ? ind.list : ind.list.slice(0, ind.top);
+    const b = STORE.get(id); if (!b) return; state.sel = id; $('info').dataset.hk = 'b:' + id; const d = B.DEFS[b.d], st = SIM.status(b), ind = SIM.indicators(b), warn = SIM.warnings(b), list = showAll ? ind.list : ind.list.slice(0, ind.top);
     const lv = d.type === 'tank' ? SIM.levelStateOf(b) : d.type === 'gas' ? SIM.gasSafetyOf(b) : null;
     const stopped = d.type === 'well' && b.s && b.s.started === false && st !== 'UNDER_CONSTRUCTION', stTxt = stopped ? 'متوقف — اضغط «ابدأ الإنتاج»' : (STAR[st] || st);
     let h = '<h4>' + nameOf(b.d) + ' <span class="st" style="color:' + (stopped ? '#ffd27a' : STCOL[st] || '#fff') + '">● ' + stTxt + '</span></h4>';
@@ -175,7 +175,7 @@
     return h;
   }
   function showPipe(x, y) {
-    const i = SIM.pipeInfo(x, y); if (!i) return; state.sel = null; state.pipeSel = { x, y }; const L = pipes.lineAt(x, y), open = !(L && L.a && L.b), st = open ? 'غير متصل' : (i.currentFlow > 0 ? 'متصل · يعمل' : 'متصل');
+    const i = SIM.pipeInfo(x, y); if (!i) return; state.sel = null; state.pipeSel = { x, y }; $('info').dataset.hk = 'p:' + x + ',' + y; const L = pipes.lineAt(x, y), open = !(L && L.a && L.b), st = open ? 'غير متصل' : (i.currentFlow > 0 ? 'متصل · يعمل' : 'متصل');
     $('info').innerHTML = '<h4>🔧 خط أنابيب <span class="st" style="color:' + (open ? '#ffd27a' : '#8dffb0') + '">● ' + st + '</span></h4><table class="kv">'+ lineRows(L) +'<tr><td>المنتج</td><td>' + (i.product === 'unassigned' ? 'غير محدد بعد' : GC.PRODUCT_NAMES[i.product] || i.product) + '</td></tr><tr><td>القطر</td><td>' + i.diameter + ' بوصة</td></tr><tr><td>الطول</td><td>' + L.path.length + ' مربعًا</td></tr><tr><td>الضغط</td><td>' + i.pressure.toLocaleString('en-US') + ' رطل/بوصة²</td></tr><tr><td>التدفق</td><td>' + i.currentFlow.toLocaleString('en-US') + ' برميل / يوم</td></tr><tr><td>السعة</td><td>' + i.capacity.toLocaleString('en-US') + ' برميل / يوم</td></tr></table>'
       + (open ? '<div class="k" style="margin-top:4px">لا يشترط إكمال الشبكة الآن: وصّل الطرف المفتوح بمبنى عندما تبنيه.</div><div class="row"><button id="bConnectLine" data-id="' + L.id + '" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800;min-height:46px">🔗 وصّل بمبنى</button></div>' : '')
       + lineButtons(L)
@@ -228,6 +228,7 @@
       const r = STORE.demolish(d.id, { building: true, pipes: true, pipeSet: pipes }); state.demo = null; if (r.ok) { state.sel = null; toast('Demolished · +' + fmt$(r.refund)); $('info').textContent = 'Demolished.'; save(); updateCash(); } else toast(r.reason); WP.markDirty(); }
   });
   hooks.tap = (px, py) => {
+    if (CUI && !state.pipeEdit && !state.pipeMode && !state.pending && !state.drag) { const t0 = WP.toTile(px, py); if (CUI.tap(Math.floor(t0.x), Math.floor(t0.y))) return true; }
     if (state.pipeEdit) return editTap(px, py);
     if (state.pipeMode) return pipeTap(px, py);
     if (state.pending || state.drag) return false;
@@ -335,11 +336,11 @@
     if (!again) { cancelAll(true); state.spotIdx = 0; } const r = state.rot[id] || 0, list = spotsFor(id, r);
     if (!list.length) {
       const [w0, h0] = dims(id, r), cx = Math.round(cam.x - w0 / 2), cy = Math.round(cam.y - h0 / 2), v = STORE.validate(id, cx, cy, r, {});
-      if (/^sector/.test(v.reason || '')) { state.pending = { def: id, x: cx, y: cy, r, verdict: v, snapped: false, aligned: false }; state.sel = null; $('info').innerHTML = '<h4>' + nameOf(id) + '</h4><span class="k">' + why(v) + '</span>'; showBar(); toast(why(v)); WP.markDirty(); return false; }      // the sector forbids it here: show the red verdict and WHY, so the player knows where it belongs
+      if (/^sector/.test(v.reason || '')) { state.pending = { def: id, x: cx, y: cy, r, verdict: v, snapped: false, aligned: false }; state.sel = null; $('info').dataset.hk = 'd:' + id; $('info').innerHTML = '<h4>' + nameOf(id) + '</h4><span class="k">' + why(v) + '</span>'; showBar(); toast(why(v)); WP.markDirty(); return false; }      // the sector forbids it here: show the red verdict and WHY, so the player knows where it belongs
       toast('لا يوجد مكان مناسب قريب. حرّك الخريطة ثم جرّب مرة أخرى.'); return false;
     }
     const sp = list[(state.spotIdx || 0) % list.length], g = evaluate({ def: id, r, x: sp.x, y: sp.y }), [w, h] = dims(id, g.r); state.pending = { def: id, x: g.x, y: g.y, r: g.r, verdict: g.verdict, snapped: g.snapped, aligned: g.aligned }; state.sel = null;
-    WP.goto(g.x + w / 2, g.y + h / 2, Math.max(cam.z, .55)); $('info').innerHTML = '<h4>' + nameOf(id) + '</h4><span class="k">اسحب المبنى على الخريطة لتغيير مكانه، ثم اضغط «بناء».</span>'; showBar(); WP.markDirty(); return true;
+    WP.goto(g.x + w / 2, g.y + h / 2, Math.max(cam.z, .55)); $('info').dataset.hk = 'd:' + id; $('info').innerHTML = '<h4>' + nameOf(id) + '</h4><span class="k">اسحب المبنى على الخريطة لتغيير مكانه، ثم اضغط «بناء».</span>'; showBar(); WP.markDirty(); return true;
   }
   function freePorts(b, roles) { return B.worldPoints(b).filter(p => p.kind === 'pipe' && !p.reserved && (!roles || roles.includes(p.role)) && free({ b: b.id, port: p.id })); }
   function bestPlan(aId, bId) {
@@ -354,7 +355,7 @@
   function pipeBar(msg, cls, ok, extra) { bar.innerHTML = '<div class="msg ' + (cls || '') + '">' + msg + '</div><div class="btns">' + (ok ? '<button id="bPipeOk">✓ بناء</button>' : '') + (extra || '') + '<button id="bPipeEnd">✕ إنهاء</button></div>'; bar.style.display = 'block'; }
   function pipeMode(on) {
     try { document.body.classList.toggle('pipemode', !!on); } catch (e) { }                    // while a pipe is being drawn / connected the info card steps aside (it would cover the buildings to tap)
-    if (!on) { state.pipeMode = null; state.pipeDrag = null; hideBar(); WP.markDirty(); return; } cancelAll(true); state.pipeMode = { step: 1, a: null, plan: null }; state.pipeDrag = null;
+    if (!on) { state.pipeMode = null; state.pipeDrag = null; hideBar(); WP.markDirty(); return; } cancelAll(true); try { document.body.classList.add('pipemode'); } catch (e) { } state.pipeMode = { step: 1, a: null, plan: null }; state.pipeDrag = null;
     pipeBar('🔧 اضغط على المبنى الذي يبدأ منه الأنبوب (مثلًا البئر)'); WP.markDirty();
   }
   function nearBuilding(t) { return STORE.at(Math.floor(t.x), Math.floor(t.y)) || STORE.query(Math.floor(t.x) - 1, Math.floor(t.y) - 1, Math.floor(t.x) + 1, Math.floor(t.y) + 1)[0] || null; }
@@ -416,7 +417,9 @@
   }
   /* the oil field card: the player taps a field and is offered "dig a well" */
   function fieldNear(t) { let best = null, bd = 4.5; for (const f of fieldSites()) { const d = Math.hypot(f.x - t.x, f.y - t.y); if (d < bd) { bd = d; best = f; } } return best; }
+  let helpField = null;
   function showField(f) {
+    helpField = f; $('info').dataset.hk = 'f';
     const n = STORE.list().filter(b => B.DEFS[b.d].type === 'well' && Math.hypot(b.x - f.x, b.y - f.y) < 14).length;
     $('info').innerHTML = '<h4>⛰️ حقل نفط' + (f.sector ? ' · ' + f.sector : '') + '</h4><span class="k">يمكنك الحفر هنا. ' + (n ? 'لديك ' + n + ' بئر في هذا الحقل.' : 'لا توجد آبار في هذا الحقل بعد.') + ' تكلفة البئر من ' + fmt$(B.DEFS.oil_well.cost) + '.</span><div class="row"><button id="bDig" data-fx="' + f.x + '" data-fy="' + f.y + '" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800;min-height:46px">🛢️ حفر بئر</button></div>'; WP.markDirty();
   }
@@ -461,6 +464,7 @@
     const sk = p => { if (p._skr !== p.r || p._skx !== p.x || p._sky !== p.y) { const a = B.dimsOf(B.DEFS[p.d], p.r); p._sk = p.x + a[0] + p.y + a[1]; p._skr = p.r; p._skx = p.x; p._sky = p.y; } return p._sk; };      // draw order key cached on the building (it only changes if the building does)
     list.sort((p, q) => sk(p) - sk(q));
     // pipes first (they lie on the ground)
+    if (pipes.central && CUI) { try { CUI.draw(ctx, sx, sy, cam, vb, pipes.central, CEN.COLOR, CEN.CHANNELS, () => { animNeed = true; }); } catch (_) { } }
     if (pipes.size && lv !== 'FAR') { const tp = performance.now(); drawPipes(vb); WP.stats.t.pipes += performance.now() - tp; }
     for (const b of list) {
       const d = B.DEFS[b.d], [w, h] = B.dimsOf(d, b.r);
@@ -531,8 +535,8 @@
   function updateCash() { $('cash').textContent = fmt$(STORE.cash); EU.hud(); }
   /* test-only timing hook (window.__perfT exists only in the performance-test build): measures, never changes behaviour */
   function save() { const P = window.__perfT; if (!P) return save_(); const t = performance.now(); try { return save_(); } finally { P.save += performance.now() - t; P.saveN++; } }
-  function save_() { if (window.__noSave || !window.__lab || !window.__lab.restored || catching) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { COMPANY.stamp(Date.now()); COMPANY.sync(); const out = JSON.stringify({ v: 2, store: STORE.toJSON(), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } });
-      try { const prev = localStorage.getItem(SAVE_KEY), now = Date.now(); if (prev && prev.length > 200 && now - bakAt > 60000) { localStorage.setItem(SAVE_KEY + '-bak', prev); bakAt = now; } } catch (_) { }   /* a rolling copy of the previous good save (at most once a minute) */
+  function save_() { if (window.__noSave || !window.__lab || !window.__lab.restored || catching) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { if (COMPANY.settle) COMPANY.settle(); COMPANY.stamp(Date.now()); COMPANY.sync(); const out = JSON.stringify({ v: 2, store: STORE.toJSON({ live: true }), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } });
+      try { const now = Date.now(); if (now - bakAt > 60000) { const prev = localStorage.getItem(SAVE_KEY); if (prev && prev.length > 200) { localStorage.setItem(SAVE_KEY + '-bak', prev); bakAt = now; } } } catch (_) { }   /* a rolling copy of the previous good save (at most once a minute). perf: the previous save (megabytes) is read only when the copy is due, not on every save */
       localStorage.setItem(SAVE_KEY, out); window.__saveError = null; saveFailShown = false; } catch (e) { window.__saveError = String(e && e.message || e); if (!saveFailShown) { saveFailShown = true; try { toast('⚠ تعذّر حفظ اللعبة: ' + window.__saveError); } catch (_) { } } } }
   let bakAt = 0, saveFailShown = false, catching = false;
   /* Offline catch-up in short slices (never one long freeze): a progress bar is shown, the same ticks run in the same order, nothing is saved until it ends */
@@ -545,7 +549,7 @@
       let a = null; try { a = COMPANY.catchUpFinish(); } catch (e) { window.__loadError = String(e && e.message || e); } catching = false; box.style.display = 'none'; simLast = performance.now(); done(a); };
     setTimeout(slice, 0);
   }
-  function swapNet(n2) { pipes.clear(); pipes.lines = n2.lines; pipes.at = n2.at; pipes.nextId = n2.nextId; pipes.nextConn = n2.nextConn; for (const k of n2) pipes.add(k); pipes.rev++; }
+  function swapNet(n2) { pipes.clear(); pipes.lines = n2.lines; pipes.at = n2.at; pipes.nextId = n2.nextId; pipes.nextConn = n2.nextConn; pipes.central = n2.central || null; for (const k of n2) pipes.add(k); pipes.rev++; }
   function load(o) {
     o = o || {}; const keys = [SAVE_KEY, SAVE_KEY + '-bak']; let last = { loaded: 0, from: 'none' }, soft = null;
     for (const k of keys) {
@@ -612,25 +616,61 @@
 
   /* simulation clock: Game Time.  1x = one game day per dayRealSeconds; the company advances in whole game hours (no dependence on FPS); nothing is simulated while paused or while a report is open */
   let lastT = performance.now(), lastDraw = 0, lastSig = '';
-  function visSig() { let h = (STORE.rev | 0) + '/' + pipes.rev + '/' + (state.sel || 0) + '/' + COMPANY.reserve.lv + '/'; let k = 0; for (const b of STORE.items.values()) { const d = B.DEFS[b.d]; k = (k * 31 + b.st.length + (d.type === 'tank' || d.type === 'gas' ? Math.round(tankFill(b) * 32) : 0) + (b.s && b.s._in > 0 ? 7 : 0)) | 0; } let f = 0; for (const L of pipes.lines.values()) f = (f * 3 + ((L.flow || 0) > 1 ? 1 : 0) + (L.over || L.hiP ? 2 : 0)) | 0; return h + k + '/' + f; }
+  function visSig() { let h = (STORE.rev | 0) + '/' + pipes.rev + '/' + (state.sel || 0) + '/' + COMPANY.reserve.lv + '/'; let k = 0; for (const b of STORE.items.values()) { const d = B.DEFS[b.d]; k = (k * 31 + b.st.length + (d.type === 'tank' || d.type === 'gas' ? Math.round(tankFill(b) * 32) : 0) + (b.s && b.s._in > 0 ? 7 : 0)) | 0; } let f = 0; if (pipes.central) { const c = pipes.central; f = c.rev | 0; for (const k of CEN.CHANNELS) { const i = c.ch[k]; f = (f * 7 + (i.flow > 1 ? 1 : 0) + (i.fault ? 2 : 0) + (i.state === 'CLOSED' ? 4 : 0)) | 0; } for (const g of c.seg.values()) for (const k of CEN.CHANNELS) f = (f * 3 + (g.fault[k] ? 1 : 0) + (g.f[k].flow > 1 ? 2 : 0)) | 0; } for (const L of pipes.lines.values()) f = (f * 3 + ((L.flow || 0) > 1 ? 1 : 0) + (L.over || L.hiP ? 2 : 0)) | 0; return h + k + '/' + f; }
   /* The company is advanced in SMALL slices (about 16 times a second) instead of one burst every 250 ms: exactly the same whole game hours in the same order (run() keeps the remainder), but no single frame has to carry a whole burst - this is what keeps x5 / x10 smooth on a phone */
   let simLast = performance.now();
-  const simPump = setInterval(() => { const now = performance.now(), dtS = Math.min(2, (now - simLast) / 1000); simLast = now; if (window.__homeOpen) return;      /* the main menu is open: the company waits */
-    if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) COMPANY.run(dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0)); }, 62);
-  const tick = setInterval(() => {
+  const simPump = setInterval(() => { const now = performance.now(), dtS = Math.min(2, (now - simLast) / 1000); simLast = now; if (window.__homeOpen) { if (COMPANY.settle) COMPANY.settle(); return; }      /* the main menu is open: the company waits (an open hour is finished first) */
+    if (COMPANY.speed > 0 && !COMPANY.bankrupt && !catching) { const hrs = dtS * (24 / EC.TIME.dayRealSeconds) * (COMPANY.speed || 0);
+      const DG = DIAG; DG.pumps++;
+      if (now < simNext) { COMPANY.addTime(hrs); realSpeed(0, now); DG.waitShare++; }                                 /* frame share: the map's turn - the time waits, nothing is skipped */
+      else if (WP.frames && WP.frames() === simFrame && now - simAt < 125) { COMPANY.addTime(hrs); realSpeed(0, now); DG.waitFrame++; }      /* no second slice before the map has had a frame - but never more than ~2 pump periods: a slow frame must not starve the simulation */
+      else { const mv = camMoving(now), t0 = performance.now(), h0 = COMPANY.hours, n = COMPANY.run(hrs, mv ? (EC.TIME.liveBudgetMs || 20) : (EC.TIME.liveBudgetStillMs || 30), PNOW), took = performance.now() - t0, sh = mv ? (EC.TIME.liveShare || 0.5) : (EC.TIME.liveShareStill || 0.65); simNext = t0 + took / sh; simFrame = WP.frames ? WP.frames() : 0; simAt = now; realSpeed(n, now);
+        DG.slices++; DG.runMs += took; DG.hours += COMPANY.hours - h0; if (took > DG.maxRun) DG.maxRun = took; } }
+    else { if (COMPANY.settle) COMPANY.settle(); realSpeed(0, now, true); } }, 62);      /* paused (or catching up): an hour the live game left open is finished, so a paused game always shows whole hours */
+  /* An hour may be spread over a few frames (COMPANY.run continues it).  Before ANY player action - a tap, a key, a typed value - the open hour is finished first, so every
+     action lands between two whole hours exactly as before (the listeners run in the capture phase, before the game's own handlers). */
+  for (const ev of ['pointerup', 'click', 'keydown', 'change', 'input']) window.addEventListener(ev, () => { if (COMPANY.midHour) { const t = performance.now(); COMPANY.settle(); RS.h += 1; DIAG.settles++; DIAG.settleMs += performance.now() - t; DIAG.hours += 1; } }, true);      // the finished hour counts in the real speed
+  /* live diagnostics (measurement only, nothing in the game depends on it): counters of the game loop, read once a second by live-diag.js (long-press the speed) */
+  const DIAG = window.__diag = { pumps: 0, waitShare: 0, waitFrame: 0, slices: 0, runMs: 0, hours: 0, maxRun: 0, settles: 0, settleMs: 0 };
+  const PNOW = () => performance.now();      // the frame budget's clock, given to the economy (which never reads the real clock itself)
+  let simNext = 0, simFrame = -1, simAt = -1e9; const camSeen = { x: NaN, y: NaN, z: NaN, at: -1e9 };
+  function camMoving(now) { if (cam.x !== camSeen.x || cam.y !== camSeen.y || cam.z !== camSeen.z) { camSeen.x = cam.x; camSeen.y = cam.y; camSeen.z = cam.z; camSeen.at = now; } return now - camSeen.at < 600; }      // the map is being moved or zoomed (or was within 0.6 s): it gets more of the frame
+  /* the speed really reached (game hours per real second / the hours per second of x1): shown next to the speed button when the device cannot keep up */
+  /* measured over 2 s windows; a new window starts when the speed changes or the game is reset / loaded, and the real speed is shown only after TWO slow windows in a row
+     (a single slow window - the world still loading, a save - is not reported as the device being too slow) */
+  const RS = { t0: performance.now(), h: 0, sp: -1, hrs: 0, slow: 0 }; function realSpeed(n, now, idle) { if (idle || COMPANY.speed !== RS.sp || COMPANY.hours < RS.hrs) { RS.t0 = now; RS.h = 0; RS.sp = COMPANY.speed; RS.slow = 0; COMPANY.realSpeed = null; RS.hrs = COMPANY.hours; if (idle) return; }
+    RS.hrs = COMPANY.hours; RS.h += n; const el = now - RS.t0; if (el >= 2000) { const v = RS.h / (el / 1000) / (24 / EC.TIME.dayRealSeconds); RS.slow = v < COMPANY.speed * 0.9 ? RS.slow + 1 : 0; COMPANY.realSpeed = RS.slow >= 2 ? v : null; COMPANY.realSpeedLast = v; RS.t0 = now; RS.h = 0; } }
+  const tick = setInterval(() => { if (!state.pipeMode && !state.pipeEdit && document.body.classList.contains('pipemode')) document.body.classList.remove('pipemode');      // self-heal: no pipe is being drawn, so the cards must be visible
+
     const PT = window.__perfT, tk0 = PT ? performance.now() : 0, now = performance.now();
-    if (WP.ui.reserveLv !== COMPANY.reserve.lv) { WP.ui.reserveLv = COMPANY.reserve.lv; WP.markDirty(); } if (now - lastDraw > (COMPANY.speed >= 5 ? 960 : 480)) { lastDraw = now; const tu0 = PT ? performance.now() : 0; const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag) showBuilding(sel.id); const sg = visSig(); if (sg !== lastSig || animOn) { lastSig = sg; WP.markDirty(); } if (PT) { PT.ui += performance.now() - tu0; PT.uiN++; } }      // Stage 5 perf: the map is redrawn only when something it shows has changed (animation has its own timer)
+    if (WP.ui.reserveLv !== COMPANY.reserve.lv) { WP.ui.reserveLv = COMPANY.reserve.lv; WP.markDirty(); } if (now - lastDraw > (COMPANY.speed >= 5 ? 960 : 480)) { lastDraw = now; const tu0 = PT ? performance.now() : 0; const sel = state.sel && STORE.get(state.sel); if (sel && !state.demo && !state.pending && !state.drag) showBuilding(sel.id); const sg = visSig(); if (sg !== lastSig || animOn) { lastSig = sg; WP.markDirty('sim'); } if (PT) { PT.ui += performance.now() - tu0; PT.uiN++; } }      // Stage 5 perf: the map is redrawn only when something it shows has changed (animation has its own timer)
   if (PT) { PT.tick += performance.now() - tk0; PT.tickN++; }
   }, EC.TIME.tickMs);
-  setInterval(() => { if (STORE.items.size || COMPANY.hours > 0) save(); }, 6000);                          // autosave: the company stamp is what the offline report measures from
+  /* autosave every 6 s - perf: not when nothing changed since the last save (a paused game), and spaced out when one save is costly (a very large company: at most ~2% of the time), yet at least once a minute */
+  let asSig = '', asAt = 0, asCost = 0; const autoSig = () => (STORE.rev | 0) + '/' + pipes.rev + '/' + COMPANY.hours + '/' + COMPANY.journal.n + '/' + STORE.cash + '/' + STORE.items.size;
+  setInterval(() => { if (!(STORE.items.size || COMPANY.hours > 0)) return; const now = performance.now(), sg = autoSig(), gap = now - asAt; if (sg === asSig && gap < 60000) return; if (gap < Math.max(5500, asCost * 50) && gap < 60000) return;
+    const t = performance.now(); save(); asCost = performance.now() - t; asAt = performance.now(); asSig = autoSig(); }, 6000);                          // autosave: the company stamp is what the offline report measures from
   document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); } else { simLast = performance.now(); const j = COMPANY.catchUpStart(Date.now()); if (j && j.job) runCatchUp(j, a => { if (a && a.ok) EU.showAway(a); save(); }); else if (j && j.ok) { EU.showAway(j); save(); } } });
   window.addEventListener('pagehide', () => save());
   EU.mount({ company: COMPANY, toast, onChange: () => save(), restart: () => newGame(), showZone: () => { const z = world.reserveZoneOfWorld(); if (z) { WP.goto(z.x + z.w / 2, z.y + z.h / 2, .5); toast('منطقة الاحتياطي الاستراتيجي (باللون الأصفر)'); } } });
   /* a new game: everything is cleared (buildings, pipes, money, the lesson) and the camera returns to the first oil field */
-  function newGame() { reset(); try { localStorage.removeItem('oli-lab-v2'); } catch (_) { } const f = fieldSites()[0]; if (f && !GU.dev) WP.goto(f.x, f.y, .55); if (GU.closeSheet) GU.closeSheet(); const es = document.getElementById('eco-sheet'); if (es) es.classList.remove('open'); toast('🔄 بدأت لعبة جديدة · $10M'); save(); WP.markDirty(); }
+  /* the Central Hybrid Network exists from the first day: stations free and operating, $500M cash, the network bought with a 100% bank loan (60 y, 6%, 2 y grace) */
+  function installCentral() { if (!CEN || window.OLI_CENTRAL === false || pipes.central) return null; const r = CEN.install(STORE, pipes); STORE.cash = EC.CENTRAL.startCash; COMPANY.reset(); const a = COMPANY.acquireCentral(pipes.central.cost()); STORE.rev = (STORE.rev | 0) + 1; updateCash(); WP.markDirty(); return { install: r, acquire: a }; }
+  function newGame() { reset(); installCentral(); try { localStorage.removeItem('oli-lab-v2'); } catch (_) { } const f = fieldSites()[0]; if (f && !GU.dev) WP.goto(f.x, f.y, .55); if (GU.closeSheet) GU.closeSheet(); const es = document.getElementById('eco-sheet'); if (es) es.classList.remove('open'); toast('🔄 بدأت لعبة جديدة · $10M'); save(); WP.markDirty(); }
   if (!GU.dev && !window.OLI_HOME) {   // in the app the reset lives in the main menu (with its own confirmation)
     const top = document.querySelector('#eco-sheet .top'); if (top) { const nb = document.createElement('button'); nb.id = 'es-new'; nb.textContent = '🔄 لعبة جديدة'; nb.style.cssText = 'min-height:40px;margin-inline-start:8px;background:#7a2a2a;border:1px solid #a33;color:#fff;border-radius:8px;padding:0 12px;font-weight:700'; let armed = 0; nb.onclick = () => { if (!armed) { armed = 1; nb.textContent = '⚠️ اضغط للتأكيد: سيُمسح كل شيء'; setTimeout(() => { armed = 0; nb.textContent = '🔄 لعبة جديدة'; }, 4000); return; } armed = 0; nb.textContent = '🔄 لعبة جديدة'; newGame(); }; top.insertBefore(nb, top.querySelector('#es-close')); } }
-  window.__lab = { routeEdit, editPreview, editAct, editEnd, adviseUpgrade, groupFrame: () => lastGroupFrame, autoLinkNote, ts, newGame, startBuild, pipeMode, pipeTap, commitPlan, spotsFor, nameOf, showField, fieldNear, fieldSites, GU, REASON, company: COMPANY, EU, buildDemo, store: STORE, pipes, sim: SIM, I, BC, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, showPipe, anchorFor, commitPipe, planFor, portNear, connect, updateCash, showSection, setDia: d => { dia = d; }, ready: () => true };
+  window.__lab = { HELP: () => HELP, helpTarget, CEN, CUI, installCentral, routeEdit, editPreview, editAct, editEnd, adviseUpgrade, groupFrame: () => lastGroupFrame, autoLinkNote, ts, newGame, startBuild, pipeMode, pipeTap, commitPlan, spotsFor, nameOf, showField, fieldNear, fieldSites, GU, REASON, company: COMPANY, EU, buildDemo, store: STORE, pipes, sim: SIM, I, BC, state, B, A, evaluate, save, load, reset, toast, confirmBuild, rotatePending, cancelAll, showBuilding, showPipe, anchorFor, commitPipe, planFor, portNear, connect, updateCash, showSection, setDia: d => { dia = d; }, ready: () => true };
+  const HELP = window.OliHelp || null;
+  function helpTarget() {
+    const hk = $('info').dataset.hk || '', [k, v] = [hk.split(':')[0], hk.slice(hk.indexOf(':') + 1)];
+    if (k === 'b' && STORE.get(+v)) return { kind: 'b', id: +v };
+    if (k === 'p' || k === 'c') { const [x, y] = v.split(',').map(Number); return { kind: k, x, y }; }
+    if (k === 'd' && B.DEFS[v]) return { kind: 'd', id: v };
+    if (k === 'f' && helpField) { const f = helpField; return { kind: 'f', f, wells: STORE.list().filter(b => B.DEFS[b.d].type === 'well' && Math.hypot(b.x - f.x, b.y - f.y) < 14).length }; }
+    return null;
+  }
+  if (HELP) HELP.mount({ target: helpTarget, ctx: () => ({ GC, B, BC, EC, SIM, store: STORE, pipes, company: COMPANY, CEN }) });
+  if (CUI) CUI.mount({ cn: () => pipes.central, CEN, store: STORE, pipes, company: COMPANY, toast, WP, state, save, updateCash, showBuilding });
   updateCash(); window.__lab.GU.mount(); if (AR) AR.install();
-  const wait = setInterval(() => { if (WP.idle && WP.idle()) { clearInterval(wait); const r = load({ sliced: true }); window.__lab.restored = r; if (r.from !== 'save' && !GU.dev) { const f = fieldSites()[0]; if (f) WP.goto(f.x, f.y, .55); } if (r.loaded) toast('Restored ' + r.loaded + ' buildings'); if (r.away && r.away.ok) EU.showAway(r.away); if (r.job) runCatchUp(r.job, a => { r.away = a; r.job = null; if (a && a.ok) EU.showAway(a); WP.markDirty(); save(); }); WP.markDirty(); } }, 200);
+  const wait = setInterval(() => { if (WP.idle && WP.idle()) { clearInterval(wait); const r = load({ sliced: true }); window.__lab.restored = r; if (r.from !== 'save') { try { installCentral(); save(); } catch (e) { window.__loadError = String(e && e.message || e); } } if (r.from !== 'save' && !GU.dev) { const f = fieldSites()[0]; if (f) WP.goto(f.x, f.y, .55); } if (r.loaded) toast('Restored ' + r.loaded + ' buildings'); if (r.away && r.away.ok) EU.showAway(r.away); if (r.job) runCatchUp(r.job, a => { r.away = a; r.job = null; if (a && a.ok) EU.showAway(a); WP.markDirty(); save(); }); WP.markDirty(); } }, 200);
 })();

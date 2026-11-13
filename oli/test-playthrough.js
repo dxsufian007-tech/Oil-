@@ -13,7 +13,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   const url = 'http://localhost:' + srv.address().port + '/?lab=1&lang=en', co = f => p.evaluate(f), shot = async nm => { if (shots) await p.screenshot({ path: path.join(shots, nm + '.png') }); };
   await p.goto(url); await p.waitForFunction(() => window.__lab && __lab.restored, null, { timeout: 90000 });
 
-  console.log('NEW GAME'); await co(() => { localStorage.clear(); window.OliEconomyConfig.ENGINE.enabled = false; __lab.reset(); });   // this playthrough checks the plant's profit at the nominal prices (the 2000 prices of the Brent market are a third of them, see test-brent-market.js) await co(() => { __lab.company.speed = 0; });
+  console.log('NEW GAME'); await co(() => { localStorage.clear(); window.OliEconomyConfig.ENGINE.enabled = false; window.OliEconomyConfig.AUTOBUY.CHEM.on = false; window.OliEconomyConfig.AUTOBUY.OPS.on = false; __lab.reset();      /* automatic purchasing off by default for this game: building the chain (buildDemo) starts the company afresh, so a setting alone would be lost */ for (const m of ['CHEM', 'OPS']) __lab.company.setAutoBuy(m, { on: false }); });   // this playthrough manages the materials by hand (automatic purchasing has its own tests)   // this playthrough checks the plant's profit at the nominal prices (the 2000 prices of the Brent market are a third of them, see test-brent-market.js) await co(() => { __lab.company.speed = 0; });
   ok(await co(() => __lab.store.cash) === 10e6, 'a new game starts with $10,000,000');
 
   console.log('BUILD THE FULL CHAIN'); const r = await co(() => __lab.buildDemo());
@@ -23,6 +23,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   await co(() => { for (const x of ['CRUDE', 'GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS']) __lab.company.setMode(x, 'WAIT'); });
   const cash0 = await co(() => __lab.store.cash);
   const refSt = () => co(() => { const l = __lab, r = l.store.list().find(b => /refinery/.test(b.d)); return { st: l.sim.status(r), mat: l.company.matLimit }; });
+  await co(() => { for (const m of ['CHEM', 'OPS']) __lab.company.setAutoBuy(m, { on: false }); });   // automatic purchasing off: this part checks the hand-managed path
   await co(() => __lab.company.advanceHours(24)); const noMat = await refSt();
   ok(noMat.st === 'NO_MATERIALS' && noMat.mat === 0, 'with no chemicals the refinery says it lacks materials, not "no oil reaches it" (' + noMat.st + ')');
   ok(await restock() === null, 'chemicals and operating materials are bought'); await co(() => __lab.company.advanceHours(24)); ok((await refSt()).st === 'RUNNING', 'after buying them the same refinery runs'); for (let d = 0; d < 10; d++) { const why = await restock(); if (why) { ok(false, 'restock failed: ' + why); } await co(() => __lab.company.advanceHours(24)); }

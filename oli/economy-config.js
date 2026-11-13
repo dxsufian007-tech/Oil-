@@ -8,11 +8,12 @@
   'use strict';
   const PRODUCTS = ['CRUDE', 'GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS'];            // the five things a company can hold and sell (OTHER is a by-product, never stored)
   return {
+    CENTRAL: { startCash: 500000000, rate: 0.06, months: 720, grace: 24 },          // the Central Hybrid Pipeline Network: bought at the start with a 100% bank loan (60 years at 6%, the first 2 years interest only); the company starts with $500M cash
     START_CASH: 10000000,                                                           // a small oil company: a first well, a pipeline and a tank; a refinery (25M..1B) has to be earned or financed
     PRODUCTS,
     LABEL: { CRUDE: 'نفط خام', GASOLINE: 'بنزين', DIESEL: 'ديزل', JET_FUEL: 'وقود طائرات', GAS: 'غاز' },
     UNIT: { CRUDE: 'برميل', GASOLINE: 'برميل', DIESEL: 'برميل', JET_FUEL: 'برميل', GAS: 'برميل مكافئ' },
-    TIME: { hoursPerDay: 24, daysPerMonth: 30, monthsPerYear: 12, dayRealSeconds: 12, speeds: [0, 0.5, 1, 2, 5, 10], tickMs: 250, maxCatchUpHours: 240, maxStepsPerTick: 60 },
+    TIME: { hoursPerDay: 24, daysPerMonth: 30, monthsPerYear: 12, dayRealSeconds: 12, speeds: [0, 0.5, 1, 2, 5, 10], tickMs: 250, maxCatchUpHours: 240, maxStepsPerTick: 60, liveBudgetMs: 20, liveBacklogHours: 240, liveShare: 0.5, liveShareStill: 0.65, liveBudgetStillMs: 30 },      // liveShare: the simulation takes at most this share of the main thread; after a pass that took X ms the map gets X x (1/share - 1) ms before the next one; while the map is not being moved or zoomed (0.6 s) the simulation may take liveBudgetStillMs per pass and liveShareStill of the thread - only the pacing changes, every game hour is still computed in full      // live play: at most liveBudgetMs of simulation per 62 ms pass (the rest of the frame stays for the map), at most liveBacklogHours waiting
 
     // ---- prices ($/bbl, gas $/boe).  Actual price = Base x Demand x Supply x Volatility, moved at most +-dailyChangeLimit per 24 h
     PRICE: { base: { CRUDE: 72, GASOLINE: 110, DIESEL: 104, JET_FUEL: 106, GAS: 48 },
@@ -93,7 +94,12 @@
     MATERIALS: ['CHEM', 'PARTS', 'OPS'],                                              // chemicals · spare parts · operating materials (stock pools, not tanks)
     MATERIAL_LABEL: { CHEM: 'مواد كيميائية', PARTS: 'قطع غيار', OPS: 'مواد تشغيل' },
     MATERIAL_UNIT: { CHEM: 'kg', PARTS: 'pcs', OPS: 'unit' },                         // the unit each price refers to (UI keys: u.kg, u.pcs, u.unit)
-    MATERIAL_STORE: { CHEM: 20000, PARTS: 200, OPS: 5000 },                           // warehouse capacity per material, in its unit: a purchase above it is refused
+    MATERIAL_STORE: { CHEM: 500000, PARTS: 200, OPS: 100000 },                        // warehouse capacity per material, in its unit: a purchase above it is refused (owner, Nov 2026: CHEM 20,000 -> 500,000 kg, OPS 5,000 -> 100,000 units)
+    // warehouse upgrades (owner, Nov 2026: capacity must be upgradable): each level adds `add` units for `cost` dollars (a fixed asset, like the reserve works). PLACEHOLDER costs, easy to change here.
+    WAREHOUSE_UPGRADE: { maxLevel: 5, CHEM: { add: 250000, cost: 2000000 }, OPS: { add: 50000, cost: 1500000 }, PARTS: { add: 100, cost: 250000 } },
+    // automatic purchasing of materials (owner, Nov 2026). Per material: on/off; reorder point and target stock, in DAYS of the current need when the player leaves them empty
+    // (need = what the operating consumers use per day at their present operating limit); maxQty per order (0 = up to the target); maxSpendDay (0 = no cap). It buys through buy() like the player does.
+    AUTOBUY: { CHEM: { on: true, reorderDays: 3, targetDays: 10 }, OPS: { on: true, reorderDays: 3, targetDays: 10 }, PARTS: { on: false, reorderDays: 3, targetDays: 10 }, logMax: 100 },
     MATERIAL_PRICE: { CHEM: 2.5, PARTS: 1200, OPS: 40 },                             // editable starting prices ($ per unit): change them here, the engine reads them
     MATERIAL_USE: { CHEM: { per: 'refinedBbl', qty: 0.36 }, OPS: { per: 'refinedBbl', qty: 0.002 }, PARTS: { per: 'repair', qty: 1 }, REPAIR_OPS: { per: 'repair', qty: 2 } },   // units used: chemicals 0.36 per refined bbl (= 0.90 $/bbl at 2.5 $/unit, the existing cost); operating materials 0.002 per bbl; one spare part per repair
     SUPPLIERS: [

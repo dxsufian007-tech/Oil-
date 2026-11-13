@@ -14,7 +14,7 @@
   const ui = { reg: DEVUI, zone: true, dev: false, heat: false, sel: null, facility: 'well', probe: null, scale: false };
   let DPR = Math.min(+qs.get('dpr') || 2, window.devicePixelRatio || 1), VW = 0, VH = 0, dirty = true;
   const level = () => world.levelForZoom(cam.z);
-  const stats = { imgs: 0, regions: 0 };
+  const stats = { imgs: 0, regions: 0 }; let gRev = 0;      // the ground picture's version (see the still-map ground cache below)
 
   // ---- engines: the world is computed in Web Workers (images + overview in one, region data in another). Fallback (no Worker, or ?noworker): the same code on this thread, sliced with setTimeout.
   const USE_WORKER = !!window.Worker && !qs.get('noworker');
@@ -38,14 +38,14 @@
   const need = new Map(), regNeed = new Set(), busy = { img: false, reg: false }, DEMO_REGIONS = [...new Set([SR.id, SR.id - 6, SR.id - 1, SR.id + 1, SR.id + 6].concat((world.sectors || []).filter(q => q.kind === 'D').flatMap(q => world.regions.filter(r => r.x0 < q.x + q.w && r.x0 + r.w > q.x && r.y0 < q.y + q.h && r.y0 + r.h > q.y).map(r => r.id))))]; let demoDone = false, ready = { img: false, reg: false }, ovQueue = [16, 8, 4];
   function onImg(m) {
     if (m.t === 'ready') { ready.img = true; return; }
-    busy.img = false; dirty = true;
+    busy.img = false; dirtyAll();
     if (m.t === 'overview') { if (skin.onOverview) skin.onOverview(m); ovStep = m.step; const c = toCanvas(m.rgba, m.w, m.h); ovg.save(); ovg.setTransform(1, 0, 0, 1, 0, 0); ovg.clearRect(0, 0, OV_W, OV_H); ovg.setTransform(m.step * 32 * OV_Z, m.step * 16 * OV_Z, -m.step * 32 * OV_Z, m.step * 16 * OV_Z, OV_EX, 0); ovg.imageSmoothingEnabled = true; ovg.drawImage(c, 0, 0, m.w, m.h, 0, 0, m.w + .7, m.h + .7); ovg.restore(); stats.overviewMs = Math.round(performance.now()); }
     else if (m.t === 'img') { const key = m.cy * CX + m.cx, mp = imgOf(m.k); mp.set(key, toCanvas(m.rgba, C * m.k, C * m.k)); while (mp.size > MAXC[m.k]) mp.delete(mp.keys().next().value); world.injectChunk(m.chunk); need.delete(m.k + ':' + key); stats.imgs++; stats.lastImgAt = performance.now(); }
     else if (m.t === 'heat') { heat.set(m.cy * CX + m.cx, toCanvas(m.rgba, 32, 32)); need.delete('h:' + (m.cy * CX + m.cx)); }
   }
   function onReg(m) {
     if (m.t === 'ready') { ready.reg = true; return; }
-    busy.reg = false; dirty = true; if (m.t === 'region') { world.injectRegion(m.d); regNeed.delete(m.d.rid); stats.regions++; if (!demoDone && DEMO_REGIONS.every(r => world.hasRegion(r))) { applyDemo(); } if (DEMOALL) openAll(m.d.rid); }
+    busy.reg = false; dirtyAll(); if (m.t === 'region') { world.injectRegion(m.d); regNeed.delete(m.d.rid); stats.regions++; if (!demoDone && DEMO_REGIONS.every(r => world.hasRegion(r))) { applyDemo(); } if (DEMOALL) openAll(m.d.rid); }
   }
   const imgEng = makeEngine(onImg), regEng = makeEngine(onReg); imgEng.post({ t: 'init', seed, sectors: SECT }); regEng.post({ t: 'init', seed, sectors: SECT });
   /* DEMO build: every oil field of every region is drillable, every region is unlocked, all regions load (flag from the demo APK, ?demo=1 or localStorage oli-demo=1) */
@@ -79,7 +79,7 @@
   const sx = (x, y) => VW / 2 + ((x - y) - (cam.x - cam.y)) * 32 * cam.z, sy = (x, y) => VH / 2 + ((x + y) - (cam.x + cam.y)) * 16 * cam.z;
   function toTile(px, py) { const u = (px - VW / 2) / (32 * cam.z) + (cam.x - cam.y), v = (py - VH / 2) / (16 * cam.z) + (cam.x + cam.y); return { x: (u + v) / 2, y: (v - u) / 2 }; }
   function bounds() { const a = [toTile(0, 0), toTile(VW, 0), toTile(0, VH), toTile(VW, VH)]; return { x0: Math.min(...a.map(p => p.x)), x1: Math.max(...a.map(p => p.x)), y0: Math.min(...a.map(p => p.y)), y1: Math.max(...a.map(p => p.y)) }; }
-  function resize() { VW = innerWidth; VH = innerHeight; cv.width = VW * DPR; cv.height = VH * DPR; dirty = true; }
+  function resize() { VW = innerWidth; VH = innerHeight; cv.width = VW * DPR; cv.height = VH * DPR; dirtyAll(); }
   addEventListener('resize', resize); resize();
 
   function poly(pts, fill, stroke, lw, dash) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); ctx.setLineDash([]); } }
@@ -204,11 +204,23 @@
     }
   }
 
+  /* Still-map ground cache.  The ground of the map - background, terrain, decoration, field pins, zones and sector names - depends only on the camera, the screen and the world
+     (never on the simulation).  When the camera has not moved since the previous drawn frame, that picture is kept in one offscreen canvas and every later redraw caused by
+     the simulation (a tank level, a flowing pipe, a running refinery: markDirty('sim')) copies it in one drawImage and draws only the buildings and pipes on top.
+     Anything else that marks the map dirty (input, a loaded image or region, a toggle, a change of resolution) invalidates it; it also expires after 3 s.  The copy is
+     pixel-for-pixel the same picture (device pixels, no scaling) - nothing is drawn at a lower resolution. */
+  const G = { c: document.createElement('canvas'), g: null, key: '', lastKey: '', at: 0, ok: false, full: 0, fullN: 0, blit: 0, blitN: 0 };      /* full / blit: measured cost (ms, moving average) of drawing the ground and of copying it - the copy is used only while it is the cheaper of the two on this device */ G.g = G.c.getContext('2d'); stats.groundHits = 0; stats.groundStores = 0;
+  function dirtyAll() { dirty = true; gRev++; }
   let missingHi = 0;
   let hudText = '', hudLv = '';
   function draw() {
-    dirty = false; const T = stats.t || (stats.t = { terrain: 0, decorate: 0, overlays: 0, afterOv: 0, top: 0, pipes: 0, buildings: 0 }), pn = performance.now.bind(performance); let t0 = pn(); const lv = level(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.lineJoin = 'round'; if (skin.bg && skin.bg(ctx, VW, VH)) { } else { ctx.fillStyle = '#0c1015'; ctx.fillRect(0, 0, VW, VH); }
-    const b = bounds(), c0 = Math.max(0, Math.floor(b.x0 / C)), c1 = Math.min(CX - 1, Math.floor(b.x1 / C)), r0 = Math.max(0, Math.floor(b.y0 / C)), r1 = Math.min(CY - 1, Math.floor(b.y1 / C));
+    dirty = false; const T = stats.t || (stats.t = { terrain: 0, decorate: 0, overlays: 0, afterOv: 0, top: 0, pipes: 0, buildings: 0, ground: 0 }), pn = performance.now.bind(performance); let t0 = pn(); const lv = level(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.lineJoin = 'round';
+    const b = bounds(), gk = gRev + '|' + cam.x + '|' + cam.y + '|' + cam.z + '|' + DPR + '|' + VW + '|' + VH + '|' + cv.width + 'x' + cv.height;
+    const gWorth = !(G.blitN >= 3 && G.fullN >= 3 && G.blit >= G.full); stats.groundWorth = gWorth;
+    if (G.ok && G.key === gk && t0 - G.at < 3000 && gWorth && !window.OLI_NOGROUNDCACHE) {      // still map: the ground is copied, only what the simulation changes is drawn again
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(G.c, 0, 0); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); stats.groundHits++; const tg = pn(); T.ground += tg - t0; G.blit = G.blitN ? G.blit * 0.8 + (tg - t0) * 0.2 : tg - t0; G.blitN++; missingHi = 0; drawRest(lv, b, T, pn, tg); return; }
+    if (skin.bg && skin.bg(ctx, VW, VH)) { } else { ctx.fillStyle = '#0c1015'; ctx.fillRect(0, 0, VW, VH); }
+    const c0 = Math.max(0, Math.floor(b.x0 / C)), c1 = Math.min(CX - 1, Math.floor(b.x1 / C)), r0 = Math.max(0, Math.floor(b.y0 / C)), r1 = Math.min(CY - 1, Math.floor(b.y1 / C));
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low'; missingHi = 0;
     if (!stats.firstDrawMs && ovStep < 99) stats.firstDrawMs = Math.round(performance.now());
     if (cam.z < 0.5) {                                  // the overview image as the backdrop (and the whole picture at FAR): only the visible part is drawn
@@ -231,7 +243,13 @@
     overlays(lv, b);
     if (skin.sectors) skin.sectors(lv, b);
     sectorLayer(lv, b, true);                            // the sector names are written AFTER the field pins and the zones, so a pin never hides a name
-    let t3 = pn(); T.overlays += t3 - t2;
+    let t3 = pn(); T.overlays += t3 - t2; if (!missingHi) { G.full = G.fullN ? G.full * 0.8 + (t3 - t0) * 0.2 : t3 - t0; G.fullN++; }
+    if (!missingHi && G.lastKey === gk && gWorth && !window.OLI_NOGROUNDCACHE) {                   // the second frame with the camera at rest: keep the ground picture
+      if (G.c.width !== cv.width || G.c.height !== cv.height) { G.c.width = cv.width; G.c.height = cv.height; } G.g.setTransform(1, 0, 0, 1, 0, 0); G.g.clearRect(0, 0, G.c.width, G.c.height); G.g.drawImage(cv, 0, 0); G.ok = true; G.key = gk; G.at = t3; stats.groundStores++; const tg = pn(); T.ground += tg - t3; t3 = tg; }
+    else if (G.key !== gk) G.ok = false;
+    G.lastKey = gk; drawRest(lv, b, T, pn, t3);
+  }
+  function drawRest(lv, b, T, pn, t3) {
     if (hooks.afterOverlays) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); hooks.afterOverlays(lv, b); }
     T.afterOv += pn() - t3;
     if (ui.scale) drawScaleChart();
@@ -245,12 +263,12 @@
   // ---- input (preview-only camera: drag to pan, wheel / pinch to zoom, tap to inspect)
   const ptrs = new Map(); let moved = 0, pinch = null;
   const clampZ = z => Math.max(CFG.ZOOM.MIN, Math.min(CFG.ZOOM.MAX, z));
-  function zoomAt(px, py, nz) { const t = toTile(px, py); cam.z = clampZ(nz); const t2 = toTile(px, py); cam.x += t.x - t2.x; cam.y += t.y - t2.y; keepIn(); dirty = true; }
+  function zoomAt(px, py, nz) { const t = toTile(px, py); cam.z = clampZ(nz); const t2 = toTile(px, py); cam.x += t.x - t2.x; cam.y += t.y - t2.y; keepIn(); dirtyAll(); }
   function keepIn() { cam.x = Math.max(0, Math.min(world.W, cam.x)); cam.y = Math.max(0, Math.min(world.H, cam.y)); }
   cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved = 0; if (ptrs.size === 2) { const [a, b2] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b2.x, a.y - b2.y), z: cam.z }; } });
   cv.addEventListener('pointermove', e => { const p = ptrs.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY; moved += Math.abs(dx) + Math.abs(dy);
     if (ptrs.size >= 2 && pinch) { const [a, b2] = [...ptrs.values()], d = Math.hypot(a.x - b2.x, a.y - b2.y); zoomAt((a.x + b2.x) / 2, (a.y + b2.y) / 2, pinch.z * d / pinch.d); }
-    else if (ptrs.size === 1) { const t = toTile(e.clientX, e.clientY), t0 = toTile(e.clientX - dx, e.clientY - dy); cam.x += t0.x - t.x; cam.y += t0.y - t.y; keepIn(); dirty = true; } });
+    else if (ptrs.size === 1) { const t = toTile(e.clientX, e.clientY), t0 = toTile(e.clientX - dx, e.clientY - dy); cam.x += t0.x - t.x; cam.y += t0.y - t.y; keepIn(); dirtyAll(); } });
   const up = e => { const was = ptrs.has(e.pointerId); ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; if (was && ptrs.size === 0 && moved < 8) tap(e.clientX, e.clientY); };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); pinch = null; });
   cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, cam.z * Math.exp(-e.deltaY * .0015)); }, { passive: false });
@@ -261,7 +279,7 @@
     if (hooks.tap && hooks.tap(px, py)) return;
     const t = toTile(px, py), x = Math.floor(t.x), y = Math.floor(t.y); if (!world.inb(x, y)) return;
     let hit = null; for (const s of world.sitesNear(x, y, 3)) { const vi = world.visibleInfo(s.id), ind = vi && vi.indicator, cxs = ind ? ind.x : s.x, cys = ind ? ind.y : s.y, rad = ind ? ind.r : s.radius; if ((vi || ui.dev) && Math.hypot(cxs - t.x, cys - t.y) <= rad + 1) { hit = s; break; } }
-    const tl = world.tile(x, y); if (!tl) { wantImg((x / C) | 0, (y / C) | 0, 1); document.getElementById('info').textContent = 'جارٍ تحميل هذا الجزء من العالم…'; return; } const res = world.canBuildAt(ui.facility, x, y); ui.probe = { x, y, res }; ui.sel = hit ? hit.id : null; dirty = true; showInfo(tl, res, hit);
+    const tl = world.tile(x, y); if (!tl) { wantImg((x / C) | 0, (y / C) | 0, 1); document.getElementById('info').textContent = 'جارٍ تحميل هذا الجزء من العالم…'; return; } const res = world.canBuildAt(ui.facility, x, y); ui.probe = { x, y, res }; ui.sel = hit ? hit.id : null; dirtyAll(); showInfo(tl, res, hit);
   }
   const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : '' + n;
   function showInfo(tl, res, hit) {
@@ -275,16 +293,16 @@
       const nxt = { UNDISCOVERED: 'discover', DISCOVERED: 'survey', SURVEYED: 'makeDrillable', DRILLABLE: 'startProducing' }[st]; if (nxt && !(vi && vi.dry && nxt === 'makeDrillable')) h += '<div class="row"><button data-adv="' + nxt + '" data-id="' + hit.id + '">Advance → ' + nxt + '</button></div>'; }
     info.innerHTML = h;
   }
-  info.addEventListener('click', e => { const b = e.target.closest('[data-adv]'); if (!b) return; const r = world[b.dataset.adv](b.dataset.id); dirty = true; const s = world.siteById(b.dataset.id); showInfo(world.tile(s.x, s.y), ui.probe.res, s); if (!r.ok) info.insertAdjacentHTML('beforeend', '<br><span class="k">refused: ' + r.reason + '</span>'); });
+  info.addEventListener('click', e => { const b = e.target.closest('[data-adv]'); if (!b) return; const r = world[b.dataset.adv](b.dataset.id); dirtyAll(); const s = world.siteById(b.dataset.id); showInfo(world.tile(s.x, s.y), ui.probe.res, s); if (!r.ok) info.insertAdjacentHTML('beforeend', '<br><span class="k">refused: ' + r.reason + '</span>'); });
 
   const zlevels = { FAR: 0.0045, MEDIUM: 0.35, CLOSE: 1.0 };
   function setLevel(n) { zoomAt(VW / 2, VH / 2, zlevels[n]); }
   document.querySelectorAll('[data-z]').forEach(b => b.onclick = () => setLevel(b.dataset.z));
-  const tog = (id, key) => { const el = document.getElementById(id); el.onclick = () => { ui[key] = !ui[key]; el.classList.toggle('on', ui[key]); if (key === 'scale' && ui[key]) { cam.z = .3; } dirty = true; }; };
+  const tog = (id, key) => { const el = document.getElementById(id); el.onclick = () => { ui[key] = !ui[key]; el.classList.toggle('on', ui[key]); if (key === 'scale' && ui[key]) { cam.z = .3; } dirtyAll(); }; };
   tog('tReg', 'reg'); tog('tZone', 'zone'); tog('tDev', 'dev'); tog('tHeat', 'heat'); tog('tScale', 'scale');
-  const fac = document.getElementById('fac'); for (const k in CFG.FACILITIES) fac.insertAdjacentHTML('beforeend', '<option value="' + k + '">' + k + ' ' + CFG.FACILITIES[k].fp.join('×') + '</option>'); fac.onchange = () => { ui.facility = fac.value; if (ui.probe) ui.probe.res = world.canBuildAt(ui.facility, ui.probe.x, ui.probe.y); dirty = true; };
+  const fac = document.getElementById('fac'); for (const k in CFG.FACILITIES) fac.insertAdjacentHTML('beforeend', '<option value="' + k + '">' + k + ' ' + CFG.FACILITIES[k].fp.join('×') + '</option>'); fac.onchange = () => { ui.facility = fac.value; if (ui.probe) ui.probe.res = world.canBuildAt(ui.facility, ui.probe.x, ui.probe.y); dirtyAll(); };
 
-  cv.addEventListener('contextlost', () => { stats.ctxLost = (stats.ctxLost || 0) + 1; }); cv.addEventListener('contextrestored', () => { dirty = true; });
+  cv.addEventListener('contextlost', () => { stats.ctxLost = (stats.ctxLost || 0) + 1; }); cv.addEventListener('contextrestored', () => { dirtyAll(); });
   // adaptive resolution: if real frames (not draw calls) are slow, the canvas resolution drops step by step (never below 0.75) so panning stays smooth on weak GPUs; it never goes up again within a session
   const ft = []; let lastT = 0; stats.dprChanges = 0;
   /* Adaptive resolution.  Slow frames (median > 38 ms over 24 drawn frames) lower the canvas resolution step by step (never below 0.75) so panning stays smooth on a weak GPU.
@@ -304,9 +322,10 @@
     if (moved) { mvLast = now; if (!restDpr && DPR >= 1.75) { restDpr = DPR; DPR = restDpr * 0.75; resize(); } }
     else if (restDpr && now - mvLast > 200) { if (DPR < restDpr) { DPR = restDpr; resize(); } restDpr = 0; }
   }
-  function loop(now) { adapt(now); motion(now); const fi = now - prevRaf; prevRaf = now; if (dirty && fi < 10 && now - lastDrawAt < 15) { requestAnimationFrame(loop); return; }      /* a 120 Hz screen: the map is drawn at most ~60 times a second (half the work and heat, same look) */
+  stats.rafs = 0;
+  function loop(now) { stats.rafs++; adapt(now); motion(now); const fi = now - prevRaf; prevRaf = now; if (dirty && fi < 10 && now - lastDrawAt < 15) { requestAnimationFrame(loop); return; }      /* a 120 Hz screen: the map is drawn at most ~60 times a second (half the work and heat, same look) */
     if (dirty) { lastDrawAt = now; const t = performance.now(); draw(); stats.lastDraw = performance.now() - t; stats.draws = (stats.draws | 0) + 1; stats.drawMs = (stats.drawMs || 0) + stats.lastDraw; } requestAnimationFrame(loop); }
-  window.__wp = { skin, hooks, ctx, bounds, markDirty: () => { dirty = true; }, VW: () => VW, VH: () => VH, dpr: () => DPR, setDpr(v) { DPR = v; resize(); }, world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirty = true; }, tap, level, ready: () => stats.imgs, genLeft: () => (demoDone && !ovQueue.length ? 0 : 1) + (busy.img || busy.reg ? 1 : 0), idle: () => pendingJobs() === 0 && demoDone, pending: pendingJobs, draw, toTile, sx, sy, hiLeft: () => missingHi };
+  window.__wp = { skin, hooks, ctx, bounds, markDirty: k => { if (k === 'sim') dirty = true; else dirtyAll(); }, frames: () => stats.rafs, VW: () => VW, VH: () => VH, dpr: () => DPR, setDpr(v) { DPR = v; resize(); }, world, cam, ui, stats, setLevel, goto(x, y, z) { cam.x = x; cam.y = y; if (z) cam.z = clampZ(z); keepIn(); dirtyAll(); }, tap, level, ready: () => stats.imgs, genLeft: () => (demoDone && !ovQueue.length ? 0 : 1) + (busy.img || busy.reg ? 1 : 0), idle: () => pendingJobs() === 0 && demoDone, pending: pendingJobs, draw, toTile, sx, sy, hiLeft: () => missingHi };
   const sp = qs.get('x'); if (sp) { cam.x = +qs.get('x'); cam.y = +qs.get('y'); cam.z = clampZ(+qs.get('z') || .9); }
   if (qs.get('dev')) { ui.dev = true; document.getElementById('tDev').classList.add('on'); }
   if (qs.get('scale')) { ui.scale = true; document.getElementById('tScale').classList.add('on'); }

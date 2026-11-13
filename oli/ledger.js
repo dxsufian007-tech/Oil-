@@ -51,6 +51,8 @@
     EXP_STORAGE: ['exp', 'Storage'],
     EXP_RSTORAGE: ['exp', 'Strategic Reserve · storage'],
     EXP_ROPS: ['exp', 'Strategic Reserve · operation'],
+    EXP_CMAINT: ['exp', 'Central network · maintenance'],
+    EXP_COPS: ['exp', 'Central network · operation'],
     EXP_INSURANCE: ['exp', 'Insurance'],
     EXP_ADMIN: ['exp', 'Administration'],
     EXP_INFRA: ['exp', 'Pipeline upkeep'],

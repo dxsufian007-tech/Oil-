@@ -12,10 +12,16 @@
   else root.OliIndustry = factory(root.OliBuildings, root.OliBuildingConfig);
 })(typeof self !== 'undefined' ? self : this, function (B, CFG) {
   'use strict';
+  const CEN = typeof OliCentral !== 'undefined' ? OliCentral : (typeof require === 'function' ? require('./central.js') : null);           // the Central Hybrid Network (central.js)
   const { DEFS, key } = B, P = CFG.PRODUCTS, SAFE = CFG.SAFETY, SIM = CFG.SIM, ANY = '*';
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const hash = (a, b, c) => { let h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
   const lerp = (a, b, t) => a + (b - a) * t;
+  /* perf: per building type, the port lists the simulator asks for on every pass (they never change: a def is frozen) */
+  const DC = new Map(); const dcOf = def => { let c = DC.get(def.id); if (c) return c; const byId = new Map(); for (const z of def.connections) byId.set(z.id, z);
+    c = { byId, ids: def.connections.map(z => z.id), outs: def.connections.filter(z => z.role === 'out').map(z => z.id), notIn: def.connections.filter(z => z.role !== 'in').map(z => z.id), notInExcept: new Map(),
+      tankOuts: def.connections.filter(z => z.role === 'out' && z.id !== 'WATER_OUT').map(z => z.id) }; DC.set(def.id, c); return c; };
+  const notInExcept = (def, port) => { const c = dcOf(def); let a = c.notInExcept.get(port); if (!a) { a = c.notIn.filter(id => id !== port); c.notInExcept.set(port, a); } return a; };
   const eco = b => (b.s && b.s.ecoEff != null) ? b.s.ecoEff : 1;       // Phase 3 hook: the economy layer (power, condition, crude quality) writes b.s.ecoEff; 1 = unchanged Phase 2 behaviour
 
   /* ------------------------------------------------------------ well profile: deterministic from the position, so a saved game and a fresh game agree */
@@ -37,17 +43,18 @@
   /* ------------------------------------------------------------ pipelines */
   const pk = (b, port) => b + ':' + port;
   class PipeNet extends Set {                                       // a Set of tile keys (so the Phase 2 link helpers keep working) + the explicit lines
-    constructor(W) { super(); this.W = W; this.lines = new Map(); this.at = new Map(); this.nextId = 1; this.nextConn = 1; this.rev = 0; }
+    constructor(W) { super(); this.W = W; this.lines = new Map(); this.at = new Map(); this.nextId = 1; this.nextConn = 1; this.rev = 0; this.central = null; }
     lay(line) { const id = line.id != null && !this.lines.has(line.id) ? line.id : this.nextId++; if (id >= this.nextId) this.nextId = id + 1; const L = Object.assign({ flow: 0 }, line, { id }); this.lines.set(id, L); for (const [x, y] of L.path) { const k = key(this.W, x, y); this.add(k); this.at.set(k, id); } this.rev++; return L; }
     remove(id) { const L = this.lines.get(id); if (!L) return false; for (const [x, y] of L.path) { const k = key(this.W, x, y); this.delete(k); this.at.delete(k); } this.lines.delete(id); this.rev++; return true; }
     /* change the tiles of an existing line IN PLACE (same id, ports, product, diameter, open flag, flow): the tiles it leaves are freed, the new ones taken */
     setPath(id, path) { const L = this.lines.get(id); if (!L) return false; for (const [x, y] of L.path) { const k = key(this.W, x, y); if (this.at.get(k) === id) { this.delete(k); this.at.delete(k); } } L.path = path; for (const [x, y] of path) { const k = key(this.W, x, y); this.add(k); this.at.set(k, id); } this.rev++; return true; }
     lineAt(x, y) { const id = this.at.get(key(this.W, x, y)); return id ? this.lines.get(id) : null; }
-    productAt(x, y) { const L = this.lineAt(x, y); return L ? L.product : null; }
+    productAt(x, y) { const L = this.lineAt(x, y); if (L) return L.product; return this.centralAt(x, y) ? 'CENTRAL' : null; }
+    centralAt(x, y) { const c = this.central; return !!c && c.cen.has(c.key(x, y)); }                  // a tile of the Central Hybrid Network (central.js): never an old pipe, never free ground
     /* backward compatible view: Phase C pipes carry no product, so every legacy tile is CRUDE with the default diameter */
     static legacyView(tiles, W) { const n = new PipeNet(W); for (const k of tiles) { n.add(k); } n.legacy = true; n.legacyProduct = P.CRUDE; return n; }
-    toJSON() { return { v: 1, next: this.nextId, nc: this.nextConn, lines: [...this.lines.values()].map(L => { const o = { id: L.id, a: L.a, b: L.b, path: L.path, product: L.product, dia: L.dia }; if (L.conn) o.conn = L.conn; if (L.open === false) o.open = false; return o; }) }; }
-    static fromJSON(W, d) { const n = new PipeNet(W); if (!d || !Array.isArray(d.lines)) return n; for (const L of d.lines) { if (!Array.isArray(L.path) || !L.path.length) continue; { const X = { a: L.a, b: L.b, path: L.path, product: L.product || ANY, dia: CFG.PIPES[L.dia] ? L.dia : (L.dia === 24 ? 36 : CFG.PIPE_DEFAULT) }; if (L.conn) X.conn = L.conn; if (L.open === false) X.open = false; n.lay(X); } } n.nextConn = Math.max(d.nc | 0, 1, ...[...n.lines.values()].map(L => (L.conn | 0) + 1)); return n; }
+    toJSON() { const o = { v: 1, next: this.nextId, nc: this.nextConn, lines: [...this.lines.values()].map(L => { const o = { id: L.id, a: L.a, b: L.b, path: L.path, product: L.product, dia: L.dia }; if (L.conn) o.conn = L.conn; if (L.open === false) o.open = false; return o; }) }; if (this.central) o.central = this.central.toJSON(); return o; }
+    static fromJSON(W, d) { const n = new PipeNet(W); if (d && d.central && CEN) n.central = CEN.CentralNet.fromJSON(W, d.central); if (!d || !Array.isArray(d.lines)) return n; for (const L of d.lines) { if (!Array.isArray(L.path) || !L.path.length) continue; { const X = { a: L.a, b: L.b, path: L.path, product: L.product || ANY, dia: CFG.PIPES[L.dia] ? L.dia : (L.dia === 24 ? 36 : CFG.PIPE_DEFAULT) }; if (L.conn) X.conn = L.conn; if (L.open === false) X.open = false; n.lay(X); } } n.nextConn = Math.max(d.nc | 0, 1, ...[...n.lines.values()].map(L => (L.conn | 0) + 1)); return n; }
   }
   const lineSpec = L => { const s = CFG.PIPES[L.dia] || CFG.PIPES[CFG.PIPE_DEFAULT]; return { length: L.path.length * CFG.TILE_METERS, capacity: s.capacity, maxPressure: s.maxPressure }; };
 
@@ -71,7 +78,7 @@
     opts = opts || {}; const W = store.W, margin = opts.margin || 14, x0 = Math.min(from[0], to[0]) - margin, x1 = Math.max(from[0], to[0]) + margin, y0 = Math.min(from[1], to[1]) - margin, y1 = Math.max(from[1], to[1]) + margin;
     const own = opts.own || new Set(), acc = new Set(); for (const o of store.query(x0, y0, x1, y1)) for (const p of B.worldPoints(o)) if (p.kind === 'pipe' && !p.reserved) acc.add(key(W, p.ax, p.ay)); const okTile = (x, y, end) => {
       if (x < 0 || y < 0 || x >= W || y >= store.H) return false; if (opts.block && opts.block.has(key(W, x, y))) return false; const t = ts.tile(x, y); if (!t) return false; { const td = ts.terrain[t.terrain]; if (!td || !(td.buildable || (opts.allowSea && td.offshore))) return false; } if (store.at(x, y)) return false;
-      { const ln = net.lineAt(x, y); if (ln && ln.id !== opts.ignoreLine) return false; } if (!end && acc.has(key(W, x, y))) return false; return true; };
+      { const ln = net.lineAt(x, y); if (ln && ln.id !== opts.ignoreLine) return false; } if (net.centralAt(x, y)) return false; if (!end && acc.has(key(W, x, y))) return false; return true; };
     if (!okTile(from[0], from[1], true) || !okTile(to[0], to[1], true)) return null;
     const idx = (x, y) => (y - y0) * (x1 - x0 + 1) + (x - x0), prev = new Map(), q = [from], seen = new Set([idx(from[0], from[1])]); let head = 0, guard = 0;
     while (head < q.length && guard++ < (opts.guard || 60000)) {
@@ -174,7 +181,7 @@
   }
   const REASON_RANK = { cash: 5, noRoute: 4, portTaken: 3, invalidProduct: 2, portRoles: 1, noPort: 0 };
   function planDirection(store, net, ts, src, dst, o) {
-    const pairs = []; for (const pa of portsOf(src)) if (canSend(pa)) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product) && !B.refuses(pa, pb) && !B.refuses(pb, pa)) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
+    const pairs = [], skip = o.skipProducts || null; for (const pa of portsOf(src)) if (canSend(pa) && !(skip && skip.has(pa.product))) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product) && !B.refuses(pa, pb) && !B.refuses(pb, pa)) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
     if (!pairs.length) return { natural: true };
     const sp = (b, free) => q => { if (portTaken(net, { b: b.id, port: q.id })) return 0; const nb = portsOf(b).filter(z => z.id !== q.id && z.side === q.side && z.role === q.role && z.group === q.group && Math.abs(z.ax - q.ax) + Math.abs(z.ay - q.ay) === 1 && !portTaken(net, { b: b.id, port: z.id })); return nb.length >= 2 ? 1 : 0; };    // a port in the MIDDLE of a run of free ports would wall the others in: take the ends of the run first
     const spS = sp(src), spD = sp(dst); for (const q of pairs) q.k = q.d + 1000 * (spS(q.pa) + spD(q.pb)) + (((q.pa.product === 'WATER') !== (q.pb.product === 'WATER') && (q.pa.product === '*' || q.pb.product === '*')) ? 100000 : 0); pairs.sort((x, y) => x.k - y.k); const fm = o.dia ? null : flowModel(store, net), diaFor = q => o.dia || sizeFor(fm.newLine(src, q.pa.id, dst)); let best = null, worst = null, tried = 0;       // auto-connect never PREFERS a water port on a generic (oil) port; it is still allowed when nothing else exists (water tank <-> junction / valve)
@@ -198,8 +205,14 @@
     const saveNext = net.nextId, saveRev = net.rev, laid = [];
     try {
       for (const [src, dst, dir] of specs) {
-        if (reaches(store, net, src.id, dst.id)) { res.notes.push({ dir, reason: 'exists', from: src.id, to: dst.id }); continue; }      // never a second line for the same direction
-        const r = planDirection(store, net, ts, src, dst, o);
+        let oo = o;
+        if (reaches(store, net, src.id, dst.id)) {      // never a second line for the same direction AND the same product; a multi-product outlet (refinery, separator) may add a line for a product it does not send there yet
+          const have = new Set(); for (const L of net.lines.values()) if (L.a && L.b && L.a.b === src.id && L.b.b === dst.id) have.add(L.product);
+          const more = portsOf(src).some(pa => canSend(pa) && pa.product && pa.product !== ANY && !have.has(pa.product) && !portTaken(net, { b: src.id, port: pa.id }) && portsOf(dst).some(pb => canTake(pb) && pb.product === pa.product && !portTaken(net, { b: dst.id, port: pb.id })));
+          if (!more || have.has(ANY)) { res.notes.push({ dir, reason: 'exists', from: src.id, to: dst.id }); continue; }
+          oo = Object.assign({}, o, { skipProducts: have });
+        }
+        const r = planDirection(store, net, ts, src, dst, oo);
         if (r.plan) { const v = r.plan, L = net.lay({ a: v.a, b: v.b, path: v.path, product: v.product, dia: v.dia }); laid.push(L.id); res.lines.push({ dir, from: src.id, to: dst.id, a: v.a, b: v.b, path: v.path, product: v.product, dia: v.dia, cost: v.cost, length: v.length, warn: r.warn }); res.cost += v.cost; res.length += v.length; if (r.warn) res.notes.push(Object.assign({ dir }, r.warn)); }
         else if (r.natural) res.notes.push({ dir, reason: 'oneWay', from: src.id, to: dst.id }); else res.problems.push(Object.assign({ dir, from: src.id, to: dst.id }, r.fail));
       }
@@ -221,7 +234,9 @@
   }
   function commitPlan(store, net, v, o) {                                                    // lay a plan that planDirs() returned (paths are already routed around each other, in the same order)
     o = o || {}; if (!v.lines.length) return v; if (!v.ok && !(o.allowOneWay && v.partial)) return v; if (store.cash < v.cost && !o.ignoreCash) return Object.assign({}, v, { ok: false, state: 'UNAFFORDABLE', reason: 'cash' });
-    const conn = net.nextConn++, made = [], closeBack = v.lines.length === 2 || (v.notes || []).some(n => n.reason === 'exists' && n.dir === 'ab');
+    const conn = net.nextConn++, made = [], same = (p, q) => p === q || p === ANY || q === ANY, ab = v.lines.find(l => l.dir === 'ab'), ba = v.lines.find(l => l.dir === 'ba');
+    /* two lines between the same pair are a "return pair" (closed back valve, else the oil sloshes back and forth) ONLY when they carry the same product: a refinery's crude feed from a station and its gasoline outlet to it are two different jobs and both run */
+    const closeBack = (ab && ba && same(ab.product, ba.product)) || (ba && !ab && (v.notes || []).some(n => n.reason === 'exists' && n.dir === 'ab') && [...net.lines.values()].some(L => L.a && L.b && L.a.b === ba.b.b && L.b.b === ba.a.b && same(L.product, ba.product)));
     for (const l of v.lines) { const L = net.lay({ a: l.a, b: l.b, path: l.path, product: l.product, dia: l.dia, conn }); if (l.dir === 'ba' && closeBack) L.open = false; made.push(L); }      // two lines are built, ONE runs: the return line is ready but its valve is closed (open both and the oil only sloshes back and forth)
     net.rev++;
     if (store.cash !== Infinity) store.cash -= v.cost; return Object.assign({}, v, { ok: true, state: 'BUILT', conn, made });
@@ -312,7 +327,7 @@
   }
 
   /* ------------------------------------------------------------ levels, safety helpers */
-  const levelOf = b => Object.assign({ level: 1, capacityMultiplier: 1, efficiencyMultiplier: 1, pressureMultiplier: 1, maintenanceMultiplier: 1 }, CFG.LEVELS[b.lv || 1]);
+  const LV_CACHE = new Map(), levelOf = b => { const k = b.lv || 1; let v = LV_CACHE.get(k); if (!v) { v = Object.freeze(Object.assign({ level: 1, capacityMultiplier: 1, efficiencyMultiplier: 1, pressureMultiplier: 1, maintenanceMultiplier: 1 }, CFG.LEVELS[k])); LV_CACHE.set(k, v); } return v; };      // perf: one frozen object per level (it was a new object on every call, thousands of times per game hour); the values are the same
   function tankLevel(fill) { return fill <= 0.0005 ? 'EMPTY' : fill < SAFE.tankLow ? 'LOW' : fill < SAFE.tankHigh ? 'NORMAL' : fill < SAFE.tankNearFull ? 'HIGH' : fill < SAFE.tankFull - 1e-6 ? 'OVERFLOW_RISK' : 'FULL'; }
   function gasSafety(fill, pressureRatio, temp) {
     if (fill >= 1 - 1e-6 || pressureRatio >= 1 || temp > SAFE.gasHighTempC + 15) return 'EMERGENCY'; if (pressureRatio >= SAFE.gasNearLimit || fill >= SAFE.gasNearLimit) return 'NEAR_LIMIT';
@@ -321,7 +336,7 @@
 
   /* ------------------------------------------------------------ the simulator */
   class Sim {
-    constructor(store, net) { this.store = store; this.net = net; this.edges = new Map(); this._el = []; this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => net.productAt(x, y); }
+    constructor(store, net) { this.store = store; this.net = net; this._cv = 0; this._fxr = null; this.edges = new Map(); this._el = []; this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => this.net.productAt(x, y); store.cenAt = (x, y) => this.net.centralAt(x, y); }
 
     /* ---- state per building (kept in b.s, saved with the game) ---- */
     ensure(b) {
@@ -329,6 +344,7 @@
       if (t === 'well') { const fp = fieldProfile(this.store, b), pr = fp ? null : wellProfile(b.x, b.y); b.s = fp ? { reserve: fp.site.remainingReserve, reserve0: fp.site.initialReserve, p0: fp.p0, nominal: fp.nominal, total: 0, shared: 1 } : { reserve: pr.reserve, reserve0: pr.reserve, p0: pr.pressure, nominal: pr.production, total: 0 }; }
       else if (t === 'pump') { const c = def.params, u = hash(b.x, b.y, 7); b.s = { boost: Math.round(lerp(c.boost[0], c.boost[1], u)), eff: +lerp(c.eff[0], c.eff[1], hash(b.x, b.y, 8)).toFixed(3), total: 0 }; }
       else if (t === 'valve') b.s = { mode: 'OPEN', opening: 1 };
+      else if (t === 'central') b.s = {};
       else if (t === 'tank') b.s = { vol: 0, wat: 0, temp: SAFE.ambientC, total: 0 };
       else if (t === 'gas') b.s = { vol: 0, temp: SAFE.ambientC, total: 0 };
       else if (t === 'separator') b.s = { total: 0, slop: 0, flared: 0 };
@@ -351,7 +367,7 @@
           if (da && db && da.type === 'tank' && db.type === 'tank' && da.product === db.product && !ba.rs && !bb.rs) {      // TANK GROUP: two tanks of the same product (outside the Strategic Reserve) joined by a pair of opposite open lines: one storage unit, each tank keeps its own stock
             for (const e of es) if (e) e.int = true;
             for (const id of [ba.id, bb.id]) if (!par.has(id)) par.set(id, id); const ra = find(ba.id), rb = find(bb.id); if (ra !== rb) par.set(rb, ra); }
-          else for (const e of es) if (e) e.lvl = true;                                                       // gas / other pairs: the two sides level out (they would only pass the same oil back and forth)
+          else if (da && db && /^(tank|gas)$/.test(da.type) && /^(tank|gas)$/.test(db.type)) { for (const e of es) if (e) e.lvl = true; }      // two STORAGES (gas, reserve...) joined both ways: the two sides level out (they would only pass the same oil back and forth). A refinery, a station, a pump... is no storage: its two lines are two ordinary lines
         }
         const by = new Map(); for (const id of par.keys()) { const r = find(id); let a = by.get(r); if (!a) by.set(r, a = []); a.push(id); }
         for (const ids of by.values()) { ids.sort((x, y) => x - y); const g = { id: ids[0], members: ids }; this._groups.push(g); for (const id of ids) this._gof.set(id, g); } }
@@ -363,7 +379,7 @@
        member in proportion to the water each one holds; each tank loses exactly that much water (and the same volume of its total), nothing is moved between tanks. The rate is the pump's / pipe's own. */
     drawBottomWater(b, pool) {
       const e = this.edgeOf(b, 'WATER_OUT'); if (!e || e.int) return; const dt = this.dt; let tot = 0; for (const m of pool) tot += Math.max(0, Math.min(m.s.vol, m.s.wat || 0)); if (tot <= 1e-6) return;
-      const acc = this.offer(b, 'WATER_OUT', { prod: P.WATER, r: tot / dt, oil: 0, gas: 0, wat: 0, p: SIM.tankHeadPsi }, true, new Set([b.id])); b.s._wout = (b.s._wout || 0) + acc; if (acc <= 1e-12) return;
+      this._cv++; const acc = this.offer(b, 'WATER_OUT', { prod: P.WATER, r: tot / dt, oil: 0, gas: 0, wat: 0, p: SIM.tankHeadPsi }, true, new Set([b.id])); b.s._wout = (b.s._wout || 0) + acc; if (acc <= 1e-12) return;
       const removed = Math.min(tot, acc * dt); for (const m of pool) { const st = m.s, w = Math.max(0, Math.min(st.vol, st.wat || 0)); if (w <= 0) continue; const q = removed * w / tot; st.wat = Math.max(0, (st.wat || 0) - q); st.vol = Math.max(0, st.vol - q); }
     }
     /* The DRAW of a tank group. Every outlet of every member (pump, pipe...) is served from the pooled stock, one after the other within the step, so two pumps share the same oil and nothing is drawn twice.
@@ -375,7 +391,7 @@
         const def = DEFS[b.d], ports = def.connections.filter(c => c.role === 'out' && c.id !== 'WATER_OUT' && this.edgeOf(b, c.id) && !this.edgeOf(b, c.id).int).map(c => c.id); if (!ports.length) continue;
         let pool = 0, wat = 0, bv = 0; for (const m of ms) { const st = m.s; pool += st.vol; wat += st.wat || 0; bv += st.bv || 0; } if (pool <= 1e-6) break;
         const cap = def.capacity.value * levelOf(b).capacityMultiplier, wf = def.product === P.CRUDE ? Math.min(1, wat / pool) : 0, bf = def.product === P.CRUDE ? clamp(bv / pool, 0, 1) : 0, r = Math.min(pool / dt, cap * .5);
-        const acc = this.split(b, ports, { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, p: SIM.tankHeadPsi }, true, new Set([b.id])); b.s._out = (b.s._out || 0) + acc; if (acc <= 1e-12) continue;
+        this._cv++; const acc = this.split(b, ports, { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, p: SIM.tankHeadPsi }, true, new Set([b.id])); b.s._out = (b.s._out || 0) + acc; if (acc <= 1e-12) continue;
         const removed = Math.min(pool, acc * dt);
         for (const m of ms) { const st = m.s; if (st.vol <= 0) continue; const q = Math.min(st.vol, removed * st.vol / pool), w = st.vol > 0 ? (st.wat || 0) / st.vol : 0, k = st.vol > 0 ? (st.bv || 0) / st.vol : 0; st.wat = Math.max(0, (st.wat || 0) - q * w); if (st.bv) st.bv = Math.max(0, st.bv - q * k); st.vol = Math.max(0, st.vol - q); }
       }
@@ -389,17 +405,17 @@
     }
     dirty() { return this.builtRev !== (this.store.rev | 0) * 100000 + this.net.rev; }
     edgeOf(b, port) { const m = this._eb && this._eb.get(b.id); return m ? (m[port] || null) : null; }
-    other(e, b, port) { return e.a === pk(b.id, port) ? { b: this.store.get(e.bb), port: e.bp } : { b: this.store.get(e.ab), port: e.ap }; }
+    other(e, b, port) { return e.ab === b.id && e.ap === port ? { b: this.store.get(e.bb), port: e.bp } : { b: this.store.get(e.ab), port: e.ap }; }      // perf: the same test as e.a === b.id + ':' + port, without building the string
 
     /* offer a flow into the pipeline attached to (b, port); returns the accepted rate. Pressure falls along the line, capacity limits the rate. */
     offer(b, port, f, commit, vis) {
-      if (f.r <= 1e-9) return 0; const e = this.edgeOf(b, port); if (!e) return 0; const far = this.other(e, b, port); if (!far.b) return 0;
+      if (f.r <= 1e-9) return 0; const e = this.edgeOf(b, port); if (!e) return 0; const fw = e.ab === b.id && e.ap === port, farB = this.store.get(fw ? e.bb : e.ab), farP = fw ? e.bp : e.ap; if (!farB) return 0;      // perf: the far end without a new object per call (same test as other())
       if (e.int) return 0;                                                  // a link INSIDE a tank group: no oil is pushed through it (the group draws and fills as one unit)
       const room = e.cap - e.flow; let r = Math.min(f.r, room);
-      if (e.lvl && f.sv != null) { const fs = this.ensure(far.b), fd = DEFS[far.b.d], fc = fd.capacity.value * levelOf(far.b).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
+      if (e.lvl && f.sv != null && this.ensure(farB).vol != null) { const fs = this.ensure(farB), fd = DEFS[farB.d], fc = fd.capacity.value * levelOf(farB).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
       const ratio = r / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * (e.line && CFG.PIPES[e.line.dia] ? CFG.PIPES[e.line.dia].fric : 1); let p = f.p - loss;
       if (p < 0) { r *= Math.max(0, f.p / (loss || 1)); p = 0; if (commit) e.lowP = true; }
-      if (r <= 1e-9) return 0; const acc = this.accept(far.b, far.port, Object.assign({}, f, { r, p }), commit, vis);
+      if (r <= 1e-9) return 0; const acc = this.accept(farB, farP, { ...f, r, p }, commit, vis);
       if (commit && acc > 0) { e.flow += acc; e.p = p; e.prod = f.prod; if (e.line) e.line.flow = e.flow; if (p > e.maxP) e.hiP = true; }
       return acc;
     }
@@ -408,14 +424,14 @@
       const outs = ports.filter(pid => this.edgeOf(b, pid)); if (!outs.length) return 0;
       if (outs.length === 1) return this.offer(b, outs[0], f, commit, vis);
       const probe = outs.map(pid => ({ pid, can: this.offer(b, pid, f, false, vis) })).sort((x, y) => x.can - y.can); let remain = f.r, left = probe.length, total = 0;
-      for (const o of probe) { const take = Math.min(o.can, remain / left); remain -= take; left--; if (take > 1e-9) total += commit ? this.offer(b, o.pid, Object.assign({}, f, { r: take }), true, vis) : take; }
+      for (const o of probe) { const take = Math.min(o.can, remain / left); remain -= take; left--; if (take > 1e-9) total += commit ? this.offer(b, o.pid, { ...f, r: take }, true, vis) : take; }
       return total;
     }
     ok(b) { return b.st === 'OPERATIONAL'; }
 
     /* the device on the receiving end of a pipeline */
     accept(b, port, f, commit, vis) {
-      const def = DEFS[b.d], s = this.ensure(b), dt = this.dt, c = def.connections.find(z => z.id === port); if (!c || (c.role === 'out') || !this.ok(b)) return 0;
+      const def = DEFS[b.d], s = this.ensure(b), dt = this.dt, c = dcOf(def).byId.get(port); if (!c || (c.role === 'out') || !this.ok(b)) return 0;
       if (c.product !== ANY && c.product !== f.prod) { if (commit) s._badProduct = true; return 0; }
       vis = vis || new Set(); if (vis.has(b.id)) return 0; vis.add(b.id); let acc = 0;
       try {
@@ -432,32 +448,33 @@
             break;
           }
           case 'pump': {
-            const c0 = def.params, cap = c0.maxFlow * levelOf(b).capacityMultiplier; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;
+            const c0 = def.params, cap = c0.maxFlow * levelOf(b).capacityMultiplier; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p; if (this._fxr) this._fxr.push(s, 0, f.p);
             if (f.p < c0.minInletPsi) { if (commit) { s._lowIn = true; } break; }
-            const room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; const boost = s.boost * levelOf(b).pressureMultiplier * s.eff * levelOf(b).efficiencyMultiplier * eco(b); const outs = def.connections.filter(z => z.role === 'out').map(z => z.id), ff = Object.assign({}, f, { r: Math.min(f.r, room), p: f.p + boost }); acc = outs.length > 1 ? this.split(b, outs, ff, commit, vis) : this.offer(b, outs[0] || 'OUTPUT', ff, commit, vis);
+            const room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; const boost = s.boost * levelOf(b).pressureMultiplier * s.eff * levelOf(b).efficiencyMultiplier * eco(b); const outs = dcOf(def).outs, ff = { ...f, r: Math.min(f.r, room), p: f.p + boost }; acc = outs.length > 1 ? this.split(b, outs, ff, commit, vis) : this.offer(b, outs[0] || 'OUTPUT', ff, commit, vis);
             if (commit && acc > 0) { s._in = (s._in || 0) + acc; s.pOut = f.p + boost; }
             break;
           }
           case 'valve': {
             const mode = s.mode, open = mode === 'OPEN' ? 1 : mode === 'PARTIAL' ? s.opening : 0; s._off = Math.max(s._off || 0, f.r); if (open <= 0) { if (commit) s._shut = true; break; }
-            const lossP = 1 + 80 * Math.pow(1 - open, 2); acc = this.offer(b, 'OUT', Object.assign({}, f, { r: Math.min(f.r, def.params.maxFlow * open), p: f.p - lossP }), commit, vis);
+            const lossP = 1 + 80 * Math.pow(1 - open, 2); acc = this.offer(b, 'OUT', { ...f, r: Math.min(f.r, def.params.maxFlow * open), p: f.p - lossP }, commit, vis);
             if (commit && acc > 0) { s._in = (s._in || 0) + acc; }
             break;
           }
           case 'junction': {
-            const cap = def.params.maxTotalFlow, room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); const outs = def.connections.filter(z => z.role !== 'in').map(z => z.id).filter(id => id !== port);
-            acc = this.split(b, outs, Object.assign({}, f, { r: Math.min(f.r, room), p: f.p - 1 }), commit, vis); if (commit && acc > 0) { s._in = (s._in || 0) + acc; if (f.p > def.params.pressureLimit) s._hiP = true; }
+            const cap = def.params.maxTotalFlow, room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); const outs = notInExcept(def, port);
+            acc = this.split(b, outs, { ...f, r: Math.min(f.r, room), p: f.p - 1 }, commit, vis); if (commit && acc > 0) { s._in = (s._in || 0) + acc; if (f.p > def.params.pressureLimit) s._hiP = true; }
             break;
           }
+          case 'central': { const cn = this.net.central, st = cn && cn.stOf(b.id); if (!st) break; s._off = Math.max(s._off || 0, f.r); acc = cn.deliver(this, st, CEN.CH_OF_PORT[port], f, commit, vis, port); if (commit && acc > 0) { s._in = (s._in || 0) + acc; (s._ch = s._ch || {})[CEN.CH_OF_PORT[port]] = ((s._ch || {})[CEN.CH_OF_PORT[port]] || 0) + acc; } break; }
           case 'separator': acc = this.separate(b, s, def, f, commit, vis); break;
           case 'refinery': acc = this.refine(b, s, def, f, commit, vis); break;
         }
-      } finally { vis.delete(b.id); }
+      } finally { vis.delete(b.id); if (commit && acc > 0) this._cv++; }
       return acc;
     }
     portState(b, id) { const e = this.edgeOf(b, id); return e ? 'connected' : 'none'; }
     separate(b, s, def, f, commit, vis) {
-      const C = def.params, L = levelOf(b), cap = C.cap * L.capacityMultiplier, room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;
+      const C = def.params, L = levelOf(b), cap = C.cap * L.capacityMultiplier, room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p; if (this._fxr) this._fxr.push(s, 0, f.p);
       if (f.p < C.minInletPsi) { if (commit) s._lowIn = true; return 0; }
       const fo = f.oil == null ? 1 : f.oil, fg = f.gas || 0, fw = f.wat || 0, k = L.efficiencyMultiplier * (0.85 + 0.15 * b.c) * eco(b), eO = Math.min(1, C.oilSep * k), eG = Math.min(1, C.gasSep * k), eW = Math.min(1, C.waterSep * k);
       let r = Math.min(f.r, room); if (r <= 1e-9) return 0;
@@ -477,7 +494,7 @@
     }
     capOf(b) { return DEFS[b.d].params.cap * levelOf(b).capacityMultiplier; }                  // the refinery's throughput ceiling (bbl/day), used by the economy to gate it on materials
     refine(b, s, def, f, commit, vis) {
-      const C = def.params, R = CFG.REFINERY, L = levelOf(b), cap = C.cap * L.capacityMultiplier, lim = Math.min(clamp(s.opLimit, 0, 1), s.matLim == null ? 1 : clamp(s.matLim, 0, 1)); s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;   // the player's throttle and the material limit (set by the economy), whichever is lower
+      const C = def.params, R = CFG.REFINERY, L = levelOf(b), cap = C.cap * L.capacityMultiplier, lim = Math.min(clamp(s.opLimit, 0, 1), s.matLim == null ? 1 : clamp(s.matLim, 0, 1)); s._off = Math.max(s._off || 0, f.r); s.pIn = f.p; if (this._fxr) this._fxr.push(s, 0, f.p);   // the player's throttle and the material limit (set by the economy), whichever is lower
       const util = clamp(lim, 0, 1), water = f.wat || 0, gas = f.gas || 0, quality = clamp(1 - .6 * water - .3 * gas, 0.2, 1), temp = lerp(150, R.optimalTempC, clamp(util * 1.4, 0, 1)), tempF = temp > R.maxTempC ? .8 : 1,
         pressF = clamp(.6 + .4 * Math.min(1, f.p / R.minInletPsi), .6, 1), utilF = .85 + .15 * Math.min(1, util / .6), maintF = .7 + .3 * b.c, eff = clamp(R.baseEfficiency * quality * tempF * pressF * utilF * maintF * L.efficiencyMultiplier * eco(b), 0, 1);
       // three separate things: the yield (R.yields, the recipe), the efficiency (eff: the share of nameplate capacity the plant can process in its current state; it limits the crude accepted, the rest stays in the feed/tank) and the physical loss (R.physicalLoss, a separate, calibrated fraction of what is processed). Efficiency is never booked as a loss.
@@ -486,7 +503,7 @@
       const outs = [['GASOLINE', 'GASOLINE_OUT', P.GASOLINE], ['DIESEL', 'DIESEL_OUT', P.DIESEL], ['JET_FUEL', 'JET_OUT', P.JET_FUEL], ['GAS', 'GAS_OUT', P.GAS]];
       let connected = 0; for (const [, port] of outs) if (this.edgeOf(b, port)) connected++; if (!connected) { if (commit) s._noOut = true; return 0; }
       let th = 1; const pOut = Math.max(20, f.p * .6);
-      for (const [y, port, prod] of outs) { if (!this.edgeOf(b, port)) continue; const want = thr * R.yields[y] / 100 * passF; if (want > 0) th = Math.min(th, this.offer(b, port, { prod, r: want, p: pOut }, false, vis) / want); }
+      for (const [y, port, prod] of outs) { if (!this.edgeOf(b, port)) continue; const want = thr * R.yields[y] / 100 * passF; if (want > 0) { const t1 = this.offer(b, port, { prod, r: want, p: pOut }, false, vis) / want; if (t1 <= 1e-9) { s._blk = true; s._blkPort = port; if (this._fxr) this._fxr.push(s, 1, port); } th = Math.min(th, t1); } }      // _blk / _blkPort: which connected outlet takes nothing (a full tank, a channel with no receiver): the panel says THAT instead of "no oil reaches it"
       if (th <= 1e-9) { if (commit) s._blocked = true; return 0; }
       thr *= th; const consumed = thr;   // the crude actually taken from the feed (all of it is processed; efficiency limited how much was accepted)
       if (commit) {
@@ -498,12 +515,17 @@
     }
 
     /* ---- one step of dt days ---- */
-    step(dt) {
-      if (this.dirty()) this.build(); this.dt = dt = Math.max(1e-6, dt); const store = this.store; this.time += dt;
-      for (const e of this._el) { e.flow = 0; e.over = false; e.lowP = false; e.hiP = false; }
-      const items = store.list(); for (const b of items) { const s = this.ensure(b); for (const k in s) if (k.charCodeAt(0) === 95) delete s[k]; const ty = DEFS[b.d].type; if (ty === 'pump' || ty === 'separator' || ty === 'refinery') { s.pIn = 0; if (ty === 'pump') s.pOut = 0; } }
+    /* One simulator step.  step(dt) runs it in one go; stepGen(dt) is the SAME code as a generator that can pause between buildings (every 256), so the live game can spread one
+       game hour over several frames (the push loops, where one building can move oil through a long chain, pause every 32 buildings).  A pause only stops the loop: the operations, their order and their numbers are exactly those of step(dt) (it is step(dt), run to the end).
+       Nothing else may change the game while a step is paused - the company finishes the hour (settle) before any player action, save, pause or catch-up. */
+    step(dt) { const g = this.stepGen(dt, false); g.next(); }      // one go: the generator never pauses (sl = false), a single resume runs it to the end
+    *stepGen(dt, sl) {
+      if (this.dirty()) this.build(); this.dt = dt = Math.max(1e-6, dt); const store = this.store; this.time += dt; let Y = 0; this._cv++;
+      for (const e of this._el) { if (sl && (++Y & 1023) === 0) yield; e.flow = 0; e.over = false; e.lowP = false; e.hiP = false; }
+      const items = store.list(); for (const b of items) { if (sl && (++Y & 255) === 0) yield; const s = this.ensure(b); for (const k in s) if (k.charCodeAt(0) === 95 && s[k] !== undefined) s[k] = undefined;      /* perf: the per-step values (_in, _out, ...) are cleared to undefined instead of deleted: same reads, same save (JSON drops undefined), but the objects keep a fast shape */ const ty = DEFS[b.d].type; if (ty === 'pump' || ty === 'separator' || ty === 'refinery') { s.pIn = 0; if (ty === 'pump') s.pOut = 0; } }
+      const cn = this.net.central; if (cn) cn.begin(dt);
       const fieldGroups = new Map(), sharedWells = [];
-      for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
+      for (const b of items) { if (sl && (++Y & 31) === 0) yield; if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
         if (def.type === 'well') {
           const fp = (s.shared || b.field) ? fieldProfile(store, b) : null, site = fp ? fp.site : null;
           if (fp && !s.shared) { s.shared = 1; s.nominal = fp.nominal; s.p0 = fp.p0; s.reserve0 = site.initialReserve; }       // a well of an older save: from now on it draws from its field
@@ -516,30 +538,31 @@
             let g = fieldGroups.get(site.id); if (!g) { g = { need: 0, cap: site.props.capacity * (.4 + .6 * prr), rate: site.remainingReserve / dt }; fieldGroups.set(site.id, g); for (const o of items) { if (o.field !== site.id || DEFS[o.d].type !== 'well' || !this.ok(o)) continue; const os = this.ensure(o), or = site.pr != null ? site.pr : (site.initialReserve ? site.remainingReserve / site.initialReserve : 0); g.need += os.nominal * (.4 + .6 * or) * levelOf(o).capacityMultiplier * eco(o) * (1 - wc - gas); } }
             const scale = g.need > 0 ? Math.min(1, Math.min(g.cap, g.rate) / g.need) : 1; target = target0 * scale;
           }
-          s._target = target; s._wc = wc; s._gas = gas; s._p = pr; const ports = def.connections.map(c => c.id); if (!ports.some(id => this.edgeOf(b, id))) { s._noOut = true; continue; }
-          let r = Math.min(target, s.reserve / dt / Math.max(1e-6, 1 - wc - gas)); const acc = this.split(b, ports, { prod: P.CRUDE, r, oil: 1 - wc - gas, gas, wat: wc, p: pr }, true, new Set([b.id]));
+          s._target = target; s._wc = wc; s._gas = gas; s._p = pr; const ports = dcOf(def).ids; if (!ports.some(id => this.edgeOf(b, id))) { s._noOut = true; continue; }
+          let r = Math.min(target, s.reserve / dt / Math.max(1e-6, 1 - wc - gas)); this._cv++; const acc = this.split(b, ports, { prod: P.CRUDE, r, oil: 1 - wc - gas, gas, wat: wc, p: pr }, true, new Set([b.id]));
           const oil = acc * dt * (1 - wc - gas); s._out = acc; s.total += acc * dt;
           if (site) { const took = store.ts.take(site.id, oil); s.reserve = site.remainingReserve; sharedWells.push([s, site]); if (took < oil - 1e-6) s._shortfall = oil - took; }
           else { s.reserve = Math.max(0, s.reserve - oil); if (s.reserve < 0.5) s.reserve = 0; }
         }
       }
       const gdone = new Set();
-      for (const b of items) { if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
+      for (const b of items) { if (sl && (++Y & 31) === 0) yield; if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
         if (def.type === 'tank' && this._gof.has(b.id)) { const g = this._gof.get(b.id); if (!gdone.has(g)) { gdone.add(g); this.stepGroup(g, dt); } continue; }
         if (def.type === 'tank' || def.type === 'gas') {
           if (def.product === P.CRUDE) this.drawBottomWater(b, [b]);     // reserve tanks too: only the settled WATER leaves (net oil, cost and quality of the reserve are untouched)
-          const hasOut = def.connections.some(c => c.role === 'out' && c.id !== 'WATER_OUT' && this.edgeOf(b, c.id)); if (!hasOut || s.vol <= 1e-6) continue;
+          const tOuts = dcOf(def).tankOuts, hasOut = tOuts.some(id => this.edgeOf(b, id)); if (!hasOut || s.vol <= 1e-6) continue;
           if (b.rs && !(s.rel > 0)) continue;                                  // a reserve tank never lets oil out by itself: only a release the player ordered (s.rel, stage 2) opens its outlet
           const gasT = def.type === 'gas', cap = def.capacity.value * levelOf(b).capacityMultiplier;
           const maxOut = cap * .5, r = Math.min(s.vol / dt, maxOut, b.rs ? s.rel / dt : Infinity), fill = s.vol / cap, wf = def.product === P.CRUDE && s.vol > 0 ? s.wat / s.vol : 0, press = gasT ? this.gasPressure(def, fill, b) : SIM.tankHeadPsi;
           const bf = (def.product === P.CRUDE || b.rs) && s.vol > 0 ? clamp((s.bv || 0) / s.vol, 0, 1) : 0;                      // the share of the tank's oil that was bought (not produced)
-          const acc = this.split(b, def.connections.filter(c => c.role === 'out' && c.id !== 'WATER_OUT').map(c => c.id), { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, sv: s.vol, sc: cap, p: Math.max(press, SIM.tankHeadPsi) }, true, new Set([b.id])); s._out = acc;
+          this._cv++; const acc = this.split(b, tOuts, { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, sv: s.vol, sc: cap, p: Math.max(press, SIM.tankHeadPsi) }, true, new Set([b.id])); s._out = acc;
           const removed = acc * dt; s.wat = Math.max(0, s.wat - removed * wf); s.vol = Math.max(0, s.vol - removed); if (s.bv) s.bv = Math.max(0, s.bv - removed * bf);
           if (b.rs) { s.rel = Math.max(0, s.rel - removed); if (s.rel < 1e-6) s.rel = 0; s.dep = (s.dep || 0) + removed; s.depBv = (s.depBv || 0) + removed * bf; s.depW = (s.depW || 0) + removed * wf; }       // what really left a reserve tank is recorded for the books (settled once per hour by the company)
         }
       }
+      if (cn) cn.end();
       for (const [ws, st] of sharedWells) ws.reserve = st.remainingReserve;   // every well of a field shows the reserve that is left after ALL of them have produced
-      for (const b of items) { const def = DEFS[b.d], s = b.s;                                         // apply deliveries, derive display values
+      for (const b of items) { if (sl && (++Y & 255) === 0) yield; const def = DEFS[b.d], s = b.s;                                         // apply deliveries, derive display values
         if (def.type === 'tank' || def.type === 'gas') { if (s._pend) { s.vol += s._pend; s.total += s._pend; if (def.type === 'tank') s.wat += s._pw || 0; if (s._pbv) s.bv = (s.bv || 0) + s._pbv; if (b.rs) { s.arr = (s.arr || 0) + s._pend; s.arrBv = (s.arrBv || 0) + (s._pbv || 0); s.arrW = (s.arrW || 0) + (def.type === 'tank' ? s._pw || 0 : 0); } } const cap = def.capacity.value; s.vol = Math.min(s.vol, cap); if (s.bv) s.bv = Math.min(s.bv, s.vol); const fill = s.vol / cap;
           if (def.type === 'gas') { s.press = this.gasPressure(def, fill, b); s.temp = SAFE.ambientC + .08 * s.press + 8 * fill; } else s.temp = SAFE.ambientC + 6 * Math.min(1, (s._in || 0) / cap * 4); }
         if (def.type === 'refinery') { s.eff = s._eff == null ? s.eff * .8 : s._eff; s.temp = s._temp == null ? Math.max(60, s.temp - 40 * dt * 10) : s._temp; }
@@ -579,7 +602,7 @@
       if (t === 'junction') { if (s._sat) return 'OVER_CAPACITY'; if (s._hiP) return 'HIGH_PRESSURE'; return (s._in || 0) > 0 ? 'RUNNING' : 'READY'; }
       if (t === 'tank' || t === 'gas') { if (s._badProduct) return 'BLOCKED'; return ((s._in || 0) > 0 || (s._out || 0) > 0) ? 'RUNNING' : 'READY'; }
       if (t === 'separator' || t === 'refinery') {
-        if (!hasIn) return 'NO_INPUT'; if (t === 'refinery' ? !outs.some(has) : !has('OIL_OUT')) return 'NO_OUTPUT'; if (s._lowIn) return 'LOW_PRESSURE'; if (s._blocked) return 'BLOCKED';
+        if (!hasIn) return 'NO_INPUT'; if (t === 'refinery' ? !outs.some(has) : !has('OIL_OUT')) return 'NO_OUTPUT'; if (s._lowIn) return 'LOW_PRESSURE'; if (s._blocked || (s._blk && !((s._in || 0) > 0))) return 'BLOCKED';
         if (s._sat && (s._in || 0) > 0) return 'OVER_CAPACITY'; if ((s._in || 0) > 0) return (s.pIn != null && s.pIn < CFG.REFINERY.minInletPsi && t === 'refinery') ? 'LOW_PRESSURE' : 'RUNNING'; return (s._off || 0) > 0 ? ((t === 'refinery' && s.matLim != null && s.matLim <= 0 && clamp(s.opLimit, 0, 1) > 0) ? 'NO_MATERIALS' : 'NO_INPUT') : 'READY';   /* oil is offered but none is taken: with no chemicals / operating materials in stock say so, instead of "no oil reaches it" */
       }
       return 'READY';
