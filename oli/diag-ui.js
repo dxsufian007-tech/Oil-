@@ -18,18 +18,19 @@
   }
   const label = f => f.indicator ? 'مؤشر رقم ' : f.confirmed ? 'العطل رقم ' : 'تحذير رقم ', grpName = f => f.indicator ? 'مؤشرات (ليست أعطالاً: لا أثر مثبت على التدفق)' : f.confirmed ? 'الأعطال المؤكدة' : 'تحذيرات تحتاج مراجعة';
 
+  const HEAD = '<div class="nd-h"><span>فاحص الشبكة</span><span class="nd-hb"><button class="nd-m" data-nd="min" title="تصغير مع إبقاء العلامات">—</button><button class="nd-x" data-nd="close" title="إخفاء">✕</button></span></div>';
   function html(rep, st) {
-    st = st || {}; if (!rep) return '<div class="nd-h">فاحص الشبكة</div><p class="nd-p">يفحص هذا النظام الشبكة كاملة (كل الأنابيب والمنشآت وليس الجزء الظاهر على الشاشة) ويحدّد مكان كل عطل وسببه. هو للتشخيص فقط: لا يصلح شيئاً ولا يغيّر التدفق.</p><button class="nd-go" data-nd="scan">فحص الشبكة الآن</button>';
+    st = st || {}; if (!rep) return HEAD + '<div class="nd-scroll"><p class="nd-p">يفحص هذا النظام الشبكة كاملة (كل الأنابيب والمنشآت وليس الجزء الظاهر على الشاشة) ويحدّد مكان كل عطل وسببه. هو للتشخيص فقط: لا يصلح شيئاً ولا يغيّر التدفق.</p><button class="nd-go" data-nd="scan">فحص الشبكة الآن</button></div>';
     const S = rep.stats, bad = st.stale ? '<div class="nd-stale">تغيّرت الشبكة منذ آخر فحص — أعد الفحص لتحديث النتائج.</div>' : '';
     const grade = S.health >= 95 ? '#34c759' : S.health >= 75 ? '#ffd60a' : S.health >= 50 ? '#ff9500' : '#ff3b30';
-    let h = '<div class="nd-h">فاحص الشبكة <button class="nd-x" data-nd="close">✕</button></div>' + bad
+    let h = HEAD + '<div class="nd-scroll">' + bad
       + '<div class="nd-sum"><div class="nd-big" style="color:' + grade + '">' + S.health + '%<small>سلامة الشبكة</small></div><table class="nd-t">'
       + '<tr><td>العناصر المفحوصة</td><td>' + S.checked + '</td></tr><tr><td>الاتصالات السليمة</td><td>' + S.healthyConnections + ' من ' + S.connections + '</td></tr>'
       + '<tr><td>الأعطال المؤكدة</td><td style="color:#ff6b61">' + S.faults + '</td></tr><tr><td>التحذيرات</td><td style="color:#ffd60a">' + S.warnings + '</td></tr><tr><td>المؤشرات (ليست أعطالاً)</td><td style="color:#8e9aaf">' + (S.indicators || 0) + '</td></tr></table></div>';
     const Cs = rep.central; if (Cs && Cs.present) h += '<div class="nd-cen"><b>شبكة Central</b> · سلامة ' + Cs.health + '%<table class="nd-t"><tr><td>العناصر المفحوصة</td><td>' + Cs.checked + ' (' + Cs.stations + ' محطة · ' + Cs.segments + ' قطاع · ' + Cs.pumps + ' مضخة · ' + Cs.channels + ' قنوات)</td></tr><tr><td>الأعطال المؤكدة</td><td style="color:#ff6b61">' + Cs.faults + '</td></tr><tr><td>التحذيرات</td><td style="color:#ffd60a">' + Cs.warnings + '</td></tr><tr><td>المؤشرات</td><td style="color:#8e9aaf">' + Cs.indicators + '</td></tr></table></div>';
     for (const n of rep.notes) h += '<div class="nd-note">' + esc(n) + '</div>';
     h += '<div class="nd-row"><button class="nd-go" data-nd="scan">إعادة الفحص</button><button data-nd="ok" class="' + (st.showOk === false ? '' : 'on') + '">إظهار السليم (أخضر)</button></div>';
-    if (!rep.faults.length) return h + '<p class="nd-p" style="color:#34c759">لم يُعثر على أي عطل أو تحذير في ' + S.checked + ' عنصراً. كل الاتصالات سليمة.</p>';
+    if (!rep.faults.length) return h + '<p class="nd-p" style="color:#34c759">لم يُعثر على أي عطل أو تحذير في ' + S.checked + ' عنصراً. كل الاتصالات سليمة.</p></div>';
     const flt = st.filter || 'all', list = rep.faults.filter(f => flt === 'all' || (flt === 'central' ? f.central : !f.central));
     if (Cs && Cs.present) h += '<div class="nd-row">' + [['all', 'الكل'], ['oil', 'النفط'], ['central', 'Central']].map(([k, t]) => '<button data-nd="flt" data-k="' + k + '" class="' + (flt === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>';
     h += '<div class="nd-list">'; const shown = list.slice(0, st.limit || 200); let lastG = null;
@@ -40,7 +41,7 @@
         + '<tr><td>السبب</td><td>' + esc(f.cause) + '</td></tr><tr><td>التأثير</td><td>' + esc(f.effect) + '</td></tr><tr><td>الإصلاح المقترح</td><td>' + esc(f.fix) + '</td></tr></table>';
       h += '</div>'; }
     if (list.length > shown.length) h += '<button data-nd="more" class="nd-go">عرض المزيد (' + (list.length - shown.length) + ' متبقية)</button>';
-    return h + '</div>';
+    return h + '</div></div>';
   }
 
   const api = { html, merge };
@@ -49,21 +50,36 @@
 
   /* ------------------------------------------------------------------ browser wiring */
   const WP = window.__wp, LAB = window.__lab, hooks = WP.hooks, ctx = WP.ctx, cam = WP.cam, sx = WP.sx, sy = WP.sy, $ = id => document.getElementById(id);
-  const DEFS = (window.OliBuildings || {}).DEFS, st = { open: false, rep: null, sel: null, showOk: true, limit: 200, rev: -1, n: -1, stale: false }, ov = { lines: [], marks: [] };
-  const css = document.createElement('style'); css.textContent = '#ndBtn{border-color:#4b5a6b}#ndPanel{display:none;position:absolute;left:8px;top:104px;width:min(340px,92vw);max-height:calc(100% - 270px);overflow:auto;background:rgba(27,34,44,.97);border:1px solid #4b5a6b;border-radius:12px;padding:8px;z-index:7;direction:rtl;color:#e8eef5;font-size:13px}'
-    + '#ndPanel .nd-h{font-weight:700;font-size:15px;margin:2px 2px 8px;display:flex;justify-content:space-between;align-items:center}#ndPanel button{font:inherit;color:inherit;background:#222b37;border:1px solid #3b4756;border-radius:8px;padding:6px 10px;min-height:38px}#ndPanel button.on{background:#2c3a4b;border-color:#34c759}'
-    + '#ndPanel .nd-x{min-height:30px;padding:2px 8px}#ndPanel .nd-go{width:100%;margin:6px 0;background:#2a5a8a;border-color:#4b8fd0}#ndPanel .nd-p{margin:8px 4px;line-height:1.6}#ndPanel .nd-sum{display:flex;gap:10px;align-items:center}#ndPanel .nd-big{font-size:30px;font-weight:800;text-align:center;min-width:92px}#ndPanel .nd-big small{display:block;font-size:11px;font-weight:400;color:#9aa8b8}'
-    + '#ndPanel .nd-t{flex:1;border-collapse:collapse}#ndPanel .nd-t td{padding:2px 4px;border-bottom:1px solid #2d3948}#ndPanel .nd-row{display:flex;gap:6px}#ndPanel .nd-row button{flex:1}#ndPanel .nd-note,#ndPanel .nd-stale{font-size:11px;color:#ffd27a;margin:4px 2px}#ndPanel .nd-f{border-right:4px solid;border-radius:8px;background:#1d2631;margin:5px 0;overflow:hidden}'
-    + '#ndPanel .nd-fh{width:100%;text-align:right;background:transparent;border:0;padding:7px 9px}#ndPanel .nd-sv{display:inline-block;color:#111;border-radius:6px;padding:0 7px;font-size:11px;font-weight:700;margin-right:6px}#ndPanel .nd-s{font-size:11px;color:#9aa8b8;margin-top:3px}#ndPanel .nd-f.sel{background:#243040}#ndPanel .nd-d{width:100%;border-collapse:collapse;font-size:12px}#ndPanel .nd-d td{padding:4px 9px;vertical-align:top;border-top:1px solid #2d3948}#ndPanel .nd-d td:first-child{white-space:nowrap;color:#9aa8b8}';
-  css.textContent += 'body:not(.dev) #ndPanel{left:50px;top:52px;width:min(340px,calc(100vw - 58px));max-height:calc(100% - 200px)}';
-  css.textContent += '#ndPanel .nd-g{font-size:12px;font-weight:700;color:#9aa8b8;margin:8px 4px 2px}#ndPanel .nd-cen{margin:8px 0;padding:6px 8px;border:1px solid #3b4756;border-radius:8px;background:#1f2833}';
+  const DEFS = (window.OliBuildings || {}).DEFS, st = { rep: null, sel: null, showOk: true, limit: 200, rev: -1, n: -1, stale: false }, ov = { lines: [], marks: [] };
+  const css = document.createElement('style'); css.textContent = '#ndBtn{border-color:#4b5a6b}'
+    + '#ndPanel{display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:75vw;height:65vh;max-width:560px;min-width:min(290px,96vw);max-height:calc(100vh - 24px);box-sizing:border-box;flex-direction:column;overflow:hidden;background:rgba(12,17,25,.74);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);border:1px solid rgba(120,138,160,.55);border-radius:12px;padding:6px 8px;z-index:12;direction:rtl;color:#e8eef5;font-size:13px;line-height:1.35}'
+    + '#ndPanel.open{display:flex}#ndPanel *{box-sizing:border-box}'
+    + '#ndPanel .nd-h{flex:0 0 auto;font-weight:700;font-size:14px;margin:0 0 4px;display:flex;justify-content:space-between;align-items:center;gap:6px}#ndPanel .nd-hb{display:flex;gap:5px}'
+    + '#ndPanel .nd-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding-left:2px}'
+    + '#ndPanel button{font:inherit;color:inherit;background:rgba(34,43,55,.9);border:1px solid #3b4756;border-radius:8px;padding:4px 9px;min-height:34px}#ndPanel button.on{background:rgba(44,58,75,.95);border-color:#34c759}'
+    + '#ndPanel .nd-x,#ndPanel .nd-m{min-height:32px;min-width:34px;padding:2px 8px;font-size:15px}#ndPanel .nd-go{width:100%;margin:4px 0;background:rgba(42,90,138,.95);border-color:#4b8fd0}#ndPanel .nd-p{margin:6px 4px;line-height:1.55}'
+    + '#ndPanel .nd-sum{display:flex;gap:8px;align-items:center}#ndPanel .nd-big{font-size:24px;font-weight:800;text-align:center;min-width:78px}#ndPanel .nd-big small{display:block;font-size:11px;font-weight:400;color:#9aa8b8}'
+    + '#ndPanel .nd-t{flex:1;border-collapse:collapse;font-size:12px}#ndPanel .nd-t td{padding:1px 4px;border-bottom:1px solid rgba(70,86,106,.6)}#ndPanel .nd-row{display:flex;gap:5px;margin:3px 0}#ndPanel .nd-row button{flex:1;padding:3px 6px;min-height:32px;font-size:12px}'
+    + '#ndPanel .nd-note,#ndPanel .nd-stale{font-size:11px;color:#ffd27a;margin:3px 2px}#ndPanel .nd-f{border-right:4px solid;border-radius:8px;background:rgba(26,35,47,.82);margin:4px 0;overflow:hidden}'
+    + '#ndPanel .nd-fh{width:100%;text-align:right;background:transparent;border:0;padding:5px 8px;min-height:0}#ndPanel .nd-sv{display:inline-block;color:#111;border-radius:6px;padding:0 6px;font-size:11px;font-weight:700;margin-right:6px}#ndPanel .nd-s{font-size:11px;color:#a9b6c5;margin-top:2px}'
+    + '#ndPanel .nd-d{width:100%;border-collapse:collapse;font-size:12px}#ndPanel .nd-d td{padding:3px 8px;border-top:1px solid rgba(70,86,106,.6);vertical-align:top}#ndPanel .nd-d td:first-child{color:#9aa8b8;white-space:nowrap;width:1%}'
+    + '#ndPanel .nd-g{font-size:12px;font-weight:700;color:#9aa8b8;margin:6px 4px 1px}#ndPanel .nd-cen{margin:5px 0;padding:4px 6px;border:1px solid rgba(80,96,116,.7);border-radius:8px;background:rgba(24,32,43,.7);font-size:12px}'
+    + '#ndChip{display:none;position:fixed;right:8px;top:50px;z-index:12;width:min(64vw,250px);box-sizing:border-box;direction:rtl;text-align:right;color:#e8eef5;background:rgba(12,17,25,.86);border:1px solid #4b8fd0;border-radius:14px;padding:6px 10px;font:600 12px/1.35 system-ui}'
+    + 'body.dev #ndChip{top:100px}#ndChip.on{display:block}#ndChip .nd-ct{display:flex;justify-content:space-between;gap:6px;align-items:center;font-size:13px}#ndChip .nd-cx{font-weight:400;color:#c4d0dd;margin-top:3px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}#ndChip .nd-co{font-size:11px;color:#8fc1f2;margin-top:3px}';
   document.head.appendChild(css);
   const bar = $('bar'), btn = document.createElement('button'); btn.id = 'ndBtn'; btn.textContent = 'فاحص الشبكة'; bar.insertBefore(btn, bar.firstChild);
   const panel = document.createElement('div'); panel.id = 'ndPanel'; document.body.appendChild(panel);
+  const chip = document.createElement('div'); chip.id = 'ndChip'; document.body.appendChild(chip);
+  /* window state: 'full' (the window), 'min' (a small card; the markers stay on the map), 'hidden' (nothing; the report is kept, so showing it again never re-scans) */
+  let mode = 'hidden'; Object.defineProperty(st, 'mode', { get: () => mode, set: v => { mode = v; }, enumerable: true });
+  Object.defineProperty(st, 'open', { get: () => mode === 'full', set: v => { mode = v ? 'full' : (st.rep ? 'min' : 'hidden'); }, enumerable: true });
   const locate = (x, y) => { try { const w = WP.world, id = w.regionIdAt(x, y); return id == null ? null : w.regionLabel(id); } catch (e) { return null; } };
   const cenSig = () => { const C = LAB.pipes.central; if (!C) return ''; let f = 0; for (const p of C.pumps.values()) if (p.fault) f++; return C.rev + '|' + f + '|' + Object.keys(C.ch).map(k => C.ch[k].state + (C.ch[k].fault ? 'F' : '')).join(',') + '|' + [...C.seg.values()].reduce((a, g) => a + Object.keys(g.fault).length, 0); };
   const stale = () => !!st.rep && (LAB.pipes.rev !== st.rev || LAB.store.items.size !== st.n || cenSig() !== st.csig);
-  const render = () => { st.stale = stale(); panel.innerHTML = html(st.rep, st); panel.style.display = st.open ? 'block' : 'none'; WP.markDirty(); };
+  const chipHtml = () => { const r = st.rep; if (!r) return ''; const nF = r.faults.filter(f => f.confirmed).length, nW = r.faults.filter(f => !f.confirmed && !f.indicator).length, f = st.sel != null ? r.faults.find(z => z.no === st.sel) : null;
+    return f ? '<div class="nd-ct"><span>' + (f.indicator ? 'مؤشر ' : f.confirmed ? 'عطل ' : 'تحذير ') + num(f.no) + ' · ' + esc(f.element.label) + '</span><span>⤢</span></div><div class="nd-cx">' + esc(f.cause) + '</div><div class="nd-co">اضغط لفتح التفاصيل</div>'
+      : '<div class="nd-ct"><span>🔍 فاحص الشبكة</span><span>⤢</span></div><div class="nd-cx">' + nF + ' عطل · ' + nW + ' تحذير · سلامة ' + r.stats.health + '%</div>'; };
+  const render = () => { st.stale = stale(); panel.classList.toggle('open', mode === 'full'); if (mode === 'full') { const sc = panel.querySelector('.nd-scroll'), top = sc ? sc.scrollTop : 0; panel.innerHTML = html(st.rep, st); const n = panel.querySelector('.nd-scroll'); if (n) n.scrollTop = top; } chip.classList.toggle('on', mode === 'min' && !!st.rep); if (mode === 'min') chip.innerHTML = chipHtml(); WP.markDirty(); };
   function scan() {
     const t0 = performance.now(), hist = st.hist || (st.hist = { __scans: 0 }), opt = { sim: LAB.sim, locate, history: hist };
     const orep = ND.run(LAB.store, LAB.pipes, opt), crep = NDC ? NDC.runCentral(LAB.store, LAB.pipes, opt) : null; st.rep = merge(orep, crep); st.rev = LAB.pipes.rev; st.n = LAB.store.items.size; st.csig = cenSig(); st.sel = null; st.ms = performance.now() - t0;
@@ -78,17 +94,17 @@
     LAB.toast && LAB.toast('اكتمل الفحص: ' + rep.faults.filter(f => f.confirmed).length + ' عطل · ' + rep.faults.filter(f => !f.confirmed && !f.indicator).length + ' تحذير · ' + rep.faults.filter(f => f.indicator).length + ' مؤشر'); render();
   }
   function select(no) {
-    const f = st.rep && st.rep.faults.find(z => z.no === no); if (!f) return; st.sel = no; WP.goto(f.x + .5, f.y + .5, Math.max(cam.z, 0.9)); render();
-    const el = panel.querySelector('.nd-f.sel'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+    const f = st.rep && st.rep.faults.find(z => z.no === no); if (!f) return; st.sel = no; WP.goto(f.x + .5, f.y + .5, Math.max(cam.z, 0.9)); if (mode === 'full') mode = 'min'; render();
   }
-  btn.addEventListener('click', () => { st.open = !st.open; if (st.open && !st.rep) scan(); else render(); });
+  btn.addEventListener('click', () => { if (mode === 'full') mode = 'hidden'; else { mode = 'full'; if (!st.rep) { scan(); return; } } render(); });
+  chip.addEventListener('click', () => { mode = 'full'; render(); const f = panel.querySelector('.nd-f.sel'); if (f && f.scrollIntoView) f.scrollIntoView({ block: 'nearest' }); });
   panel.addEventListener('click', e => { const el = e.target.closest('[data-nd]'); if (!el) return; const a = el.dataset.nd;
-    if (a === 'scan') scan(); else if (a === 'close') { st.open = false; render(); } else if (a === 'ok') { st.showOk = !st.showOk; render(); } else if (a === 'flt') { st.filter = el.dataset.k; render(); } else if (a === 'more') { st.limit += 200; render(); } else if (a === 'go') { const n = +el.dataset.n; if (st.sel === n) { st.sel = null; render(); } else select(n); } });
+    if (a === 'scan') scan(); else if (a === 'close') { mode = 'hidden'; render(); } else if (a === 'min') { mode = 'min'; render(); } else if (a === 'ok') { st.showOk = !st.showOk; render(); } else if (a === 'flt') { st.filter = el.dataset.k; render(); } else if (a === 'more') { st.limit += 200; render(); } else if (a === 'go') { const n = +el.dataset.n; if (st.sel === n) { st.sel = null; render(); } else select(n); } });
 
   const prevAfter = hooks.afterOverlays;
   hooks.afterOverlays = (lv, vb) => {
     if (prevAfter) prevAfter(lv, vb);
-    if (!st.open || !st.rep) return; const near = (x, y) => x > vb.x0 - 40 && x < vb.x1 + 40 && y > vb.y0 - 40 && y < vb.y1 + 40;
+    if (mode === 'hidden' || !st.rep) return; const near = (x, y) => x > vb.x0 - 40 && x < vb.x1 + 40 && y > vb.y0 - 40 && y < vb.y1 + 40;
     ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     for (const it of ov.lines) { if (it.ok && st.showOk === false) continue; const bb = it.bb; if (bb && (bb[2] < vb.x0 - 40 || bb[0] > vb.x1 + 40 || bb[3] < vb.y0 - 40 || bb[1] > vb.y1 + 40)) continue;
       ctx.beginPath(); it.pts.forEach((p, i) => i ? ctx.lineTo(sx(p[0], p[1]), sy(p[0], p[1])) : ctx.moveTo(sx(p[0], p[1]), sy(p[0], p[1]))); ctx.globalAlpha = it.ok ? .75 : 1; ctx.strokeStyle = it.c; ctx.lineWidth = Math.max(1.5, it.w * Math.min(1.6, Math.max(.7, cam.z))); ctx.stroke(); ctx.globalAlpha = 1; }
@@ -101,10 +117,10 @@
     ctx.restore();
   };
   const prevTap = hooks.tap;
-  hooks.tap = (px, py) => { if (st.open && st.rep) { const t = WP.toTile(px, py); let best = null, bd = 2.2; for (const m of ov.marks) { const d = Math.hypot(m.x - t.x, m.y - t.y); if (d < bd) { bd = d; best = m; } } if (best) { select(best.no); return true; } }
+  hooks.tap = (px, py) => { if (mode !== 'hidden' && st.rep) { const t = WP.toTile(px, py); let best = null, bd = 2.2; for (const m of ov.marks) { const d = Math.hypot(m.x - t.x, m.y - t.y); if (d < bd) { bd = d; best = m; } } if (best) { select(best.no); return true; } }
     return prevTap ? prevTap(px, py) : false; };
   /* the player's way in: the «فاحص الشبكة» button of the Company tab (the dev toolbar #bar is hidden in the normal game) closes the sheet, opens the panel and scans */
-  const openFromMenu = () => { const x = $('es-close'); if (x) x.click(); st.open = true; scan(); };
+  const openFromMenu = () => { const x = $('es-close'); if (x) x.click(); mode = 'full'; if (st.rep) render(); else scan(); };
   document.addEventListener('click', e => { const el = e.target.closest && e.target.closest('[data-nd-open]'); if (el) { e.stopPropagation(); openFromMenu(); } }, true);
   window.__netdiag = { st, ov, scan, select, render, panel, openFromMenu };
 })(typeof window !== 'undefined' ? window : globalThis);

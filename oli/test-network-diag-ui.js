@@ -26,6 +26,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   ok(await ev(() => __netdiag.ov.lines.some(l => l.ok) && __netdiag.ov.lines.some(l => !l.ok && l.c === '#ff3b30') && __netdiag.ov.lines.some(l => l.c === '#ffd60a')), 'the overlay has green (healthy), red (critical) and yellow (warning) pipes');
   await p.locator('#ndPanel .nd-fh').first().tap(); await p.waitForTimeout(500);
   const cam = await ev(() => ({ x: __wp.cam.x, y: __wp.cam.y, sel: __netdiag.st.sel })); const near = await ev((o) => { const u = __wp.cam.x, v = __wp.cam.y; return Math.hypot(u - (o.x + .5), v - (o.y + .5)); }, open); ok(cam.sel === 1 && near < 6, 'tapping the fault in the list moves the map to its location (distance ' + near.toFixed(1) + ' tiles)');
+  ok(await ev(() => document.getElementById('ndChip').classList.contains('on') && !document.getElementById('ndPanel').classList.contains('open') && /PIPE-/.test(document.getElementById('ndChip').textContent)), 'after the jump the window folds into a small card with the cause, so the located spot is visible'); await p.locator('#ndChip').tap(); await p.waitForSelector('#ndPanel.open .nd-f.sel');
   t = await p.textContent('#ndPanel .nd-f.sel'); ok(/النوع/.test(t) && /الخطورة/.test(t) && /العنصر/.test(t) && /المنطقة/.test(t) && /الإحداثيات/.test(t) && /السابق في التدفق/.test(t) && /اللاحق في التدفق/.test(t) && /السبب/.test(t) && /التأثير/.test(t) && /الإصلاح المقترح/.test(t), 'the open fault shows all ten fields');
   ok(t.includes('PIPE-' + info.a) && t.includes('(' + info.tail[0] + ', ' + info.tail[1] + ')'), 'with the real pipe id and coordinates');
   await p.screenshot({ path: process.env.SHOT || '/tmp/netdiag-ui.png' });
@@ -34,8 +35,19 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   await p.waitForTimeout(300); await p.mouse.click(pt.x, pt.y); await p.waitForTimeout(300); ok(await ev(() => __netdiag.st.sel) === 1, 'tapping the red marker on the map selects fault 1 in the panel');
   /* repair and re-scan */
   await ev(() => { const L = __lab.pipes.lines; const a = [...L.values()][5]; const orig = __lab.pipes.lines.get(a.id); orig.b = { b: [...__lab.store.items.values()].find(z => z.d === 'crude_tank_m').id, port: 'INPUT_W' }; delete [...L.values()][6].open; __lab.pipes.rev++; });
-  await p.locator('#ndPanel [data-nd=scan]').first().tap(); await p.waitForTimeout(400); const s2 = await ev(() => __netdiag.st.rep.stats);
+  await p.locator('#ndChip').tap(); await p.waitForSelector('#ndPanel.open'); await p.locator('#ndPanel [data-nd=scan]').first().tap(); await p.waitForTimeout(400); const s2 = await ev(() => __netdiag.st.rep.stats);
   ok(s2.faults + s2.warnings < rep.length + 0 && !(await ev(() => __netdiag.st.rep.faults.some(f => f.code === 'CLOSED_LINE'))), 'after the repair and a re-scan the closed-pipe warning is gone', JSON.stringify(s2));
+  /* the window: size, place, minimise / hide / show without a re-scan */
+  const geo = await ev(() => { const r = document.getElementById('ndPanel').getBoundingClientRect(), W = innerWidth, H = innerHeight; return { w: r.width / W, h: r.height / H, cx: (r.left + r.right) / 2 / W, cy: (r.top + r.bottom) / 2 / H, inside: r.left >= 0 && r.top >= 0 && r.right <= W && r.bottom <= H, bg: getComputedStyle(document.getElementById('ndPanel')).backgroundColor }; });
+  ok(Math.abs(geo.w - .75) < .03 && Math.abs(geo.h - .65) < .03 && Math.abs(geo.cx - .5) < .02 && Math.abs(geo.cy - .5) < .02 && geo.inside, 'the window is ~75% x 65% of the phone screen, centred and fully inside it', JSON.stringify(geo));
+  ok(/rgba\(\d+, \d+, \d+, 0?\.\d+\)/.test(geo.bg), 'the background is dark and semi-transparent (' + geo.bg + ')');
+  ok(await ev(() => { const s = document.querySelector('#ndPanel .nd-scroll'); return !!s && getComputedStyle(s).overflowY === 'auto' && getComputedStyle(document.getElementById('ndPanel')).overflow === 'hidden'; }), 'the list scrolls inside the window (not the page)');
+  await ev(() => { window.__r0 = __netdiag.st.rep; window.__sc0 = __netdiag.st.hist.__scans; });
+  await p.locator('#ndPanel .nd-m').tap(); await p.waitForTimeout(300);
+  ok(await ev(() => document.getElementById('ndChip').classList.contains('on') && !document.getElementById('ndPanel').classList.contains('open') && __netdiag.st.mode === 'min' && __netdiag.ov.lines.length > 0), 'minimise folds the window into a small card and the overlay (green pipes / markers) stays on the map');
+  await p.locator('#ndChip').tap(); await p.waitForSelector('#ndPanel.open'); ok(await ev(() => __netdiag.st.rep === window.__r0), 'tapping the card restores the window without re-scanning');
+  await p.locator('#ndPanel .nd-x').tap(); ok(await ev(() => __netdiag.st.mode === 'hidden' && !document.getElementById('ndChip').classList.contains('on') && !document.getElementById('ndPanel').classList.contains('open')), 'hide removes the window and the card');
+  await p.locator('#ndBtn').tap(); await p.waitForSelector('#ndPanel.open'); ok(await ev(() => __netdiag.st.rep === window.__r0 && __netdiag.st.hist.__scans === window.__sc0), 'showing it again does not re-scan (same report, same scan count)');
   await p.locator('#ndPanel .nd-x').tap(); ok(await ev(() => getComputedStyle(document.getElementById('ndPanel')).display) === 'none', 'the panel closes');
   ok(errs.length === 0, 'no page errors: ' + errs.join(' | ')); console.log('PASS ' + n); await b.close(); srv.close();
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });

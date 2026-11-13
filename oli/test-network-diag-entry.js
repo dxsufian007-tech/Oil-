@@ -11,7 +11,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   await p.locator('#eh-menu').tap(); await p.waitForSelector('#eco-sheet.open'); await p.locator('#es-tabs [data-tab=company]').tap(); await p.waitForSelector('#es-netdiag', { timeout: 10000 });
   ok(await p.locator('#es-netdiag').isVisible(), 'the Company tab offers «فاحص الشبكة»');
   await p.locator('#es-netdiag').tap(); await p.waitForSelector('#ndPanel .nd-sum', { timeout: 20000 });
-  ok(await ev(() => !document.querySelector('#eco-sheet.open') && getComputedStyle(document.getElementById('ndPanel')).display === 'block'), 'tapping it closes the sheet, opens the panel and scans');
+  ok(await ev(() => !document.querySelector('#eco-sheet.open') && getComputedStyle(document.getElementById('ndPanel')).display !== 'none'), 'tapping it closes the sheet, opens the panel and scans');
   ok(/سلامة الشبكة/.test(await p.textContent('#ndPanel')) && /العناصر المفحوصة/.test(await p.textContent('#ndPanel')), 'the panel shows the scan summary');
   await p.locator('#ndPanel [data-nd=close]').tap(); ok(await ev(() => getComputedStyle(document.getElementById('ndPanel')).display === 'none'), 'the panel closes');
   ok(!errs.length, 'no page errors: ' + errs.join(' | ')); console.log('PASS ' + n); await b.close(); srv.close();
