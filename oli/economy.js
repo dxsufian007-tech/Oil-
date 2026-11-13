@@ -1158,6 +1158,23 @@
       const r = this.bank.originate({ bank: bankId, type, amount, term: months, freq: opts.freq, grace: opts.grace, purpose: opts.purpose, collateral: opts.collateral }, this.bankRiskCtx(), this.dayIdx, this._monthFrac()); if (!r.ok) return r;
       this._cashIn('BANK_LOAN_IN', r.loan.bal, (opts.purpose || 'Bank loan') + ' · ' + bankId + ' · loan ' + r.loan.id, 'BANK_LOANS', 'FIN'); return r;
     }
+    /* Phase 7: construction financed by a bank loan.  The loan pays for part of the building (loan-to-cost, default 70%, at most 80%); the rest comes from cash.
+       The money goes through the Journal (loan in, then BUILD) - the building is placed through the wrapped store.place, so sync() never sees it as pipeline works. */
+    buildFinanced(defId, x, y, r, opts) {
+      opts = opts || {}; if (this.bankrupt) return { ok: false, reason: 'bankrupt' };
+      const F = this.cfg.BUILD_FINANCE || { ltc: 0.7, maxLtc: 0.8, minLoan: 1000000, bank: 'STRATEGIC', type: 'PROJECT_FINANCE', term: 120 };
+      const ltc = opts.ltc == null ? F.ltc : opts.ltc; if (!(ltc > 0) || ltc > F.maxLtc + 1e-9) return { ok: false, reason: 'ltc', max: F.maxLtc };
+      this.sync(); const v = this.store.validate(defId, x, y, r, { ignoreCash: true }); if (!v.ok) return v;
+      const cost = v.cost, amount = Math.max(F.minLoan, Math.round(cost * ltc)), own = cost - amount;
+      if (!(cost > 0) || amount > cost) return { ok: false, reason: 'tooSmall', cost, min: F.minLoan };
+      if (isFinite(this.store.cash) && this.store.cash < own - 1e-6) return { ok: false, reason: 'cash', need: own, cost };
+      const bank = opts.bank || F.bank, type = opts.type || F.type, term = opts.term || F.term;
+      const q = this.bankQuote(bank, type, amount, term, { freq: opts.freq, grace: opts.grace }); if (!q.ok) return q;
+      const ln = this.takeBankLoan(bank, type, amount, term, { freq: opts.freq, grace: opts.grace, purpose: 'Construction · ' + DEFS[defId].name }); if (!ln.ok) return ln;
+      const p = this.store.place(defId, x, y, r, opts.place);
+      if (!p.ok) { const rr = this.prepayBankLoan(ln.loan.id, null); return { ok: false, reason: 'placeFailed', cause: p.reason, refunded: !!(rr && rr.ok) }; }
+      return { ok: true, building: p.building, cost, loan: ln.loan, financed: amount, own, rate: ln.rate };
+    }
     prepayBankLoan(id, amount) { this.sync(); return this.bank.prepay(id, amount, this._bankIO(), this._monthFrac()); }
     rescheduleBankLoan(id, months) { this.sync(); return this.bank.reschedule(id, months, this._bankIO()); }
     riskIndicators() {

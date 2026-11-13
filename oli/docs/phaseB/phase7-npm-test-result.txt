@@ -1,0 +1,1202 @@
+
+> oli@1.0.0 test
+> node test-core.js && node test-p3.js && node test-p4.js && node test-p5.js && node test-p6.js && node test-p8.js && node test-p9.js && node test-p14.js && node test-p15.js && node test-p16.js && node test-pipe-types.js && node test-p22.js && node test-p23.js && node test-phase1.js && node test-phase2.js && node test-phase2-final.js && node test-phaseB.js && node test-phaseC.js && node test-offline.js && node test-central.js && node test-central-loan.js && node test-central-pump.js && node test-central-values.js && node test-central-distribution.js && node test-central-tap-limits.js && node test-help.js && node test-refinery-central.js && node test-autobuy.js && node test-bank-foundation.js && node test-bank-baserate.js && node test-bank-loans.js && node test-bank-credit.js && node test-bank-collateral.js && node test-bank-default.js && node test-bank-bonds.js && node test-bank-ui.js && node test-bank-integration.js
+
+  ok  start cash $10,000
+  ok  price history seeded
+  ok  place oil well (-$2,000)
+  ok  unconnected well is idle
+  ok  place storage tank (-$1,500)
+  ok  pipeline route has no diagonal steps (7 cells)
+  ok  L-shaped route for a diagonal request stays 90-degree
+  ok  build pipeline (-$500, 5 segments)
+  ok  well is connected to storage
+  ok  well produced 19.8 BBL in 2 min (10 BBL/min)
+  ok  full storage stops production (status: full)
+  ok  spot sale: sold 100 BBL @ $80.6 -> cash $8060
+  ok  price walk: range $56.5-$87.4, biggest single step $1.6
+  ok  futures: 500 BBL locked @ $76, delivered at expiry for $38000 (status completed)
+  ok  price alert fired
+  ok  upgrades: well 12 BBL/min, tank 2,000 BBL, pipes 40 BBL/min
+  ok  build more after earning money
+  ok  save/load round trip (14610 bytes)
+  ok  remove building refunds 50%
+  ok  build grid is 88 rows x 140 columns = exactly 10x the old 28 x 44 map
+  ok  floating pipeline is rejected (reason: floating)
+  ok  route from wells that does not reach a tank is allowed but connects=false
+  ok  route that reaches the tank reports connects=true
+  ok  pipeline capacity limits 3 wells (30/min) to 25 BBL/min (status: limited)
+  ok  pipe upgrade lifts the limit to the full 30 BBL/min
+  ok  wells: 10/12/14/16.5/20 BBL/min, tanks: 1000/2000/3500/5500/8000 BBL, both stop at level 5
+  ok  previous price is tracked (70 -> 69.8)
+  ok  price trend reads rising / falling / stable
+  ok  changing CFG.COST / CFG.UPGRADE changes game prices
+  ok  activity log stores translatable message keys
+  ok  save keeps cash, oil, wells, pipes, tanks, upgrades, price history and contracts
+  ok  price glides smoothly (max step per 0.05s: 0.06)
+  ok  inventory never leaves 0..capacity over 10 minutes (peak 63.9 / 1000)
+  ok  oil conservation: produced 97.0 = stored 54.2 + sold/reserved 42.9
+  ok  production matches the rate: 10 bbl/min x 10 min, minus pressure loss = 97.0 (disconnected wells produced nothing)
+  ok  statuses: connected=producing, isolated=nopipe, pipe-to-nowhere=nostorage
+  ok  full tank: wells really stop, nothing is produced, inventory stays at capacity
+  ok  sale of 1000 BBL: inventory -1000, cash +48051, production resumes
+  ok  selling more than the inventory is clamped; selling nothing is refused
+  ok  a tampered save is clamped to capacity on load
+  ok  removing a pipe segment stops the flow in the simulation (not just visually)
+  ok  price alert fires only when the quoted price has reached the target
+  ok  produce -> pipe -> tank: 50 BBL after 5 min
+  ok  market state: price $77.77 (prev $77.8, change -0.03, t=300s)
+  ok  sold 200 of 650 @ $77.77: money +15554, inventory 450, tank 45.0% (was 65.0%)
+  ok  wait: price moved $66.4-$78.7 over 60 s, oil stayed, operating costs +$81.25
+  ok  second sale @ $66.44 (first @ $77.77): revenue $32164 - costs $273.81 = profit $31890.19
+  ok  operating cost of one minute = $46.43 (pump 25 + tank 10 + 3 pipes + holding)
+  ok  a pump that is stopped (storage full) costs nothing
+  ok  contract countdown: 120 s -> 90 s
+  ok  contract COMPLETED: 500 BBL x locked $83 paid, inventory delivered
+  ok  contract EXPIRED (oil sold elsewhere): penalty $4686, inventory untouched (100.0)
+  ok  money never goes negative: unpaid costs ($1000) are owed and settled from the next sale
+  ok  futures are not guaranteed profit: 60 five-minute contracts -> 25 beat the spot price, 35 lost to it (avg -1846)
+  ok  market over 200 min: $42.3-$111.8 (limits 40-115), trends persist (autocorr 0.93), biggest 3 s move $2.19
+  ok  save keeps revenue, operating costs, profit, debt and finished contracts
+
+ALL CORE TESTS PASSED
+  ok  3 starting areas are discovered, the rest is hidden
+  ok  1. built well + tank + pipes (cost $4000)
+  ok  2. oil produced: tank 9.8 BBL (status producing)
+  ok  3-4. well upgrade -$500, level 2, nominal 10 -> 12 BBL/min, real output 11.90
+  ok  upgrade without money is refused and changes nothing
+  ok  5-6. pipe upgrade -$150 (5 tiles x $30): capacity 25 -> 40 BBL/min
+  ok  7-8. bottleneck: wells want 66/min, pipe carries 25/min; ground lost only 24.5 BBL (excess stays in reserve), status limited
+  ok  9-11. tank full (5500) stopped the wells; upgrade -$4500 -> capacity 8000, production resumed
+  ok  12-13. after 10 min: pressure 100% -> 87.5%, condition 100% -> 92.0%, output 39.4 -> 38.8 BBL/min
+  ok  14-15. maintenance cost $345 (worse condition costs more), condition back to 100%, expense booked
+  ok  pressure slowly recovers while the well is stopped
+  ok  a broken well (condition <= 10%) stops and resumes after maintenance
+  ok  16-17. leak: flow 9.97 -> 6.96 BBL/min, oil lost 1.5 BBL
+  ok  18. repair paid ($150), state REPAIRING, second repair refused
+  ok  19. repaired: flow back to 9.91 BBL/min (normal 9.97)
+  ok  random leaks are moderate: 2 in 120 min on a 7-tile level-1 pipe
+  ok  well types differ: small 10 / medium 22 / large 45 BBL/min, pressure loss 0.5/0.8/1.4 %/min
+  ok  oil quality: LOW 0.85 / MEDIUM 1.00 / HIGH 1.20 x market price paid
+  ok  mixed oil in one tank is priced by its weighted quality
+  ok  21-23a. undiscovered area hides its data and refuses wells (notExplored)
+  ok  20-22. explore -$1300, took 20 s, result: MEDIUM (size 18000, quality MEDIUM, potential 90/min)
+      area results over the map: {"medium":21,"empty":15,"large":19,"small":14}
+  ok  23-24. wells can be built on a discovered reserve (cost charged, quality inherited); EMPTY areas refuse (noOil)
+  ok  25. economy balances (money = start - capex + refunds + revenue - costs); save/load keeps levels, pressure, condition, quality, leaks, areas
+  ok  an older save (no Phase 3 fields) loads: well becomes small, pressure/condition 100%, tank clamped to its capacity
+
+ALL PHASE 3 CORE TESTS PASSED
+  ok  5 regions with constructionMult / explorationCost / reservePotential / terrain / riskLevel / discovered; states EXPLORED,LOCKED,LOCKED,LOCKED,LOCKED
+  ok  1. locked region: unlock needs 4000 cash (3000 refused), exploring and building refused (locked)
+  ok  1. unlock region 2 for $2,500 -> AVAILABLE
+  ok  2-3. explored region 2 for $1,300/area -> EXPLORED; reserve found: medium MEDIUM 18000 BBL
+      terrain in the area -> cost multiplier incl. region x1.1: {"SAND":1.1,"FLAT":0.935}
+  ok  terrain: FLAT cheaper, SAND normal, ROUGH and ROCK dearer (all 4 types exist on the map)
+  ok  4-5. well built in region 2 (cost incl. terrain), region ACTIVE, pipe cost follows terrain; oil produced: 9.8 BBL
+  ok  region riskLevel multiplies leak chance and well wear (R5 x1.5 vs R1 x1)
+  ok  6. offer: 200 BBL @ $67 = $13400 reward in 4 min (spot $70.0)
+  ok  cannot deliver before accepting, nor with an empty tank (nooil)
+  ok  7. delivery limited to the stock: delivered 80 of 200, remaining 120, inventory 0
+  ok  8. contract COMPLETED: reward $13400 paid on completion, moved to history
+  ok  9a. active contract past its deadline -> FAILED: partial payment 870 for delivered oil, penalty $1450
+  ok  9b. an offer nobody accepts -> EXPIRED
+  ok  at most 3 contracts can be active
+  ok  offers appear every ~70-130 s (max 3 open)
+  ok  contract prices are not always better than spot: 21 below, 39 at/above in 60 offers
+  ok  10-11. DEMAND_SURGE: price $70.6 -> peak $110.1 (planned $83.3), largest step per 0.5 s $0.83 (gradual)
+  ok  12. event ends: multiplier fades back to 1.00 gradually, next event scheduled in 301 s
+  ok  SUPPLY_SHOCK / MARKET_DROP lower, MARKET_BOOM raises, STABLE_MARKET calms the price
+  ok  events are rare: 12 in 2 game hours
+  ok  price stays within $40-$115 with events and competitors (seen $40.0-$111.6)
+  ok  13. AI updates once every 5 s (11 updates in 60 s of 600 steps), not every frame
+  ok  14-15. after 31 min: A A: prod 19.1/min, produced 505, sold 499, revenue $34544 | B B: prod 14.4/min, produced 404, sold 325, revenue $22954 | C C: prod 9.1/min, produced 273, sold 131, revenue $9480
+  ok  strategies: at a low price they keep 40% / 50% / 70% of their oil (AGGRESSIVE / BALANCED / CONSERVATIVE)
+  ok  16. market effect: heavy selling x0.976, hoarding x1.024 (limited to +-4%)
+  ok  the competitor multiplier really enters the quoted price (aiMult 0.964)
+  ok  17. market share = production moving average / total: Player 46%, Co.A 22%, Co.B 18%, Co.C 14%
+  ok  18. rank by total revenue: 1.Player $49963  2.Co.A $15438  3.Co.B $10808  4.Co.C $6835
+  ok  rank follows revenue (player 1 -> 1 after +$10M)
+  ok  19-21. save -> JSON -> load: regions, supply contracts (active + history), event, competitors, market, wells, pipes, tanks, money all identical, and the game keeps running
+  ok  a Phase 3 save (no Phase 4 data) loads with default regions, competitors and no event
+
+ALL PHASE 4 CORE TESTS PASSED
+  ok  new game: tutorialDone = false
+  ok  validSpots(well): 48 tiles, every one really buildable
+  ok  validSpots(tank): 225 2x2 spots, every one really buildable
+  ok  nearestValid snaps a tap 2 tiles away onto a buildable tile
+  ok  nothing is invented when no valid tile is close
+  ok  nearestAnchor finds the well from 2 tiles away
+  ok  no anchor far from any building
+  ok  first sale sets tutorialDone
+  ok  tutorialDone survives save -> load
+  ok  old save with progress and no flag: guide is skipped
+  ok  old empty save: guide still shows
+ALL PHASE 5 CORE TESTS PASSED
+  ok  construction: objects exist in Game State immediately but are unusable until finished, pipes finish segment by segment, progress in (0,1), and a save made mid-construction finishes after loading
+  ok  after construction the well is connected and oil flows
+  ok  TEST 1: well + pipe + tank -> 9.8 BBL arrived in the tank (target tank = the connected one)
+  ok  everything produced is in the tank (no oil appears or vanishes)
+  ok  TEST 2: well with no pipe -> no flow (status nopipe)
+  ok  TEST 3: pipe that does not reach a tank -> no flow (status nostorage, not connected)
+  ok  pipe panel data says WHY: issue = noTank
+  ok  TEST 4: well reaches two tanks; A is nearer on the map (3.6) but B is nearer by pipe (7 vs 12 tiles) -> oil goes to B only
+  ok  TEST 5: nearest tank full -> target switches to the next valid tank (A got 5.0 BBL)
+  ok  TEST 6: every tank full -> inventory stays at capacity (never above), well status full, nothing is extracted
+  ok  room appears again -> flow returns to the nearest tank
+  ok  TEST 10: a new pipe opens a shorter path -> routes recalculated, target = A (4 tiles now), path and oil follow
+  ok  TEST 7: pipe removed -> no flow through it (tank stays at 4.8)
+  ok  TEST 8: pipe rebuilt -> flow returns (tank 4.8 -> 9.6)
+  ok  TEST 9: wells want 135/min, pipes carry 24.5/min (cap 25), every tile <= capacity, wells show "limited"
+  ok  production = actual flow = inventory change (consistent)
+  ok  W1 -> T1, W2 -> T1, W3 -> T2 (4,4,5); tank panel data: feeding wells 2, incoming 19.9/min
+  ok  flow direction of 8 carrying tiles follows the real path (each points to the next pipe tile or a tank)
+  ok  stress: tanks nearly full, 3 wells pushing: inventory never above capacity
+  ok  save -> load: network and target are rebuilt from Game State, inventory kept
+  ok  no network rebuild during 65 s of steady flow (version 5); 6000 steps in 690 ms
+ALL PHASE 6 CORE TESTS PASSED
+  ok  TEST 1: single well -> tank: 4.8 BBL arrived, reservoir 14.0 bar > well head 3.0 bar, v=1.04 m/s Re=13240
+  ok  TEST 2: no pipe -> zero flow; a cut pipe stops the flow at once and nothing reaches the tank
+  ok  TEST 3: full tank -> flow 0, inventory exactly at capacity (back-pressure 9.0 bar), nothing extracted
+  ok  TEST 4: two tanks: the nearer (by pipe) one fills first; when it is full the oil goes to the second (3.3 BBL)
+  ok  TEST 5: the nearest tank is cut off -> the well keeps producing into the other tank
+  ok  TEST 6: well 44.8 bbl/min into a pipe of 25 -> flow capped at 25.0 (limited by capacity)
+  ok  TEST 7: larger diameter -> less loss: 0.305 > 0.037 > 0.006 bar per tile at 20 bbl/min
+  ok  TEST 8: longer pipe -> more loss: 10 tiles need 6.0 bar, 40 tiles need 14.3 bar (flow 25.0 vs 20.7)
+  ok  Darcy-Weisbach: laminar f=64/Re (0.064), turbulent Swamee-Jain f=0.0217, smooth blend in the transition (f=0.0332); zero flow -> zero loss
+  ok  TEST 9a: pump on: 21.8 bbl/min (boost 8.7 bar), off: 17.6, on again: 21.8
+  ok  TEST 9b: disconnected pump does nothing (flow 0, power 0); a pump facing the wrong way blocks the line; flipping it back restores the flow
+  ok  TEST 9c: pump placement: needs a pipe line (pumpNeedsPipe), refuses junctions (pumpJunction), occupied tiles and water; costs 2500; removal restores the pipe tile
+  ok  TEST 10: pump curve H=H0-kQ^2: falls with flow (10.0 -> 0 bar), dP=rho*g*H, scales with speed, better at higher levels (L1/L2/L3 at 30 bbl/min: 7.5/16.0/26.5 bar)
+  ok  TEST 11: valve OPEN 25.0 -> PARTIAL 8.7 -> CLOSED 0 -> OPEN again 25.0 bbl/min
+  ok  TEST 12: tank back-pressure P=Pbase+Pmax*fill^2 grows (5%: 1.0 bar -> 20.7 bbl/min, 50%: 3.0 bar -> 19.5 bbl/min, 90%: 7.5 bar -> 16.4 bbl/min, 98%: 8.7 bar -> 15.6 bbl/min)
+  ok  TEST 13: tank full -> sell oil -> the flow resumes by itself (7.7 bbl/min)
+  ok  TEST 14: pump shutdown/startup are smooth: flow 21.8 -> 17.6 -> 21.7 bbl/min, biggest step per 0.1 s 0.13
+  ok  TEST 15: reconnecting the cut pipe restores the flow (10.0 bbl/min)
+  ok  TEST 16: 3 wells + 2 tanks + a pump over 400 s: no tank above capacity, no NaN, oil conserved (produced 165, sold 637, stored 529), 2000 solves
+  ok  TEST 17: extreme pressures (rate 1e9, reservoir 1e6 bar, pressure 0, NaN inputs): no NaN / Infinity / negative values, flow stays within pipe capacity, solver iterations <= 40
+  ok  TEST 18: save/load keeps pumps (id, position, level, enabled, direction, the pipe under it) and valves; the network is recalculated after loading and keeps working
+  ok  TEST 19: pump power = dP x Q / efficiency = 80.9 kW -> $4.04/min only while pumping (0 when off); it is part of the operating costs
+  ok  TEST 20: 4.6 solves per second at 60 fps (limit 5), no rebuild without a change, and every network change (pipe, upgrade, valve) triggers one recalculation
+  ok  TEST 21: solver converged in 4 iteration(s) (limit 40), debug snapshot lists the bottleneck, edge data has diameter 0.18 m / capacity 25
+  ok  TEST 22: closing a valve makes a pressure transient (peak 0.75 bar, limit 4) that decays back to 0
+  ok  TEST 23: performance: 12 wells, 4 pumps, 3 tanks, 126 pipe tiles -> step 2.787 ms avg (worst 13.80 ms), one solve 5.76 ms, 5.0 solves/s, 29 iterations
+ALL PHASE 8 CORE TESTS PASSED
+  ok  TEST 1: well -> pipe -> tank: flow 10.0 bbl/min along all 11 real pipe tiles, graph valid
+  ok  TEST 2: well -> 3 separate pipe builds with corners -> tank (4.8 bbl), one connected component
+  ok  TEST 3: well with two tanks on one line -> nearest path first (3.1 vs 0)
+  ok  TEST 4: tank full -> oil rerouted to the second tank (1000), both full -> flow stops (q=0.000)
+  ok  TEST 5: pipe deleted -> well cut off (0 routes, flow 0, no oil moves); pipe rebuilt -> 2 routes again and flow resumes (9.9 bbl/min)
+  ok  TEST 6: well can make 44.3 but the pipe carries 25 -> flow 25.0; upgraded pipe -> 40.0
+  ok  TEST 7: a crossing is routed around (touching nothing) or refused, a run beside another network re-planned or refused (pipeTouch), a nearby pipe stays a separate network, ending ON a pipe = real junction and oil follows it (19.6 bbl)
+  ok  TEST 8: two parallel networks (one tile apart) stay separate: a full tank in one never changes the other
+  ok  TEST 9: the graph is rebuilt only when something changes (600 idle steps -> no rebuild; delete -> exactly one)
+  ok  TEST 10: save/load rebuilds an identical, valid graph and the oil keeps flowing
+  ok  TEST 11: 700 random operations (14 buildings, 171 routes, 197 refused routes, 63 deletions) -> network valid after every single one
+ALL PIPE-NETWORK TESTS PASSED
+  ok  TEST 1: footprints: well 1x1, tank 2x2 (4 registered cells), pump 1x1 - one table (CFG.FOOTPRINT) feeds cellsOf, canPlace, price and spots
+  ok  TEST 2: 21 out-of-world attempts refused (anchor outside = "outside", footprint sticking out = "edge"), nothing built, no money moved; all four corners accept a tank that fits exactly
+  ok  TEST 3: 18 overlap attempts (well/tank/pump over well/tank/pump, every covered cell) all refused; a tank clipping a neighbour with one corner = "overlap" (OVERLAPPING), anchor on a building = "occupied" (OCCUPIED)
+  ok  TEST 4: placing directly beside existing buildings (touching edges, no gap) is valid - efficient use of land
+  ok  TEST 5: states VALID / INVALID / UNAFFORDABLE; 20 previews cost $0; confirm charges exactly the previewed $1500 once; a repeat confirm and an unaffordable confirm change nothing
+  ok  TEST 6: Confirm revalidates on the live state: spot taken after the preview -> refused ("overlap"), terrain changed -> refused, money gone -> refused; nothing charged or created
+  ok  TEST 7: locked region / unexplored area -> RESTRICTED_AREA, water / blocked tile under any corner of the footprint -> TERRAIN (existing rules preserved and classified)
+  ok  TEST 8: 3000 random placements across the whole 140x88 world (incl. outside it): 1366 built, 1634 refused; placement() == place() every time; price exact; refusals change nothing; no overlaps / outside buildings / unregistered cells
+  ok  TEST 9: 100,000 placement() checks on a world with 400 buildings took 33 ms (0.33 us each): grid lookups, no object scan
+ALL PHASE 14 CORE TESTS PASSED
+  ok  TEST 1: well -> tank straight (9 tiles, 0 corners, oil 12.0); TEST 2: with one 90-degree turn (13 tiles, 1 corner, oil 12.0)
+  ok  TEST 3: well -> tank with multiple turns (3 corners, 20 tiles) around two buildings; oil 16.2 arrives
+  ok  TEST 4: well -> pump: the route ends on the pump cell along its axis (7 new tiles), end recognised as "pump"
+  ok  TEST 5: pump -> tank (starts on the pump cell); TEST 6: well -> pump -> tank is one real path, the pump is on it and works (boost 8.3 bar), oil 15.5
+  ok  TEST 4b: leaving / entering a pump from its SIDE is refused ("pumpSide": cannot connect to this side of the pump) in both directions
+  ok  TEST 7: pipe endpoint -> new pipe (continues the line); TEST 8: pipe endpoint -> tank (oil 16.2, 1 corner)
+  ok  TEST 9: pipe endpoint -> pump (end recognised, joined along the axis, oil 15.5 reaches the tank through it)
+  ok  TEST 10: the direct line through a tank is blocked (crossBuilding); TEST 11: the router goes around it - 17 tiles, 2 corners, never through or beside the other building, built and valid
+  ok  TEST 12: destination walled in by water -> "No valid route found" (noRoute), no pipe, no money spent
+  ok  TEST 13: 5 routes ending outside the world refused ("outside"), nothing built
+  ok  TEST 14: invalid endpoints: a pipe in the middle of nowhere = "floating", a tile that already is a pipe = "nothing"; from/to real buildings is accepted
+  ok  TEST 15: 899 cash for a 900 pipe -> refused ("cash"), not one tile built, not one coin spent
+  ok  TEST 16: cancel / 200 previews: cash, capex, pipes, buildings and network version unchanged; TEST 19: rapid cancel (200 previews in a row) leaves nothing behind
+  ok  TEST 17: confirm builds all 9 tiles and takes exactly 900 (100 x 9); TEST 18: 6 more confirms of the same preview build nothing and take nothing
+  ok  TEST 23: a route straight across a pipe is never built across it (goes around: 31 tiles, no junction); TEST 24: ending ON the pipe = one real junction, same network
+  ok  TEST 25: save/load after construction: 16 pipe tiles identical, graph valid, oil keeps flowing
+  ok  TEST 26-27: 6 pipes between 12 buildings: 6 independent networks, every well delivers (97 bbl in the tanks)
+  ok  TEST 28: well at x=6 -> building at x=125 across the 140-wide world: 120 tiles, 0 corners, built in 0.5 ms
+  ok  TEST 29: 290 long routes between random buildings of the 140x88 world: avg 1.20 ms, worst 25.1 ms (26 needed a detour, 49 had no route, 44 built and validated)
+  ok  TEST 30: route valid at preview, then water / a building appears on it / the money is gone -> confirm refused with the reason, 0 tiles built, money unchanged - never a partial pipe
+  ok  TEST 31: cost = sum over the real tiles of (pipe price x terrain x region) = 1420, shown in the preview and taken exactly once on confirm
+
+ALL PHASE 15 CORE TESTS PASSED
+  ok  TEST 1: well -> pipe -> tank: graph = 2 nodes (W1, T2) + 1 segment of 11 pipe tiles, no junction; real flow 25.0 bbl/min, tank 12.0
+  ok  TEST 2: well -> main -> T-junction -> tank A: junction J5646 made by joining the middle of the main pipe, 3 segments, preview announced it (from 2 links to 3), oil to tank A 16.2
+  ok  TEST 3: well -> main -> T-junction -> tank B: with A full the real flow turns into the branch (25.0 bbl in B), every tile of the branch carries oil
+  ok  TEST 4: one junction with 3 branches (west to the well, east to tank A, south to tank B): 3 segments listed on the node
+  ok  TEST 5: one junction with 4 branches (N, S, E, W): same node J5646, 4 segments, well reaches 3 tanks; no duplicate junction
+  ok  TEST 6: a pipe joined to the middle of the main pipe -> junction node; TEST 7: the main pipe became 2 logical segments (5 + 5 tiles) + the 7-tile branch, every pipe tile belongs to exactly one segment
+  ok  TEST 8: a route across a pipe goes AROUND it (no junction, nothing built by the preview) and across a wall too long to circle it is refused ("crossPipe": pipe crossing is not a junction); diagonal neighbours stay two separate networks (both pipe ends are end nodes)
+  ok  TEST 9: the intentional junction connects the networks (same component) and oil really flows through it
+  ok  TEST 10: the branch to tank B deleted in one operation (7 tiles, refund 350 exact): the junction simplified itself, the main pipe is one segment, tank A keeps its supply
+  ok  TEST 11: an entire dead-end branch (4 tiles incl. its end) removed in one operation; a second branch after it; remaining network valid and running
+  ok  TEST 12: cut the main between well and junction -> 0 routes, flow 0, graph shows both pieces; one tile put back -> 2 routes, flow back to 25.0
+  ok  TEST 13+14: 2 wells x 2 tanks over 2 junctions: every well reaches every tank, both produce (12.0 + 13.0 bbl/min), tanks hold 25
+  ok  TEST 15: well -> pipe -> pump -> pipe -> tank: pump is a node with 2 segments (in/out), on the real route, oil arrives (15.5)
+  ok  TEST 16: well -> main -> junction -> tank A + pump -> tank B: the pump (in the branch) works only when its branch is the route (boost 8.26 bar, flow 25.0), and gives nothing when switched off
+  ok  TEST 17: tank A full -> oil is rerouted into the branch; TEST 18: 21 flowing tiles over every branch, worst load 100% of capacity; TEST 19: pressure solved on the branch and falling toward the tank
+  ok  TEST 20: save/load -> identical graph (7 nodes, 6 segments, junction ids), the simulation resumes from the saved topology
+  ok  TEST 21-23: 900 random builds / refusals / single removals / branch removals / steps (370 built of which 370 made junctions, 97 refused, 177 tiles removed, 45 branches removed): graph valid after EVERY operation - no duplicate junction, no orphan pipe, no broken reference
+  ok  TEST 24: 400 previews / cancelled routes: graph, pipes, money and network version unchanged (a preview never builds, never rebuilds)
+  ok  TEST 25: 300 rapid connect / disconnect / branch-remove operations: graph valid after every one (93 tiles cut)
+  ok  TEST 26: an end tile touching two different networks at once is refused ("ambiguous"); a bridge pipe from one network to the other (2 junctions) and a single tile put in a gap are fine
+  ok  TEST 27: 120 s of simulation -> 0 rebuilds; a network of 301 pipe tiles / 24 nodes rebuilds (graph included) in 0.68 ms - only when the topology changes
+  ok  TEST 28: every drawn link equals the solver link (checked on every tile by validateNetwork); debug info names node, segment, branches, network and connection state
+
+ALL PHASE 16 CORE TESTS PASSED
+PIPE TYPES TEST PASS { mainCap: 50, mainD: 0.2376, mainTiles: 12 }
+  ok  well -> pipe -> tank flows (q=25.0)
+  ok  canMove changes nothing; specific reasons: sameSpot / occupied / pipe / outside
+  ok  invalid move: nothing moved, nothing paid (pipe)
+  ok  a tank may move one tile (its own old cells do not block it)
+  ok  moved: old cells free, new cells taken, graph valid, the well has 0 routes (pipe no longer touches the tank)
+  ok  moved back next to the pipe: connected again, oil flows (q=25.0)
+  ok  well moved one row: graph valid (0 routes)
+  ok  pump: clear "cannot move" reason
+  ok  save -> load: moved position kept, graph valid, route restored
+ALL PHASE 22 CORE TESTS PASSED
+  ok  1. well -> tank by node IDs: line #1 B1 -> B2, 13 tiles, preview == built route, oil flows (q=25.0)
+  ok  2. well -> pump -> tank: lines B1->B3, B3->B2, oil reaches the tank
+  ok  3/9. junction on an existing pipe (tile 5646) joins 3 branches into one network; with tank A full the oil goes down a branch (B 0, C 25)
+  ok  3. storage -> storage pipe: B2 -> B3
+  ok  4/5. unknown node, empty tile, same node -> refused with a reason; the same pair twice -> "duplicate", nothing built, no money taken
+  ok  6. two tanks in the way: auto route goes round them (21 tiles), never through a building
+  ok  7. a river across the whole map: no route ("noRoute"), nothing built
+  ok  10. one tile erased: the pipe becomes two entities with an open end each (B1->E5645, E5647->B2), no route
+  ok  11. tank deleted: the line now ends in an open end (B1->E5651), no reference to the deleted tank
+  ok  17. six pipes built one after the other: 6 entities, no duplicates, graph valid
+  ok  12/13. save -> load: 6 pipe entities identical (IDs, start/end nodes, tiles), graph rebuilt, oil flows; next new id continues at 7
+  ok  migration: an old save (no pipe entities) gets entities built from its tiles, graph valid
+  ok  18. 8 wells -> one tank (pipes join each other): 8 entities, graph valid, slowest route 37 ms (runs only on a tap)
+ALL PHASE 23 CORE TESTS PASSED
+  ok  Test 1: Well -> Pipe -> Junction(3 pipes) -> Pipe -> Tank: B1->J5630 17.4, J5630->B3 17.4 bbl/min; tank B 11 bbl, full tank A gets 0
+  ok  Test 2: reservoir 8.41 bar < tank back-pressure 8.84 bar (tank 99%, still room) -> flow 0
+  ok  Test 3: well 44.7 bbl/min into a 25 bbl/min pipe -> 25.0 (usage 100% bottleneck); 82% -> high; 40% -> normal
+  ok  Test 4: 40-tile line, branch D=0.180 m -> 14.7 bbl/min (loss 6.9 bar); main D=0.238 m -> 20.1 bbl/min (loss 3.2 bar); level-2 branch 19.5
+  ok  Test 5: fill -> back-pressure -> flow: 0%: 1.00 bar, 16.1 bbl/min | 50%: 3.03 bar, 14.5 bbl/min | 80%: 6.16 bar, 12.0 bbl/min | 95%: 8.26 bar, 10.2 bbl/min
+  ok  Test 6: full tank: inventory 1000 = capacity 1000, inflow 0, nothing more produced
+  ok  Test 7: cutting the junction -> tank B pipe: tank B stays at 8.4 bbl, every pipe 0; the still-connected part (well -> A) flows again: 17.9 bbl/min; 2 open stubs at 0
+  ok  Test 8: well pressure 100% -> 14.7 bbl/min; 30% (reservoir 12.9 bar, PI 1.05) -> 9.3; back -> 14.7. First step 1.18, biggest change per 0.1 s 1.18
+  ok  Test 9: 0% -> 1.00 bar, 25% -> 1.51 bar, 50% -> 3.01 bar, 75% -> 5.51 bar, 90% -> 7.49 bar; the pressure at the pipe end follows it
+  ok  Test 10 (core part): the pipe reports currentFlow 17.88 bbl/min and direction B1 -> B2 from the solver (screen part: test-v2-phase1.js)
+  ok  Test 11: NaN inputs, zero flow, zero diameter, dt 0 / 5 s, flow 1e9 -> every value finite, nothing negative, pressures <= 150 bar
+  ok  Test 12: 3 wells, 3 tanks, 2 junctions, a cut, a sale, a reconnection over 400 s: graph valid every check, oil conserved (produced 169 = stored 90 + sold 79), 2001 solves
+PHASE 1 core: 12 passed / 0 failed
+  ok  Units: H(Q)=H0-kQ^2 [m], dP=rho*g*H [Pa]/1e5 = bar; level 1: H0 119.9 m = 10 bar at rho 850 kg/m3, g 9.81; Qmax 60 bbl/min
+  ok  Test 1: Pump OFF: state OFF, boost 0 bar, 0 kW; flow 36.0 -> 29.7 bbl/min (line without pump 29.9)
+  ok  Test 2: Pump ON: RUNNING, boost 6.45 bar, flow 29.7 -> 35.8 bbl/min, well 29.7 -> 35.8
+  ok  Test 3: Pump increases pressure: in 2.35 -> out 8.51 bar (boost 6.45); well-head 9.9 -> 6.9 bar
+  ok  Test 4: Pump flow curve: Q 36.0 bbl/min -> head 76.7 m (H0 119.9), boost 6.40 bar = curve
+  ok  Test 5: Pump operating cost: 98.5 kW -> $4.93/min; $4.92 in 60 s while running, $0 while OFF
+  ok  Test 6: Valve OPEN: flow 29.9 bbl/min, pressure before 4.14 / after 3.98 bar; tank gains 29.9 bbl/min
+  ok  Test 7: Valve CLOSED: flow 0 exactly, well 29.9 -> 0, tank frozen at 20 bbl, pressure before 23.9 (shut-in) / after 1.0 bar
+  ok  Test 8: Valve isolation: closed -> nothing after the valve, no tank growth, oil not drawn; reopened -> flow 29.8 bbl/min again
+  ok  Test 9: Small pipe bottleneck: capacity 25; without pump pressure-limited 23.6 (high), with pump 25.0 = 100% BOTTLENECK while the well could give 45 bbl/min
+  ok  Test 9b: Replacing the small pipe with a bigger one: flow 25.0 -> 36.5, status high
+  ok  Test 10: Main pipe bottleneck (narrow section downstream): flow 25.0/25 bbl/min, well throttled to 25.0
+  ok  Test 11: High utilisation: bands <60 normal, 60-80 busy, 80-95 high, >95 bottleneck (stored in game state L.status); small well on a main line: 20% -> normal
+  ok  Test 12: Tank backpressure: tank 0->90% full: flow 29.9 -> 22.9 bbl/min (back-pressure 7.6 bar); full: 0, inventory never above capacity
+  ok  Test 13: Multiple bottlenecks: both narrow sections at 100%, the network carries the minimum: 25.0 bbl/min
+  ok  Test 13b: two separate pipes at the limit -> 2 BOTTLENECK warnings
+  ok  Test 14: Pump starvation: tank with room reachable, no oil -> STARVED (flow 0, 0 kW, warning); a well connected behind it -> RUNNING 35.3 bbl/min
+  ok  Test 14b: OVERLOAD only at flow >= 98% of Qmax (OVERLOAD); STOPPED when every reachable tank is full (STOPPED)
+  ok  Test 15: Save/Load pump state: OFF, level 1, direction, run time 30 s and cost $2.18 restored; still OFF with 0 boost
+  ok  Test 16: Save/Load valve state: CLOSED stays CLOSED after Load (flow 0, tank frozen); reopened + pump ON -> flow 35.9 bbl/min
+  ok  Test 17/18: No negative flow / NaN / Infinity / inventory > capacity over 400 random pump toggles, valve changes, tank empty/full, pump flips
+  ok  Test 19: PARTIAL valve throttles for real: flow 29.9 -> 17.5 bbl/min, dP 0.5 bar; a healthy network raises no warning
+
+  === FULL SCENARIO: Well -> Small Pipe -> Pump -> Main Pipe -> Valve -> Tank ===
+  [Pump ON, valve OPEN       ] well 25.0 | pipe-after 25.0 bbl/min | tank 15 bbl (+25.0/min) | pump RUNNING boost 8.26 bar (in 1.0 / out 9.1) | well-head 10.1 bar | valve OPEN 25.0 (7.4->7.3 bar) | small pipe 100% bottleneck | BOTTLENECK
+  [Pump OFF                  ] well 23.5 | pipe-after 23.5 bbl/min | tank 31 bbl (+23.5/min) | pump OFF boost 0.00 bar (in 4.7 / out 4.6) | well-head 12.8 bar | valve OPEN 23.5 (3.1->2.9 bar) | small pipe 94% high | LOW_PRESSURE
+  [Pump ON again             ] well 25.0 | pipe-after 25.0 bbl/min | tank 48 bbl (+25.0/min) | pump RUNNING boost 8.26 bar (in 1.0 / out 9.1) | well-head 10.1 bar | valve OPEN 25.0 (7.4->7.3 bar) | small pipe 100% bottleneck | BOTTLENECK
+  [Valve CLOSED              ] well 0.0 | pipe-after 0.0 bbl/min | tank 49 bbl (+0.0/min) | pump STOPPED boost 0.00 bar (in 3.0 / out 12.9) | well-head 3.0 bar | valve CLOSED 0.0 (23.9->1.0 bar) | small pipe 0% normal | VALVE_CLOSED
+  [Valve OPEN again          ] well 25.0 | pipe-after 25.0 bbl/min | tank 64 bbl (+25.0/min) | pump RUNNING boost 8.26 bar (in 1.0 / out 9.1) | well-head 10.1 bar | valve OPEN 25.0 (7.4->7.3 bar) | small pipe 100% bottleneck | BOTTLENECK
+  [Small pipe -> upgraded    ] well 43.6 | pipe-after 43.6 bbl/min | tank 93 bbl (+43.6/min) | pump RUNNING boost 4.73 bar (in 2.5 / out 6.9) | well-head 3.0 bar | valve OPEN 43.6 (6.8->6.8 bar) | small pipe 34% normal | no warnings
+  [Tank 90% full             ] well 41.9 | pipe-after 41.9 bbl/min | tank 921 bbl (+41.9/min) | pump RUNNING boost 5.13 bar (in 3.2 / out 8.0) | well-head 3.7 bar | valve OPEN 41.9 (7.9->7.9 bar) | small pipe 32% normal | TANK_BACKPRESSURE
+  [Well depleted (starved)   ] well 0.0 | pipe-after 0.0 bbl/min | tank 0 bbl (+0.0/min) | pump STARVED boost 0.00 bar (in 3.2 / out 8.0) | well-head 3.7 bar | valve OPEN 0.0 (1.0->1.0 bar) | small pipe 0% normal | PUMP_STARVED
+  ok  FULL SCENARIO: Pump OFF/ON, Valve OPEN/CLOSED, Small-pipe bottleneck, Tank back-pressure, Pump starvation: each step changed Flow / Pressure / Inventory (printed above)
+
+PHASE2-ALLPASS (23 groups)
+  ok  High load: max pump flow 36.1 <= Qmax 60 bbl/min; max boost 6.42 <= H0 10 bar; no NaN / negative
+  ok  Pump OFF boost 0 (flow 29.8, out 6.4 bar); ON boost 6.40 (flow 36.0, out 8.6)
+  ok  Valve OPEN 35.9 > PARTIAL 17.5 > CLOSED 0 bbl/min; pressure before: 5.4 / 9.9 / 23.9 bar
+  ok  Save/Load: valve PARTIAL and pump OFF restored, simulation valid after load
+
+PHASE2-FINAL-ALLPASS (4 groups)
+  ok  Model: well 1x1 with 4 OUT points, tank 2x2 with 8 IN points (all outside the footprint); id/type/position/rotation/size/footprint present
+  ok  Pump: IN and OUT on opposite sides of its axis; flip = rotation +180 and swaps both points; all four facings give 0/180/90/270 and the right OUT side
+  ok  Valve: IN towards the start of its line, OUT towards the end; junction/pipe tile: its pipe neighbours (2 on a straight run)
+  ok  Validation by cells: overlap, occupied, map edge (footprint sticking out), outside, water under any cell; touching tanks and corners are allowed
+  ok  No accidental connection: beside a pipe's middle -> refused (touchesPipe), nothing changed; one tile away fine; at an OPEN END -> valid, 0 junctions, network valid, oil arrives
+  ok  Snap: always a valid tile within the radius, never invented when none, prefers a spot touching an open pipe end; 0.040 ms per call (was 3.2 ms scanning the whole map)
+  ok  Cost preview: previews/snaps/ports leave the saved state byte-identical; build charges exactly the previewed $1500; unaffordable -> UNAFFORDABLE and nothing changes
+  ok  Hydraulics / network / economy / market: 600 steps with 200 interleaved previews end byte-identical (same random sequence) to the game without previews
+  ok  Save/Load: every building has the same type, position, rotation, footprint and connection points after a reload (pump facing included)
+  ok  Move: a connected tank may be nudged next to its own pipe; moving it beside another part of the pipe is refused
+  ok  Same rule on a pipe that is still being built: beside its middle refused, at its open end allowed
+
+PHASEB-ALLPASS (11 groups)
+  ok  1-2. well -> pipe -> tank: one transaction (charged exactly the previewed 1900), 19 tiles, oil arrives (24.5 bbl)
+  ok  3-4. pipe -> pump and pump -> pipe: the pump takes the line (IN + OUT ports), runs RUNNING, pump node route judged by the same judge (ok)
+  ok  5-6. pipe -> valve -> pipe: closed valve -> status BLOCKED; open again -> NEAR_LIMIT
+  ok  7-8. branch from the middle of a pipe: a real junction in the solver graph (0 -> 1), the branch pipe is live and oil arrives (tanks 34.9 / 0.0 bbl)
+  ok  9. crossing is refused as "crossPipe", never silently turned into a junction (junction count unchanged = 0)
+  ok  10. invalid targets refused with a reason: sameNode, duplicate (both directions), sameNet (two points of one pipe), badNode; routes go round buildings (tank-to-tank is allowed by the current network rules, unchanged)
+  ok  11-13. release near a target = a node-to-node route (21 tiles); release far = an OPEN-END pipe (10 tiles) judged by the same judge; both have a cost
+  ok  14-15. cancel (just judging) and "not enough cash" (cash): no pipe, no payment, state byte-identical
+  ok  16-17. long pipe (147 tiles, 1 bends, cost 14700) and short pipe (2 tiles) both build
+  ok  18-19. three pipes (one main) on an existing network: first pipe flow 23.57 -> 23.46 bbl/min, validateNetwork clean
+  ok  20. save / load: the pipe, its ends and the live flow are restored (29 tiles)
+  ok  21. pipeStartPoints (wells/tanks/open ends), pipeStatus = NEAR_LIMIT for utilisation 94% (high), diameter 180 mm; both are read-only
+PHASEC-ALLPASS (12 groups)
+  ok  schedule: sums to the span exactly for 9 spans; 24 h = 6320 steps (not 86,400)
+  ok  1 min / 1 h / 6 h / 24 h: oil delivered 1 min 24 bbl (60 steps, 20 ms); 1 h 803 bbl (800 steps, 152 ms); 6 h 996 bbl (2000 steps, 192 ms); 24 h 996 bbl (6320 steps, 190 ms) - bounded by pipe capacity and tank room, identical on repeat
+  ok  24 h without a tank limit: 2073 bbl delivered (never above the starting flow 23.6 bbl/min x 1440 min = 34052 nor the pipe capacity 36000) in 6320 steps; the well wears out by the existing rules: pressure 0 %, condition 10 %
+  ok  offline = online within 0.11 % for one hour with the same random numbers (806.7 vs 805.9 bbl); across 6 other random seeds the live game itself gives 631..836 bbl, so an offline result is one valid, deterministic sample
+  ok  full tank: filled to 600.0 / 600 and stayed there; the next hour delivered 0.000 bbl; the well is held back (out 0.000)
+  ok  blocked pipe (valve closed): 6 h offline delivered 0.000000 bbl
+  ok  the same pipe opened again delivers 996 bbl in the next hour
+  ok  pump limitation: one hour delivered 930 bbl <= pump max 3600 bbl (60 bbl/min)
+  ok  app killed by the OS: restored from the save only, +6 h -> tank 186 -> 1000 bbl; two restores identical; within 0.00 % of a process that never died
+  ok  save / load: timestamp meta round-trips, serialize() untouched, advance(0) is a no-op
+  ok  time policy: 90 s credited; <5 s left to the live loop; clock set back = 0; 10 days away = 24 h cap; back-and-forward is not double counted; same timestamp twice = 0; monotonic clock beats a moved wall clock (same boot), wall clock used after a reboot
+  ok  plug-in point: a registered "refinery" system ran after each of 800 offline steps (same registry for the live loop), deterministic
+OFFLINE-ALLPASS (12 groups)
+1. the pre-built network
+  ok  1a 29 stations installed on the real world, none refused
+  ok  1b 34 trunk segments (19 main · 5 loops · 10 coastal), 7,288 tiles
+  ok  1c the four elements: main lines + closed loops + F1 coastal links (branches are the player's)
+  ok  1d PipeNet (the old pipes) is untouched: no old line was created, the only buildings are the stations
+  ok  1e stations are operational and free (cash still $500M)
+  ok  1f the stations lie in the real sectors
+  ok  1g the graph is one connected network with independent closed loops
+  ok  1h six channels, each with capacity (300,000 = the 36" class) and max pressure (3,000)
+  ok  1i channel colours = the game's product colours (crude #4a3a2c, jet #4aa3ff)
+  ok  1j shell cost = tiles × 6 channels × $120,000 (the 36" price)
+2. the six channels, each on its own
+  ok  2-CRUDE source and destination are built and wired to the CRUDE port
+  ok  2-CRUDE it arrives: the source lost exactly what the destination gained (12500 bbl)
+  ok  2-CRUDE the channel reports flow 25000 bbl/d · pressure 57 psi · in the pipe 4023 bbl
+  ok  2-CRUDE the other five channels carry nothing
+  ok  2-CRUDE no segment exceeds the channel capacity
+  ok  2-WATER the two stations are tapped into the trunk inside E1
+  ok  2-WATER source and destination are built and wired to the WATER port
+  ok  2-WATER it arrives: the source lost exactly what the destination gained (12500 bbl)
+  ok  2-WATER the channel reports flow 25000 bbl/d · pressure 60 psi · in the pipe 211 bbl
+  ok  2-WATER the other five channels carry nothing
+  ok  2-WATER no segment exceeds the channel capacity
+  ok  2-GASOLINE source and destination are built and wired to the GASOLINE port
+  ok  2-GASOLINE it arrives: the source lost exactly what the destination gained (12500 bbl)
+  ok  2-GASOLINE the channel reports flow 25000 bbl/d · pressure 57 psi · in the pipe 4023 bbl
+  ok  2-GASOLINE the other five channels carry nothing
+  ok  2-GASOLINE no segment exceeds the channel capacity
+  ok  2-DIESEL source and destination are built and wired to the DIESEL port
+  ok  2-DIESEL it arrives: the source lost exactly what the destination gained (12500 bbl)
+  ok  2-DIESEL the channel reports flow 25000 bbl/d · pressure 57 psi · in the pipe 4023 bbl
+  ok  2-DIESEL the other five channels carry nothing
+  ok  2-DIESEL no segment exceeds the channel capacity
+  ok  2-JET_FUEL source and destination are built and wired to the JET_FUEL port
+  ok  2-JET_FUEL it arrives: the source lost exactly what the destination gained (12500 bbl)
+  ok  2-JET_FUEL the channel reports flow 25000 bbl/d · pressure 57 psi · in the pipe 4023 bbl
+  ok  2-JET_FUEL the other five channels carry nothing
+  ok  2-JET_FUEL no segment exceeds the channel capacity
+  ok  2-GAS source and destination are built and wired to the GAS port
+  ok  2-GAS it arrives: the source lost exactly what the destination gained (12500 bbl)
+  ok  2-GAS the channel reports flow 25000 bbl/d · pressure 126 psi · in the pipe 4023 bbl
+  ok  2-GAS the other five channels carry nothing
+  ok  2-GAS no segment exceeds the channel capacity
+  ok  2-stock an empty source puts nothing in the pipe and nothing appears at the destination
+  ok  2-full a full destination refuses: the source keeps its oil
+3. distribution at the branches
+  ok  3a one source, three branches (one of them nearly full)
+  ok  3b in = out: what left the source is exactly what the three branches received
+  ok  3c no destination receives the whole source quantity
+  ok  3d the nearly full branch receives only what its tank can still hold (1,000 bbl)
+  ok  3e the others share the rest by what each can take
+  ok  3f no tank is filled beyond its capacity
+  ok  3g supply (3,000 bbl) < demand (100,000 bbl): everything moved, total conserved, nothing created
+4. loops, alternative paths and capacity
+  ok  4a source on N3 (B), destination on M2 (A7)
+  ok  4b a path exists
+  ok  4c product flows by the shortest path
+  ok  4d the faulted segments carry nothing and the product still arrives by an alternative path
+  ok  4e no double counting: the source lost exactly what the destination gained over the alternative route
+  ok  4f the alternative path (6 segments) carries 25000 of the original 25000 bbl/d: the longer way costs pressure, capacity is enough
+  ok  4g every segment into the destination station cut: no valid path = no product moves (no teleporting)
+  ok  4h repairing the segments restores the flow
+  ok  4i capacity: no segment is ever loaded above 300,000 bbl/day however much is asked
+  ok  4j the loops are effective: the flow above one path's capacity goes over a second, third… path (total 900000 bbl/day over 3 routes)
+5. pipe cuts and pump failures
+  ok  5a 28 routes exist whose delivery really depends on a pump (e.g. N4→FS 2364 tiles: 125000 bbl/d with the pump, 74477 without)
+  ok  5b both ends of such a route are built (N5e → FS)
+  ok  5c with the pumps working, the pumped hub boosts the pressure (47 → 501 psi) and 125000 bbl/d arrives
+  ok  5d pump failure: no pump moves any product and the channel pressure falls 679 → 21 psi (flow 125000 → 125000 bbl/d)
+  ok  5e repairing the pumps restores pressure and flow
+  ok  5f a failure of the OTHER channels' pumps does not touch the crude channel
+  ok  5g closing the GASOLINE channel stops gasoline only; diesel keeps flowing
+  ok  5h a DIESEL channel fault blocks diesel
+6. tapping from different points of the trunk
+  ok  6-T-E2 a station is tapped in at (993,482) [A3]
+  ok  6-T-E3 a station is tapped in at (993,835) [A3]
+  ok  6-T-N5 a station is tapped in at (555,309) [B2]
+  ok  6-L-C1 a station is tapped in at (121,482) [D1]
+  ok  6-F-L4 a station is tapped in at (122,443) [D1]
+  ok  6a every tap cuts its segment in two and adds one station (mechanical registration in the engine)
+  ok  6b each new station is a real building bound to its node in the graph
+  ok  6c a point that is not on the trunk cannot be tapped
+  ok  6d tanks are wired to two different tapped stations (T1 and T2)
+  ok  6e the product travels between the two tapped points
+  ok  6f a tap buys a station (one tile of shell $720,000 × the terrain factor of the site = $950,400) and is refused without the cash
+  ok  6g a station can never be demolished (the graph would break)
+7. no mixing of products
+  ok  7a a gasoline tank cannot be wired to the CRUDE port, a crude tank not to the GASOLINE port
+  ok  7b (water tanks are E-sector only)
+  ok  7c both products travel at the same time to their own tanks
+  ok  7d each destination received exactly what its own source gave: no crude in the gasoline tank, no gasoline in the crude tank
+  ok  7e the channels keep separate books (moved volume per channel)
+  ok  7f the 12 station ports (two per channel) are each locked to one product
+8. save and load after a restart
+  ok  8a after the restart the network is back: stations, segments, pumps, occupied tiles
+  ok  8b faults, the closed channel and the failed pump survived the save
+  ok  8c every segment (path, ends) and every station↔building binding is identical
+  ok  8d the station buildings, the old pipe lines and the node bindings all came back
+  ok  8e the reloaded game carries product again (flow 25000 bbl/d)
+  ok  8f save → load → save is lossless
+  ok  8g an old save (no network inside) loads exactly as before: no network
+9. the old pipes are not affected
+  ok  9a an old-style connection between two tanks plans and is built fine with and without the central network
+  ok  9b the old pipe takes the SAME route, tile for tile, with the central network present
+  ok  9c the old pipe moves exactly the same oil (identical volumes) with the central network running next to it
+  ok  9d no old pipe tile is a central tile (shared occupancy registry)
+  ok  9e an old pipe is never routed across the central trunk (it goes around or is refused)
+  ok  9f a building cannot be put on a central tile
+10. end to end: crude in, refinery, four product channels out
+  ok  10a a refinery zone in a D sector and the trunk tile nearest to it
+  ok  10b a crude tank (250,000 bbl) wired to the network at N1
+  ok  10c a refinery stands in D and is wired to ONE tapped station: crude in + GAS/JET_FUEL/DIESEL out
+  ok  10d one product tank per wired product channel (GAS, JET_FUEL, DIESEL) at the B stations
+  ok  10e the refinery took 4399 bbl of crude, all of it from the tank through the CRUDE channel
+  ok  10f every product reached its own tank through its own channel
+  ok  10g what the refinery made = what the destination tanks hold (every barrel accounted for)
+  ok  10h the existing refinery yields are untouched: the products arrive in the recipe's proportions (GAS 5 : JET_FUEL 10 : DIESEL 30)
+  ok  10i the channels worked at once and each kept its own volume count
+11. accounting: the asset, the bank loan, the grace period and the instalments
+  ok  11a the given terms: $500M cash, 6%, 60 years, 2 years grace
+  ok  11b the purchase moves NO cash: $500M stays in the bank account
+  ok  11c network value = shell $5,247.36M + 29 stations $20.88M + 18 pumps $810M = $6078.24M
+  ok  11d the network is an asset (fixed assets) and the bank loan a liability of the same amount
+  ok  11e the balance sheet balances and equity is just the $500M of owner capital (the company paid nothing for the network)
+  ok  11f one loan: 6%, 720 months, 24 of them grace
+  ok  11g after the grace the instalment is the annuity of 696 months: $31365918.08
+  ok  11h the schedule: 24 interest-only months of $30.391M, then 696 instalments, balance 0 at month 720
+  ok  11i months 1–24: only interest is paid ($30.391M/month booked as interest expense), the principal does not move
+  ok  11j month 25: interest + principal = the instalment; the principal part REDUCES the liability (not an expense)
+  ok  11k the interest share falls and the principal share rises; the balance after month 27 matches the schedule ($6075.301M)
+  ok  11l maintenance (pipeline upkeep + pumps/stations) and operation are separate expense accounts, booked every month
+  ok  11m the books: interest is a financial expense, principal repayment is a cash-flow item (liability reduction), the acquisition itself is NOT a cash flow
+  ok  11n after 27 months of books the balance sheet still balances
+  ok  11o insurance and administration are NOT charged on the network (no extra cost invented): insurance base excludes it
+  ok  11p the finance report exposes asset, loan, instalment and the whole table
+  ok  11q the company saves and reloads the network, the loan and its progress
+
+125 passed, 0 failed
+A. normal instalments: interest on the balance that is still owed
+  ok  A1 the whole $6078.24M is a liability from day 1 and only falls after the grace
+  ok  A2 grace (24 months): interest only, on the unchanged balance; the balance does not move
+  ok  A3 after the grace every month's interest = (balance before the payment) × 6%/12, never on the original amount
+  ok  A4 next period interest is computed on the NEW (reduced) balance
+  ok  A5 the balance follows the published schedule exactly
+  ok  A6 the books balance; principal paid = liability reduction (separate from interest expense)
+B. extra payment on the principal (during grace and after)
+  ok  B1 $1B extra: balance falls by exactly that; term (720) and rate (6%) unchanged
+  ok  B2 cash falls by the principal + the interest accrued to date, NO penalty; the principal is not an expense
+  ok  B3 the future interest saved = 2686.6M (before − after), shown with the extra repaid
+  ok  B4 the instalment is re-based on the smaller balance over the same months left: 31365918 → 26205556
+  ok  B5 the month after the payment charges interest on (V − $1B) only
+  ok  B6 half of the remaining loan repaid early: balance 6062.0M → 3031.0M
+  ok  B7 the next month's interest runs only on the balance left
+  ok  B8 half repaid -> a large part of the future interest is saved: 7.63B of 15.27B
+  ok  B9 the displayed schedule is the new one: from the current month to month 720, ends at 0
+C. full early repayment stops interest at once
+  ok  C1 full repayment: the loan closes, balance 0
+  ok  C2 paid exactly the balance + interest accrued to date, no early-repayment fee
+  ok  C3 all the remaining interest is saved: 15.57B
+  ok  C4 six months later: NO interest booked on money that was repaid
+  ok  C5 the books balance; the liability is gone, the asset stays
+D. loan runs to its end
+  ok  D1 after 720 months the loan is closed and the balance is zero
+  ok  D2 total interest paid over 60 years = the schedule: $16.482B (schedule 16.482B)
+  ok  D3 principal repaid = the full loan; interest paid is reported
+E. mid-month repayment: no interest on money already repaid, no double charge
+  ok  E1 the interest accrued so far this month (49% of the month) is settled on the balance as it was
+  ok  E2 that month's total interest = old balance for the days before + the reduced balance for the days after (nothing on the repaid half afterwards)
+F. guards, panel numbers, save / load
+  ok  F1 not enough cash: refused, nothing changes
+  ok  F2 zero / negative amounts are refused
+  ok  F3 an amount above the balance repays exactly the balance
+  ok  F4 the panel numbers exist: balance, accrued interest, principal repaid, total interest paid, interest saved, future interest
+  ok  F5 the repayment progress, savings and re-based instalment survive save / load
+
+30 passed, 0 failed
+1. the pump model
+  ok  1a 18 pumps (3 hubs × 6 channels), each mounted on a real segment of its hub, default Forward
+  ok  1b direction is Forward (+1) or Reverse (−1) only; anything else is refused
+  ok  1c a pump cannot be reversed on a pipe that is not attached to its station (no pumping through a path that does not exist)
+2. product A → B, reverse the pumps, B → A (real tanks, real Sim)
+  ok  2a the route exists both ways on the real map (6 hops)
+  ok  2b Forward pumps: A→B passes 2 working pumps, B→A passes none (the pumps push the other way, the product bypasses them)
+  ok  2c A→B arrives at 683 psi / 125000 bbl/d, B→A at 45 psi / 38136 bbl/d
+  ok  2d Reverse: suction and discharge swap — now B→A is the pumped way (2 pumps) and A→B bypasses
+  ok  2e pressure in both directions: B→A reversed ≈ A→B forward (782 vs 683 psi); A→B after the reversal drops to 23 psi
+  ok  2f reversing the CRUDE pumps did not touch the other five channels
+  ok  2g a crude tank is wired to N4 and another to FS through the CRUDE ports
+  ok  2h A→B: 7500 bbl left A and exactly that arrived in B (nothing created, nothing lost)
+  ok  2i the Forward pumps work: pressure up at each (60→513, 512→796 psi)
+  ok  2j tanks wired: source at B (FS), destination at A (N6)
+  ok  2k B→A moves product both with the pumps Forward (7500 bbl) and Reversed (7500 bbl); every barrel that left B arrived in A
+  ok  2l B→A: Forward pumps are idle (0 working); Reversed, 2 pumps work and lift the pressure (338→791, 55→339 psi)
+  ok  2m channel pressure B→A: 54 psi (Forward, pumps idle) → 791 psi (Reversed); flow 25000 → 25000 bbl/d
+  ok  2n the channel flow matches what the tanks exchanged (no double counting)
+3. all six channels, both directions, separated
+  ok  3a every channel: Forward pumps help A→B only, Reverse helps B→A only
+  ok  3b every channel: reversing raises the B→A pressure / flow
+  ok  3c each pump keeps its own channel (no pump serves two products)
+4. pump failure in both directions
+  ok  4a Forward: working 683 psi / 125000 bbl/d, all pumps failed 23 psi / 64141 bbl/d
+  ok  4b Reverse: working 782 psi / 38136 bbl/d, all pumps failed 45 psi / 38136 bbl/d
+  ok  4c one failed pump of two on the route: the other still works, the failed one is bypassed
+  ok  4d a failed pump does not make the idle direction pump either
+5. closed loops: no double counting, no phantom flow
+  ok  5a the loop segments exist
+  ok  5b pumps on a loop with no source create no flow at all (a pump moves product, it does not create it)
+  ok  5c tanks at FM and FS
+  ok  5d through the pumped loop: 10000 bbl left the source and exactly that arrived (no copy of the product travels another way)
+  ok  5e what leaves the source station over all its segments equals the channel flow (each barrel counted once)
+  ok  5f with the loop pumps reversed the transfer still conserves the product
+6. the reverse direction gives an alternative path when the main one is cut
+  ok  6a main line cut (T-E3): the product reroutes over the closed loops
+  ok  6b a pump on the alternative path lifts the delivery to 125000 bbl/d only when set the way the product travels; set against it the delivery stays at 51306 (no pump: 51306)
+7. save / load and tapping keep the direction
+  ok  7a the direction (and the segment) of every pump survives save / load
+  ok  7b a free tap on the pump's segment keeps the pump on the half next to its hub with its direction
+
+34 passed, 0 failed
+  ok  V1 channel capacity 300,000 bbl/d, max pressure 3,000 psi, friction 0.6 = the existing 36" pipe class (CFG.PIPES[36])
+  ok  V2 every channel carries exactly those figures
+  ok  V3 pump = the existing Central Pump Station (CFG.PUMP.C): max flow 200,000, inlet ≥ 15 psi, boost 300–600 psi, price $45M
+  ok  V4 every pump's boost and efficiency lie inside the configured ranges (a deterministic pick per hub and channel, nothing outside them)
+  ok  V5 shell price per tile = six 36" channels × $120,000 (the existing 36" price) = $720,000
+  ok  V6 channel colours = the game's product colours
+  ok  V7 line-pack per tile derives from the real bore geometry (36", tile length from the config)
+  ok  V8 finance terms exactly as ordered: $500M, 6%, 720 months, 24 grace
+  ok  V9 idle running cost = the existing operating / maintenance formulas on the existing pump and junction figures ($64800 + $50340 per day)
+  ok  V10 pipeline upkeep = the existing infraPerYear rate (0.8%) on the shell, per month
+  ok  V11 over every pair of stations: no delivered pressure above 3,000 psi and no rate above 300,000 bbl/d (max seen 3000 psi / 300000 bbl/d)
+  ok  V12 in the live simulation: no pump above 200,000 bbl/d, no segment above 300,000 bbl/d
+  ok  V13 (documented assumption) the old 1×1 junction manifold limit of 60,000 bbl/d is NOT applied to the 3×3 stations: a station is a 36" hub bounded by its pipes (300,000 per channel)
+
+13 passed, 0 failed
+1. different branch capacities (8" = 30,000, 16" = 100,000, 36" = 300,000 bbl/d)
+  ok  1a a source and three destinations on branches of different size
+  ok  1b in = out: 125000 bbl/d left the source, 30000 + 47500 + 47500 arrived
+  ok  1c no destination receives more than its own branch can carry (30,000 / 100,000 / 300,000)
+  ok  1d the small branch is not handed an equal share it cannot take
+  ok  1e nobody receives the whole source quantity
+2. a nearly full tank takes only its free space; the remainder is shared by the others
+  ok  2a the nearly full tank received exactly its 1,000 bbl of free space (1000)
+  ok  2b what it could not take went to the others, split between them (52500 / 52500 bbl/d)
+  ok  2c in = out
+3. demand above the supply: the real quantity is shared by capacity, demand below it: everybody gets their need
+  ok  3a supply (25000 bbl/d) below the combined capacity (130,000): all of it is delivered, none created
+  ok  3b when nobody is capacity-limited the sharing is equal (12500 / 12500)
+  ok  3c with plenty of supply the 8" branch gets its 30,000 maximum and the 16" the rest: 30000 / 95000
+4. pressure: a destination across a pressure-starved route receives less than a near one
+  ok  4a source at N6, a near destination (N5e) and a far one (M2)
+  ok  4b the far route really is pressure-limited without the pumps (61370 bbl/d against 125000 with them)
+  ok  4c pumps failed: the far destination gets no more than the near one (62500 vs 62500 bbl/d), in = out (parallel loop paths still deliver most of it)
+5. six channels share the same rule
+  ok  5a every channel: in = out, the 8" branch never above 30,000 bbl/d, both receive
+
+15 passed, 0 failed
+1. every 7th tile of every trunk segment (1,046 points on the real map)
+     by result: {"notOnCentral":34,"ok":873,"slope":98,"water":6,"centralPipe":32,"sectorForbidden":3}
+     by kind:   {"main":{"n":598,"ok":536},"loop":{"n":227,"ok":178},"coast":{"n":221,"ok":159}}
+     by sector: {"A1":"30/33","A3":"61/63","A5":"27/33","B4":"27/29","B3":"64/80","B2":"33/36","B1":"68/83","C1":"48/51","A7":"205/240","D2":"22/27","D1":"121/187","E1":"102/111","B5":"65/73"}
+  ok  1a every refusal carries a known reason (nothing silent)
+  ok  1b 83% of the sampled points accept a branch: a branch can start from almost any tile, not only from fixed stations
+  ok  1c main lines, loops and coastal links each accept branches
+2. what stops a branch (the real reasons)
+  ok  2a slope (98), water (6), another trunk tile in the way (32), sector rule (3): the station is a normal 3×3 building and obeys the normal placement rules
+  ok  2b not enough cash: refused with the price (1044000)
+  ok  2c on an existing station tile: refused (notOnCentral), the station itself is already a connection point
+  ok  2d a tile that is not on the trunk: refused (notOnCentral)
+3. real taps at 12 different points, each wired to a facility of the right product
+  ok  3a 12 taps made on 3 kinds of trunk in 6 sectors
+  ok  3b every tap is a registered graph node with a real operating building (the engine's mechanical connection, not a visual touch)
+  ok  3c each tap cut its segment in two (graph grew from 34 to 46 segments)
+  ok  3d a tank of each product can be wired to a tapped station on the matching channel (5/6 placed on these points; the rest need a sector that allows that tank)
+  ok  3e a gasoline tank cannot be wired to the CRUDE port of a tapped station (incompatible product refused)
+4. second tap close to the first
+  ok  4a tapping the very tile that is now a station is refused (atStation)
+  ok  4b stations may not overlap: a tap 1–3 tiles from an existing station is accepted only where a free 3×3 spot exists (3/3 accepted, the rest refused with a reason)
+
+14 passed, 0 failed
+1. every building in the game has a full help sheet before it is built (auto-extends with new defs)
+  ok  1a all 38 building types: 12 non-empty sections, no undefined/NaN
+  ok  1b the twelve sections are the requested ones, in order
+  ok  1c numbers come from the config: large refinery capacity, cost and yields
+  ok  1d refinery materials per barrel come from economy-config
+  ok  1e pump: max flow, boost range and minimum inlet from the config
+  ok  1e2 the pipe card of the build menu has its own sheet (every diameter from the config)
+  ok  1f a NEW building type gets a full sheet automatically (generic profile)
+2. every placed building: live sheet, status and diagnosis
+  ok  2a 37 placed buildings of every type: full live sheet + at least one diagnosis line
+  ok  2b every sheet states footprint and build time
+  ok  2c the live state lines are all in Arabic (no English indicator names)
+3. smart help: the reason and the fix follow the real state
+  ok  3a stopped well: status «متوقف بأمرك», tells to press «ابدأ الإنتاج»
+  ok  3b2 with automatic purchasing off the fix says to switch it on
+  ok  3b refinery without chemicals: NO_MATERIALS, names the missing materials with stock and daily need
+  ok  3c with materials bought the same refinery runs (no material warning)
+  ok  3d full tank: says full, its capacity and the room left (0), and how to fix
+  ok  3e the same tank half full: no full warning, shows level and room left
+  ok  3f pump with nothing connected: names the unconnected inlet and outlet
+  ok  3g connected pipe: both ends named, capacity of its diameter
+  ok  3h open-ended pipe: says which end is open and WHERE (tile)
+  ok  3i well whose only pipe goes nowhere: help still explains the state
+4. central network: station, segment, channel closed / cut
+  ok  4a central station sheet: six channels, 300,000 per channel, no connected facility explained
+  ok  4b closed crude channel: the station says it neither receives nor distributes, and where to open it
+  ok  4c cut diesel channel on a segment: segment sheet names it and the fix
+  ok  4d the station also warns that a segment of the diesel channel is cut
+  ok  4e segment with a network pump: direction (forward/reverse) shown
+  ok  4f oil field sheet: field capacity, reserve, wells
+5. reading the help never changes the game
+  ok  5a buildings, pipes, cash and company identical after opening every help sheet
+
+27 passed, 0 failed
+1. "🔗 توصيل" refinery <-> central station
+  ok  1a a large refinery in the D refinery zone and two stations tapped near it
+  ok  1b one press lays the crude feed (station -> refinery) AND one product outlet (refinery -> station)
+  ok  1c the crude feed is OPEN: two different products are not a return pair (no closed valve)
+  ok  1d a second press to the SAME station adds the next product outlet (one line per product, never a duplicate)
+  ok  1e no two lines for the same product: every outlet line carries a different product
+  ok  1f the simulator builds no "level-out" link between a refinery and a station
+2. end to end with the economy: crude in through the CRUDE channel, four products out through their channels
+  ok  2a the outlets are wired to stations (GASOLINE, DIESEL, GAS)
+  ok  2b the refinery takes crude (no NaN anywhere)
+  ok  2c every wired product reaches its own tank through its own channel
+  ok  2d made by the refinery = held by the tanks (nothing lost in the network)
+  ok  2e products in the recipe proportions (gasoline : jet = 45 : 10)
+  ok  2f the status is a working one (running, or a pressure / capacity note), never "no input"
+3. an old save: the crude feed laid closed, then opened by the player
+  ok  3a after opening the valve the refinery receives crude (no level-out NaN)
+4. a product with no receiving tank anywhere on the network
+  ok  4a GASOLINE is wired but has nowhere to go: the refinery stops and says BLOCKED, not "no input"
+  ok  4b the help names the GASOLINE outlet, the station, the missing tank and the fix
+  ok  4c a GASOLINE tank on any station: the refinery runs again
+5. tank pairs keep their old behaviour
+  ok  5a two crude tanks connected both ways: the return line is still laid closed (same product)
+
+17 passed, 0 failed
+1. the starting point
+  ok  1a warehouse capacity raised: chemicals 500,000 kg, operating materials 100,000 units
+  ok  1b automatic purchasing is on for chemicals and operating materials, off for spare parts
+  ok  1c the consumption rates and prices are unchanged (0.36 kg and 0.002 unit per refined bbl, $2.5 / $40)
+  ok  1d no refinery: nothing uses the materials, nothing is bought
+2. a refinery with no stock keeps running on automatic purchases
+  ok  2a the need = refinery capacity x operating limit x use per barrel (5000 x 1 x 0.36 = 1800 kg/day)
+  ok  2b automatic reorder point / target = 3 / 10 days of that need
+  ok  2c in 20 days the refinery was never held back for materials
+  ok  2d it is NOT a fixed daily purchase: a few purchases, each when the stock fell to the reorder point
+  ok  2e the stock never ran out and stayed near or above the reorder point
+  ok  2f bought - used = the chemicals in stock (nothing appears or vanishes)
+  ok  2g every automatic purchase is paid in cash at the cheapest landed price of the suppliers
+  ok  2h the purchases are in the journal and the books balance
+  ok  2i the materials are not free: cash went down by at least what the purchases cost
+  ok  2j the panel numbers: real daily use, days left = stock / daily use
+  ok  2k the automatic purchase log lists them
+3. the need follows the operating limit
+  ok  3a at a 50% operating limit the need and the automatic target are halved
+4. never more than the company has
+  ok  4a with $20,000 it buys only what the cash allows (never more than the cash it had)
+  ok  4b the shortfall is reported: reason «cash», with what is needed and what is available
+  ok  4c a warning event explains it in Arabic
+  ok  4d with no cash at all nothing is bought, and the reason is logged
+  ok  4e the alert list shows it
+5. the settings
+  ok  5a a fixed target: it buys up to 4,000 kg
+  ok  5b a material switched off is never bought
+  ok  5c the maximum quantity per order is respected
+  ok  5d the daily spending cap is respected ($3000 <= $3,000) and the reason is logged
+  ok  5e empty fields return to automatic (days of need)
+6. upgradable warehouses
+  ok  6a an upgrade adds 250000 kg for $2000000, paid in cash as a fixed asset
+  ok  6b purchases can use the new room
+  ok  6c up to level 5, then refused
+  ok  6d not enough cash: refused, nothing paid
+  ok  6e the books balance
+7. saves
+  ok  7a settings, warehouse level and the purchase log survive a save and load
+  ok  7b a save from before this feature loads with the default settings and level 0
+
+33 passed, 0 failed
+A. three independent banks with the approved opening numbers
+  ok  A1 exactly three banks
+  ok  A2 COMMERCIAL capital / deposits / liquidity / single-loan cap / leverage as approved
+  ok  A3 COMMERCIAL books balance: assets = deposits + equity
+  ok  A2 INDUSTRIAL capital / deposits / liquidity / single-loan cap / leverage as approved
+  ok  A3 INDUSTRIAL books balance: assets = deposits + equity
+  ok  A2 STRATEGIC capital / deposits / liquidity / single-loan cap / leverage as approved
+  ok  A3 STRATEGIC books balance: assets = deposits + equity
+  ok  A4 the banks have separate books (changing one leaves the others alone)
+  ok  A5 no loans yet in Phase 1
+B. reserve and lendable money: shown separately, never counted twice
+  ok  B1 COMMERCIAL reserve 15% of deposits = 600M, lendable = 1000M
+  ok  B2 COMMERCIAL reserve + lendable = the liquidity itself (the same money, not added twice)
+  ok  B1 INDUSTRIAL reserve 15% of deposits = 300M, lendable = 1500M
+  ok  B2 INDUSTRIAL reserve + lendable = the liquidity itself (the same money, not added twice)
+  ok  B1 STRATEGIC reserve 15% of deposits = 150M, lendable = 2850M
+  ok  B2 STRATEGIC reserve + lendable = the liquidity itself (the same money, not added twice)
+  ok  B3 max loan = min(single-loan cap, lendable, leverage room): the strategic bank is held to 2.85B by its reserve, not 3B
+  ok  B4 canLend says why a loan is refused
+  ok  B5 cash close to the reserve: only the excess is lendable
+  ok  B6 cash below the reserve: nothing lendable (never negative)
+C. the monthly cycle
+  ok  C1 a month: deposits +0.3% and the new deposits arrive as cash
+  ok  C2 the same or an older day is ignored: no duplicated growth
+  ok  C3 12 months compound at 0.3% and the books still balance
+  ok  C4 a permanent monthly history is kept for every bank (3 x 12 rows) and never shows reserve + lendable above the liquidity
+D. settings: capital and liquidity are editable from the economy config
+  ok  D1 new numbers in the config -> new opening books (balanced)
+  ok  D2 a liquidity above capital + deposits is refused
+  ok  D3 the reserve ratio and the caps are read live from the config
+  ok  D4 a capital injection adds capital AND cash, balanced
+  ok  D5 capital can only be withdrawn from lendable money
+E. save and load
+  ok  E1 save -> load -> save is identical (balances, log, history)
+  ok  E2 after loading the same day is not processed again
+  ok  E3 no / unknown bank data -> fresh banks, never an error
+  ok  E4 a bank missing from the save opens fresh and the others keep their books
+F. inside the company: no company money moves, old saves load, the bank is saved
+  ok  F1 every company has a bank layer and saves it under `bank`
+  ok  F2 the month end of the company runs the banks once a month (3 months -> 9 snapshots)
+  ok  F3 a saved company loads its banks back exactly
+  ok  F4 an OLD save (no `bank` key) loads: fresh banks that open on today, no catch-up growth
+  ok  F5 and the banks run normally afterwards
+  ok  F6 the whole company save after 5 months is identical with and without the banks (only the `bank` key differs): no cash, journal, loan or market effect
+
+38 passed, 0 failed
+A. the official scenarios
+  ok  A1 sustained inflation: the rate only rises, always by exactly 0.50%, up to 7.5%
+  ok  A2 sustained recession: the rate only falls by 0.50% steps down to the 1% floor
+  ok  A3 stable economy: 16 quarters, the rate never moves from 4%
+  ok  A4 a one-quarter pulse does not move the rate (no confirmation)
+  ok  A5 direction reversal: possible, but never within 2 reviews of the opposite change
+  ok  A6 6-month cooling: a reversal step never happens fewer than 2 reviews after the last change
+  ok  A7 the rate never leaves the corridor 1%..12% (extreme inputs)
+B. indicators clamp to [-1, +1]
+  ok  B1 extreme high inputs give +1 each (S0 = 1)
+  ok  B2 extreme low inputs give -1 each (S0 = -1)
+  ok  B3 neutral inputs: score 0, target 4%
+C. the daily price average
+  ok  C1 starts at the reference price 72
+  ok  C2 EMA(360) of a constant price follows the closed form
+  ok  C3 a day already counted is ignored (load / replay safe)
+D. fixed mode
+  ok  D1 FIXED holds the manual rate through any signals
+  ok  D2 a FIXED rate outside 1%..12% is refused
+  ok  D3 back to AUTO it continues from the present rate
+E. bank liquidity surcharge
+  ok  E1 enter tier 1 below 50%, leave at 55%; tier 2 below 20%, back to tier 1 at 25%, to 0 at 55%
+  ok  E2 the exact thresholds
+  ok  E3 each bank has its own surcharge: +0.25% / 0 / +0.50%
+  ok  E4 the surcharge is held between thresholds (hysteresis)
+F. save / load
+  ok  F1 save -> load -> save is identical
+  ok  F2 a game loaded half way continues with exactly the same rates, history and state
+  ok  F3 a quarter already reviewed is never reviewed twice
+G. 20 years on the real market engine (a real Company, rate in AUTO)
+  ok  G0 the company runs on the real OilEngine, Base Rate in AUTO
+  ok  G1 about 80 quarterly reviews in 20 years (80)
+  ok  G2 rate in the corridor and every indicator in [-1, +1] at every review
+  ok  G3 every move is exactly 0.50%; moves in 36 of 80 reviews
+  ok  G4 no reversal within 2 reviews of the last change
+  ok  G5 the bank books balance after 20 years; with no loans the company books carry no bank accounts
+  ok  G6 the state saved after 20 years loads unchanged
+   (4.6 s, rates: 0.04 0.035 0.03 0.045 0.05 0.025)
+
+30 passed, 0 failed
+A. the seven loan types: terms, locks, who offers them
+  ok  A1 seven types with the approved longest terms (2y, 60y, 30y, 40y, 2y, 1y, 60y)
+  ok  A2 working capital: 24 months allowed, 25 refused
+  ok  A3 expansion / project finance 60y, equipment 30y
+  ok  A4 secured and oil-inventory loans are open in Phase 3 (they need collateral: see test-bank-collateral.js)
+  ok  A5 the new emergency loan stays locked until the owner approves it
+  ok  A6 each bank offers only its own loan types
+  ok  A7 loan-risk premiums as approved (0.5%, +3%, -0.5% ...)
+B. schedules: terms up to 60 years, grace up to 5 years, monthly / quarterly / annual
+  ok  B1 WORKING_CAPITAL (24 months): ends at zero, total interest = annuity formula (6.91M)
+  ok  B1 EXPANSION (720 months): ends at zero, total interest = annuity formula (298.14M)
+  ok  B1 EQUIPMENT (360 months): ends at zero, total interest = annuity formula (127.54M)
+  ok  B1 PROJECT_FINANCE (720 months): ends at zero, total interest = annuity formula (298.14M)
+  ok  B1 SECURED (480 months): ends at zero, total interest = annuity formula (181.02M)
+  ok  B1 OIL_INVENTORY (24 months): ends at zero, total interest = annuity formula (6.91M)
+  ok  B1 EMERGENCY (12 months): ends at zero, total interest = annuity formula (3.56M)
+  ok  B2 60 years with a 5-year grace: 60 interest-only months, then amortising to zero
+  ok  B3 quarterly (40 payments) and annual (10 payments) cycles, grace respected, end at zero
+  ok  B4 grace as long as the term: interest only, the whole principal at the end
+  ok  B5 grace up to 60 months, multiple of the cycle; the term must be a whole number of cycles
+C. a loan in the company: money, books, the old loans untouched
+  ok  C1 rate = Base 4% + bank spread 1.5% + working-capital premium 0.5% + the credit premium of the rating
+  ok  C2 the company receives the cash, BANK_LOANS holds the debt; LOANS, loans[] and debt() are exactly as before
+  ok  C3 the bank paid out of its liquidity and holds the loan; both sets of books balance
+  ok  C4 the balance sheet shows bank loans apart from the old loans
+D. month by month: the books follow the schedule exactly
+  ok  D1 60 monthly instalments equal the schedule (interest on the remaining balance, principal, balance); the loan closes at zero
+  ok  D2 total interest paid = the schedule total; BANK_LOANS and ACCRUED_INT are zero at the end
+  ok  D3 the bank received the interest as income and the principal back; its books balance
+E. quarterly and annual cycles in the company
+  ok  E1 between payments the interest is accrued (ACCRUED_INT) but not yet paid
+  ok  E2 quarterly loan: 8 payments; annual loan: 3 payments; both equal their schedules, both closed
+  ok  E3 nothing is left on the books
+F. the variable rate: repriced at the quarterly review, never backwards
+  ok  F1 opens at 6%
+  ok  F2 the first review (January) does not move the rate: the direction is not confirmed yet
+  ok  F3 a new Base Rate (6%) prices NEW loans at once (8%) but the running loan keeps 6%
+  ok  F4 a month without a review changes nothing
+  ok  F5 at the April review the running loan is repriced to 8% from that date and the change is recorded
+  ok  F6 interest already paid is never recalculated (no retroactive effect)
+  ok  F7 the instalment is re-based on the balance and the months left at the new rate
+  ok  F8 after repricing the loan still ends at zero in its term
+G. early repayment and rescheduling
+  ok  G1 partial prepayment of $100M: balance falls by it, term and rate unchanged, the instalment is re-based lower, no fee
+  ok  G2 cash paid = principal + interest to date; books balance
+  ok  G3 the schedule goes on from the smaller balance
+  ok  G4 full early repayment closes the loan; nothing is left
+  ok  G5 no interest after the loan was repaid
+  ok  H1 rescheduling to 120 more months: fee 0.5% of the balance
+  ok  H2 never beyond the longest term of the loan type (30 years for equipment)
+  ok  H3 the loan runs to zero over the new term
+I. a month the cash cannot cover: arrears, never negative cash
+  ok  I1 the instalment is recorded as arrears and the loan cash was not paid out
+  ok  I2 the unpaid interest stays a liability (ACCRUED_INT) and the principal stays in the balance: nothing is lost
+  ok  I3 the next month adds a second item; the principal in arrears never exceeds the balance (no double counting)
+  ok  I4 when cash is back the overdue items are paid first, oldest first, then the current one
+  ok  I5 the loan finishes at zero with nothing left
+  ok  I6 (quote works with a small company)
+J. refusals
+  ok  J1 above the bank single-loan cap (250M) is refused
+  ok  J2 below the minimum amount is refused
+  ok  J3 term and grace limits
+  ok  J4 not enough lendable liquidity (the compulsory reserve is not lent) is refused
+  ok  J5 the Central loan is not part of the risk debt
+  ok  J6 a loan that pushes debt over 50% of assets + stock + cash is refused
+  ok  J7 a refusal changes nothing
+  ok  J8 a bankrupt company gets nothing
+K. the old loans and the Central loan are untouched
+  ok  K1 an old-style loan still works beside it; LOANS = -debt() still holds for the old loans only
+  ok  K2 after months of both kinds the old loans follow their own book; the balance sheet balances
+  ok  K3 bank loans are part of the total liabilities
+L. permanent record, save and load
+  ok  L1 a closed loan stays in the register (nothing is dropped)
+  ok  L2 every operation is recorded in order (open, instalments, close ...)
+  ok  L3 save -> load -> save: the register, the schedule state and the record are identical
+  ok  L4 after loading, the same month is not charged again (no duplicated instalment or interest)
+  ok  L5 a game saved and loaded half way ends exactly like one played straight through
+  ok  L6 an old save (no bank key, no bank accounts) loads with an empty loan book
+  ok  L7 a Phase 1 save (bank v1) loads with the Base Rate at 4% and no loans
+M. nothing banking leaves a trace when no bank is used; cost
+  ok  M1 no bank loan: the company save has no bank accounts at all (identical to a company without the banking layer)
+  ok  M2 a month of servicing 2000 loans takes 3.28 ms (once a month, never per frame)
+
+70 passed, 0 failed
+A. the score: range and the approved weights
+  ok  A1 weights 30 / 25 / 15 / 15 / 10 / 5 (sum 100%)
+  ok  A2 the best company scores 1000 and the worst 0
+  ok  A3 5000 random inputs (including missing and extreme values): always an integer in 0..1000
+  ok  A4 each indicator moves the score by exactly its weight: 300 / 250 / 150 / 150 / 100 / 50
+  ok  A5 late payments lower the score
+B. indicators
+  ok  B1 operational stability = coefficient of variation of production over up to 6 months (needs 3)
+  ok  B2 a new company with no history gets neutral values (no punishment for being new)
+  ok  B3 linear mid-points give 0.5
+  ok  B4 grade limits
+  ok  B5 a worse score never gets a cheaper credit premium (0 .. +3%)
+C. the rating inside the company
+  ok  C1 before the first month there is no rating and the premium is 0
+  ok  C2 the first month rates the company (550, grade B)
+  ok  C3 a month already rated is never rated twice
+  ok  C4 a new loan is priced with the credit premium of the rating
+  ok  C5 at the next repricing the loan follows the new credit premium (and only from then on)
+D. payment history lowers the score
+  ok  D1 a company that cannot pay its instalments scores lower than one that pays on time (0 vs 625)
+  ok  D2 six instalments paid on time give a full payment-history part
+E. save / load
+  ok  E1 save -> load -> save: the rating, its history and the parts are identical
+  ok  E2 after loading, the same month is not rated again
+  ok  E3 a Phase 2 save (bank v2) loads with no rating yet and no liens; it is rated at the next month end
+
+20 passed, 0 failed
+A. an asset-backed (SECURED) loan
+  ok  A1 a secured loan without collateral is refused
+  ok  A2 the borrowing capacity is the asset value x the LTV limit (15.00M of a 25.0M asset)
+  ok  A3 above the LTV limit is refused
+  ok  A4 a missing asset and the wrong kind of collateral are refused
+  ok  A5 the loan is made, one lien recorded with the value at pledge; priced with the secured premium (-0.5%)
+  ok  A6 valuation and LTV are exact (LTV = balance / value = 60%)
+  ok  A7 both sets of books balance
+B. no pledging twice
+  ok  B1 the same asset cannot back a second loan
+  ok  B2 nor twice in one request
+  ok  B3 nor added again to the same loan
+  ok  B4 barrels already pledged cannot be pledged again (40,000 of 50,000 are taken; 20,000 more is refused)
+  ok  B5 the free 10,000 barrels can still be pledged, not one more
+C. oil-inventory loan: 50% of the value, 2 years
+  ok  C1 the capacity is exactly 50% of the oil value (1.964M)
+  ok  C2 one dollar above 50% is refused
+  ok  C3 more than two years is refused
+  ok  C4 only oil backs an oil loan; more barrels than exist are refused
+  ok  C5 the strategic reserve is not collateral (no product of that name is eligible)
+  ok  C6 the loan is made at an LTV of 50%
+  ok  C7 only the real commercial tank volume counts as available oil
+  ok  C8 oil held in a strategic-reserve tank (30,000 bbl) is never collateral: only the 50,000 commercial barrels can be pledged
+D. no bypass: a pledged asset cannot be sold or demolished
+  ok  D1 selling a pledged asset is refused
+  ok  D2 demolishing it is refused too (nothing changes)
+  ok  D3 an asset that is NOT pledged is sold as before
+  ok  D4 releasing the only lien of a loan that still has a balance asks for the whole gap
+  ok  D5 repaying the gap closes the loan and frees the asset
+  ok  D6 once free, the asset can be sold
+  ok  D7 selling pledged barrels is refused (only the 10,000 free ones can go)
+  ok  D8 the free barrels are sold
+  ok  D9 an automatic or rescue sale sells only what is free; the pledged 40,000 stay
+E. release rules
+  ok  E1 one loan with two liens
+  ok  E2 a lien is released when the LTV stays inside the limit; the other asset stays pledged
+  ok  E3 if the LTV would be broken the release is refused and the gap is named
+  ok  E4 repaying the gap releases the lien; the loan is within its limit again
+  ok  E5 after the release the balance is within the origination LTV of the remaining collateral
+F. Margin Call
+  ok  F1 no call while the LTV is at 50% (call limit 60%)
+  ok  F2 a 10% price drop (LTV 55.6%) is still inside the limit
+  ok  F3 a deeper drop (LTV over 60%) issues a Margin Call and records it
+  ok  F4 the call is issued once, not repeated every day
+  ok  F5 the amount needed brings the loan back to its origination LTV (balance - value x 50%)
+  ok  F6 empty / zero collateral does not cure it
+  ok  F7 not cured in 30 days: the call is marked expired and recorded (Phase 4 acts on it)
+  ok  F7b an oil loan accepts only oil as extra collateral
+  ok  F8 the owner stores 30,000 more barrels and pledges them to the loan
+  ok  F9 the extra collateral clears the call and it is recorded
+  ok  F10 early repayment is another way to cure (the balance falls)
+  ok  F11 (setup) call open
+  ok  F12 prices recover: the call clears by itself
+  ok  F13 oil that physically leaves the tank counts out of the collateral: 30,000 of 50,000 barrels left, a call is issued
+G. closing, record, save / load
+  ok  G1 when the loan is repaid the lien is released automatically; the lien stays in the record
+  ok  G2 save -> load -> save: liens, call state and pledged quantities are identical
+  ok  G3 after loading, the open Margin Call is not issued again
+  ok  G4 the loaded game still blocks double pledge and demolition
+  ok  G5 each lien keeps its full state (day,id,kind,loan,qty,ref,relDay,status,v0)
+H. nothing changes when no collateral is used
+  ok  H1 no lien: no daily collateral work and identical company state
+  ok  H2 demolishing an unpledged asset works exactly as before
+
+55 passed, 0 failed
+A. the five stages from the delay of the oldest unpaid instalment
+  ok  A1 stage 1: the instalment is not covered at its due date (arrears recorded, nothing deducted)
+  ok  A2 delay 0-30 days = 1, >30 = 2, >60 = 3, >90 = 4, >180 = 5 (exact day boundaries)
+  ok  A3 stage 5 flags the collateral enforcement; the loan itself stays open
+  ok  A4 (monthly) first miss: stage 1
+  ok  A5 cash is back next month: overdue item paid first, the new one too, stage back to 0 (cured)
+  ok  A6 a second late instalment within 6 months goes straight to stage 2 (even with no delay)
+  ok  A7 stages are recorded and never go down while the arrears last
+B. the 2% late fee: once per late instalment, never compounded or repeated
+  ok  B1 the fee is exactly 2% of the late instalment
+  ok  B2 20 days later the fee is unchanged: no repetition, nothing taken from cash
+  ok  B3 the next late instalment has its own 2%; no fee is charged on the first fee or on the accumulated arrears
+  ok  B4 the unpaid fees and interest are in the accrued liability: nothing lost
+  ok  B5 when cash is back the fees are paid with their instalments (177282.44), no new fee for the paid-late items
+  ok  B6 the bank books balance (the fee is bank income) and the liability is cleared
+  ok  B7 an instalment paid on time has no fee
+C. restructuring: the offer, the 60-day window, acceptance, breach
+  ok  C1 at stage 4 the bank offers (a) a longer term or (b) a lower instalment, open for 60 days
+  ok  C2 accepted on the last day of the window
+  ok  C3 one day after the 60 days the offer has lapsed and is refused
+  ok  C4 accepting a longer term: the unpaid interest and fees join the balance, the arrears are cleared, the instalment is lower
+  ok  C5 never beyond the longest term of the type; the books balance; the capitalised amount equals the unpaid interest + fees
+  ok  C6 the other option: interest only for 12 months (grace), then amortising
+  ok  C7 an offer can be accepted only once
+  ok  C8 missing a payment under an accepted plan breaches it: straight to stage 5
+  ok  C9 a plan kept for a year is completed
+D. the company: no bankruptcy from late instalments, rating, restriction
+  ok  D1 eight months of unpaid instalments: arrears pile up, the company is NOT bankrupt and cash never goes down because of them
+  ok  D2 the stages advance month by month (,2,3,4,4,4,5,5)
+  ok  D3 payment history and the stage lower the rating; the worst stage is known (0)
+  ok  D4 from stage 3 new bank loans are refused (RESTRICTED); rescheduling stays possible
+  ok  D5 rescheduling is not blocked by the restriction
+  ok  D6 the books balance with arrears and fees (ACCRUED_INT = accrued + unpaid interest + unpaid fees)
+E. collateral enforcement: least operational harm first
+  ok  E0 fixture: an oil loan and a secured loan
+  ok  E1 the order: oil in the tank first, then assets (idle before running; larger value first within the same harm)
+  ok  E2 assets are ordered by operational harm (idle 1, running 2)
+  ok  E3 stage 5: one asset was taken and sold, its proceeds paid the arrears first, then principal; enforcement stopped when the arrears were cleared
+  ok  E4 the proceeds (more than the debt) repaid the loan in full; the other lien was released unused and the surplus stays with the company; the enforcement is recorded
+  ok  E5 company and bank books balance after the forced sale
+F. the 5 / 15 / 40 ladder with bank loans
+  ok  F1 day 5: the old emergency loan is drawn exactly as before
+  ok  F2 day 15: financing is restricted (the old DEFAULT stage); new bank loans refused
+  ok  F2b new bank loans are refused from day 15
+  ok  F3 day 40: NOT bankrupt - restructuring (stage 4) with a 60-day offer
+  ok  F4 still negative at day 95: inside the 60-day window, not bankrupt
+  ok  F5 negative cash continues and there is nothing to recover: bankruptcy after the window (day 100+)
+  ok  F6 the banks book the unrecovered balance as a credit loss against their capital; their books balance
+  ok  F7 with collateral: day 40 starts the restructuring and the recovery sells the pledged asset at once
+  ok  F8 the recovery proceeds can bring cash back: no bankruptcy
+  ok  F9 when cash is positive again the ladder resets and the restructuring window closes
+  ok  F10 a company with NO bank loan: day 40 is bankruptcy exactly as before (the legacy ladder is unchanged)
+G. save / load and nothing without bank loans
+  ok  G1 save -> load -> save: stages, arrears, fees and plans are identical
+  ok  G2 after loading, the same day is not processed again: no repeated fee, stage, offer or record
+  ok  G3 a Phase 3 save (bank v3) loads; the crisis state starts empty
+  ok  G4 no bank loan: no default work and an identical company state
+
+50 passed, 0 failed
+A. pricing: present value of coupons and face
+  ok  A1 at issue with yield = coupon the price is par (100%)
+  ok  A2 a higher yield means a lower price, a lower yield a higher one
+  ok  A3 a longer bond reacts much more to the same yield rise
+  ok  A4 equals the closed form (4 half-yearly coupons of 3% + face at 4% per half-year)
+  ok  A5 mid-period: accrued interest = half a coupon; full price = clean + accrued
+  ok  A6 a few days before maturity the price is almost par whatever the yield (pull to par)
+  ok  A7 at maturity: par
+B. yield curve and rating
+  ok  B1 the term premium rises with the remaining term and stays below its cap
+  ok  B2 a worse score pays a bigger spread (0.23%, 0.68%, 1.50%, 3.56%, 4.56%)
+  ok  B3 government < corporate < high-yield at the same term
+  ok  B4 the curve moves one-for-one with the Base Rate
+  ok  B5 when the Base Rate rises the same bond is worth less
+  ok  B6 when the issuer rating falls the price falls
+  ok  B7 the company buys at the ask and sells at the bid (corporate 0.3% each side)
+C. the market
+  ok  C1 18 listed bonds from a government, three corporates and two high-yield issuers
+  ok  C2 new bonds are priced close to par (coupon = the par yield, in steps of 0.125%)
+  ok  C3 coupons are multiples of 0.125%
+D. buying and selling
+  ok  D1 buying 5,000 units costs units x 1,000 x the ask (5.019M); cash falls by exactly that
+  ok  D2 the books hold it as an investment; positions and books agree; the balance sheet balances
+  ok  D3 refusals: not enough cash, zero units, below the minimum trade, unknown bond
+  ok  D4 selling part: proceeds at the bid, the cost basis leaves pro rata
+  ok  D5 a round trip on the same day loses about the bid-ask spread (-12010)
+  ok  D6 selling everything closes the position; nothing left in the books
+  ok  D7 company books, bond records and bank books all balance
+  ok  D8 selling after the Base Rate rose from 4% to 7% is at a real loss (-12043K)
+E. coupons and maturity
+  ok  E1 four half-yearly coupons of units x 1,000 x coupon / 2 (2250K), six months apart
+  ok  E2 at maturity the face is paid and the position is closed
+  ok  E3 the coupons received total 4 x coupon; investment books = positions
+  ok  E4 the matured market bond is replaced by a new one of the same term: the market stays at 18 bonds
+  ok  E5 coupon income is recorded as income (and the embedded accrued interest of the purchase is not counted twice)
+F. issuer default: loss and recovery
+  ok  F1 a corporate issuer can default; the government cannot
+  ok  F2 the position is written down at once to the recovery value (HY 35%); the loss is booked; books = positions
+  ok  F3 other issuers are not touched
+  ok  F4 a defaulted issuer's bonds can no longer be bought or sold and leave the market
+  ok  F5 no coupons are paid on a defaulted bond; the recovery has not arrived yet (6 months)
+  ok  F6 six months after the default the recovery is paid in cash (35% of the face) and the position closes
+  ok  F7 books balance after the loss and the recovery
+  ok  F8 after 36 months the issuer is relisted with a lower score and new bonds
+  ok  F9 20 years with the same seed: exactly the same scores and defaults (deterministic, saved generator)
+  ok  F10 over 20 years defaults are rare (1 in 5 issuers), scores stay in range, the government never defaults
+  ok  F11 a market saved after 20 years and loaded continues exactly like the original
+G. the company issues its own bonds
+  ok  G1 the coupon is the market yield for the company's rating and term (+0.25%), in steps of 0.125%; the issue fee is 1%
+  ok  G2 the company receives the face less the fee; the liability appears in the books and in the debt figure
+  ok  G3 refusals: amount below 5M or above 500M, term not a multiple of 6 months or under a year
+  ok  G4 a company rated below 400 cannot issue
+  ok  G5 the risk limit (debt <= 50% of assets + stock + cash) applies to bonds too
+  ok  G6 two coupons a year of face x coupon / 2 (3.938M each)
+  ok  G7 the balance sheet shows the bond debt apart from the loans
+  ok  G8 a coupon the cash cannot cover becomes arrears: no cash is deducted, no bankruptcy
+  ok  G9 unpaid coupons stay a liability (ACCRUED_INT)
+  ok  G10 late coupons count against the payment history of the rating
+  ok  G11 when cash is back the late coupons are paid, oldest first
+  ok  G12 at maturity the principal is repaid and the bond closes; the books are clear
+H. save / load, old saves, no activity
+  ok  H1 save -> load -> save: market, issuers, positions, issued bonds and the record are identical
+  ok  H2 after loading, the same month is not processed again (no duplicated coupon)
+  ok  H3 a game loaded half way ends exactly like one played straight through
+  ok  H4 a Phase 4 save (bank v4) loads with a fresh bond market and no positions
+  ok  H5 no bond activity: no bond accounts in the company save, identical company state
+  ok  H6 a month with 18 positions and 300 issued bonds takes 0.10 ms (monthly, never per frame)
+
+59 passed, 0 failed
+A. a new game: honest empty screens
+  ok  A1 the title and the Base Rate (4.00% at the start) are there
+  ok  A2 no loans, no rating, no records: the screens say so (nothing invented)
+  ok  A3 no NaN / undefined / Infinity anywhere in the five screens
+  ok  A4 the bond screen lists the 18 real market bonds
+B. the screens show exactly what the engines hold
+  ok  B1 the overview shows each bank's real liquidity, capital, lendable money and loan book
+  ok  B2 rating, bond debt, bond investments and bank debt are the engine figures
+  ok  B3 every loan with its real balance and rate
+  ok  B4 the next instalment amount and its date are the loan's own
+  ok  B5 rating, parts and the liens with their real values; the reserve is stated as not collateral
+  ok  B6 the six rating parts (30/25/15/15/10/5 weights) show the real percentages
+  ok  B7 holdings, own issued bond and totals are the real ones
+  ok  B8 the market table shows the live ask and bid
+  ok  B9 the permanent record counts every loan and bond operation
+  ok  B10 an open Margin Call appears on both screens (real call state)
+  ok  B11 a defaulted issuer is shown as such
+C. the view changes nothing
+  ok  C1 rendering every screen many times leaves the company (money, books, banks, bonds, records) exactly as it was
+  ok  C2 the only actions are the tabs and "show more": no trading buttons
+  ok  C3 every button drawn belongs to a working action
+  ok  C4 a screen is built in 0.07 ms (only when opened or tapped)
+  ok  C5 with many closed loans only the latest five are listed until "show all" is tapped
+  ok  C6 "show all" lists every loan (nothing is hidden for good)
+
+21 passed, 0 failed
+A. financed construction
+  ok  A1 70% of the cost is financed, the rest is paid from cash
+  ok  A2 cash fell by the own share only
+  ok  A3 a PROJECT_FINANCE loan at the development bank
+  ok  A4 nothing was booked as "Pipeline works": the spend went through the Journal
+  ok  A5 the asset is recorded in FIXED at the full cost
+  ok  A6 company Journal balances, bank books audit
+  ok  A7 a later sync() changes nothing (no duplicated balance)
+  ok  A8 not enough cash for the own share: refused, no loan, no building
+  ok  A9 loan-to-cost above 80% is refused
+  ok  A10 an invalid site: refused before any loan
+  ok  A11 a small project is either under the minimum loan (refused) or financed
+  ok  A12 setup
+  ok  A14 a financed building (no lien) can be demolished by the normal rules and the books stay sound
+B. integrated scenario: loans + collateral + bonds + monthly service, audited every month
+  ok  B1 financed build, secured loan, working capital loan, bond purchase all succeed
+  ok  B2 24 months: Journal, balance sheet and bank books sound after every month-end
+  ok  B3 the 12-month loan is fully repaid and closed
+  ok  B4 arrears figure is consistent
+C. default scenario with a financed building
+  ok  C1 setup
+  ok  C2 an unpayable financed loan goes into arrears / default handling (no silent loss)
+  ok  C3 books still balance
+D. save / load round trip (no duplicated instalments, interest or balances)
+  ok  D1 toJSON(fromJSON(x)) is identical
+  ok  D2 balance sheet identical after loading
+  ok  D3 the next month on the loaded company equals the original (no double instalment or interest)
+  ok  D4 loaded company is sound
+E. performance with a large book
+  ok  E1 many loans opened (400) and 18 bond positions
+  ok  E2 a month-end with 400 loans costs 44.6 ms (limit 250)
+  ok  E3 books sound after 36 months of a large book
+  ok  E4 save+load of the large book in 45 ms, 1.05 MB
+
+28 passed, 0 failed
+EXIT 0

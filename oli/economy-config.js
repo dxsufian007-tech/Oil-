@@ -112,6 +112,7 @@
       grades: [{ id: 'A', min: 700, premium: 0 }, { id: 'B', min: 550, premium: 0.0025 }, { id: 'C', min: 400, premium: 0.0075 }, { id: 'D', min: 250, premium: 0.015 }, { id: 'E', min: 0, premium: 0.03 }], premiumOn: true, stagePenalty: { 2: 100, 3: 200, 4: 300, 5: 400 } },
     /* collateral: LTV = loan balance / collateral value.  max = the most a loan may be at origination; call = above this the bank issues a Margin Call.  Oil inventory: 50% of the value, 2 years (the OIL_INVENTORY type).  The strategic reserve is NOT collateral. */
     /* Banking Phase 5: the bond market.  Config assumptions (the spec names no numbers): unit face 1,000; coupons twice a year in steps of 0.125%; the credit spread grows with the square of (1000 - score) / 1000; the term premium rises towards +2% with a 8-year time constant */
+    BUILD_FINANCE: { ltc: 0.7, maxLtc: 0.8, minLoan: 1000000, bank: 'STRATEGIC', type: 'PROJECT_FINANCE', term: 120 },
     BONDS: { seed: 20261113, unitFace: 1000, minTrade: 10000, couponStep: 0.00125, spreadBase: 0.002, spreadK: 0.10, termMax: 0.02, termTau: 8,
       bidAsk: { GOV: 0.001, CORP: 0.003, HY: 0.008 }, recovery: { CORP: 0.5, HY: 0.35 }, recoveryDelay: 6, relistMonths: 36, relistScore: 0.8, pdK: 4.8e-6, pdScale: 100, revert: 0.1, noise: 12, rateSens: 600, scoreMin: 100,
       minIssue: 5e6, maxIssue: 500e6, minTerm: 12, maxTerm: 360, minScore: 400, issueFee: 0.01, issuePremium: 0.0025,
