@@ -336,7 +336,7 @@
 
   /* ------------------------------------------------------------ the simulator */
   class Sim {
-    constructor(store, net) { this.store = store; this.net = net; this.edges = new Map(); this._el = []; this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => this.net.productAt(x, y); store.cenAt = (x, y) => this.net.centralAt(x, y); }
+    constructor(store, net) { this.store = store; this.net = net; this._cv = 0; this._fxr = null; this.edges = new Map(); this._el = []; this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => this.net.productAt(x, y); store.cenAt = (x, y) => this.net.centralAt(x, y); }
 
     /* ---- state per building (kept in b.s, saved with the game) ---- */
     ensure(b) {
@@ -379,7 +379,7 @@
        member in proportion to the water each one holds; each tank loses exactly that much water (and the same volume of its total), nothing is moved between tanks. The rate is the pump's / pipe's own. */
     drawBottomWater(b, pool) {
       const e = this.edgeOf(b, 'WATER_OUT'); if (!e || e.int) return; const dt = this.dt; let tot = 0; for (const m of pool) tot += Math.max(0, Math.min(m.s.vol, m.s.wat || 0)); if (tot <= 1e-6) return;
-      const acc = this.offer(b, 'WATER_OUT', { prod: P.WATER, r: tot / dt, oil: 0, gas: 0, wat: 0, p: SIM.tankHeadPsi }, true, new Set([b.id])); b.s._wout = (b.s._wout || 0) + acc; if (acc <= 1e-12) return;
+      this._cv++; const acc = this.offer(b, 'WATER_OUT', { prod: P.WATER, r: tot / dt, oil: 0, gas: 0, wat: 0, p: SIM.tankHeadPsi }, true, new Set([b.id])); b.s._wout = (b.s._wout || 0) + acc; if (acc <= 1e-12) return;
       const removed = Math.min(tot, acc * dt); for (const m of pool) { const st = m.s, w = Math.max(0, Math.min(st.vol, st.wat || 0)); if (w <= 0) continue; const q = removed * w / tot; st.wat = Math.max(0, (st.wat || 0) - q); st.vol = Math.max(0, st.vol - q); }
     }
     /* The DRAW of a tank group. Every outlet of every member (pump, pipe...) is served from the pooled stock, one after the other within the step, so two pumps share the same oil and nothing is drawn twice.
@@ -391,7 +391,7 @@
         const def = DEFS[b.d], ports = def.connections.filter(c => c.role === 'out' && c.id !== 'WATER_OUT' && this.edgeOf(b, c.id) && !this.edgeOf(b, c.id).int).map(c => c.id); if (!ports.length) continue;
         let pool = 0, wat = 0, bv = 0; for (const m of ms) { const st = m.s; pool += st.vol; wat += st.wat || 0; bv += st.bv || 0; } if (pool <= 1e-6) break;
         const cap = def.capacity.value * levelOf(b).capacityMultiplier, wf = def.product === P.CRUDE ? Math.min(1, wat / pool) : 0, bf = def.product === P.CRUDE ? clamp(bv / pool, 0, 1) : 0, r = Math.min(pool / dt, cap * .5);
-        const acc = this.split(b, ports, { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, p: SIM.tankHeadPsi }, true, new Set([b.id])); b.s._out = (b.s._out || 0) + acc; if (acc <= 1e-12) continue;
+        this._cv++; const acc = this.split(b, ports, { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, p: SIM.tankHeadPsi }, true, new Set([b.id])); b.s._out = (b.s._out || 0) + acc; if (acc <= 1e-12) continue;
         const removed = Math.min(pool, acc * dt);
         for (const m of ms) { const st = m.s; if (st.vol <= 0) continue; const q = Math.min(st.vol, removed * st.vol / pool), w = st.vol > 0 ? (st.wat || 0) / st.vol : 0, k = st.vol > 0 ? (st.bv || 0) / st.vol : 0; st.wat = Math.max(0, (st.wat || 0) - q * w); if (st.bv) st.bv = Math.max(0, st.bv - q * k); st.vol = Math.max(0, st.vol - q); }
       }
@@ -448,7 +448,7 @@
             break;
           }
           case 'pump': {
-            const c0 = def.params, cap = c0.maxFlow * levelOf(b).capacityMultiplier; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;
+            const c0 = def.params, cap = c0.maxFlow * levelOf(b).capacityMultiplier; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p; if (this._fxr) this._fxr.push(s, 0, f.p);
             if (f.p < c0.minInletPsi) { if (commit) { s._lowIn = true; } break; }
             const room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; const boost = s.boost * levelOf(b).pressureMultiplier * s.eff * levelOf(b).efficiencyMultiplier * eco(b); const outs = dcOf(def).outs, ff = { ...f, r: Math.min(f.r, room), p: f.p + boost }; acc = outs.length > 1 ? this.split(b, outs, ff, commit, vis) : this.offer(b, outs[0] || 'OUTPUT', ff, commit, vis);
             if (commit && acc > 0) { s._in = (s._in || 0) + acc; s.pOut = f.p + boost; }
@@ -469,12 +469,12 @@
           case 'separator': acc = this.separate(b, s, def, f, commit, vis); break;
           case 'refinery': acc = this.refine(b, s, def, f, commit, vis); break;
         }
-      } finally { vis.delete(b.id); }
+      } finally { vis.delete(b.id); if (commit && acc > 0) this._cv++; }
       return acc;
     }
     portState(b, id) { const e = this.edgeOf(b, id); return e ? 'connected' : 'none'; }
     separate(b, s, def, f, commit, vis) {
-      const C = def.params, L = levelOf(b), cap = C.cap * L.capacityMultiplier, room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;
+      const C = def.params, L = levelOf(b), cap = C.cap * L.capacityMultiplier, room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); s.pIn = f.p; if (this._fxr) this._fxr.push(s, 0, f.p);
       if (f.p < C.minInletPsi) { if (commit) s._lowIn = true; return 0; }
       const fo = f.oil == null ? 1 : f.oil, fg = f.gas || 0, fw = f.wat || 0, k = L.efficiencyMultiplier * (0.85 + 0.15 * b.c) * eco(b), eO = Math.min(1, C.oilSep * k), eG = Math.min(1, C.gasSep * k), eW = Math.min(1, C.waterSep * k);
       let r = Math.min(f.r, room); if (r <= 1e-9) return 0;
@@ -494,7 +494,7 @@
     }
     capOf(b) { return DEFS[b.d].params.cap * levelOf(b).capacityMultiplier; }                  // the refinery's throughput ceiling (bbl/day), used by the economy to gate it on materials
     refine(b, s, def, f, commit, vis) {
-      const C = def.params, R = CFG.REFINERY, L = levelOf(b), cap = C.cap * L.capacityMultiplier, lim = Math.min(clamp(s.opLimit, 0, 1), s.matLim == null ? 1 : clamp(s.matLim, 0, 1)); s._off = Math.max(s._off || 0, f.r); s.pIn = f.p;   // the player's throttle and the material limit (set by the economy), whichever is lower
+      const C = def.params, R = CFG.REFINERY, L = levelOf(b), cap = C.cap * L.capacityMultiplier, lim = Math.min(clamp(s.opLimit, 0, 1), s.matLim == null ? 1 : clamp(s.matLim, 0, 1)); s._off = Math.max(s._off || 0, f.r); s.pIn = f.p; if (this._fxr) this._fxr.push(s, 0, f.p);   // the player's throttle and the material limit (set by the economy), whichever is lower
       const util = clamp(lim, 0, 1), water = f.wat || 0, gas = f.gas || 0, quality = clamp(1 - .6 * water - .3 * gas, 0.2, 1), temp = lerp(150, R.optimalTempC, clamp(util * 1.4, 0, 1)), tempF = temp > R.maxTempC ? .8 : 1,
         pressF = clamp(.6 + .4 * Math.min(1, f.p / R.minInletPsi), .6, 1), utilF = .85 + .15 * Math.min(1, util / .6), maintF = .7 + .3 * b.c, eff = clamp(R.baseEfficiency * quality * tempF * pressF * utilF * maintF * L.efficiencyMultiplier * eco(b), 0, 1);
       // three separate things: the yield (R.yields, the recipe), the efficiency (eff: the share of nameplate capacity the plant can process in its current state; it limits the crude accepted, the rest stays in the feed/tank) and the physical loss (R.physicalLoss, a separate, calibrated fraction of what is processed). Efficiency is never booked as a loss.
@@ -503,7 +503,7 @@
       const outs = [['GASOLINE', 'GASOLINE_OUT', P.GASOLINE], ['DIESEL', 'DIESEL_OUT', P.DIESEL], ['JET_FUEL', 'JET_OUT', P.JET_FUEL], ['GAS', 'GAS_OUT', P.GAS]];
       let connected = 0; for (const [, port] of outs) if (this.edgeOf(b, port)) connected++; if (!connected) { if (commit) s._noOut = true; return 0; }
       let th = 1; const pOut = Math.max(20, f.p * .6);
-      for (const [y, port, prod] of outs) { if (!this.edgeOf(b, port)) continue; const want = thr * R.yields[y] / 100 * passF; if (want > 0) { const t1 = this.offer(b, port, { prod, r: want, p: pOut }, false, vis) / want; if (t1 <= 1e-9) { s._blk = true; s._blkPort = port; } th = Math.min(th, t1); } }      // _blk / _blkPort: which connected outlet takes nothing (a full tank, a channel with no receiver): the panel says THAT instead of "no oil reaches it"
+      for (const [y, port, prod] of outs) { if (!this.edgeOf(b, port)) continue; const want = thr * R.yields[y] / 100 * passF; if (want > 0) { const t1 = this.offer(b, port, { prod, r: want, p: pOut }, false, vis) / want; if (t1 <= 1e-9) { s._blk = true; s._blkPort = port; if (this._fxr) this._fxr.push(s, 1, port); } th = Math.min(th, t1); } }      // _blk / _blkPort: which connected outlet takes nothing (a full tank, a channel with no receiver): the panel says THAT instead of "no oil reaches it"
       if (th <= 1e-9) { if (commit) s._blocked = true; return 0; }
       thr *= th; const consumed = thr;   // the crude actually taken from the feed (all of it is processed; efficiency limited how much was accepted)
       if (commit) {
@@ -520,7 +520,7 @@
        Nothing else may change the game while a step is paused - the company finishes the hour (settle) before any player action, save, pause or catch-up. */
     step(dt) { const g = this.stepGen(dt, false); g.next(); }      // one go: the generator never pauses (sl = false), a single resume runs it to the end
     *stepGen(dt, sl) {
-      if (this.dirty()) this.build(); this.dt = dt = Math.max(1e-6, dt); const store = this.store; this.time += dt; let Y = 0;
+      if (this.dirty()) this.build(); this.dt = dt = Math.max(1e-6, dt); const store = this.store; this.time += dt; let Y = 0; this._cv++;
       for (const e of this._el) { if (sl && (++Y & 1023) === 0) yield; e.flow = 0; e.over = false; e.lowP = false; e.hiP = false; }
       const items = store.list(); for (const b of items) { if (sl && (++Y & 255) === 0) yield; const s = this.ensure(b); for (const k in s) if (k.charCodeAt(0) === 95 && s[k] !== undefined) s[k] = undefined;      /* perf: the per-step values (_in, _out, ...) are cleared to undefined instead of deleted: same reads, same save (JSON drops undefined), but the objects keep a fast shape */ const ty = DEFS[b.d].type; if (ty === 'pump' || ty === 'separator' || ty === 'refinery') { s.pIn = 0; if (ty === 'pump') s.pOut = 0; } }
       const cn = this.net.central; if (cn) cn.begin(dt);
@@ -539,7 +539,7 @@
             const scale = g.need > 0 ? Math.min(1, Math.min(g.cap, g.rate) / g.need) : 1; target = target0 * scale;
           }
           s._target = target; s._wc = wc; s._gas = gas; s._p = pr; const ports = dcOf(def).ids; if (!ports.some(id => this.edgeOf(b, id))) { s._noOut = true; continue; }
-          let r = Math.min(target, s.reserve / dt / Math.max(1e-6, 1 - wc - gas)); const acc = this.split(b, ports, { prod: P.CRUDE, r, oil: 1 - wc - gas, gas, wat: wc, p: pr }, true, new Set([b.id]));
+          let r = Math.min(target, s.reserve / dt / Math.max(1e-6, 1 - wc - gas)); this._cv++; const acc = this.split(b, ports, { prod: P.CRUDE, r, oil: 1 - wc - gas, gas, wat: wc, p: pr }, true, new Set([b.id]));
           const oil = acc * dt * (1 - wc - gas); s._out = acc; s.total += acc * dt;
           if (site) { const took = store.ts.take(site.id, oil); s.reserve = site.remainingReserve; sharedWells.push([s, site]); if (took < oil - 1e-6) s._shortfall = oil - took; }
           else { s.reserve = Math.max(0, s.reserve - oil); if (s.reserve < 0.5) s.reserve = 0; }
@@ -555,7 +555,7 @@
           const gasT = def.type === 'gas', cap = def.capacity.value * levelOf(b).capacityMultiplier;
           const maxOut = cap * .5, r = Math.min(s.vol / dt, maxOut, b.rs ? s.rel / dt : Infinity), fill = s.vol / cap, wf = def.product === P.CRUDE && s.vol > 0 ? s.wat / s.vol : 0, press = gasT ? this.gasPressure(def, fill, b) : SIM.tankHeadPsi;
           const bf = (def.product === P.CRUDE || b.rs) && s.vol > 0 ? clamp((s.bv || 0) / s.vol, 0, 1) : 0;                      // the share of the tank's oil that was bought (not produced)
-          const acc = this.split(b, tOuts, { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, sv: s.vol, sc: cap, p: Math.max(press, SIM.tankHeadPsi) }, true, new Set([b.id])); s._out = acc;
+          this._cv++; const acc = this.split(b, tOuts, { prod: def.product, r, oil: 1 - wf, gas: 0, wat: wf, bf, sv: s.vol, sc: cap, p: Math.max(press, SIM.tankHeadPsi) }, true, new Set([b.id])); s._out = acc;
           const removed = acc * dt; s.wat = Math.max(0, s.wat - removed * wf); s.vol = Math.max(0, s.vol - removed); if (s.bv) s.bv = Math.max(0, s.bv - removed * bf);
           if (b.rs) { s.rel = Math.max(0, s.rel - removed); if (s.rel < 1e-6) s.rel = 0; s.dep = (s.dep || 0) + removed; s.depBv = (s.depBv || 0) + removed * bf; s.depW = (s.depW || 0) + removed * wf; }       // what really left a reserve tank is recorded for the books (settled once per hour by the company)
         }

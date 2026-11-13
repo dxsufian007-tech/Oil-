@@ -31,7 +31,7 @@
     constructor(W) {
       this.W = W; this.st = new Map(); this.seg = new Map(); this.pumps = new Map(); this.at = new Map(); this.cen = new Set(); this.cov = new Set(); this.rev = 0; this.nextSt = 1; this.nextSeg = 1; this.nextPump = 1; this.time = 0;
       this.ch = {}; for (const c of CHANNELS) this.ch[c] = { state: 'OPEN', flow: 0, pressure: 0, qty: 0, moved: 0, dir: 0, fault: false, cap: CLASS.capacity, maxP: CLASS.maxPressure, status: 'READY' };
-      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcX = -1; this._plE = 0; this._plV = [0, 0, 0, 0, 0, 0]; this._plM = [null, null, null, null, null, null]; this._plRev = -1; this.plStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0 }; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
+      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcX = -1; this._plE = 0; this._plV = [0, 0, 0, 0, 0, 0]; this._plM = [null, null, null, null, null, null]; this._plRev = -1; this.plStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0 }; this._dmMode = CentralNet.dmDefault | 0; this._dv = 0; this._dmM = [null, null, null, null, null, null]; this._dmRev = -1; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
     }
     static k(W, x, y) { return y * W + x; }
     key(x, y) { return y * this.W + x; }
@@ -77,9 +77,9 @@
     /* Forward (+1) pushes product along the pump's segment from its end a to its end b, Reverse (-1) from b to a: suction and discharge swap sides */
     setPumpDir(id, dir) { const p = this.pumps.get(id); if (!p || (dir !== 1 && dir !== -1)) return false; const g = this.seg.get(p.seg); if (!g || (g.a !== p.st && g.b !== p.st)) return false; p.dir = dir; this.rev++; return true; }
     pumpsOn(g, ch) { const o = []; for (const p of this.pumps.values()) if (p.seg === g.id && p.ch === ch) o.push(p); return o; }
-    setPumpFault(id, on) { const p = this.pumps.get(id); if (!p) return false; p.fault = !!on; return true; }
-    setChannel(ch, state) { const c = this.ch[ch]; if (!c || !['OPEN', 'CLOSED'].includes(state)) return false; c.state = state; return true; }
-    setChannelFault(ch, on) { const c = this.ch[ch]; if (!c) return false; c.fault = !!on; return true; }
+    setPumpFault(id, on) { const p = this.pumps.get(id); if (!p) return false; p.fault = !!on; this._plE++; return true; }
+    setChannel(ch, state) { const c = this.ch[ch]; if (!c || !['OPEN', 'CLOSED'].includes(state)) return false; c.state = state; this._plE++; return true; }
+    setChannelFault(ch, on) { const c = this.ch[ch]; if (!c) return false; c.fault = !!on; this._plE++; return true; }
 
     /* ---------------------------------------------------------------- routing */
     _graph() {
@@ -108,6 +108,7 @@
       const res = this._pathCore(ch, from, to, over, ban, bias); this._pcShadow(ch, from, to, over, ban, bias, res); return res;      // shadow: compare only
     }
     /* 0 = off (instant return to the plain computation), 1 = shadow (compare only), 2 = on.  Changing the mode empties the cache and resets its counters. */
+    setDeliverMode(m) { this._dmMode = m | 0; for (let i = 0; i < 6; i++) this._dmM[i] = null; this._dmRev = -1; this._dv++; this._plE++; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; }
     setCacheMode(m) {
       m = m === 2 ? 2 : m === 1 ? 1 : 0; this.pcMode = m; this._plE++; this._plM = [null, null, null, null, null, null]; this.pcStats = null; for (let i = 0; i < NCH; i++) { this._pcA[i] = null; this._pcB[i] = null; } this._pcRev = -1;
       for (const g of this.seg.values()) { if (m) { if (!Object.isFrozen(g.fault)) Object.freeze(g.fault); } else if (Object.isFrozen(g.fault)) g.fault = Object.assign({}, g.fault); }
@@ -229,7 +230,7 @@
     }
     begin(dt) { this._plE++; this._graph(); const need = Math.max(this._six.size, 1) * NCH; if (this._used && this._used.length >= need) { this._used.fill(0); this._net.fill(0); } else { this._used = new Float64Array(need); this._net = new Float64Array(need); } this._pused = new Map(); this._usedX = new Map(); this._netX = new Map(); if (this.pcMode) { this._pcClearAll('begin'); for (const g of this.seg.values()) if (!Object.isFrozen(g.fault)) { Object.freeze(g.fault); this.pcStats.tamper++; this._pcClearAll('fault'); } } this.dt = dt; this.time += dt; for (const p of this.pumps.values()) { p.flow = 0; p.pIn = 0; p.pOut = 0; p.lowIn = false; } this._chFlow = {}; this._chP = {}; this._chPw = {}; for (const c of CHANNELS) { this._chFlow[c] = 0; this._chP[c] = 0; this._chPw[c] = 0; } }
     _apply(ch, pl, acc) {
-      if (CI[ch] !== undefined) this._plV[CI[ch]]++;      // B6: every use of this channel invalidates its memoised plans
+      this._dv++; if (CI[ch] !== undefined) this._plV[CI[ch]]++;      // B6: every use of this channel invalidates its memoised plans
       for (const h of pl.hops) { if (CI[ch] === undefined) { const k = h.g.id + '|' + ch; this._usedX.set(k, (this._usedX.get(k) || 0) + acc); this._netX.set(k, (this._netX.get(k) || 0) + acc * h.dir); continue; } const i = this._ixOf(h.g.id) * NCH + CI[ch]; const was = this.pcMode ? CLASS.capacity - (this._used[i] || 0) <= EPS : false; this._used[i] = (this._used[i] || 0) + acc; this._net[i] = (this._net[i] || 0) + acc * h.dir; if (this.pcMode && was !== (CLASS.capacity - this._used[i] <= EPS)) { this._pcA[CI[ch]] = null; this._pcB[CI[ch]] = null; if (this.pcStats) this.pcStats.invalSat++; } }
       for (const [pu, pin, pout, on] of pl.stats) { pu.flow += on ? acc : 0; if (on) { this._pused.set(pu.id, (this._pused.get(pu.id) || 0) + acc); pu.pIn = pin; pu.pOut = pout; } else pu.lowIn = true; }
       this._chFlow[ch] += acc; this._chP[ch] += pl.p * acc; this._chPw[ch] += acc;
@@ -268,12 +269,39 @@
       return got;
     }
     /* the entry point from the Sim: a flow f (rate r bbl/day, pressure p) arrives at station `src` on channel `ch` */
+    /* B7: the probe list of one deliver() call is a pure function of the state of the whole simulation; it is remembered per (source station, channel, port) and reused while NOTHING has changed:
+     *  - sim._cv: bumped when a commit changes a building / pipe (offer, accept), at the start of every step and before every top-level operation of the step (the loops between operations write building values);
+     *  - this._dv: bumped by _apply (every use of the network);  this._plE: begin() and the player / test controls (pump fault, channel state);  this.rev: the graph;  sim._eb: the sim's edge table;
+     *  - the same flow (every field, Object.is), the same visited set, and the faults / directions / boosts of this channel's pumps.
+     * The probe has two side effects that are not idempotent (the last writer wins: s.pIn of pumps / separators / refineries, s._blk/_blkPort of refineries); they are recorded while the list is computed and written again, in the same order, on a hit.  (_off, _sat, e.over are max / set-true writes of the same values: already done.) */
     deliver(sim, src, ch, f, commit, vis, port) {
-      if (!this._used || !this.channelUp(ch)) return 0; const rcv = this.receivers(sim, ch, src.id, port); if (!rcv.length) return 0;
-      const probe = rcv.map(d => ({ d, can: this.toStation(sim, ch, src.id, d, f.r, f, false, vis, new Map()) })).filter(o => o.can > EPS).sort((a, b) => a.can - b.can);
-      if (!probe.length) return 0; let remain = f.r, left = probe.length, total = 0;
+      if (!this._used || !this.channelUp(ch)) return 0;
+      const probe = this._dmMode === 0 || CI[ch] === undefined ? this._probeRaw(sim, src, ch, f, vis, port) : this._probeMemo(sim, src, ch, f, vis, port);
+      if (probe === null || !probe.length) return 0; let remain = f.r, left = probe.length, total = 0;
       for (const o of probe) { const take = Math.min(o.can, remain / left); remain -= take; left--; if (take > EPS) total += commit ? this.toStation(sim, ch, src.id, o.d, take, f, true, vis, null) : take; }
       return total;
+    }
+    _probeRaw(sim, src, ch, f, vis, port) {      // the original code: null = no receiver at all
+      const rcv = this.receivers(sim, ch, src.id, port); if (!rcv.length) return null;
+      return rcv.map(d => ({ d, can: this.toStation(sim, ch, src.id, d, f.r, f, false, vis, new Map()) })).filter(o => o.can > EPS).sort((a, b) => a.can - b.can);
+    }
+    _probeRec(sim, src, ch, f, vis, port) {     // _probeRaw + the recording of the non-idempotent writes (returns [probe, effects])
+      const prev = sim._fxr, rec = []; sim._fxr = rec; let p; try { p = this._probeRaw(sim, src, ch, f, vis, port); } finally { sim._fxr = prev; }
+      if (prev) for (let i = 0; i < rec.length; i++) prev.push(rec[i]);
+      return [p, rec];
+    }
+    _probeMemo(sim, src, ch, f, vis, port) {
+      const S = this.dmStats, m = this._dmMode, ci = CI[ch], ports = PORTS[ch]; this._graph(); const nix = this._nix, si = nix.get(src.id), pi = port === undefined ? 2 : ports.indexOf(port);
+      if (si === undefined || pi < 0) { S.bypass++; return this._probeRaw(sim, src, ch, f, vis, port); }
+      if (this._dmRev !== this.rev) { for (let i = 0; i < 6; i++) this._dmM[i] = null; this._dmRev = this.rev; }
+      let M = this._dmM[ci]; if (!M) M = this._dmM[ci] = new Map(); const k = si * 4 + pi; let e = M.get(k); S.calls++;
+      const ok = e !== undefined && e.sim === sim && e.cv === sim._cv && e.dv === this._dv && e.ep === this._plE && e.eb === sim._eb && sameFlow(f, e.f) && sameVis(vis, e.vis) && this._plPumpsSame(e.pf, this._pxList(ch));
+      if (ok && m === 2) { S.hit++; const fx = e.fx; if (fx.length) { S.replayed++; replayFx(sim, fx); } return e.probe; }
+      const cv = sim._cv, dv = this._dv, ep = this._plE, r = this._probeRec(sim, src, ch, f, vis, port), probe = r[0], fx = r[1];
+      if (ok) { S.verified++; if (!sameProbe(probe, e.probe) || !sameFx(fx, e.fx)) S.mismatch++; } else S.miss++;
+      if (e === undefined) { e = { sim: null, cv: 0, dv: 0, ep: 0, eb: null, f: null, vis: null, probe: null, fx: null, pf: [] }; M.set(k, e); }
+      e.sim = sim; e.cv = cv; e.dv = dv; e.ep = ep; e.eb = sim._eb; e.f = Object.assign({}, f); e.vis = vis ? [...vis] : []; e.probe = probe; e.fx = fx; this._plPumpsSnap(e, this._pxList(ch));
+      return probe;
     }
     end() {
       const dt = this.dt || 0;
@@ -310,6 +338,12 @@
       return n;
     }
   }
+  CentralNet.dmDefault = 2;      // B7: the deliver memo mode a NEW network starts in (2 = on, 1 = shadow: recompute and compare, 0 = off = the B6 code)
+  const sameFlow = (a, b) => { let n = 0; for (const k in a) { n++; const x = a[k], y = b[k]; if (x !== y && !(typeof x === 'number' && Object.is(x, y))) return false; } let m = 0; for (const k in b) m++; return n === m; };
+  const sameVis = (v, arr) => { if (!v) return arr.length === 0; if (v.size !== arr.length) return false; let i = 0; for (const x of v) if (arr[i++] !== x) return false; return true; };
+  const sameProbe = (a, b) => { if (a === null || b === null) return a === b; if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i].d.s !== b[i].d.s || a[i].d.b !== b[i].d.b || a[i].d.port !== b[i].d.port || !Object.is(a[i].can, b[i].can)) return false; return true; };
+  const sameFx = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) { const x = a[i], y = b[i]; if (x !== y && !(typeof x === 'number' && Object.is(x, y))) return false; } return true; };
+  const replayFx = (sim, fx) => { const R = sim._fxr; for (let i = 0; i < fx.length; i += 3) { const s = fx[i], t = fx[i + 1], v = fx[i + 2]; if (t === 0) s.pIn = v; else { s._blk = true; s._blkPort = v; } if (R) R.push(s, t, v); } };
   CentralNet.pcDefault = 2;      // the path cache mode a NEW network starts in (2 = on, answers plain path calls from the cache; 0 = off = the B1 path, an instant fallback from the diagnostics panel)
   /* compact path: corner points */
   function pack(path) { const o = [path[0]]; for (let i = 1; i < path.length - 1; i++) { const a = path[i - 1], b = path[i], c = path[i + 1]; if ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]) !== 0) o.push(b); } if (path.length > 1) o.push(path[path.length - 1]); return o; }
