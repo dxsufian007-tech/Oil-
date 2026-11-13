@@ -32,3 +32,17 @@ Health % = elements (buildings + pipes) with no finding / elements checked.
 
 ## Read-only guarantee and cost
 Tests compare the full saved state (buildings, lines, flows, cash, sim dirty flag) before and after a scan. It runs only when the player taps «فحص الشبكة» / «إعادة الفحص». 4,032 elements: ~80 ms. Capacity / pressure checks use the last simulation solve; if the simulation is stale the report says so.
+
+## Real-save validation (244 buildings, 234 pipes, 7,137 Central tiles)
+
+Run with `SAVE=<realsave.json> node test-network-diag-real.js` (skipped without a save). Findings after calibration on the real save:
+- 0 critical faults; the engine's own flags are reproduced one-to-one (65 pipes over pressure rating, 2 pipes over capacity).
+- Pipes carry no fixed direction in the engine (an edge joins two ports; oil goes from the end that can send to the end that can take), so the diagnostic graph follows port roles, not the registered a->b order.
+- Geometry-only findings (a drawn path across a building, a shared tile, a reversed registration) are MEDIUM warnings: the simulation follows the registered connection, so flow is unaffected.
+- Central stations are hand-off points: they are terminals and sources, never dead ends or "no supply".
+
+### NOT covered
+- The Central Hybrid Network (segments, stations, central pumps, its tiles): flow past or inside the Central stations is not verified; it has its own system.
+- There is no leak/loss model in the engine, so none is reported.
+- Capacity/pressure checks mirror the last simulation solve (peak offered flow within a step is not recoverable from stored data).
+- Unused optional ports are not reported.

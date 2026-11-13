@@ -32,8 +32,8 @@ console.log('C. a wrong connection');
 
 console.log('D. wrong direction');
 { const { g, c } = mk(), L = g.net.lines.get(6); const t = L.a; L.a = L.b; L.b = t; L.path = L.path.slice().reverse(); g.net.rev++; const r = run(g), f = by(r, 'WRONG_DIRECTION');
-  ok(f.length === 2 && f.every(x => x.element.id === 6 && x.severity === 'HIGH'), 'D1 both ends of the reversed PIPE-6 are reported', f.map(x => x.cause.slice(0, 40)));
-  ok(by(r, 'DEAD_END').length >= 1, 'D2 and the flow it should carry is reported as not arriving', r.faults.map(f => f.code)); }
+  ok(f.length === 2 && f.every(x => x.element.id === 6 && x.severity === 'MEDIUM' && !x.confirmed), 'D1 both ends of the reversed PIPE-6 are reported', f.map(x => x.cause.slice(0, 40)));
+  ok(by(r, 'DEAD_END').length === 0, 'D2 a reversed registration still flows (the engine edge has no fixed direction): no false dead end', r.faults.map(f => f.code)); }
 
 console.log('E. a pump that is not connected');
 { const { g, c } = mk(); g.net.remove(4); const r = run(g), f = by(r, 'PUMP_DISCONNECTED');
@@ -66,7 +66,7 @@ console.log('H. conflicts');
 { const { g, c } = mk(); const L = g.net.lines.get(6); const b = c.ct; L.path[3] = [b.x, b.y]; g.net.rev++; const r = run(g); const f = by(r, 'PATH_BLOCKED'); ok(f.length === 1 && f[0].element.id === 6 && f[0].x === b.x && f[0].y === b.y && /#/.test(f[0].cause), 'H2 a pipe path inside a building is a conflict, at the right tile', r.faults.map(f => f.code)); }
 { const { g, c } = mk(); g.net.lay({ a: { b: c.wells[0].id, port: 'OIL_OUT_E' }, b: { b: c.jn.id, port: 'PORT_N' }, path: [[21, 36]], product: 'CRUDE', dia: 16 }); const r = run(g); ok(by(r, 'PORT_TWICE').length >= 1 && by(r, 'TILE_SHARED').length >= 1, 'H3 two pipes on the same port and tile are conflicts', r.faults.map(f => f.code)); }
 { const g = game(5e12), a = put(g, 'oil_well', 20, 40), pe = B.worldPoints(a).find(p => p.id === 'OIL_OUT_E'); let hit = null; for (let bx = pe.ax - 3; bx <= pe.ax + 3 && !hit; bx++) for (let by2 = pe.ay - 3; by2 <= pe.ay + 3 && !hit; by2++) { const v = g.store.validate('oil_well', bx, by2, 0, { ignoreCash: true }); if (v.ok) { const w = g.store.place('oil_well', bx, by2, 0, { instant: true }).building; if (B.worldPoints(w).some(q => q.x === pe.ax && q.y === pe.ay && q.ax === pe.x && q.ay === pe.y)) hit = w; else g.store.demolish(w.id, { building: true, pipes: true }); } }
-  const r = run(g); ok(hit && by(r, 'FACING_MISMATCH').length === 1 && !by(r, 'FACING_MISMATCH')[0].confirmed, 'H4 two wells whose outlets touch face to face: reported once as a warning (neither can feed the other)', r.faults.map(f => f.code)); }
+  const r = run(g); ok(hit && by(r, 'FACING_MISMATCH').length === 0, 'H4 two wells whose outlets touch face to face (out/out): harmless, no noise', r.faults.map(f => f.code)); }
 
 console.log('I. several faults at once, each with its element and place');
 { const { g, c } = mk(); g.net.lines.get(6).b = null; g.net.remove(4); I.setLineOpen(g.net, 7, false); g.net.lines.get(8).b = { b: c.td.id, port: 'INPUT_W' }; g.net.rev++; const r = run(g);
