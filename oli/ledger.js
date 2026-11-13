@@ -38,6 +38,8 @@
     PAY_SUPPLIERS: ['liab', 'Payables to suppliers (purchases on credit)'],
     LOANS: ['liab', 'Loans'],
     BANK_LOANS: ['liab', 'Bank loans (banking layer)'],                       // Banking Phase 2: loans from the three banks; the old LOANS account stays exactly the old loans
+    BOND_INV: ['asset', 'Bond investments (banking layer, at cost)'],
+    BOND_DEBT: ['liab', 'Bonds issued (face value outstanding)'],
     ACCRUED_INT: ['liab', 'Accrued bank interest (not yet paid)'],
     EQUITY: ['equity', 'Paid-in capital'],
     REV_SPOT: ['rev', 'Sales · spot'],
@@ -68,7 +70,7 @@
   };
   const KINDS = Object.keys(ACC);
   const EPS = 1e-6, MAX_LOG = 300;
-  const OPTIONAL = ['BANK_LOANS', 'ACCRUED_INT'];                                   // accounts added after the first saves: written to a save only while they hold money, so a company that never used a bank saves exactly as before
+  const OPTIONAL = ['BANK_LOANS', 'ACCRUED_INT', 'BOND_INV', 'BOND_DEBT'];                                   // accounts added after the first saves: written to a save only while they hold money, so a company that never used a bank saves exactly as before
 
   class Journal {
     constructor() {

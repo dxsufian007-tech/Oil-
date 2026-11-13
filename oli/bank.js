@@ -7,9 +7,9 @@
  * Save: toJSON() / fromJSON() (an optional `bank` key of the company save; an old save without it simply opens fresh banks).
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./economy-config.js'), require('./game-calendar.js'), require('./baserate.js'), require('./loans-engine.js'), require('./credit.js'));
-  else root.OliBank = factory(root.OliEconomyConfig, root.OliCalendar, root.OliBaseRate, root.OliLoans, root.OliCredit);
-})(typeof self !== 'undefined' ? self : this, function (EC, CAL, BR, LE, CR) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./economy-config.js'), require('./game-calendar.js'), require('./baserate.js'), require('./loans-engine.js'), require('./credit.js'), require('./bonds.js'));
+  else root.OliBank = factory(root.OliEconomyConfig, root.OliCalendar, root.OliBaseRate, root.OliLoans, root.OliCredit, root.OliBonds);
+})(typeof self !== 'undefined' ? self : this, function (EC, CAL, BR, LE, CR, BM) {
   'use strict';
   const IDS = ['COMMERCIAL', 'INDUSTRIAL', 'STRATEGIC'];
   // account -> [kind, label].  asset | liab | equity.  A debit is positive, a credit is negative.
@@ -42,7 +42,7 @@
     constructor(cfg, day) {
       this.cfg = cfg || EC; this.lastDay = day | 0; this.books = {}; this.log = []; this.hist = [];
       for (const id of IDS) this._open(id);
-      this.rate = new BR.BaseRate(this.cfg, qKey(day | 0)); this.loans = []; this.tx = []; this.nextLoan = 1; this.nextTx = 1; this.svcDay = day | 0; this.liens = []; this.nextLien = 1; this.crisis = { at: -1, n: 0 }; this.credit = { score: null, grade: null, parts: null, day: -1, hist: [], prod: [], cf: [] };      // Phase 3: liens (every lien ever made) and the credit rating.  Phase 2: Phase 2: the Base Rate, the loan book (every loan ever made, open or closed) and the permanent transaction record
+      this.rate = new BR.BaseRate(this.cfg, qKey(day | 0)); this.loans = []; this.tx = []; this.nextLoan = 1; this.nextTx = 1; this.svcDay = day | 0; this.liens = []; this.nextLien = 1; this.crisis = { at: -1, n: 0 }; this.bonds = new BM.BondMarket(this.cfg, day | 0); this.credit = { score: null, grade: null, parts: null, day: -1, hist: [], prod: [], cf: [] };      // Phase 3: liens (every lien ever made) and the credit rating.  Phase 2: Phase 2: the Base Rate, the loan book (every loan ever made, open or closed) and the permanent transaction record
     }
     get B() { return this.cfg.BANKS; }
     _open(id) {
@@ -108,7 +108,7 @@
     _tx(code, loan, a, b, day) { this.tx.push([this.nextTx++, day == null ? this.svcDay : day, TX[code], loan ? loan.id : 0, a == null ? 0 : a, b == null ? 0 : b]); }
     bankDebt() { let d = 0; for (const l of this.loans) if (l.status === 'ACTIVE') d += l.bal; return d; }
     /* the part of the loan book that falls due within a year (for the current-liabilities figure) */
-    dueWithinYear() { let d = 0; for (const l of this.loans) if (l.status === 'ACTIVE') d += Math.min(l.bal, (l.pmt || 0) * 12 / l.fm); return d; }
+    dueWithinYear() { let d = 0; for (const l of this.loans) if (l.status === 'ACTIVE') d += Math.min(l.bal, (l.pmt || 0) * 12 / l.fm); return d + this.bonds.dueWithinYear(); }
     arrearsTotal() { let t = 0; for (const l of this.loans) if (l.status === 'ACTIVE') for (const a of l.arrears) t += a.int + a.prin + (a.fee || 0); return LE.r2(t); }
     /* may this loan be made?  spec = { bank, type, amount, term, freq, grace }; ctx = { riskDebt, riskBase } (the company's debt without the Central loan, and its assets + stock + cash without the Central network) */
     assess(spec, ctx) {
@@ -200,7 +200,7 @@
       c.cf.push([inp.opNet || 0, inp.opOut || 0]); while (c.cf.length > C.cfMonths) c.cf.shift(); c.prod.push(inp.crude || 0); while (c.prod.length > C.keepMonths) c.prod.shift();
       let on = 0, late = 0, arrNow = 0; const from = day - C.historyMonths * 30;
       for (let i = this.tx.length - 1; i >= 0; i--) { const t = this.tx[i]; if (t[1] < from) break; if (t[2] === TX.DUE_PAID) on++; else if (t[2] === TX.ARREARS) late++; }
-      for (const l of this.loans) if (l.status === 'ACTIVE') arrNow += l.arrears.length;
+      for (const l of this.loans) if (l.status === 'ACTIVE') arrNow += l.arrears.length; on += this.bonds.onTimeCount(from); late += this.bonds.lateCount(from); for (const b of this.bonds.issued) arrNow += b.arrears.length;
       let on0 = 0, out0 = 0; for (const r of c.cf) { on0 += r[0]; out0 += r[1]; }
       const r = CR.score({ onTime: on, late, arrearsNow: arrNow, opMargin: c.cf.length && out0 > 0 ? on0 / out0 : null, debtToAssets: inp.debtToAssets == null ? null : inp.debtToAssets, netMargin: inp.netMargin == null ? null : inp.netMargin, currentRatio: inp.currentRatio == null ? null : inp.currentRatio, prodCV: CR.cv(c.prod) }, C);
       const pen = (C.stagePenalty || {})[this.worstStage()] || 0; if (pen) r.score = Math.max(0, r.score - pen);
@@ -335,14 +335,15 @@
     loan(id) { return this.loans.find(x => x.id === id) || null; }
     toJSON() {
       const b = {}; for (const id of IDS) b[id] = { bal: Object.assign({}, this.books[id].bal), n: this.books[id].n };
-      return { v: 4, crisis: this.crisis, defDay: this.defDay == null ? -1 : this.defDay, liens: this.liens, nextLien: this.nextLien, credit: this.credit, lastDay: this.lastDay, banks: b, log: this.log, hist: this.hist, rate: this.rate.toJSON(), loans: this.loans, tx: this.tx, nextLoan: this.nextLoan, nextTx: this.nextTx, svcDay: this.svcDay };
+      return { v: 5, bonds: this.bonds.toJSON(), crisis: this.crisis, defDay: this.defDay == null ? -1 : this.defDay, liens: this.liens, nextLien: this.nextLien, credit: this.credit, lastDay: this.lastDay, banks: b, log: this.log, hist: this.hist, rate: this.rate.toJSON(), loans: this.loans, tx: this.tx, nextLoan: this.nextLoan, nextTx: this.nextTx, svcDay: this.svcDay };
     }
     static fromJSON(d, cfg, day) {
-      if (!d || (d.v < 1 || d.v > 4) || !d.banks) return new Bank(cfg, day);
+      if (!d || (d.v < 1 || d.v > 5) || !d.banks) return new Bank(cfg, day);
       const bk = new Bank(cfg, d.lastDay | 0);
       for (const id of IDS) { const s = d.banks[id], k = new BankBook(); if (s && s.bal) { for (const a of KEYS) k.bal[a] = +s.bal[a] || 0; k.n = s.n | 0; bk.books[id] = k; } else { bk.books[id] = null; } }
       bk.log = Array.isArray(d.log) ? d.log : []; bk.hist = Array.isArray(d.hist) ? d.hist : [];
       if (d.v >= 2) { bk.rate = BR.BaseRate.fromJSON(d.rate, bk.cfg, qKey(d.svcDay | 0)); bk.loans = Array.isArray(d.loans) ? d.loans : []; bk.tx = Array.isArray(d.tx) ? d.tx : []; bk.nextLoan = d.nextLoan || 1; bk.nextTx = d.nextTx || 1; bk.svcDay = d.svcDay | 0; }
+      if (d.v >= 5) bk.bonds = BM.BondMarket.fromJSON(d.bonds, bk.cfg, d.lastDay | 0); else bk.bonds = new BM.BondMarket(bk.cfg, d.svcDay | 0 || day | 0);
       if (d.v >= 4) { bk.crisis = Object.assign({ at: -1, n: 0 }, d.crisis || {}); bk.defDay = d.defDay == null ? -1 : d.defDay; }
       if (d.v >= 3) { bk.liens = Array.isArray(d.liens) ? d.liens : []; bk.nextLien = d.nextLien || 1; if (d.credit) bk.credit = Object.assign(bk.credit, d.credit); }
       if (d.v === 1) { bk.rate = new BR.BaseRate(bk.cfg, qKey(day | 0)); bk.svcDay = day | 0; bk.rate.emaDay = (day | 0) - 1; }                       // a Phase 1 save: no loans yet, the Base Rate starts from today

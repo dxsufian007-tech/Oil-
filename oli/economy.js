@@ -183,7 +183,7 @@
           else if (a in EXPKEY) { const k = EXPKEY[a]; L[k] += v; L.pl[k] += v; }
           else if (a in REVKEY) { L.revenue -= v; L[REVKEY[a]] -= v; }
           else if (a === 'FIXED') L.capex += v;
-          else if (a === 'LOANS' || a === 'BANK_LOANS') { if (v < 0) L.loansIn -= v; else L.principal += v; }
+          else if (a === 'LOANS' || a === 'BANK_LOANS' || a === 'BOND_DEBT') { if (v < 0) L.loansIn -= v; else L.principal += v; }
           else if (a === 'EQUITY') { if (v < 0) L.equityIn -= v; }
         }
         if (meta.inc) for (const k of Object.keys(meta.inc)) L[k] += meta.inc[k];   // incurred production costs (capitalised, so not in the profit)
@@ -201,7 +201,7 @@
     balanceSheet() {
       const bs = this.journal.balanceSheet(), b = this.journal.bal, inv = this.inventoryBook(), fixedNet = b.FIXED + b.ACC_DEP;
       return { cash: b.CASH, receivables: b.AR, inventory: inv, inventoryByProduct: Object.assign(Object.fromEntries(SELL.map(p => [p, b[INVACC[p]]])), { CRUDE_BOUGHT: b.INV_CRUDE_BUY || 0, RESERVE: b.INV_RESERVE || 0 }), wip: b.INV_WIP, fixedCost: b.FIXED, accumulatedDepreciation: b.ACC_DEP, fixedNet,
-        totalAssets: bs.assets, payroll: -b.PAY_PAYROLL, tax: -b.PAY_TAX, loans: -b.LOANS, bankLoans: -b.BANK_LOANS, accruedBank: -b.ACCRUED_INT, totalLiabilities: bs.liabilities, paidIn: bs.paidIn, result: bs.result, totalEquity: bs.equity, gap: bs.gap };
+        totalAssets: bs.assets, payroll: -b.PAY_PAYROLL, tax: -b.PAY_TAX, loans: -b.LOANS, bankLoans: -b.BANK_LOANS, bondDebt: -(b.BOND_DEBT || 0), bondInvest: b.BOND_INV || 0, accruedBank: -b.ACCRUED_INT, totalLiabilities: bs.liabilities, paidIn: bs.paidIn, result: bs.result, totalEquity: bs.equity, gap: bs.gap };
     }
     inventoryBook() { let v = 0; for (const p of SELL) v += this.journal.bal[INVACC[p]]; return v + (this.journal.bal.INV_CRUDE_BUY || 0) + (this.journal.bal.INV_RESERVE || 0); }
     /* lifting cost of a well relative to the old flat cost: its field's cost per barrel (deeper = dearer) and the pressure the field has left; 1 for wells without field data */
@@ -1076,7 +1076,7 @@
     }
     /* the seven financial stages are driven by these indicators (plus the cash rules in _finance) */
     /* ---- Banking Phase 2: loans from the three banks (bank.js / loans-engine.js).  The loans live in the banking layer; the company books its side in BANK_LOANS / ACCRUED_INT / EXP_INTEREST / CASH.  The old loans[] and debt() are untouched. ---- */
-    bankDebt() { return this.bank.bankDebt(); }
+    bankDebt() { return this.bank.bankDebt() + this.bank.bonds.debt(); }
     _monthFrac() { const d = CAL.fromHours(this.hours); return Math.min(1, ((d.day - 1) * 24 + d.hour + d.minute / 60) / (d.daysInMonth * 24)); }
     /* the company's risk position for a new bank loan: debt without the Central loan, against assets (without the Central network) + stock + cash */
     bankRiskCtx() { const cl = this.centralLoan(), cen = cl && this.loans.includes(cl) ? cl.remaining : 0; return { riskDebt: this.debt() - cen + this.bankDebt(), riskBase: this.assetsTotal() - this.centralValue() + this.inventoryValue() + Math.max(0, this.store.cash), val: this._valuer(), restricted: this.fin.negHours >= this.cfg.FINANCE.pressureAfterDays * 24 || this.bank.worstStage() >= 3 }; }
@@ -1117,6 +1117,27 @@
       if (this.hours - B.crisis.at >= D.crisisWindowDays * 24) { this._assetRecovery(); if (this.store.cash < 0) { this.bankrupt = true; f.state = 'BANKRUPT'; f.stage = 'BANKRUPT'; B.chargeOffAll(this.dayIdx); this._event('crit', 'BANKRUPTCY'); } }
     }
     acceptRestructuring(id, kind) { this.sync(); return this.bank.acceptPlan(id, kind, this._bankIO(), this.dayIdx); }
+    /* ---- Banking Phase 5: bonds (bonds.js).  The company side of every bond operation is booked here. ---- */
+    _bondIO() {
+      const me = this;
+      return { cash: () => me.store.cash,
+        invest(a, d) { me._post({ type: 'BOND_BUY', flow: 'INV', desc: d }, [['BOND_INV', a], ['CASH', -a]]); },
+        divest(p, c, d) { const g = Math.round((p - c) * 100) / 100, L = [['CASH', p], ['BOND_INV', -c]]; if (g > 0) L.push(['REV_OTHER', -g]); else if (g < 0) L.push(['EXP_DISPOSAL', -g]); me._post({ type: 'BOND_SELL', flow: 'INV', desc: d }, L); },
+        recover(p, c, d) { this.divest(p, c, d); },
+        couponIn(cash, inc, a0, d) { const L = [['CASH', cash]]; if (inc > 0) L.push(['REV_OTHER', -inc]); if (a0 > 0) L.push(['BOND_INV', -a0]); me._post({ type: 'BOND_COUPON', flow: 'OP', desc: d }, L); },
+        impair(a, d) { me._post({ type: 'BOND_IMPAIR', flow: 'NONE', desc: d }, [['EXP_DISPOSAL', a], ['BOND_INV', -a]]); },
+        issue(face, fee, d) { me._post({ type: 'BOND_ISSUE', flow: 'FIN', desc: d }, [['CASH', face], ['BOND_DEBT', -face]]); if (fee > 0) me._expense('interest', fee, 'Bond issue fee'); },
+        couponOut(a, d) { me._post({ type: 'BOND_COUPON_OUT', flow: 'OP', desc: d }, [['EXP_INTEREST', a], ['CASH', -a]]); },
+        accrueCoupon(a, d) { me._post({ type: 'BOND_COUPON_ACCRUED', flow: 'NONE', desc: d }, [['EXP_INTEREST', a], ['ACCRUED_INT', -a]]); },
+        payAccrued(a, d) { me._post({ type: 'BOND_COUPON_PAID', flow: 'OP', desc: d }, [['ACCRUED_INT', a], ['CASH', -a]]); },
+        repay(a, d) { me._post({ type: 'BOND_PRINCIPAL', flow: 'FIN', desc: d }, [['BOND_DEBT', a], ['CASH', -a]]); } };
+    }
+    bondList() { const B = this.bank.bonds, base = this.bank.rate.rate; return B.listed().map(b => B.quote(b, this.dayIdx, base)); }
+    bondQuote(id) { const B = this.bank.bonds, b = B.bond(id); return b ? B.quote(b, this.dayIdx, this.bank.rate.rate) : null; }
+    buyBond(id, units) { if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); return this.bank.bonds.buy(id, units, this.dayIdx, this.bank.rate.rate, this._bondIO()); }
+    sellBond(id, units) { if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); return this.bank.bonds.sell(id, units, this.dayIdx, this.bank.rate.rate, this._bondIO()); }
+    issueBondQuote(term, amount) { return this.bank.bonds.issueQuote(term, amount, this.bank.credit.score, this.bank.rate.rate, this.bankRiskCtx()); }
+    issueBond(term, amount, opts) { if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); return this.bank.bonds.issue(term, amount, this.bank.credit.score, this.bank.rate.rate, this.dayIdx, this.bankRiskCtx(), this._bondIO(), opts && opts.purpose); }
     _bankIO() {
       const me = this;
       return { cash: () => me.store.cash,
@@ -1129,6 +1150,7 @@
     _bankMonth() {
       this.bank.serviceMonth(this.dayIdx, this._bankIO());
       this.bank.quarterly(this.dayIdx, this.market.engine ? this.market.engine.indus : 0);
+      this.bank.bonds.monthly(this.dayIdx, this.bank.rate.rate, this._bondIO());                // Phase 5: coupons, maturities, issuer scores and defaults
     }
     bankQuote(bankId, type, amount, months, opts) { opts = opts || {}; return this.bank.assess({ bank: bankId, type, amount, term: months, freq: opts.freq, grace: opts.grace, collateral: opts.collateral }, this.bankRiskCtx()); }
     takeBankLoan(bankId, type, amount, months, opts) {
