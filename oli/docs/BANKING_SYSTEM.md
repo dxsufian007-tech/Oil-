@@ -33,3 +33,11 @@
 
 ## Tests (all in `npm test`)
 `test-bank-foundation, -baserate (30), -loans (70), -credit (20), -collateral (55), -default (50), -bonds (59), -ui (21), -integration (28)`; browser UI tests (`test-banking-ui.js`, 18) run separately with playwright.
+
+## Loans & Financing and Investment screens (Company tab)
+
+Two screens over the existing engines (no new engine, no new formulas): **loans-ui.js** («القروض والتمويل») and **invest-ui.js** («نظام الاستثمار»), placed in that order on the Company tab; the earlier read-only «المصارف وأسواق المال» screen stays below them.
+
+- **Loans & financing** – eight sections: debt summary, active loans (Central/old, bank, project finance, distressed, repaid – Central is shown apart but counted in the total debt), new loan (bank → type → amount [→ collateral] → term → cycle/grace → review; the loan is created only by the confirm button through `takeBankLoan`, i.e. only if `bank.assess` approves), instalment schedule (the engine's own `schedule` functions), repayment log (the bank's permanent record + the journal for old loans), arrears & default stages (+ restructuring offers through `acceptRestructuring`), banks & offers, and a calculator that creates nothing. Early repayment and rescheduling call `prepayBankLoan`/`prepayLoan`/`repayLoan` and `rescheduleBankLoan`/`rescheduleLoan`.
+- **Investment** – overview (market value, cost, realised/unrealised result, coupons, share of liquidity invested), portfolio, bonds (market with Ask/Bid/yield/issuer risk and class filter, my holdings with next coupon and maturity, my issued bonds with the issue form) and the investment operations log. Buying/selling/issuing use `buyBond`/`sellBond`/`issueBond` (bonds.js). Owned bonds are assets; issued bonds are debt and appear in the loan system as one separate line.
+- Tests: `test-loans-invest-model.js` (56 checks on a real Company: figures, wizard, management, arrears, schedule, calculator, save/load cycles, old save) and `test-loans-invest-ui.js` (browser, phone 412x866).
