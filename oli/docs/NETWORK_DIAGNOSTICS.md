@@ -75,3 +75,13 @@ Run with `SAVE=<realsave.json> node test-network-diag-real.js` (skipped without 
 - There is no leak/loss model in the engine, so none is reported.
 - Capacity/pressure checks mirror the last simulation solve (peak offered flow within a step is not recoverable from stored data).
 - Unused optional ports are not reported.
+
+## Blocked wells: the traced path, and Central channel faults
+
+**Blocked well (`BLOCKED`).** The inspector follows the oil from the well along the edge the engine itself loaded most, element by element, and reads only states the game records (closed/detached pipe, pump MAINTENANCE/DAMAGED/low suction/saturated, closed valve, full tank, separator blocked...). The FIRST element with such a state is the break point: its label and id, the last healthy element before it, every other cause on the path (each as its own card), the elements after it, and the production lost (`_target - _out`, summed for the wells that share the cause). A pipe that is closed (`open=false`), or whose far end is not attached, is blamed on the PIPE - not on the pump or junction beside it. If nothing on the path is recorded as a limit the finding says «السبب غير محدد» and lists no cause. On the map: healthy part green, break point red (with a cross), what follows orange (dashed).
+
+**Central channel faults.** `ch.fault` / `ch.state === 'CLOSED'` belong to the CHANNEL, so the finding has no map position (it is no longer pinned on the first segment) and no segment is marked faulty because of it. The text quotes the recorded `state`, `fault`, `status`, the pump and cut-segment counts, and the origin: «disabled manually from the Central panel in this session» (the panel keeps `window.__cnManual`) or «saved that way in the save file» (the engine does not record who set it).
+
+**Central panel.** The old «محاكاة عطل بالقناة» is now «تعطيل القناة للاختبار», in its own «أدوات الاختبار» box, with a confirmation; repairing needs none. Nothing in `industry.js`, `central.js` or `central-plan.js` changed.
+
+Tests: `node test-network-diag-trace.js` (27), `test-network-diag-central.js` (35, block E), browser `test-central-test-fault-ui.js` (17) and `test-network-diag-trace-ui.js` (7).

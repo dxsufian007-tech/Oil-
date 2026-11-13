@@ -9,7 +9,8 @@
   const ST = { RUNNING: 'يعمل', READY: 'جاهزة', CLOSED: 'مغلقة', FAULT: 'عطل' };
   const fmt = n => { n = Math.round(n); const a = Math.abs(n); return (n < 0 ? '-' : '') + '$' + (a >= 1e9 ? (a / 1e9).toFixed(3) + 'B' : a >= 1e6 ? (a / 1e6).toFixed(2) + 'M' : a.toLocaleString('en-US')); };
   const num = (n, d) => (+n || 0).toFixed(d == null ? 1 : d);
-  let env = null, cache = new WeakMap(), sel = 'CRUDE', branch = null;
+  let env = null, cache = new WeakMap(), sel = 'CRUDE', branch = null, pendingFlt = null;      // pendingFlt: the channel whose test-fault confirmation is open (nothing is changed until the player confirms)
+  const G = typeof window !== 'undefined' ? window : globalThis, MANUAL = (G.__cnManual = G.__cnManual || {});      // channels the player disabled from this panel in THIS session (the engine does not record who set a fault; the inspector reads this to say so)
 
   /* corner points of a segment path (cached) and the offset of a polyline by `off` pixels (miter joins) */
   function corners(g) { const P = g.path, k = P.length; if (g._cp && g._cpn === k) return g._cp; const o = [P[0]]; for (let i = 1; i < k - 1; i++) { const a = P[i - 1], b = P[i], c = P[i + 1]; if ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]) !== 0) o.push(b); } o.push(P[k - 1]); g._cpn = k; return (g._cp = o); }
@@ -40,7 +41,8 @@
     + '#cn-sheet .top{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #33404f}#cn-sheet .top b{flex:1;font-size:15px}'
     + '#cn-sheet .body{flex:1;overflow:auto;padding:10px}#cn-sheet table{width:100%;border-collapse:collapse}#cn-sheet td,#cn-sheet th{padding:4px 6px;border-bottom:1px solid #26303c;text-align:right}'
     + '#cn-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}#cn-chips button{min-height:40px;padding:0 10px;border-radius:9px;background:#1b222c;border:2px solid #33404f;color:#fff;font-weight:600}#cn-chips button.on{border-color:var(--c)}'
-    + '#cn-sheet button.act{min-height:42px;padding:0 12px;border-radius:9px;background:#27415c;border:1px solid #4b6a8a;color:#fff;font-weight:600;margin:3px 0 3px 6px}#cn-sheet h5{margin:12px 0 4px;font-size:13px;color:#9fb3c8}';
+    + '#cn-sheet button.act{min-height:42px;padding:0 12px;border-radius:9px;background:#27415c;border:1px solid #4b6a8a;color:#fff;font-weight:600;margin:3px 0 3px 6px}#cn-sheet h5{margin:12px 0 4px;font-size:13px;color:#9fb3c8}'
+    + '#cn-sheet .cn-test{margin:12px 0 4px;padding:8px;border:1px dashed #a5584e;border-radius:10px;background:#2a1a1a}#cn-sheet .cn-test .k{margin:0 0 4px}#cn-sheet button.cn-tb{background:#5c2a27;border-color:#c0584e}#cn-sheet .cn-conf{padding:8px;border:2px solid #ff8a7a;border-radius:9px;background:#3a1f1d;font-size:13px;line-height:1.7}';
 
   const R_ = rep => '60 سنة · 6% · سماح سنتان · الفائدة على الرصيد المتبقي فقط';
   function chInfo(c) { return env.cn().channelInfo(c); }
@@ -59,7 +61,10 @@
       + '<tr><td>الضغط (متوسط مرجّح)</td><td>' + num(c.pressure, 0) + ' psi (الأقصى ' + CLS.maxPressure + ')</td></tr>'
       + '<tr><td>الاتجاه</td><td>' + (c.dir > 0 ? 'من الشمال/الغرب نحو الجنوب/الشرق (a→b)' : c.dir < 0 ? 'عكس اتجاه الرسم (b→a)' : c.flow > 0 ? 'متوازن' : 'لا حركة') + '</td></tr>'
       + '<tr><td>الكمية داخل الشبكة</td><td>' + num(c.qty, 0) + ' bbl</td></tr><tr><td>المضخات</td><td>' + c.pumpsOk + ' / ' + c.pumps + ' سليمة</td></tr><tr><td>إجمالي ما نُقل</td><td>' + num(c.moved, 0) + ' bbl</td></tr></table>'
-      + '<div><button class="act" id="cn-open">' + (c.state === 'CLOSED' ? '▶ فتح القناة' : '⏸ إغلاق القناة') + '</button><button class="act" id="cn-flt">' + (c.fault ? '🔧 إصلاح عطل القناة' : '⚠ محاكاة عطل بالقناة') + '</button><button class="act" id="cn-pump">' + (c.pumpsOk < c.pumps ? '🔧 إصلاح المضخات' : '⚠ تعطيل مضخات القناة') + '</button></div>';
+      + '<div><button class="act" id="cn-open">' + (c.state === 'CLOSED' ? '▶ فتح القناة' : '⏸ إغلاق القناة') + '</button><button class="act" id="cn-pump">' + (c.pumpsOk < c.pumps ? '🔧 إصلاح المضخات' : '⚠ تعطيل مضخات القناة') + '</button></div>'
+      + '<div class="cn-test"><div class="k">🧪 أدوات الاختبار — تغيّر حالة اللعبة فعلاً ويُحفظ التغيير</div>' + (c.fault ? '<button class="act cn-tb" id="cn-flt">🔧 إصلاح القناة المعطّلة</button>' + (MANUAL[sel] ? '<div class="k">عُطّلت من هذه اللوحة في هذه الجلسة.</div>' : '<div class="k">هذه القناة معطّلة في حالة اللعبة المحفوظة.</div>')
+        : pendingFlt === sel ? '<div class="cn-conf">تعطيل قناة ' + (NAME[sel] || sel) + ' للاختبار سيوقف نقلها بالكامل عبر Central (حتى لو كانت المضخات والقطاعات سليمة) حتى تُصلحها، وسيُحفظ مع اللعبة. هل أنت متأكد؟<br><button class="act cn-tb" id="cn-flt-yes">نعم، عطّل القناة</button><button class="act" id="cn-flt-no">إلغاء</button></div>'
+        : '<button class="act cn-tb" id="cn-flt">🧪 تعطيل القناة للاختبار</button>') + '</div>';
     h += '<h5>مضخات القناة (ثنائية الاتجاه)</h5>' + pumpRows(cn, sel) + '<div class="k">المضخة تدفع المنتج في اتجاه واحد على مقطعها وتتجاوزها الحركة المعاكسة بلا دعم ضغط. «عكس» يبدّل السحب والطرد.</div>';
     h += '<h5>فرع جديد</h5><div class="k">اضغط الزر ثم المس أي نقطة على الأنبوب المركزي: يُبنى موقع ربط مسجَّل داخل المحرك ثم تصل منه بالأنبوب العادي إلى المنشأة.</div><button class="act" id="cn-tap">🔀 إنشاء فرع من نقطة على الخط</button>';
     if (rep) { h += '<h5>المال والقرض</h5><table><tr><td>قيمة الشبكة (أصل)</td><td>' + fmt(rep.asset) + '</td></tr><tr><td>رصيد أصل الدين</td><td>' + fmt(rep.loan) + (rep.open ? '' : ' (مُسدَّد)') + '</td></tr><tr><td>الفائدة المستحقة حتى الآن هذا الشهر</td><td>' + fmt(rep.accrued) + '</td></tr><tr><td>أصل الدين المسدَّد</td><td>' + fmt(rep.principalRepaid) + (rep.extraRepaid ? ' (منه إضافي ' + fmt(rep.extraRepaid) + ')' : '') + '</td></tr><tr><td>إجمالي الفوائد المدفوعة</td><td>' + fmt(rep.interestPaid) + '</td></tr><tr><td>الفوائد المستقبلية المتبقية</td><td>' + fmt(rep.futureInterest) + '</td></tr><tr><td>فوائد مستقبلية وُفّرت بالسداد المبكر</td><td style="color:#8dffb0">' + fmt(rep.interestSaved) + '</td></tr><tr><td>القسط الشهري' + (rep.inGrace ? ' (بعد السماح)' : '') + '</td><td>' + fmt(rep.instalment) + '</td></tr><tr><td>فائدة الشهر القادم</td><td>' + fmt(rep.nextInterest) + (rep.inGrace ? ' (فترة سماح: فوائد فقط)' : '') + '</td></tr><tr><td>تشغيل / يوم</td><td>' + fmt(rep.opPerDay) + '</td></tr><tr><td>صيانة / يوم</td><td>' + fmt(rep.maintPerDay) + '</td></tr></table>';
@@ -87,11 +92,13 @@
     env = e; const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
     const b = document.createElement('button'); b.id = 'cn-btn'; b.textContent = '🛢️ الشبكة المركزية'; document.body.appendChild(b);
     const s = document.createElement('div'); s.id = 'cn-sheet'; s.innerHTML = '<div class="top"><b>🛢️ الأنبوب المركزي · 6 قنوات</b><button class="act" id="cn-x" style="min-height:40px">إغلاق</button></div><div class="body" id="cn-body"></div>'; document.body.appendChild(s);
-    const show = () => { render(); s.classList.add('open'); }; b.onclick = show; s.querySelector('#cn-x').onclick = () => s.classList.remove('open');
+    const show = () => { render(); s.classList.add('open'); }; b.onclick = show; s.querySelector('#cn-x').onclick = () => { pendingFlt = null; s.classList.remove('open'); };
     const refresh = () => { if (!s.classList.contains('open')) return; const i = document.getElementById('cn-amt'); if (i && (i.value || document.activeElement === i)) return; render(); };   // never wipe what the player is typing setInterval(refresh, 700);
-    s.addEventListener('click', ev => { const t = ev.target.closest('button'); if (!t) return; const cn = env.cn(); if (t.dataset.ch) { sel = t.dataset.ch; render(); return; }
+    s.addEventListener('click', ev => { const t = ev.target.closest('button'); if (!t) return; const cn = env.cn(); if (t.dataset.ch) { sel = t.dataset.ch; pendingFlt = null; render(); return; }
       if (t.id === 'cn-open') { const c = chInfo(sel); cn.setChannel(sel, c.state === 'CLOSED' ? 'OPEN' : 'CLOSED'); env.save(); render(); }
-      else if (t.id === 'cn-flt') { cn.setChannelFault(sel, !chInfo(sel).fault); env.save(); render(); }
+      else if (t.id === 'cn-flt') { if (chInfo(sel).fault) { cn.setChannelFault(sel, false); delete MANUAL[sel]; pendingFlt = null; env.save(); } else pendingFlt = sel; render(); }      // repairing is immediate; DISABLING needs the confirmation below
+      else if (t.id === 'cn-flt-yes') { if (pendingFlt === sel) { cn.setChannelFault(sel, true); MANUAL[sel] = true; env.save(); } pendingFlt = null; render(); }
+      else if (t.id === 'cn-flt-no') { pendingFlt = null; render(); }
       else if (t.id === 'cn-pump') { const bad = chInfo(sel).pumpsOk < chInfo(sel).pumps; for (const p of cn.pumps.values()) if (p.ch === sel) cn.setPumpFault(p.id, !bad); env.save(); render(); }
       else if (t.id === 'cn-pay' || t.classList.contains('cn-pp')) { const l = env.company.centralLoan(); if (!l) return; const amt = t.id === 'cn-pay' ? +document.getElementById('cn-amt').value : l.remaining * (+t.dataset.p) / 100, r = env.company.prepayLoan(l.id, t.dataset.p === '100' ? null : amt); env.updateCash(); env.save(); render(); const m = document.getElementById('cn-pmsg'); if (m) m.textContent = r.ok ? 'تم سداد ' + fmt(r.paid) + (r.accrued ? ' + فائدة مستحقة ' + fmt(r.accrued) : '') + ' · وُفّر ' + fmt(r.saved) + ' من الفوائد المستقبلية' : (r.reason === 'cash' ? 'الرصيد لا يكفي (' + fmt(r.need) + ')' : 'مبلغ غير صالح'); }
       else if (t.classList.contains('cn-pdir')) { const p = cn.pumps.get(t.dataset.p); if (p) { cn.setPumpDir(p.id, -p.dir); env.save(); render(); } }

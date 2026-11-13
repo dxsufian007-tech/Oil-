@@ -49,4 +49,20 @@ console.log('D. a large Central network');
   for (let i = 0; i < N - 50; i += 7) C.addSeg({ id: 'G' + k++, kind: 'loop', a: 'S' + i, b: 'S' + (i + 50), path: [[(i % 50) * 10 + 1, Math.floor(i / 50) * 10 + 3], [(i % 50) * 10 + 1, Math.floor(i / 50) * 10 + 4]] });
   for (let i = 0; i < N; i += 3) C.addPump({ id: 'U' + i, st: 'S' + i, ch: 'CRUDE', seg: null }); const g = { C, store: fakeStore(items), net: { lines, central: C } }; const t = Date.now(), r = run(g), ms = Date.now() - t;
   ok(r.stats.stations === 2000 && r.stats.segments === k && ms < 1500, 'D1 ' + r.stats.checked + ' Central elements scanned in ' + ms + ' ms', { ms, stats: r.stats }); }
+console.log('E. a disabled CHANNEL is shown on the channel itself, never on a segment');
+{ const UI = require('./diag-ui.js'), g = mk(); g.C.setChannelFault('CRUDE', true); g.C.begin(1); g.C.end(); 
+  let r = run(g), f = by(r, 'C_CH_FAULT');
+  ok(f.length === 1 && f[0].element.type === 'CCHANNEL' && f[0].element.id === 'CRUDE' && /قناة الخام/.test(f[0].element.label), 'E1 one finding, on the channel CRUDE (name shown)');
+  ok(f[0].x === null && f[0].y === null && f[0].global === true && /القناة كلها/.test(f[0].zone), 'E2 no coordinates: it is not pinned on the first segment (T-E1 style) or anywhere else', [f[0].x, f[0].y, f[0].zone]);
+  ok(/state=OPEN/.test(f[0].cause) && /fault=true/.test(f[0].cause) && /status=FAULT/.test(f[0].cause) && f[0].evidence.state === 'OPEN' && f[0].evidence.fault === true, 'E3 the real recorded state is quoted (state / fault / status)');
+  ok(/قناة نقل الخام \(CRUDE\)/.test(f[0].cause), 'E4 the kind of element is named: a transport channel, one of the six');
+  ok(/محفوظة هكذا في ملف الحفظ/.test(f[0].cause) && f[0].evidence.manual === false, 'E5 origin when NOT disabled from the panel this session: «saved in the save file»');
+  r = run(g, { cenManual: { CRUDE: true } }); f = by(r, 'C_CH_FAULT'); ok(/عُطّلت يدوياً من لوحة Central/.test(f[0].cause) && f[0].evidence.manual === true, 'E6 origin when the player disabled it from the panel this session: «manually»');
+  ok(by(r, 'C_SEG_FAULT').length === 0 && r.healthySegs.length === 5 && !r.faults.some(z => z.element.type === 'CSEG' && z.confirmed), 'E7 NO segment is marked faulty because of the channel fault: all 5 stay healthy (green)');
+  ok(/لا موضع واحد له/.test(UI.html({ faults: r.faults, stats: { health: 90, checked: 1, connections: 0, healthyConnections: 0, faults: 1, warnings: 0, indicators: 0 }, notes: [], healthyLines: [] }, { sel: f[0].no, showOk: true, limit: 50 })) && /قطاع مقطوع عليها/.test(f[0].effect), 'E8 the panel says it is a whole-channel fault and the effect counts pumps and cut segments (0 cut)');
+  g.C.setChannelFault('CRUDE', false); g.C.setChannel('GASOLINE', 'CLOSED'); r = run(g); const cl = by(r, 'C_CH_CLOSED'); ok(by(r, 'C_CH_FAULT').length === 0 && cl.length === 1 && cl[0].global && cl[0].x === null && cl[0].confirmed === false && /state=CLOSED/.test(cl[0].cause), 'E9 a CLOSED channel: a warning (not a fault), on the channel, with its state');
+  ok(by(r, 'C_CH_PARTITION').length === 0, 'E10 no partition invented'); g.C.setChannel('GASOLINE', 'OPEN');
+  const j = JSON.parse(JSON.stringify(g.C.toJSON())); g.C.setChannelFault('DIESEL', true); const j2 = JSON.parse(JSON.stringify(g.C.toJSON())), C2 = CEN.CentralNet.fromJSON(W, j2), C1 = CEN.CentralNet.fromJSON(W, j); ok(C2.ch.DIESEL.fault === true && C1.ch.DIESEL.fault === false, 'E11 save / load keeps each channel exactly as it was (the inspector changes nothing)');
+  delete j.ch; const C0 = CEN.CentralNet.fromJSON(W, j); ok(Object.values(C0.ch).every(c => c.state === 'OPEN' && c.fault === false), 'E12 an OLD save without the channel table loads with every channel OPEN and healthy');
+}
 console.log('\n' + n + ' passed'); if (process.exitCode) process.exit(1);

@@ -19,6 +19,17 @@
   const label = f => f.indicator ? 'مؤشر رقم ' : f.confirmed ? 'العطل رقم ' : 'تحذير رقم ', grpName = f => f.indicator ? 'مؤشرات (ليست أعطالاً: لا أثر مثبت على التدفق)' : f.confirmed ? 'الأعطال المؤكدة' : 'تحذيرات تحتاج مراجعة';
 
   const HEAD = '<div class="nd-h"><span>فاحص الشبكة</span><span class="nd-hb"><button class="nd-m" data-nd="min" title="تصغير مع إبقاء العلامات">—</button><button class="nd-x" data-nd="close" title="إخفاء">✕</button></span></div>';
+  const TR_ROW = (k, v) => '<tr><td>' + k + '</td><td>' + v + '</td></tr>';
+  function traceHtml(f) {
+    const T = f.trace; if (!T) return ''; const known = T.firstBad != null, nf = n => Math.round(n || 0).toLocaleString('en-US');
+    let h = '<div class="nd-tr"><b>تتبّع مسار ' + esc(T.well.label) + '</b><table class="nd-d">'
+      + TR_ROW('البئر', esc(T.well.label) + ' · ' + esc(f.zone)) + TR_ROW('حالة البئر', esc(T.well.state)) + TR_ROW('الإنتاج المتأثر', 'ينتج ' + nf(T.well.out) + ' من ' + nf(T.well.target) + ' برميل/يوم — يُفقد ' + nf(T.lost) + (T.sharedWith && T.sharedWith.length ? ' (ومع ' + T.sharedWith.length + ' بئر بنفس السبب: ' + nf(T.groupLost) + ' برميل/يوم)' : ''))
+      + TR_ROW('آخر عنصر سليم', esc(f.prev || '—')) + TR_ROW('أول نقطة فشل', known ? esc(T.culprit) + ' · المعرّف ' + esc(T.responsible.id) : 'السبب غير محدد') + TR_ROW('السبب', esc(T.causeAr)) + '</table>';
+    if (T.causes && T.causes.length) { h += '<div class="nd-cs">'; T.causes.forEach((c, i) => { h += '<div class="nd-c' + (c.first ? ' first' : '') + '"><b>السبب ' + (i + 1) + (c.first ? ' (أول انقطاع)' : '') + '</b> · ' + esc(c.element || '') + '<div>' + esc(c.ar) + '</div><div class="nd-fx">الإصلاح: ' + esc(c.fix) + '</div></div>'; }); h += '</div>'; }
+    else if (!known) h += '<div class="nd-c"><b>السبب غير محدد</b><div>لم أجد على المسار أي عنصر مسجَّل كقيد، فلا أخمّن سبباً.</div></div>';
+    if (T.after && T.after.length) h += '<div class="nd-af">بعد نقطة الانقطاع: ' + T.after.filter(z => z.type !== 'pipe').map(z => esc(z.label)).slice(0, 5).join('، ') + '</div>';
+    return h + '</div>';
+  }
   function html(rep, st) {
     st = st || {}; if (!rep) return HEAD + '<div class="nd-scroll"><p class="nd-p">يفحص هذا النظام الشبكة كاملة (كل الأنابيب والمنشآت وليس الجزء الظاهر على الشاشة) ويحدّد مكان كل عطل وسببه. هو للتشخيص فقط: لا يصلح شيئاً ولا يغيّر التدفق.</p><button class="nd-go" data-nd="scan">فحص الشبكة الآن</button></div>';
     const S = rep.stats, bad = st.stale ? '<div class="nd-stale">تغيّرت الشبكة منذ آخر فحص — أعد الفحص لتحديث النتائج.</div>' : '';
@@ -37,8 +48,8 @@
     for (const f of shown) { const sv = SEV[f.severity], open = st.sel === f.no, col = f.indicator ? '#8e9aaf' : f.confirmed ? sv.color : '#ffd60a'; const gn = grpName(f); if (gn !== lastG) { lastG = gn; h += '<div class="nd-g">' + gn + '</div>'; }
       h += '<div class="nd-f' + (open ? ' sel' : '') + '" style="border-color:' + col + '"><button class="nd-fh" data-nd="go" data-n="' + f.no + '"><b>' + label(f) + num(f.no) + '</b> <span class="nd-sv" style="background:' + col + '">' + sv.ar + '</span><div class="nd-s">' + esc(f.kindAr) + ' · ' + esc(f.element.label) + ' · ' + esc(f.zone) + '</div></button>';
       if (open) h += '<table class="nd-d"><tr><td>النوع</td><td>' + esc(f.kindAr) + (f.indicator ? ' (مؤشر)' : f.confirmed ? ' (مؤكد)' : ' (تحذير يحتاج مراجعة)') + '</td></tr><tr><td>الخطورة</td><td>' + sv.ar + '</td></tr><tr><td>العنصر</td><td>' + esc(f.element.label) + ' · المعرّف ' + esc(f.element.id) + '</td></tr>'
-        + '<tr><td>المنطقة</td><td>' + esc(f.zone) + '</td></tr><tr><td>الإحداثيات</td><td dir="ltr">(' + f.x + ', ' + f.y + ')</td></tr><tr><td>السابق في التدفق</td><td>' + esc(f.prev || '—') + '</td></tr><tr><td>اللاحق في التدفق</td><td>' + esc(f.next || '—') + '</td></tr>'
-        + '<tr><td>السبب</td><td>' + esc(f.cause) + '</td></tr><tr><td>التأثير</td><td>' + esc(f.effect) + '</td></tr><tr><td>الإصلاح المقترح</td><td>' + esc(f.fix) + '</td></tr></table>';
+        + '<tr><td>المنطقة</td><td>' + esc(f.zone) + '</td></tr><tr><td>الإحداثيات</td><td dir="ltr">' + (f.global ? '— (عطل على القناة كلها، لا موضع واحد له)' : '(' + f.x + ', ' + f.y + ')') + '</td></tr><tr><td>السابق في التدفق</td><td>' + esc(f.prev || '—') + '</td></tr><tr><td>اللاحق في التدفق</td><td>' + esc(f.next || '—') + '</td></tr>'
+        + '<tr><td>السبب</td><td>' + esc(f.cause) + '</td></tr><tr><td>التأثير</td><td>' + esc(f.effect) + '</td></tr><tr><td>الإصلاح المقترح</td><td>' + esc(f.fix) + '</td></tr></table>' + traceHtml(f);
       h += '</div>'; }
     if (list.length > shown.length) h += '<button data-nd="more" class="nd-go">عرض المزيد (' + (list.length - shown.length) + ' متبقية)</button>';
     return h + '</div></div>';
@@ -60,7 +71,7 @@
     + '#ndPanel .nd-x,#ndPanel .nd-m{min-height:32px;min-width:34px;padding:2px 8px;font-size:15px}#ndPanel .nd-go{width:100%;margin:4px 0;background:rgba(42,90,138,.95);border-color:#4b8fd0}#ndPanel .nd-p{margin:6px 4px;line-height:1.55}'
     + '#ndPanel .nd-sum{display:flex;gap:8px;align-items:center}#ndPanel .nd-big{font-size:24px;font-weight:800;text-align:center;min-width:78px}#ndPanel .nd-big small{display:block;font-size:11px;font-weight:400;color:#9aa8b8}'
     + '#ndPanel .nd-t{flex:1;border-collapse:collapse;font-size:12px}#ndPanel .nd-t td{padding:1px 4px;border-bottom:1px solid rgba(70,86,106,.6)}#ndPanel .nd-row{display:flex;gap:5px;margin:3px 0}#ndPanel .nd-row button{flex:1;padding:3px 6px;min-height:32px;font-size:12px}'
-    + '#ndPanel .nd-note,#ndPanel .nd-stale{font-size:11px;color:#ffd27a;margin:3px 2px}#ndPanel .nd-f{border-right:4px solid;border-radius:8px;background:rgba(26,35,47,.82);margin:4px 0;overflow:hidden}'
+    + '#ndPanel .nd-tr{margin:4px 0 2px;font-size:12px}#ndPanel .nd-c{margin:4px 0;padding:4px 6px;border-right:3px solid #ffd60a;background:rgba(255,255,255,.05);border-radius:6px}#ndPanel .nd-c.first{border-color:#ff453a}#ndPanel .nd-fx{color:#9fd3a8}#ndPanel .nd-af{margin-top:4px;color:#ff9f0a}#ndPanel .nd-note,#ndPanel .nd-stale{font-size:11px;color:#ffd27a;margin:3px 2px}#ndPanel .nd-f{border-right:4px solid;border-radius:8px;background:rgba(26,35,47,.82);margin:4px 0;overflow:hidden}'
     + '#ndPanel .nd-fh{width:100%;text-align:right;background:transparent;border:0;padding:5px 8px;min-height:0}#ndPanel .nd-sv{display:inline-block;color:#111;border-radius:6px;padding:0 6px;font-size:11px;font-weight:700;margin-right:6px}#ndPanel .nd-s{font-size:11px;color:#a9b6c5;margin-top:2px}'
     + '#ndPanel .nd-d{width:100%;border-collapse:collapse;font-size:12px}#ndPanel .nd-d td{padding:3px 8px;border-top:1px solid rgba(70,86,106,.6);vertical-align:top}#ndPanel .nd-d td:first-child{color:#9aa8b8;white-space:nowrap;width:1%}'
     + '#ndPanel .nd-g{font-size:12px;font-weight:700;color:#9aa8b8;margin:6px 4px 1px}#ndPanel .nd-cen{margin:5px 0;padding:4px 6px;border:1px solid rgba(80,96,116,.7);border-radius:8px;background:rgba(24,32,43,.7);font-size:12px}'
@@ -81,7 +92,7 @@
       : '<div class="nd-ct"><span>🔍 فاحص الشبكة</span><span>⤢</span></div><div class="nd-cx">' + nF + ' عطل · ' + nW + ' تحذير · سلامة ' + r.stats.health + '%</div>'; };
   const render = () => { st.stale = stale(); panel.classList.toggle('open', mode === 'full'); if (mode === 'full') { const sc = panel.querySelector('.nd-scroll'), top = sc ? sc.scrollTop : 0; panel.innerHTML = html(st.rep, st); const n = panel.querySelector('.nd-scroll'); if (n) n.scrollTop = top; } chip.classList.toggle('on', mode === 'min' && !!st.rep); if (mode === 'min') chip.innerHTML = chipHtml(); WP.markDirty(); };
   function scan() {
-    const t0 = performance.now(), hist = st.hist || (st.hist = { __scans: 0 }), opt = { sim: LAB.sim, locate, history: hist };
+    const t0 = performance.now(), hist = st.hist || (st.hist = { __scans: 0 }), opt = { sim: LAB.sim, locate, history: hist, cenManual: window.__cnManual || {} };
     const orep = ND.run(LAB.store, LAB.pipes, opt), crep = NDC ? NDC.runCentral(LAB.store, LAB.pipes, opt) : null; st.rep = merge(orep, crep); st.rev = LAB.pipes.rev; st.n = LAB.store.items.size; st.csig = cenSig(); st.sel = null; st.ms = performance.now() - t0;
     hist.__scans++; for (const f of st.rep.faults) if (f.code === 'OFFER_EXCEEDS') { const k = f.code + '|' + f.element.id, r = hist[k] || (hist[k] = { hit: 0 }); r.hit++; }
     const rep = st.rep, L = LAB.pipes.lines, CS = LAB.pipes.central; ov.lines = []; ov.marks = []; const bbOf = pts => { let a = 1e9, b = 1e9, c = -1e9, d = -1e9; for (const p of pts) { if (p[0] < a) a = p[0]; if (p[0] > c) c = p[0]; if (p[1] < b) b = p[1]; if (p[1] > d) d = p[1]; } return [a, b, c, d]; };
@@ -90,11 +101,11 @@
     for (const id of rep.healthyLines) { const l = L.get(id); if (l && l.path.length) { const pts = l.path.map(p => [p[0] + .5, p[1] + .5]); ov.lines.push({ pts, bb: bbOf(pts), c: ND.OK_COLOR, w: 2, ok: true }); } }
     if (CS) for (const id of rep.healthySegs || []) { const g = CS.seg.get(id); if (g && g.path.length) { const pts = g.path.map(p => [p[0] + .5, p[1] + .5]); ov.lines.push({ pts, bb: bbOf(pts), c: ND.OK_COLOR, w: 3, ok: true, central: true }); } }
     for (const [key, { f }] of sevOf) { const l = f.element.type === 'PIPE' ? L.get(f.element.id) : CS && CS.seg.get(f.element.id); if (l && l.path.length) { const pts = l.path.map(p => [p[0] + .5, p[1] + .5]); ov.lines.push({ pts, bb: bbOf(pts), c: colOf(f), w: 3.5, no: f.no, central: f.central }); } }
-    for (const f of rep.faults) ov.marks.push({ x: f.x + .5, y: f.y + .5, c: colOf(f), no: f.no, f });
+    for (const f of rep.faults) if (f.x != null && f.y != null) ov.marks.push({ x: f.x + .5, y: f.y + .5, c: colOf(f), no: f.no, f });
     LAB.toast && LAB.toast('اكتمل الفحص: ' + rep.faults.filter(f => f.confirmed).length + ' عطل · ' + rep.faults.filter(f => !f.confirmed && !f.indicator).length + ' تحذير · ' + rep.faults.filter(f => f.indicator).length + ' مؤشر'); render();
   }
   function select(no) {
-    const f = st.rep && st.rep.faults.find(z => z.no === no); if (!f) return; st.sel = no; WP.goto(f.x + .5, f.y + .5, Math.max(cam.z, 0.9)); if (mode === 'full') mode = 'min'; render();
+    const f = st.rep && st.rep.faults.find(z => z.no === no); if (!f) return; st.sel = no; if (f.x != null && f.y != null) { WP.goto(f.x + .5, f.y + .5, Math.max(cam.z, 0.9)); if (mode === 'full') mode = 'min'; } render();      // a whole-channel finding has no place on the map: the window stays open
   }
   btn.addEventListener('click', () => { if (mode === 'full') mode = 'hidden'; else { mode = 'full'; if (!st.rep) { scan(); return; } } render(); });
   chip.addEventListener('click', () => { mode = 'full'; render(); const f = panel.querySelector('.nd-f.sel'); if (f && f.scrollIntoView) f.scrollIntoView({ block: 'nearest' }); });
@@ -114,6 +125,12 @@
         if (f.element.type === 'CSEG' && LAB.pipes.central) { const g = LAB.pipes.central.seg.get(f.element.id); if (g && g.path.length) { ctx.beginPath(); g.path.forEach((p, i) => i ? ctx.lineTo(sx(p[0] + .5, p[1] + .5), sy(p[0] + .5, p[1] + .5)) : ctx.moveTo(sx(p[0] + .5, p[1] + .5), sy(p[0] + .5, p[1] + .5))); ctx.strokeStyle = '#fff'; ctx.lineWidth = 6; ctx.globalAlpha = .55; ctx.stroke(); ctx.globalAlpha = 1; } }
         if (f.element.type === 'CSTATION' && LAB.pipes.central) { const s0 = LAB.pipes.central.st.get(f.element.id), b = s0 && s0.b != null ? LAB.store.get(s0.b) : null, d = b && DEFS && DEFS[b.d]; if (d) { const w = (b.r & 1) ? d.footprint[1] : d.footprint[0], h = (b.r & 1) ? d.footprint[0] : d.footprint[1]; ctx.beginPath(); ctx.moveTo(sx(b.x, b.y), sy(b.x, b.y)); ctx.lineTo(sx(b.x + w, b.y), sy(b.x + w, b.y)); ctx.lineTo(sx(b.x + w, b.y + h), sy(b.x + w, b.y + h)); ctx.lineTo(sx(b.x, b.y + h), sy(b.x, b.y + h)); ctx.closePath(); ctx.strokeStyle = m.c; ctx.lineWidth = 3; ctx.stroke(); } } }
       ctx.beginPath(); ctx.arc(X, Y, r, 0, 7); ctx.fillStyle = m.c; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = '#111'; ctx.stroke(); if (cam.z >= .5 || m.no === sel) { ctx.fillStyle = '#111'; ctx.font = '700 ' + Math.round(r * 1.1) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText(String(m.no), X, Y + r * .38); } }
+    { const sf = st.sel != null && st.rep.faults.find(z => z.no === st.sel), T = sf && sf.trace; if (T) {      /* the traced oil path of the selected blocked well: healthy part green, break point red, what comes after orange */
+      const col = i => T.firstBad == null ? '#ffd60a' : i < T.firstBad ? '#34c759' : i === T.firstBad ? '#ff3b30' : '#ff9500', z = Math.min(1.6, Math.max(.7, cam.z));
+      T.steps.forEach((s, i) => { const c = col(i); ctx.strokeStyle = c; ctx.fillStyle = c; ctx.setLineDash(i > (T.firstBad == null ? 1e9 : T.firstBad) || T.firstBad == null ? [7, 5] : []);
+        if (s.path && s.path.length) { ctx.beginPath(); s.path.forEach((p, k) => k ? ctx.lineTo(sx(p[0] + .5, p[1] + .5), sy(p[0] + .5, p[1] + .5)) : ctx.moveTo(sx(p[0] + .5, p[1] + .5), sy(p[0] + .5, p[1] + .5))); ctx.lineWidth = (i === T.firstBad ? 7 : 5) * z; ctx.globalAlpha = .85; ctx.stroke(); ctx.globalAlpha = 1; }
+        else { const X = sx(s.x + .5, s.y + .5), Y = sy(s.x + .5, s.y + .5); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(X, Y, (i === T.firstBad ? 9 : 6) * z, 0, 7); ctx.globalAlpha = .9; ctx.fill(); ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#111'; ctx.stroke(); } });
+      ctx.setLineDash([]); if (T.firstBad != null) { const s = T.steps[T.firstBad], X = sx(s.x + .5, s.y + .5), Y = sy(s.x + .5, s.y + .5), r = 12 * z; ctx.strokeStyle = '#ff3b30'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(X, Y, r, 0, 7); ctx.moveTo(X - r * .6, Y - r * .6); ctx.lineTo(X + r * .6, Y + r * .6); ctx.moveTo(X + r * .6, Y - r * .6); ctx.lineTo(X - r * .6, Y + r * .6); ctx.stroke(); } } }
     ctx.restore();
   };
   const prevTap = hooks.tap;
