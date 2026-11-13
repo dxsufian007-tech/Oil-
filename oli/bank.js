@@ -7,9 +7,9 @@
  * Save: toJSON() / fromJSON() (an optional `bank` key of the company save; an old save without it simply opens fresh banks).
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./economy-config.js'), require('./game-calendar.js'), require('./baserate.js'), require('./loans-engine.js'));
-  else root.OliBank = factory(root.OliEconomyConfig, root.OliCalendar, root.OliBaseRate, root.OliLoans);
-})(typeof self !== 'undefined' ? self : this, function (EC, CAL, BR, LE) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./economy-config.js'), require('./game-calendar.js'), require('./baserate.js'), require('./loans-engine.js'), require('./credit.js'));
+  else root.OliBank = factory(root.OliEconomyConfig, root.OliCalendar, root.OliBaseRate, root.OliLoans, root.OliCredit);
+})(typeof self !== 'undefined' ? self : this, function (EC, CAL, BR, LE, CR) {
   'use strict';
   const IDS = ['COMMERCIAL', 'INDUSTRIAL', 'STRATEGIC'];
   // account -> [kind, label].  asset | liab | equity.  A debit is positive, a credit is negative.
@@ -34,14 +34,14 @@
   }
 
   const qKey = day => { const d = CAL.dateOfDay(day); return d.year * 4 + Math.floor((d.month - 1) / 3); };
-  const TX = { OPEN: 1, DUE_PAID: 2, ARREARS: 3, ARREARS_PAID: 4, REPRICE: 5, PREPAY: 6, RESCHEDULE: 7, CLOSE: 8 };
+  const TX = { OPEN: 1, DUE_PAID: 2, ARREARS: 3, ARREARS_PAID: 4, REPRICE: 5, PREPAY: 6, RESCHEDULE: 7, CLOSE: 8, LIEN: 9, RELEASE: 10, MARGIN_CALL: 11, MARGIN_CLEAR: 12, MARGIN_EXPIRED: 13, RATING: 14 };
 
   class Bank {
     /* cfg = the economy config (BANKS); day = the company day the banks open on (the first deposit growth comes one month later) */
     constructor(cfg, day) {
       this.cfg = cfg || EC; this.lastDay = day | 0; this.books = {}; this.log = []; this.hist = [];
       for (const id of IDS) this._open(id);
-      this.rate = new BR.BaseRate(this.cfg, qKey(day | 0)); this.loans = []; this.tx = []; this.nextLoan = 1; this.nextTx = 1; this.svcDay = day | 0;      // Phase 2: the Base Rate, the loan book (every loan ever made, open or closed) and the permanent transaction record
+      this.rate = new BR.BaseRate(this.cfg, qKey(day | 0)); this.loans = []; this.tx = []; this.nextLoan = 1; this.nextTx = 1; this.svcDay = day | 0; this.liens = []; this.nextLien = 1; this.credit = { score: null, grade: null, parts: null, day: -1, hist: [], prod: [], cf: [] };      // Phase 3: liens (every lien ever made) and the credit rating.  Phase 2: Phase 2: the Base Rate, the loan book (every loan ever made, open or closed) and the permanent transaction record
     }
     get B() { return this.cfg.BANKS; }
     _open(id) {
@@ -114,8 +114,13 @@
       const freq = spec.freq || 'M', grace = spec.grace | 0, v = LE.validate(this.cfg, spec.bank, spec.type, spec.amount, spec.term, freq, grace); if (!v.ok) return v;
       const c = this.canLend(spec.bank, spec.amount); if (!c.ok) return c;
       const L = this.cfg.BANK_LOANS; if (ctx && (ctx.riskDebt + spec.amount) > L.maxDebtRatio * Math.max(0, ctx.riskBase) + 1e-6) return { ok: false, reason: 'RISK' };
-      const rate = this.quote(spec.bank, spec.type), l = LE.newLoan({ amount: spec.amount, rate, term: spec.term, grace, freq });
-      return { ok: true, reason: '', rate, payment: l.pmt };
+      const T = this.cfg.LOAN_TYPES[spec.type], CL = this.cfg.COLLATERAL; let cap = null;
+      if (T.lock === 'COLLATERAL' && CL && CL.enabled) {
+        if (!spec.collateral || !spec.collateral.length) return { ok: false, reason: 'COLLATERAL_REQUIRED' };
+        const k = this._check(spec.collateral, CL.kinds[spec.type] || [], ctx && ctx.val, null); if (!k.ok) return k; cap = k.cap; if (spec.amount > cap + 1e-6) return { ok: false, reason: 'LTV', cap };
+      }
+      const rate = this.quote(spec.bank, spec.type, this.creditPremium()), l = LE.newLoan({ amount: spec.amount, rate, term: spec.term, grace, freq });
+      return { ok: true, reason: '', rate, payment: l.pmt, cap };
     }
     /* make the loan: the bank pays out of its liquidity, the loan joins the book.  The company side (cash in, BANK_LOANS) is booked by Company.takeBankLoan. */
     originate(spec, ctx, day, frac) {
@@ -123,6 +128,7 @@
       const lo = LE.newLoan({ amount: spec.amount, rate: a.rate, term: spec.term, grace: spec.grace | 0, freq: spec.freq || 'M', frac });
       Object.assign(lo, { id: this.nextLoan++, bank: spec.bank, type: spec.type, purpose: spec.purpose || '', start: day | 0, status: 'ACTIVE', arrears: [], paidInt: 0, paidPrin: 0, closedDay: null });
       this.books[spec.bank].post([['LOANS', lo.bal], ['CASH', -lo.bal]]); this.loans.push(lo); this._tx('OPEN', lo, lo.bal, lo.rate, day); this._rec(spec.bank, 'LOAN_OPEN', 'Loan ' + lo.id + ' ' + spec.type, lo.bal);
+      if (spec.collateral && spec.collateral.length) this._lien(lo, spec.collateral, ctx && ctx.val, day);
       return { ok: true, loan: lo, rate: a.rate, payment: lo.pmt };
     }
     _settle(l, item, io, code) {                                   // the company pays an instalment item: cash out for it, the bank receives it
@@ -132,7 +138,7 @@
       l.bal = LE.r2(l.bal - item.prin); l.paidInt = LE.r2(l.paidInt + item.int); l.paidPrin = LE.r2(l.paidPrin + item.prin); this._tx(code, l, item.int, item.prin);
     }
     _afterPay(l) {
-      if (l.bal < 0.005 && l.accr < 0.005 && !l.arrears.length) { l.bal = 0; l.status = 'CLOSED'; l.closedDay = this.svcDay; this._tx('CLOSE', l, l.paidInt, l.paidPrin); this._rec(l.bank, 'LOAN_CLOSE', 'Loan ' + l.id + ' closed', 0); }
+      if (l.bal < 0.005 && l.accr < 0.005 && !l.arrears.length) { l.bal = 0; l.status = 'CLOSED'; l.closedDay = this.svcDay; this._unlienAll(l); l.call = null; this._tx('CLOSE', l, l.paidInt, l.paidPrin); this._rec(l.bank, 'LOAN_CLOSE', 'Loan ' + l.id + ' closed', 0); }
     }
     /* the month end of every open loan (called once a month by Company._monthEnd; a day already done is ignored).  io = the company side: { cash(), accrue(amt, loan), payInt(amt, loan), payPrin(amt, loan) } */
     serviceMonth(day, io) {
@@ -153,7 +159,7 @@
     quarterly(day, indus) {
       const d = CAL.dateOfDay(day | 0); if (d.day !== 1 || !this.cfg.BASE_RATE.reviewMonths.includes(d.month)) return null;
       const row = this.rate.review(qKey(day | 0), day | 0, { lam: this.lam(), indus: indus || 0, ratios: this.ratios() }); if (!row) return null;
-      for (const l of this.loans) { if (l.status !== 'ACTIVE') continue; const q = this.quote(l.bank, l.type); if (Math.abs(q - l.rate) > 1e-12) { this._tx('REPRICE', l, l.rate, q, day); l.rate = q; l.pmt = LE.pmtFor(l); } }
+      for (const l of this.loans) { if (l.status !== 'ACTIVE') continue; const q = this.quote(l.bank, l.type, this.creditPremium()); if (Math.abs(q - l.rate) > 1e-12) { this._tx('REPRICE', l, l.rate, q, day); l.rate = q; l.pmt = LE.pmtFor(l); } }
       return row;
     }
     /* early repayment: amount = null repays everything.  Needs cash for the principal, the interest accrued to date, the overdue items and the fee.  io adds { fee(amt, loan), partInt(amt, loan) } */
@@ -178,19 +184,100 @@
       if (fee > 0) { io.fee(fee, l); this.books[l.bank].post([['CASH', fee], ['RETAINED', -fee]]); }
       const old = l.term; l.term = l.m + months; l.pmt = LE.pmtFor(l); this._tx('RESCHEDULE', l, old, l.term); return { ok: true, term: l.term, payment: l.pmt, fee };
     }
+    /* ======== Phase 3: credit rating ======== */
+    creditPremium() { const C = this.cfg.CREDIT; return C && C.premiumOn && this.credit.score != null ? CR.premiumOf(this.credit.score, C) : 0; }
+    /* once a month (Company, after the month is closed): in = { opNet, opOut, crude, netMargin, currentRatio, debtToAssets }.  A day already rated is ignored (no double count on load). */
+    rateMonth(day, inp) {
+      day |= 0; const C = this.cfg.CREDIT, c = this.credit; if (!C || day <= c.day) return null;
+      c.cf.push([inp.opNet || 0, inp.opOut || 0]); while (c.cf.length > C.cfMonths) c.cf.shift(); c.prod.push(inp.crude || 0); while (c.prod.length > C.keepMonths) c.prod.shift();
+      let on = 0, late = 0, arrNow = 0; const from = day - C.historyMonths * 30;
+      for (let i = this.tx.length - 1; i >= 0; i--) { const t = this.tx[i]; if (t[1] < from) break; if (t[2] === TX.DUE_PAID) on++; else if (t[2] === TX.ARREARS) late++; }
+      for (const l of this.loans) if (l.status === 'ACTIVE') arrNow += l.arrears.length;
+      let on0 = 0, out0 = 0; for (const r of c.cf) { on0 += r[0]; out0 += r[1]; }
+      const r = CR.score({ onTime: on, late, arrearsNow: arrNow, opMargin: c.cf.length && out0 > 0 ? on0 / out0 : null, debtToAssets: inp.debtToAssets == null ? null : inp.debtToAssets, netMargin: inp.netMargin == null ? null : inp.netMargin, currentRatio: inp.currentRatio == null ? null : inp.currentRatio, prodCV: CR.cv(c.prod) }, C);
+      const g = CR.gradeOf(r.score, C), prev = c.score; c.score = r.score; c.parts = r.parts; c.day = day;
+      if (g !== c.grade) { this._tx('RATING', null, prev == null ? 0 : prev, r.score, day); c.grade = g; }
+      c.hist.push([day, r.score]); while (c.hist.length > 240) c.hist.shift(); return r;
+    }
+    /* ======== Phase 3: collateral and liens ======== */
+    activeLiens(loanId) { return this.liens.filter(x => x.status === 'ACTIVE' && (loanId == null || x.loan === loanId)); }
+    hasLiens() { for (const x of this.liens) if (x.status === 'ACTIVE') return true; return false; }
+    assetPledged(id) { for (const x of this.liens) if (x.status === 'ACTIVE' && x.kind === 'ASSET' && x.ref === id) return true; return false; }
+    oilPledged(p) { let q = 0; for (const x of this.liens) if (x.status === 'ACTIVE' && x.kind === 'OIL' && x.ref === p) q += x.qty; return q; }
+    /* the current value one lien gives (an oil lien never counts more barrels than are really in the tanks); val = { asset(id) -> value | null, oil(p) -> { avail, price } | null } */
+    _value(x, val) {
+      if (!val) return 0;
+      if (x.kind === 'ASSET') return Math.max(0, val.asset(x.ref) || 0);
+      const o = val.oil(x.ref); if (!o) return 0; const others = this.oilPledgedBefore(x); return Math.max(0, Math.min(x.qty, o.avail - others)) * o.price;      // barrels already pledged by older liens come first
+    }
+    oilPledgedBefore(x) { let q = 0; for (const y of this.liens) { if (y === x) break; if (y.status === 'ACTIVE' && y.kind === 'OIL' && y.ref === x.ref) q += y.qty; } return q; }
+    /* items = [{ kind: 'ASSET', ref: buildingId } | { kind: 'OIL', ref: product, qty }]; the check never pledges the same asset (or the same barrels) twice.  Returns the borrowing capacity at the origination LTV. */
+    _check(items, kinds, val, loan) {
+      const CL = this.cfg.COLLATERAL; let cap = 0; const seen = new Set(), addOil = {};
+      if (!val) return { ok: false, reason: 'NO_VALUER' };
+      for (const it of items) {
+        if (!it || !kinds.includes(it.kind)) return { ok: false, reason: 'KIND' };
+        if (it.kind === 'ASSET') {
+          const key = 'A' + it.ref; if (seen.has(key) || this.assetPledged(it.ref)) return { ok: false, reason: 'DOUBLE_PLEDGE' }; seen.add(key);
+          const v = val.asset(it.ref); if (v == null) return { ok: false, reason: 'NOT_FOUND' }; cap += v * CL.ltv.ASSET.max;
+        } else {
+          const o = val.oil(it.ref); if (!o) return { ok: false, reason: 'PRODUCT' }; const q = +it.qty; if (!(q > 0)) return { ok: false, reason: 'QTY' };
+          addOil[it.ref] = (addOil[it.ref] || 0) + q; if (addOil[it.ref] + this.oilPledged(it.ref) > o.avail + 1e-6) return { ok: false, reason: 'DOUBLE_PLEDGE' }; cap += q * o.price * CL.ltv.OIL.max;
+        }
+      }
+      if (loan) for (const x of this.activeLiens(loan.id)) cap += this._value(x, val) * CL.ltv[x.kind].max;       // what the loan already has counts too
+      return { ok: true, cap };
+    }
+    _lien(l, items, val, day) {
+      for (const it of items) { const x = { id: this.nextLien++, loan: l.id, kind: it.kind, ref: it.ref, qty: it.kind === 'OIL' ? +it.qty : 0, v0: 0, day: day | 0, status: 'ACTIVE', relDay: null }; this.liens.push(x); x.v0 = LE.r2(this._value(x, val)); this._tx('LIEN', l, x.id, x.v0, day); }
+    }
+    _unlienAll(l) { for (const x of this.liens) if (x.loan === l.id && x.status === 'ACTIVE') { x.status = 'RELEASED'; x.relDay = this.svcDay; this._tx('RELEASE', l, x.id, 0); } }
+    /* collateral value of a loan, and the limits it allows: at origination (max) and before a Margin Call (call) */
+    collateralOf(l, val) { let v = 0, mx = 0, cl = 0; const CL = this.cfg.COLLATERAL; for (const x of this.activeLiens(l.id)) { const w = this._value(x, val); v += w; mx += w * CL.ltv[x.kind].max; cl += w * CL.ltv[x.kind].call; } return { value: v, max: mx, call: cl, ltv: v > 0 ? l.bal / v : (l.bal > 0 ? Infinity : 0) }; }
+    /* add collateral to a running loan (the owner's way to meet a Margin Call without repaying) */
+    addCollateral(loanId, items, val, day) {
+      const l = this.loan(loanId); if (!l || l.status !== 'ACTIVE') return { ok: false, reason: 'noLoan' }; const CL = this.cfg.COLLATERAL, kinds = CL.kinds[l.type]; if (!kinds) return { ok: false, reason: 'KIND' };
+      const k = this._check(items, kinds, val, null); if (!k.ok) return k; this._lien(l, items, val, day); this.margin(day, val); return { ok: true };
+    }
+    /* release one lien: allowed when the loan stays within its origination LTV without it; else the gap must be repaid first (opts.repayGap does that from cash) */
+    release(lienId, val, io, frac, opts) {
+      const x = this.liens.find(y => y.id === lienId && y.status === 'ACTIVE'); if (!x) return { ok: false, reason: 'noLien' }; const l = this.loan(x.loan); if (!l || l.status !== 'ACTIVE') return { ok: false, reason: 'noLoan' };
+      const CL = this.cfg.COLLATERAL; let rest = 0; for (const y of this.activeLiens(l.id)) if (y !== x) rest += this._value(y, val) * CL.ltv[y.kind].max;
+      const gap = Math.max(0, LE.r2(l.bal - rest)); if (gap > 0.005) {
+        if (!(opts && opts.repayGap)) return { ok: false, reason: 'GAP', gap };
+        const free = LE.r2(l.bal - l.arrears.reduce((a, z) => a + z.prin, 0)); const r = this.prepay(l.id, Math.min(gap, free), io, frac); if (!r.ok) return { ok: false, reason: r.reason, gap };
+        if (l.status !== 'ACTIVE') return { ok: true, repaid: gap, closed: true };
+      }
+      x.status = 'RELEASED'; x.relDay = this.svcDay; this._tx('RELEASE', l, x.id, gap); this.margin(this.svcDay, val); return { ok: true, repaid: gap };
+    }
+    /* once a day while any lien exists (Company._newDay): Margin Call when the loan balance passes the call limit of its collateral; cleared when it is back inside; expires after the cure days (Phase 4 enforces) */
+    margin(day, val) {
+      day |= 0; const CL = this.cfg.COLLATERAL; let n = 0;
+      for (const l of this.loans) {
+        if (l.status !== 'ACTIVE') continue; const has = this.liens.some(x => x.status === 'ACTIVE' && x.loan === l.id); if (!has) continue; n++;
+        const c = this.collateralOf(l, val), over = l.bal > c.call + 0.005;
+        if (over) {
+          const need = LE.r2(Math.max(0, l.bal - c.max));
+          if (!l.call) { l.call = { day, need, expired: false }; this._tx('MARGIN_CALL', l, LE.r2(l.bal), LE.r2(c.value), day); this._rec(l.bank, 'MARGIN_CALL', 'Margin Call · loan ' + l.id, need); }
+          else { l.call.need = need; if (!l.call.expired && day - l.call.day >= CL.cureDays) { l.call.expired = true; this._tx('MARGIN_EXPIRED', l, need, 0, day); } }
+        } else if (l.call) { this._tx('MARGIN_CLEAR', l, LE.r2(l.bal), LE.r2(c.value), day); l.call = null; }
+      }
+      return n;
+    }
     /* the loan register: every loan ever made (open and closed), with its permanent history in tx */
     loan(id) { return this.loans.find(x => x.id === id) || null; }
     toJSON() {
       const b = {}; for (const id of IDS) b[id] = { bal: Object.assign({}, this.books[id].bal), n: this.books[id].n };
-      return { v: 2, lastDay: this.lastDay, banks: b, log: this.log, hist: this.hist, rate: this.rate.toJSON(), loans: this.loans, tx: this.tx, nextLoan: this.nextLoan, nextTx: this.nextTx, svcDay: this.svcDay };
+      return { v: 3, liens: this.liens, nextLien: this.nextLien, credit: this.credit, lastDay: this.lastDay, banks: b, log: this.log, hist: this.hist, rate: this.rate.toJSON(), loans: this.loans, tx: this.tx, nextLoan: this.nextLoan, nextTx: this.nextTx, svcDay: this.svcDay };
     }
     static fromJSON(d, cfg, day) {
-      if (!d || (d.v !== 1 && d.v !== 2) || !d.banks) return new Bank(cfg, day);
+      if (!d || (d.v !== 1 && d.v !== 2 && d.v !== 3) || !d.banks) return new Bank(cfg, day);
       const bk = new Bank(cfg, d.lastDay | 0);
       for (const id of IDS) { const s = d.banks[id], k = new BankBook(); if (s && s.bal) { for (const a of KEYS) k.bal[a] = +s.bal[a] || 0; k.n = s.n | 0; bk.books[id] = k; } else { bk.books[id] = null; } }
       bk.log = Array.isArray(d.log) ? d.log : []; bk.hist = Array.isArray(d.hist) ? d.hist : [];
-      if (d.v === 2) { bk.rate = BR.BaseRate.fromJSON(d.rate, bk.cfg, qKey(d.svcDay | 0)); bk.loans = Array.isArray(d.loans) ? d.loans : []; bk.tx = Array.isArray(d.tx) ? d.tx : []; bk.nextLoan = d.nextLoan || 1; bk.nextTx = d.nextTx || 1; bk.svcDay = d.svcDay | 0; }
-      else { bk.rate = new BR.BaseRate(bk.cfg, qKey(day | 0)); bk.svcDay = day | 0; bk.rate.emaDay = (day | 0) - 1; }                       // a Phase 1 save: no loans yet, the Base Rate starts from today
+      if (d.v >= 2) { bk.rate = BR.BaseRate.fromJSON(d.rate, bk.cfg, qKey(d.svcDay | 0)); bk.loans = Array.isArray(d.loans) ? d.loans : []; bk.tx = Array.isArray(d.tx) ? d.tx : []; bk.nextLoan = d.nextLoan || 1; bk.nextTx = d.nextTx || 1; bk.svcDay = d.svcDay | 0; }
+      if (d.v >= 3) { bk.liens = Array.isArray(d.liens) ? d.liens : []; bk.nextLien = d.nextLien || 1; if (d.credit) bk.credit = Object.assign(bk.credit, d.credit); }
+      if (d.v === 1) { bk.rate = new BR.BaseRate(bk.cfg, qKey(day | 0)); bk.svcDay = day | 0; bk.rate.emaDay = (day | 0) - 1; }                       // a Phase 1 save: no loans yet, the Base Rate starts from today
       for (const id of IDS) if (!bk.books[id]) bk._open(id);                      // a bank missing from the save opens fresh (never an error)
       return bk;
     }

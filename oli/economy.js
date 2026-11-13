@@ -157,7 +157,7 @@
     _wrap() {                                                                       // every purchase / demolition goes through the journal (the store and its validation are not changed)
       const st = this.store; if (st.__eco) { st.__eco = this; return; } st.__eco = this; const place = st.place.bind(st), dem = st.demolish.bind(st);
       st.place = (...a) => { const me = st.__eco; me.sync(); const r = place(...a); if (r.ok) { me.assets.set(r.building.id, { cost: r.cost, t: me.hours, dep: 0, useStart: null }); if (r.cost > 0) me._post({ type: 'BUILD', flow: 'INV', desc: DEFS[r.building.d].name }, [['FIXED', r.cost], ['CASH', -r.cost]], { cashApplied: true }); } return r; };
-      st.demolish = (...a) => { const me = st.__eco; me.sync(); const rec = me.assets.get(a[0]), r = dem(...a);
+      st.demolish = (...a) => { const me = st.__eco; if (me.bank && me.bank.assetPledged(a[0])) return { ok: false, reason: 'pledged' }; me.sync(); const rec = me.assets.get(a[0]), r = dem(...a);
         if (r.ok) { let refund = r.refund || 0; if (me._saleOverride != null && isFinite(st.cash)) { st.cash += me._saleOverride - refund; refund = me._saleOverride; }   // a sale brings the sale price, not the demolition refund
           me._dispose(rec, refund); me.assets.delete(a[0]); r.refund = refund; } return r; };
     }
@@ -685,7 +685,7 @@
     }
     sell(p, qty, kind, opts) {                                                       // opts.source (crude only): 'OWN' = produced crude, 'BOUGHT' = bought crude, omitted = the mixture
       const src = p === 'CRUDE' && opts && opts.source ? opts.source : null; if (src && src !== 'OWN' && src !== 'BOUGHT') return { ok: false, reason: 'source' };
-      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; if (!SELL.includes(p)) return { ok: false, reason: 'product' }; this.sync(); const qt = this.quote(p, qty, src); if (!(qty > 0) || qt.qty <= 1e-6) return { ok: false, reason: 'nothingToSell' }; if (qty > qt.available + 1e-6) return { ok: false, reason: 'notEnough', quote: qt };
+      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; if (!SELL.includes(p)) return { ok: false, reason: 'product' }; const pl = this.bank.oilPledged(p); if (pl > 0) { const free = Math.max(0, this.available(p) - pl); if (kind === 'AUTO' || kind === 'RESCUE') qty = Math.min(qty, free); else if (qty > free + 1e-6) return { ok: false, reason: 'pledged', free }; } this.sync(); const qt = this.quote(p, qty, src); if (!(qty > 0) || qt.qty <= 1e-6) return { ok: false, reason: 'nothingToSell' }; if (qty > qt.available + 1e-6) return { ok: false, reason: 'notEnough', quote: qt };
       const got = this.removeFrom(p, qt.qty, p === 'CRUDE' ? (src || 'ALL') : undefined), take = this._lastTake, gross = got * qt.unitPrice, fee = gross * this.cfg.FEES.spot;
       this._post({ type: 'SALE_SPOT', flow: 'OP', desc: 'Spot sale · ' + p, src: kind || 'SPOT' }, [['CASH', gross], ['REV_SPOT', -gross]]);   // revenue exists only when the product is sold
       this._expense('fees', fee, 'Spot sale fee');
@@ -1018,7 +1018,7 @@
       return out;
     }
     _newDay() {
-      this.bank.daily(this.dayIdx, this.market.price.CRUDE);                          // banks: the daily EMA of the crude price for the Base Rate (one multiply-add)
+      this.bank.daily(this.dayIdx, this.market.price.CRUDE); if (this.bank.hasLiens()) this.bank.margin(this.dayIdx, this._valuer());                          // banks: the daily EMA of the crude price for the Base Rate (one multiply-add)
       // Month-end charges (salaries, running costs, loans, tax) belong to the day that ENDS the month: they are booked before that day is closed.
       if (CAL.isMonthStart(this.dayIdx)) this._monthEnd();                                 // the real calendar decides: the 1st of a month closes the month before it
       const cash = this.store.cash; this.days.push(Object.assign({ d: this.dayIdx - 1 }, (() => { const c = calc(this.led.day, cash); return { revenue: c.revenue, expenses: c.expenses, profit: c.netProfit, cashIn: c.cash.in, cashOut: c.cash.out, storage: this.led.day.storage, opex: c.opex + c.variable }; })()));
@@ -1055,6 +1055,7 @@
       // 6. close the month
       const cash = this.store.cash, closed = calc(this.led.month, cash), endSnap = this._snap(), startSnap = this.bsStart || endSnap;
       closed.ratios = this._ratios(closed, startSnap, endSnap); this.bsStart = endSnap;                                   // ratios use the average of the start and end balances
+      this._creditMonth(closed);                                                       // 6a. the monthly credit rating (before the production figure is dropped)
       this.lastMonth = closed; delete this.lastMonth.L.produced; this.led.month = ledger(cash);
       this.months.push({ n: this.months.length + 1, dayIdx: this.dayIdx, revenue: closed.revenue, expenses: closed.expenses, profit: closed.netProfit, cashIn: closed.cash.in, cashOut: closed.cash.out, cashEnd: cash }); while (this.months.length > 24) this.months.shift();
       if (CAL.isYearStart(this.dayIdx)) this.led.year = ledger(cash);
@@ -1077,7 +1078,17 @@
     bankDebt() { return this.bank.bankDebt(); }
     _monthFrac() { const d = CAL.fromHours(this.hours); return Math.min(1, ((d.day - 1) * 24 + d.hour + d.minute / 60) / (d.daysInMonth * 24)); }
     /* the company's risk position for a new bank loan: debt without the Central loan, against assets (without the Central network) + stock + cash */
-    bankRiskCtx() { const cl = this.centralLoan(), cen = cl && this.loans.includes(cl) ? cl.remaining : 0; return { riskDebt: this.debt() - cen + this.bankDebt(), riskBase: this.assetsTotal() - this.centralValue() + this.inventoryValue() + Math.max(0, this.store.cash) }; }
+    bankRiskCtx() { const cl = this.centralLoan(), cen = cl && this.loans.includes(cl) ? cl.remaining : 0; return { riskDebt: this.debt() - cen + this.bankDebt(), riskBase: this.assetsTotal() - this.centralValue() + this.inventoryValue() + Math.max(0, this.store.cash), val: this._valuer() }; }
+    /* what the collateral is worth now (the bank layer asks; it never reads the company itself).  The strategic reserve is not here: it is never collateral. */
+    _valuer() { const me = this; return { asset: id => { const b = me.store.get(id); return b ? me.assetValue(b) : null; }, oil: p => SELL.includes(p) ? { avail: me.available(p), price: me.unitPrice(p) } : null }; }
+    _creditMonth(c) {
+      const f = c.cash && c.cash.flows && c.cash.flows.OP, r = c.ratios || {}, L = c.L || {};
+      this.bank.rateMonth(this.dayIdx, { opNet: f ? f.net : 0, opOut: f ? f.out : 0, crude: L.produced ? L.produced.CRUDE : 0, netMargin: r.netMargin, currentRatio: r.currentRatio, debtToAssets: r.debtToAssets });
+    }
+    creditScore() { return this.bank.credit.score; }
+    bankCollateralOf(id) { const l = this.bank.loan(id); return l ? this.bank.collateralOf(l, this._valuer()) : null; }
+    addBankCollateral(id, items) { this.sync(); return this.bank.addCollateral(id, items, this._valuer(), this.dayIdx); }
+    releaseBankLien(lienId, opts) { this.sync(); return this.bank.release(lienId, this._valuer(), this._bankIO(), this._monthFrac(), opts); }
     _bankIO() {
       const me = this;
       return { cash: () => me.store.cash,
@@ -1090,10 +1101,10 @@
       this.bank.serviceMonth(this.dayIdx, this._bankIO());
       this.bank.quarterly(this.dayIdx, this.market.engine ? this.market.engine.indus : 0);
     }
-    bankQuote(bankId, type, amount, months, opts) { opts = opts || {}; return this.bank.assess({ bank: bankId, type, amount, term: months, freq: opts.freq, grace: opts.grace }, this.bankRiskCtx()); }
+    bankQuote(bankId, type, amount, months, opts) { opts = opts || {}; return this.bank.assess({ bank: bankId, type, amount, term: months, freq: opts.freq, grace: opts.grace, collateral: opts.collateral }, this.bankRiskCtx()); }
     takeBankLoan(bankId, type, amount, months, opts) {
       opts = opts || {}; if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync();
-      const r = this.bank.originate({ bank: bankId, type, amount, term: months, freq: opts.freq, grace: opts.grace, purpose: opts.purpose }, this.bankRiskCtx(), this.dayIdx, this._monthFrac()); if (!r.ok) return r;
+      const r = this.bank.originate({ bank: bankId, type, amount, term: months, freq: opts.freq, grace: opts.grace, purpose: opts.purpose, collateral: opts.collateral }, this.bankRiskCtx(), this.dayIdx, this._monthFrac()); if (!r.ok) return r;
       this._cashIn('BANK_LOAN_IN', r.loan.bal, (opts.purpose || 'Bank loan') + ' · ' + bankId + ' · loan ' + r.loan.id, 'BANK_LOANS', 'FIN'); return r;
     }
     prepayBankLoan(id, amount) { this.sync(); return this.bank.prepay(id, amount, this._bankIO(), this._monthFrac()); }

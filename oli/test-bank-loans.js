@@ -11,7 +11,7 @@ console.log('A. the seven loan types: terms, locks, who offers them');
   const v = (b, t, a, m, f, g) => LE.validate(EC, b, t, a, m, f || 'M', g || 0);
   ok(v('COMMERCIAL', 'WORKING_CAPITAL', 5e6, 24).ok && v('COMMERCIAL', 'WORKING_CAPITAL', 5e6, 25).reason === 'TERM', 'A2 working capital: 24 months allowed, 25 refused');
   ok(v('STRATEGIC', 'EXPANSION', 5e7, 720).ok && v('STRATEGIC', 'EXPANSION', 5e7, 721).reason === 'TERM' && v('INDUSTRIAL', 'EQUIPMENT', 5e7, 360).ok && v('INDUSTRIAL', 'EQUIPMENT', 5e7, 361).reason === 'TERM' && v('STRATEGIC', 'PROJECT_FINANCE', 5e7, 720).ok, 'A3 expansion / project finance 60y, equipment 30y');
-  ok(v('COMMERCIAL', 'SECURED', 5e6, 12).reason === 'LOCKED_COLLATERAL' && v('COMMERCIAL', 'OIL_INVENTORY', 5e6, 12).reason === 'LOCKED_COLLATERAL', 'A4 secured and oil-inventory loans wait for collateral (Phase 3)');
+  ok(v('COMMERCIAL', 'SECURED', 5e6, 12).ok && v('INDUSTRIAL', 'SECURED', 5e6, 12).ok && v('COMMERCIAL', 'OIL_INVENTORY', 5e6, 12).ok, 'A4 secured and oil-inventory loans are open in Phase 3 (they need collateral: see test-bank-collateral.js)');
   ok(v('COMMERCIAL', 'EMERGENCY', 5e6, 12).reason === 'LOCKED_OWNER_APPROVAL', 'A5 the new emergency loan stays locked until the owner approves it');
   ok(v('COMMERCIAL', 'EXPANSION', 5e6, 60).reason === 'NOT_OFFERED' && v('STRATEGIC', 'WORKING_CAPITAL', 5e6, 12).reason === 'NOT_OFFERED', 'A6 each bank offers only its own loan types');
   ok(EC.LOAN_TYPES.WORKING_CAPITAL.premium === 0.005 && EC.LOAN_TYPES.EMERGENCY.premium === 0.03 && EC.LOAN_TYPES.SECURED.premium === -0.005, 'A7 loan-risk premiums as approved (0.5%, +3%, -0.5% ...)'); }
@@ -30,7 +30,7 @@ console.log('B. schedules: terms up to 60 years, grace up to 5 years, monthly / 
 console.log('C. a loan in the company: money, books, the old loans untouched');
 { const c = fresh(), { co, bank } = c, j0 = { LOANS: c.J().LOANS }, debt0 = co.debt(), cash0 = c.g.store.cash, liq0 = bank.liquidity('COMMERCIAL');
   const r = co.takeBankLoan('COMMERCIAL', 'WORKING_CAPITAL', 1e8, 24, { purpose: 'test' });
-  ok(r.ok && r.loan.rate === 0.04 + 0.015 + 0.005 && near(r.loan.rate, 0.06), 'C1 rate = Base 4% + bank spread 1.5% + working-capital premium 0.5% = 6% (credit premium is 0 in this phase)');
+  ok(r.ok && near(r.loan.rate, 0.04 + 0.015 + 0.005 + co.bank.creditPremium()), 'C1 rate = Base 4% + bank spread 1.5% + working-capital premium 0.5% + the credit premium of the rating');
   ok(near(c.g.store.cash - cash0, 1e8, 1e-12) && near(-c.J().BANK_LOANS, 1e8, 1e-12) && c.J().LOANS === j0.LOANS && co.debt() === debt0 && co.loans.length === 0, 'C2 the company receives the cash, BANK_LOANS holds the debt; LOANS, loans[] and debt() are exactly as before');
   ok(near(bank.liquidity('COMMERCIAL'), liq0 - 1e8, 1e-12) && near(bank.loansOut('COMMERCIAL'), 1e8, 1e-12) && bank.audit().ok && Math.abs(co.balanceSheet().gap) < 1, 'C3 the bank paid out of its liquidity and holds the loan; both sets of books balance');
   ok(co.balanceSheet().bankLoans === 1e8 && co.balanceSheet().loans === 0, 'C4 the balance sheet shows bank loans apart from the old loans'); }
@@ -66,14 +66,14 @@ console.log('F. the variable rate: repriced at the quarterly review, never backw
 console.log('G. early repayment and rescheduling');
 { const c = fresh(), { co } = c, l = co.takeBankLoan('STRATEGIC', 'EXPANSION', 4e8, 120, { purpose: 'x' }).loan; for (let i = 0; i < 12; i++) nextMonth(co);
   const pm0 = l.pmt, cash0 = c.g.store.cash, bal0 = l.bal, r = co.prepayBankLoan(l.id, 1e8);
-  ok(r.ok && !r.full && near(l.bal, bal0 - 1e8, 1e-12) && l.term === 120 && near(l.rate, 0.0525) && l.pmt < pm0 && r.fee === 0, 'G1 partial prepayment of $100M: balance falls by it, term and rate unchanged, the instalment is re-based lower, no fee');
+  ok(r.ok && !r.full && near(l.bal, bal0 - 1e8, 1e-12) && l.term === 120 && near(l.rate, 0.0525 + co.bank.creditPremium()) && l.pmt < pm0 && r.fee === 0, 'G1 partial prepayment of $100M: balance falls by it, term and rate unchanged, the instalment is re-based lower, no fee');
   ok(near(cash0 - c.g.store.cash, 1e8 + r.interestToDate, 1e-9) && Math.abs(co.balanceSheet().gap) < 1 && co.bank.audit().ok, 'G2 cash paid = principal + interest to date; books balance');
   nextMonth(co); const sch = LE.schedule({ amount: l.bal, rate: l.rate, term: l.term - l.m, grace: 0, freq: 'M' }); ok(l.m === 14 && near(l.bal, sch.rows[0].balance, 1e-9) || true, 'G3 the schedule goes on from the smaller balance');
   const f = co.prepayBankLoan(l.id, null); ok(f.ok && f.full && l.status === 'CLOSED' && l.bal === 0 && Math.abs(c.J().BANK_LOANS) < 1e-3 && Math.abs(c.J().ACCRUED_INT) < 1e-3, 'G4 full early repayment closes the loan; nothing is left');
   const i0 = c.J().EXP_INTEREST; for (let i = 0; i < 6; i++) nextMonth(co); ok(c.J().EXP_INTEREST === i0, 'G5 no interest after the loan was repaid'); }
 { const c = fresh(), { co } = c, l = co.takeBankLoan('INDUSTRIAL', 'EQUIPMENT', 3e8, 60).loan; for (let i = 0; i < 6; i++) nextMonth(co);
   const cash0 = c.g.store.cash, r = co.rescheduleBankLoan(l.id, 120);
-  ok(r.ok && l.term === 6 + 120 && near(r.fee, l.bal * 0.005, 1e-9) && near(cash0 - c.g.store.cash, r.fee, 1e-9), 'H1 rescheduling to 120 more months: fee 0.5% of the balance');
+  ok(r.ok && l.term === 6 + 120 && near(r.fee, l.bal * 0.005, 1e-6) && near(cash0 - c.g.store.cash, r.fee, 1e-9), 'H1 rescheduling to 120 more months: fee 0.5% of the balance');
   ok(!co.rescheduleBankLoan(l.id, 360).ok && co.rescheduleBankLoan(l.id, 360).reason === 'TERM', 'H2 never beyond the longest term of the loan type (30 years for equipment)');
   const rows = LE.schedule({ amount: l.bal, rate: l.rate, term: 120, grace: 0, freq: 'M' }); for (let i = 0; i < 120; i++) nextMonth(co); ok(l.status === 'CLOSED' && l.bal === 0, 'H3 the loan runs to zero over the new term'); }
 

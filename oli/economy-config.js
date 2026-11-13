@@ -105,6 +105,13 @@
       EMERGENCY: { label: 'طوارئ', maxMonths: 12, premium: 0.03, lock: 'OWNER_APPROVAL' },
       PROJECT_FINANCE: { label: 'تمويل مشاريع', maxMonths: 720, premium: 0.01, lock: null } },
     BANK_LOANS: { maxDebtRatio: 0.5, minAmount: 1000000, maxGraceMonths: 60, freqMonths: { M: 1, Q: 3, A: 12 }, prepayFee: 0, rescheduleFee: 0.005 },   // risk limit: debt (without the Central loan) after the loan <= 50% of assets (without the Central network) + stock + cash; early repayment is free (the spec names no fee); rescheduling costs 0.5% of the balance (the same fee as the old rescheduling)
+    /* Banking Phase 3: credit rating (credit.js) - the six approved weights; the linear limits, neutral values, grades and premiums are config assumptions */
+    CREDIT: { weights: { pay: 0.30, cf: 0.25, debt: 0.15, prof: 0.15, liq: 0.10, stab: 0.05 }, arrearsPenalty: 0.25, historyMonths: 24, keepMonths: 6, cfMonths: 3,
+      limits: { opMargin: [-0.2, 0.3], debtToAssets: [0.1, 0.8], netMargin: [-20, 20], currentRatio: [0.5, 2.0], prodCV: [0.1, 0.6] },
+      neutral: { pay: 0.8, cf: 0.5, debt: 0.7, prof: 0.5, liq: 0.5, stab: 0.7 },
+      grades: [{ id: 'A', min: 700, premium: 0 }, { id: 'B', min: 550, premium: 0.0025 }, { id: 'C', min: 400, premium: 0.0075 }, { id: 'D', min: 250, premium: 0.015 }, { id: 'E', min: 0, premium: 0.03 }], premiumOn: true },
+    /* collateral: LTV = loan balance / collateral value.  max = the most a loan may be at origination; call = above this the bank issues a Margin Call.  Oil inventory: 50% of the value, 2 years (the OIL_INVENTORY type).  The strategic reserve is NOT collateral. */
+    COLLATERAL: { enabled: true, ltv: { ASSET: { max: 0.60, call: 0.75 }, OIL: { max: 0.50, call: 0.60 } }, cureDays: 30, kinds: { SECURED: ['ASSET'], OIL_INVENTORY: ['OIL'] } },
     FINANCE: { emergencyAfterDays: 5, pressureAfterDays: 15, bankruptAfterDays: 40 },
     RISK: { liquidityMonths: 1, debtRatio: 0.5, costRatio: 0.9, salesDrop: 0.15 },      // financial stress indicators: a month of fixed costs in cash, debt above half of the assets, costs above 90% of sales, sales falling 15% a month
     AUTOSELL: { trigger: 0.8, target: 0.5, minPriceRatio: 0.92, force: 0.98, defaultMode: 'SPOT' },       // SPOT mode: above `trigger` fill sell down to `target`, unless the price is below minPriceRatio x base (then wait) or the tank is `force` full

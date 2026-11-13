@@ -43,7 +43,7 @@
     const T = cfg.LOAN_TYPES[type], B = cfg.BANKS.banks[bankId], L = cfg.BANK_LOANS;
     if (!B) return { ok: false, reason: 'BANK' }; if (!T) return { ok: false, reason: 'TYPE' };
     if (!B.types.includes(type)) return { ok: false, reason: 'NOT_OFFERED' };
-    if (T.lock === 'COLLATERAL') return { ok: false, reason: 'LOCKED_COLLATERAL' }; if (T.lock) return { ok: false, reason: 'LOCKED_' + T.lock };
+    if (T.lock === 'COLLATERAL') { if (!(cfg.COLLATERAL && cfg.COLLATERAL.enabled)) return { ok: false, reason: 'LOCKED_COLLATERAL' }; } else if (T.lock) return { ok: false, reason: 'LOCKED_' + T.lock };
     if (!(amount >= L.minAmount)) return { ok: false, reason: 'AMOUNT_MIN' };
     const fm = FM[freq]; if (!fm) return { ok: false, reason: 'FREQ' };
     if (!(term >= fm) || term > T.maxMonths || term % fm !== 0 || Math.floor(term) !== term) return { ok: false, reason: 'TERM' };
