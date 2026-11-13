@@ -55,6 +55,7 @@
     + '#ndPanel .nd-x{min-height:30px;padding:2px 8px}#ndPanel .nd-go{width:100%;margin:6px 0;background:#2a5a8a;border-color:#4b8fd0}#ndPanel .nd-p{margin:8px 4px;line-height:1.6}#ndPanel .nd-sum{display:flex;gap:10px;align-items:center}#ndPanel .nd-big{font-size:30px;font-weight:800;text-align:center;min-width:92px}#ndPanel .nd-big small{display:block;font-size:11px;font-weight:400;color:#9aa8b8}'
     + '#ndPanel .nd-t{flex:1;border-collapse:collapse}#ndPanel .nd-t td{padding:2px 4px;border-bottom:1px solid #2d3948}#ndPanel .nd-row{display:flex;gap:6px}#ndPanel .nd-row button{flex:1}#ndPanel .nd-note,#ndPanel .nd-stale{font-size:11px;color:#ffd27a;margin:4px 2px}#ndPanel .nd-f{border-right:4px solid;border-radius:8px;background:#1d2631;margin:5px 0;overflow:hidden}'
     + '#ndPanel .nd-fh{width:100%;text-align:right;background:transparent;border:0;padding:7px 9px}#ndPanel .nd-sv{display:inline-block;color:#111;border-radius:6px;padding:0 7px;font-size:11px;font-weight:700;margin-right:6px}#ndPanel .nd-s{font-size:11px;color:#9aa8b8;margin-top:3px}#ndPanel .nd-f.sel{background:#243040}#ndPanel .nd-d{width:100%;border-collapse:collapse;font-size:12px}#ndPanel .nd-d td{padding:4px 9px;vertical-align:top;border-top:1px solid #2d3948}#ndPanel .nd-d td:first-child{white-space:nowrap;color:#9aa8b8}';
+  css.textContent += 'body:not(.dev) #ndPanel{left:50px;top:52px;width:min(340px,calc(100vw - 58px));max-height:calc(100% - 200px)}';
   css.textContent += '#ndPanel .nd-g{font-size:12px;font-weight:700;color:#9aa8b8;margin:8px 4px 2px}#ndPanel .nd-cen{margin:8px 0;padding:6px 8px;border:1px solid #3b4756;border-radius:8px;background:#1f2833}';
   document.head.appendChild(css);
   const bar = $('bar'), btn = document.createElement('button'); btn.id = 'ndBtn'; btn.textContent = 'فاحص الشبكة'; bar.insertBefore(btn, bar.firstChild);
@@ -102,5 +103,8 @@
   const prevTap = hooks.tap;
   hooks.tap = (px, py) => { if (st.open && st.rep) { const t = WP.toTile(px, py); let best = null, bd = 2.2; for (const m of ov.marks) { const d = Math.hypot(m.x - t.x, m.y - t.y); if (d < bd) { bd = d; best = m; } } if (best) { select(best.no); return true; } }
     return prevTap ? prevTap(px, py) : false; };
-  window.__netdiag = { st, ov, scan, select, render, panel };
+  /* the player's way in: the «فاحص الشبكة» button of the Company tab (the dev toolbar #bar is hidden in the normal game) closes the sheet, opens the panel and scans */
+  const openFromMenu = () => { const x = $('es-close'); if (x) x.click(); st.open = true; scan(); };
+  document.addEventListener('click', e => { const el = e.target.closest && e.target.closest('[data-nd-open]'); if (el) { e.stopPropagation(); openFromMenu(); } }, true);
+  window.__netdiag = { st, ov, scan, select, render, panel, openFromMenu };
 })(typeof window !== 'undefined' ? window : globalThis);
