@@ -83,6 +83,14 @@
     // ---- finance
     LOANS: { baseRate: 0.07, riskMax: 0.06, terms: [12, 24, 48, 60], amounts: [5000000, 10000000, 25000000, 50000000, 100000000, 250000000], maxDebtRatio: 0.5, prepayFee: 0.01,
       emergency: { rate: 0.18, term: 12, limit: 20000000, minAmount: 2000000, cover: 1.5 } },
+    // ---- banking system (Phase 1 "Banking Foundation"; owner approved the numbers, Nov 2026). A layer ABOVE the company: three independent banks with their own books.
+    //      Every number is editable here. capital / deposits / liquidity are the OPENING balances (applied when a bank is first created); the ratios and caps are read live.
+    //      liquidity = cash the bank holds; reserveRatio x deposits of it is the compulsory reserve (never lent); lendable = liquidity - reserve (the reserve is part of the liquidity, never added to it again).
+    BANKS: { reserveRatio: 0.15, depositGrowthPerMonth: 0.003,
+      banks: {
+        COMMERCIAL: { label: 'البنك التجاري', capital: 1000000000, deposits: 4000000000, liquidity: 1600000000, singleLoanCap: 250000000, maxLeverage: 8 },
+        INDUSTRIAL: { label: 'بنك الاستثمار الصناعي', capital: 2500000000, deposits: 2000000000, liquidity: 1800000000, singleLoanCap: 1500000000, maxLeverage: 6 },
+        STRATEGIC: { label: 'بنك التنمية الاستراتيجي', capital: 5000000000, deposits: 1000000000, liquidity: 3000000000, singleLoanCap: 3000000000, maxLeverage: 4 } } },
     FINANCE: { emergencyAfterDays: 5, pressureAfterDays: 15, bankruptAfterDays: 40 },
     RISK: { liquidityMonths: 1, debtRatio: 0.5, costRatio: 0.9, salesDrop: 0.15 },      // financial stress indicators: a month of fixed costs in cash, debt above half of the assets, costs above 90% of sales, sales falling 15% a month
     AUTOSELL: { trigger: 0.8, target: 0.5, minPriceRatio: 0.92, force: 0.98, defaultMode: 'SPOT' },       // SPOT mode: above `trigger` fill sell down to `target`, unless the price is below minPriceRatio x base (then wait) or the tank is `force` full
