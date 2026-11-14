@@ -90,8 +90,11 @@
           effect: 'لا يمر عبره أي تدفق (المحاكاة تتجاهل الخطوط ذات الطرف المفتوح)' + (hb ? '؛ المنفذ ' + have.port + ' في ' + nameOf(hb) + ' يبقى بلا مسار.' : '.'), fix: 'أكمل الأنبوب بتوصيل طرفه الحر بالمنفذ الصحيح (أو احذفه إن كان بقايا).', evidence: { line: L.id, openEnd: missing } });
         continue; }
       for (const end of ['a', 'b']) { const ref = L[end], b = ends[end];
-        if (!b) { flag({ code: 'MISSING_BUILDING', severity: 'CRITICAL', element: me, x: (end === 'a' ? first : last)[0], y: (end === 'a' ? first : last)[1], prev: end === 'b' ? endLabel(L.a, L) : null, next: end === 'a' ? endLabel(L.b, L) : null,
-            cause: 'الطرف ' + (end === 'a' ? 'الأول' : 'الأخير') + ' من ' + pipeLabel(L) + ' يشير إلى المنشأة #' + ref.b + ' وهي غير موجودة في المخزن (حُذفت دون حذف الأنبوب).', effect: 'الأنبوب لا يحمل أي تدفق.', fix: 'احذف هذا الأنبوب أو أعد توصيله بمنشأة قائمة.', evidence: { line: L.id, missing: ref.b } }); continue; }
+        if (!b) { const oe = end === 'a' ? 'b' : 'a', ob = ends[oe], op = ob && L[oe] ? ports.get(pk(L[oe].b, L[oe].port)) : null, stranded = !!(ob && op && op.required !== false);      // the engine ignores a pipe with a missing end (industry.js): the severity follows what the pipe's OTHER end loses, not the fact itself
+          flag({ code: 'MISSING_BUILDING', severity: !ob ? 'LOW' : stranded ? 'CRITICAL' : 'MEDIUM', element: me, x: (end === 'a' ? first : last)[0], y: (end === 'a' ? first : last)[1], prev: end === 'b' ? endLabel(L.a, L) : null, next: end === 'a' ? endLabel(L.b, L) : null,
+            cause: 'الطرف ' + (end === 'a' ? 'الأول' : 'الأخير') + ' من ' + pipeLabel(L) + ' يشير إلى المنشأة #' + ref.b + ' وهي غير موجودة في المخزن (حُذفت دون حذف الأنبوب).',
+            effect: !ob ? 'بقايا أنبوب: لا يحمل تدفقاً ولا يعطّل أي منشأة قائمة (طرفاه كلاهما بلا منشأة).' : stranded ? 'الأنبوب لا يحمل أي تدفق، ويترك المنفذ ' + L[oe].port + ' في ' + nameOf(ob) + ' بلا مسار.' : 'الأنبوب لا يحمل أي تدفق (المنفذ ' + L[oe].port + ' في ' + nameOf(ob) + ' اختياري فلا يتعطل شيء).',
+            fix: !ob ? 'احذف هذا الأنبوب لتنظيف الشبكة (اختياري: لا أثر له على الإنتاج).' : 'احذف هذا الأنبوب أو أعد توصيله بمنشأة قائمة.', evidence: { line: L.id, missing: ref.b, leftover: !ob } }); continue; }
         const p = ports.get(pk(ref.b, ref.port));
         if (!p) { flag({ code: 'BAD_PORT', severity: 'CRITICAL', element: me, x: (end === 'a' ? first : last)[0], y: (end === 'a' ? first : last)[1], prev: null, next: null,
             cause: 'الأنبوب ' + pipeLabel(L) + ' يستخدم المنفذ «' + ref.port + '» في ' + nameOf(b) + ' وهذا المنفذ غير موجود (أو محجوز) في تعريف هذه المنشأة.', effect: 'الأنبوب لا يحمل أي تدفق.', fix: 'أعد توصيل الأنبوب بمنفذ صحيح من ' + DEFS[b.d].name + '.', evidence: { line: L.id, port: ref.port } }); continue; }
@@ -247,6 +250,14 @@
               causes: tr.limits.map((l, i) => ({ code: l.code, ar: l.ar, fix: l.fix, element: tr.steps[l.idx] ? tr.steps[l.idx].label : null, idx: l.idx, first: i === 0 })), after: rest.map(z => ({ type: z.type, id: z.id, label: z.label })), responsible: known ? { type: tr.culprit.type, id: tr.culprit.id, label: tr.culprit.label } : null },
             evidence: { out: s._out, target: s._target, culprit: known ? tr.culprit.label : null } }); } }
     }
+
+    /* ---------- one pipe, one finding: the same structural fault found on BOTH ends of the same pipe is merged (the second end only adds its place and its cause) ---------- */
+    for (const code of ['MISSING_BUILDING', 'BAD_PORT', 'WRONG_POINT']) { const byEl = new Map(); for (const f of faults) if (f.code === code && f.element.type === 'PIPE') { const a = byEl.get(f.element.id); if (a) a.push(f); else byEl.set(f.element.id, [f]); }
+      for (const [, g] of byEl) { if (g.length < 2) continue; const m = g[0], rest = g.slice(1); m.merged = g.length; m.locations = g.map(f => ({ x: f.x, y: f.y })); m.next = m.next || rest[0].next; m.prev = m.prev || rest[0].prev; m.severity = g.reduce((a, f) => sevOf(f.severity) < sevOf(a) ? f.severity : a, 'LOW'); m.sev = m.severity;
+        m.cause = code === 'MISSING_BUILDING' ? 'طرفا ' + m.element.label + ' يشيران إلى منشأتين غير موجودتين (' + g.map(f => '#' + f.evidence.missing).join(' و') + ') — حُذفتا دون حذف الأنبوب.' : g.map(f => f.cause).join(' ');
+        m.evidence = Object.assign({}, m.evidence, { ends: g.map(f => f.evidence), missing: code === 'MISSING_BUILDING' ? g.map(f => f.evidence.missing) : undefined, leftover: code === 'MISSING_BUILDING' ? g.every(f => f.evidence.leftover) : undefined });
+        if (code === 'MISSING_BUILDING' && g.every(f => f.evidence.leftover)) { m.effect = 'بقايا أنبوب: لا يحمل تدفقاً ولا يعطّل أي منشأة قائمة (طرفاه كلاهما بلا منشأة).'; m.fix = 'احذف هذا الأنبوب لتنظيف الشبكة (اختياري: لا أثر له على الإنتاج).'; }
+        for (const f of rest) faults.splice(faults.indexOf(f), 1); } }
 
     /* ---------- numbering: by severity, then by id ---------- */
     const grp = f => f.indicator ? 2 : f.confirmed ? 0 : 1;
