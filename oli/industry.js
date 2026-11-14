@@ -179,6 +179,22 @@
     const adv = pipeAdvice(store, net), pick = adv.list.filter(x => !ids || ids.includes(x.id)); if (!pick.length) return { ok: false, reason: 'nothing' }; const cost = pick.reduce((a, x) => a + x.cost, 0);
     if (store.cash !== Infinity && store.cash < cost) return { ok: false, reason: 'cash', cost }; for (const x of pick) { const L = net.lines.get(x.id); L.dia = x.to; } net.rev++; if (store.cash !== Infinity) store.cash -= cost; return { ok: true, n: pick.length, cost };
   }
+  /* ---- PIPE UPGRADE (player-chosen): one line gets a wider diameter. Path, ends, ports, product, valve state and connection pairing are untouched; only L.dia changes.
+     Price = tiles x (new price - old price per tile), paid from cash at once (no downtime: the pipe keeps flowing). Never a smaller or the same diameter. ---- */
+  function pipeUpgradeOptions(store, net, lineId) {
+    const L = net.lines.get(lineId); if (!L) return { ok: false, reason: 'noLine' }; const cur = CFG.PIPES[L.dia] || CFG.PIPES[CFG.PIPE_DEFAULT], connected = !!(L.a && L.b && store.get(L.a.b) && store.get(L.b.b)), need = connected && L.open !== false ? flowModel(store, net).need(L) : 0, tiles = L.path.length;
+    const options = sizesAsc().map(d => { const sp = CFG.PIPES[d], bigger = sp.capacity > cur.capacity, cost = bigger ? tiles * (sp.cost - cur.cost) : 0;
+      const eff = connected && L.open !== false ? Math.min(sp.capacity, need) : 0, limit = !connected ? 'open' : L.open === false ? 'closed' : need <= 0 ? 'idle' : sp.capacity < need - 1e-6 ? 'pipe' : need < cur.capacity - 1e-6 ? 'ends' : null;
+      return { dia: d, capacity: sp.capacity, increase: sp.capacity - cur.capacity, cost, allowed: bigger, reason: bigger ? null : d === +L.dia ? 'current' : 'smaller', effective: eff, limit, maxPressure: sp.maxPressure }; });
+    return { ok: true, id: lineId, product: L.product, tiles, from: +L.dia, capacity: cur.capacity, need, connected, open: L.open !== false, downtimeHours: 0, options };
+  }
+  function upgradePipe(store, net, lineId, dia) {
+    const L = net.lines.get(lineId); if (!L) return { ok: false, reason: 'noLine' }; dia = +dia; const to = CFG.PIPES[dia], cur = CFG.PIPES[L.dia] || CFG.PIPES[CFG.PIPE_DEFAULT]; if (!to) return { ok: false, reason: 'badDia' };
+    if (to.capacity <= cur.capacity) return { ok: false, reason: dia === +L.dia ? 'same' : 'smaller' };
+    const cost = L.path.length * (to.cost - cur.cost); if (store.cash !== Infinity && store.cash < cost) return { ok: false, reason: 'cash', cost };
+    const from = +L.dia; L.dia = dia; net.rev++; if (store.cash !== Infinity) store.cash -= cost;
+    return { ok: true, id: L.id, from, to: dia, cost, capacityBefore: cur.capacity, capacityAfter: to.capacity, tiles: L.path.length };
+  }
   const REASON_RANK = { cash: 5, noRoute: 4, portTaken: 3, invalidProduct: 2, portRoles: 1, noPort: 0 };
   function planDirection(store, net, ts, src, dst, o) {
     const pairs = [], skip = o.skipProducts || null; for (const pa of portsOf(src)) if (canSend(pa) && !(skip && skip.has(pa.product))) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product) && !B.refuses(pa, pb) && !B.refuses(pb, pa)) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
@@ -667,5 +683,5 @@
   }
 
   const TANK_KIND_AR = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
-  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, controlPoints, planReroute, commitReroute, undoReroute, planConnect, layConnect, flowModel, sizeFor, sizeNew, pipeAdvice, upgradeLines, autoLinkTank, ADJ_GAP, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
+  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, controlPoints, planReroute, commitReroute, undoReroute, planConnect, layConnect, flowModel, sizeFor, sizeNew, pipeAdvice, upgradeLines, pipeUpgradeOptions, upgradePipe, autoLinkTank, ADJ_GAP, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });
