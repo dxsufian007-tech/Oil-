@@ -1,7 +1,7 @@
 /* Oli - fault-repair.js : EXECUTING repairs with the player's approval -- PHASE 4A ONLY.
  *   4A covers exactly: open a closed pipe, open a closed / partly closed valve, delete an ORPHAN pipe (no live building at either end).
  *   Not here: building replacement, new pipes, widening, demolition (4B / 4C), spare parts (equipment repair only), any change to the save format.
- * A repair is a TICKET:  PLANNED -> (confirm x1, or x2 for a deletion) -> EXECUTING -> DONE | ROLLED_BACK | REJECTED.   A ticket is used once.
+ * A repair is a TICKET:  PLANNED -> (confirm x1, or x2 for a deletion) -> EXECUTING -> one FINAL state: DONE | ROLLED_BACK (financial: NONE or REVERSED = two exact mirror entries) | ROLLBACK_FAILED (repair kept complete, flagged) | REJECTED.   A ticket is used once.
  * Execution is ATOMIC: re-diagnose, re-check every precondition and the price, change the network through an undo log, post the money LAST as one balanced journal entry,
  * run the company audit; ANY failure undoes every step (the journal is never touched before the last step, so no money moves on a failure).
  * Allowed only while the game is paused.  Nothing runs unless the player taps; the simulation never calls this module.
@@ -59,36 +59,48 @@
     /* EXECUTE: the atomic part */
     function execute(id, env) {
       const t = tickets.get(id); if (!t) return { ok: false, status: null, reason: 'NO_TICKET', ar: 'التذكرة غير موجودة.' };
-      if (t.status === 'DONE' || t.status === 'ROLLED_BACK' || t.status === 'REJECTED') return { ok: false, status: t.status, reason: 'USED', ar: t.status === 'DONE' ? 'نُفِّذت هذه التذكرة من قبل: لا تُنفَّذ مرتين.' : 'التذكرة منتهية.' };
+      if (t.status === 'DONE' || t.status === 'ROLLED_BACK' || t.status === 'ROLLBACK_FAILED' || t.status === 'REJECTED') return { ok: false, status: t.status, reason: 'USED', ar: t.status === 'DONE' ? 'نُفِّذت هذه التذكرة من قبل: لا تُنفَّذ مرتين.' : 'التذكرة منتهية.' };
       if (busy || t.status === 'EXECUTING') return { ok: false, status: t.status, reason: 'BUSY', ar: 'تنفيذ آخر جارٍ.' };
       if (t.confirms < t.needConfirms) return { ok: false, status: t.status, reason: 'NEEDS_CONFIRM', ar: t.needConfirms > 1 ? 'الحذف يحتاج تأكيداً بخطوتين.' : 'يلزم تأكيد.' };
       if (now(env) - t.createdMs > TTL) return reject(t, 'EXPIRED', 'انتهت صلاحية التذكرة: أعد التخطيط.');
       if (!env.company || env.company.speed !== 0) return { ok: false, status: t.status, reason: 'NOT_PAUSED', ar: 'أوقف اللعبة مؤقتاً أولاً: الإصلاح لا يُنفَّذ أثناء التشغيل.' };
-      busy = true; t.status = 'EXECUTING'; const undo = []; let posted = null, rev0 = null, next0 = null;
+      busy = true; t.status = 'EXECUTING'; const undo = []; let posted = null, postedLines = null, rev0 = null, next0 = null, bal0 = null, cash0 = null;
       try {
         /* 1. is the fault still there? a FRESH diagnosis, not the screen's old one */
         const rep = fresh(env), f = rep.faults.find(z => FR.keyOf(z) === t.key); if (!f) return reject(t, 'RESOLVED', 'العطل انتهى (لم يعد موجوداً في التشخيص الجديد): لا حاجة للإصلاح.');
         /* 2. every precondition and the price, again */
         let refund = 0; for (let i = 0; i < t.actions.length; i++) { const c = ACT[t.actions[i].kind].check(env, t.actions[i]); if (!c.ok) return reject(t, c.reason, c.ar); if (c.fp !== t.pre[i]) return reject(t, 'CHANGED', 'تغيّر العنصر منذ المعاينة: أعد التخطيط.'); refund += c.refund; }
         if (refund !== t.quote.refund) return reject(t, 'PRICE_CHANGED', 'تغيّر السعر منذ المعاينة (' + t.quote.refund + ' ← ' + refund + '): أعد التخطيط.');
-        const co = env.company; rev0 = env.net.rev; next0 = env.net.nextId;
+        const co = env.company; { const a0 = co.audit(); if (!a0.ok) return reject(t, 'BOOKS_UNBALANCED', 'دفتر الشركة لا يجتاز التدقيق الآن: لا يُنفَّذ إصلاح فوق دفتر غير سليم (' + ((a0.errors && a0.errors[0]) || '') + ').'); }
+        rev0 = env.net.rev; next0 = env.net.nextId; bal0 = Object.assign({}, co.journal.bal); cash0 = env.store.cash;
         /* 3. the structural change through the undo log (no money moves here) */
         for (let i = 0; i < t.actions.length; i++) { if (env.__inject && env.__inject('apply:' + i)) throw new Error('injected failure at step ' + i); const ok = ACT[t.actions[i].kind].apply(env, t.actions[i], undo); if (ok === false) throw new Error('step ' + i + ' refused'); }
         /* 4. the money, LAST, as one balanced entry (a deletion refund); a failure here leaves cash and journal untouched */
         if (env.__inject && env.__inject('post')) throw new Error('injected failure before the journal entry');
-        if (refund > 0 && isFinite(env.store.cash)) { co.sync(); posted = co._post({ type: 'REPAIR', flow: 'INV', desc: 'Repair ' + t.id + ' · ' + t.titleAr + ' · refund' }, [['CASH', refund], ['FIXED', -refund]]); }
+        if (refund > 0 && isFinite(env.store.cash)) { co.sync(); postedLines = [['CASH', refund], ['FIXED', -refund]]; posted = co._post({ type: 'REPAIR', flow: 'INV', desc: 'Repair ' + t.id + ' · ' + t.titleAr + ' · refund' }, postedLines); }
         /* 5. the company audit: the books must still balance */
         if (env.__inject && env.__inject('audit')) throw new Error('injected audit failure'); const au = co.audit(); const errs = (au && au.errors) || []; if (errs.length) throw new Error('audit: ' + errs[0]);
         co._event('info', 'إصلاح مُنفَّذ بموافقتك: ' + t.titleAr + (refund > 0 ? ' · استرداد ' + refund.toLocaleString('en-US') + ' $' : ' · بلا كلفة') + ' (' + t.id + ')');
-        t.status = 'DONE'; t.result = { ok: true, refund, executedHours: co.hours };
+        t.status = 'DONE'; t.result = { ok: true, financial: refund > 0 ? 'APPLIED' : 'NONE', refund, executedHours: co.hours };
         /* 6. structural verification on a fresh scan (flows update when the game resumes: the simulation is not stepped here) */
         let v = { fixed: null }; try { const r2 = fresh(env); v.fixed = !r2.faults.some(z => FR.keyOf(z) === t.key); v.lostBefore = rep.rca ? rep.rca.totals.lostBblDay : null; v.lostAfter = r2.rca ? r2.rca.totals.lostBblDay : null; v.solved = !env.sim.dirty(); } catch (e) { v.error = e.message; }
         t.result.verify = v; return Object.assign({ ok: true, status: 'DONE', id: t.id }, t.result);
       } catch (e) {
-        const errs = []; for (let i = undo.length - 1; i >= 0; i--) { try { undo[i](); } catch (x) { errs.push(x.message); } }
-        if (rev0 !== null) { env.net.rev = rev0; env.net.nextId = next0; }                                   // the network revision is exactly what it was
-        if (posted) { try { env.company._post({ type: 'REPAIR_REVERSAL', flow: 'INV', desc: 'Reversal of repair ' + t.id }, [['FIXED', t.quote.refund], ['CASH', -t.quote.refund]]); } catch (x) { errs.push('reversal: ' + x.message); } }
-        t.status = 'ROLLED_BACK'; t.result = { ok: false, reason: 'ROLLED_BACK', ar: 'فشل التنفيذ فتم التراجع عن كل شيء ولم يُخصم أي مبلغ: ' + e.message, rollbackErrors: errs }; return Object.assign({ ok: false, status: 'ROLLED_BACK' }, t.result);
+        /* ROLLBACK.  Order matters: the money first (an exact MIRROR of the entry that was posted, never recomputed), then the structure, then a proof that the books are back. */
+        const errs = [], co = env.company; let financial = 'NONE', reversal = null;
+        if (posted) {
+          try { if (env.__inject && env.__inject('reversal')) throw new Error('injected reversal failure'); reversal = co._post({ type: 'REPAIR_REVERSAL', flow: 'INV', desc: 'Reversal of repair ' + t.id + ' (entry #' + posted.id + ') · ' + String(e.message).slice(0, 80) }, postedLines.map(([a, v]) => [a, -v])); financial = 'REVERSED'; }
+          catch (x) {                                                                  // the money cannot be reversed: keep the repair COMPLETE (pipe gone + refund booked) so state and books agree; say so loudly
+            t.status = 'ROLLBACK_FAILED'; t.result = { ok: false, reason: 'ROLLBACK_FAILED', financial: 'APPLIED', consistent: true, ar: 'تعذّر عكس القيد المالي (' + x.message + '): أُبقي الإصلاح كاملاً (التغيير منفَّذ والاسترداد مسجَّل) حفاظاً على اتساق الدفتر. راجع الدفتر.', error: e.message }; return Object.assign({ ok: false, status: 'ROLLBACK_FAILED' }, t.result);
+          }
+        }
+        for (let i = undo.length - 1; i >= 0; i--) { try { undo[i](); } catch (x) { errs.push(x.message); } }
+        if (rev0 !== null) { env.net.rev = rev0; env.net.nextId = next0; }                          // the network revision is exactly what it was
+        let proof = true; if (bal0) { const tol = co.journal.tol(); for (const k of Object.keys(bal0)) if (Math.abs((co.journal.bal[k] || 0) - bal0[k]) > tol) proof = false; if (isFinite(cash0) && Math.abs(env.store.cash - cash0) > 1e-6) proof = false; const au = co.audit(); if (!au.ok) proof = false; }
+        if (errs.length || !proof) { t.status = 'ROLLBACK_FAILED'; t.result = { ok: false, reason: 'ROLLBACK_FAILED', financial, consistent: false, ar: 'التراجع لم يُثبت أن الدفتر والشبكة عادا كما كانا: ' + (errs[0] || 'اختلاف في الأرصدة') + '. لا تتابع قبل المراجعة.', error: e.message, rollbackErrors: errs }; return Object.assign({ ok: false, status: 'ROLLBACK_FAILED' }, t.result); }
+        t.status = 'ROLLED_BACK'; t.result = { ok: false, reason: 'ROLLED_BACK', financial, reversalEntry: reversal ? reversal.id : null, originalEntry: posted ? posted.id : null, rollbackErrors: errs, error: e.message,
+          ar: financial === 'REVERSED' ? 'فشل التدقيق بعد تسجيل القيد فتم التراجع كاملاً: سُجّل قيد عكسي مطابق وصافي الأثر المالي صفر، وأُعيد التغيير. السبب: ' + e.message : 'فشل التنفيذ فتم التراجع عن كل شيء: لم يُخصم أي مبلغ ولم يُسجَّل أي قيد. السبب: ' + e.message };
+        return Object.assign({ ok: false, status: 'ROLLED_BACK' }, t.result);
       } finally { busy = false; if (t.status === 'EXECUTING') t.status = 'REJECTED'; }
     }
     return { plan, confirm, cancel, execute, get: id => { const t = tickets.get(id); return t ? view(t) : null; }, list: () => [...tickets.values()].map(view), supported: kind => !!ACT[kind] };
