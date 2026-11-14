@@ -195,6 +195,29 @@
     const from = +L.dia; L.dia = dia; net.rev++; if (store.cash !== Infinity) store.cash -= cost;
     return { ok: true, id: L.id, from, to: dia, cost, capacityBefore: cur.capacity, capacityAfter: to.capacity, tiles: L.path.length };
   }
+
+  /* ---- JOINT UPGRADE (player-chosen): valve / junction / main manifold get the next capacity tier (CFG.jointTiers). Position, ports, rotation and every connected pipe are untouched; only b.lv changes
+     (already saved with the building). The real flow follows at once because the Sim reads jointCap(b). The central station is a separate network and is NOT upgradable here. ---- */
+  function jointInfo(store, net, id, sim) {
+    const b = store.get(id); if (!b) return { ok: false, reason: 'noBuilding' }; const d = DEFS[b.d], tiers = CFG.jointTiers(d.id); if (!tiers) return { ok: false, reason: 'notJoint' };
+    const lv = Math.min(Math.max(1, b.lv | 0 || 1), tiers.length), cur = tiers[lv - 1], next = tiers[lv] || null, ends = []; const side = { in: { sum: 0, n: 0, lim: null }, out: { sum: 0, n: 0, lim: null } };
+    for (const L of net.lines.values()) { const mine = L.a && L.a.b === id ? 'a' : L.b && L.b.b === id ? 'b' : null; if (!mine) continue; const fr = mine === 'a' ? L.b : L.a, far = fr && store.get(fr.b), pc = (CFG.PIPES[L.dia] || CFG.PIPES[CFG.PIPE_DEFAULT]).capacity; let fc = Infinity, fk = null;
+      if (far) { const fd = DEFS[far.d]; if (fd.type === 'pump') { fc = fd.params.maxFlow * levelOf(far).capacityMultiplier; fk = 'pump'; } else if (fd.type === 'junction' || fd.type === 'valve') { fc = jointCap(far); fk = 'joint'; } else if (fd.type === 'refinery' && fd.params && fd.params.cap) { fc = fd.params.cap * levelOf(far).capacityMultiplier; fk = 'station'; } else fk = fd.type; }
+      const eff = Math.min(pc, fc), sd = side[mine === 'b' ? 'in' : 'out']; sd.sum += eff; sd.n++; if (fc < pc - 1e-6) sd.lim = fk === 'station' ? 'station' : 'pump'; else if (!sd.lim) sd.lim = 'pipe';
+      ends.push({ line: L.id, dia: +L.dia, pipeCap: pc, far: far ? far.id : null, farKind: fk, farCap: fc === Infinity ? null : fc, dir: mine === 'b' ? 'in' : 'out' }); }
+    const reach = cap => Math.min(cap, side.in.n ? side.in.sum : Infinity, side.out.n ? side.out.sum : Infinity), limitOf = cap => { if (!side.in.n || !side.out.n) return 'open'; const o = Math.min(side.in.sum, side.out.sum); if (cap < o - 1e-6) return 'joint'; return side.in.sum <= side.out.sum ? side.in.lim : side.out.lim; };
+    const s = sim ? sim.ensure(b) : null, inPorts = d.connections.filter(c => c.role === 'in').length, outPorts = d.connections.filter(c => c.role === 'out').length;
+    const ports = d.connections.filter(c => c.kind === 'pipe').length, used = ends.length;
+    const pot0 = reach(cur.capacity), pot1 = next ? reach(next.capacity) : pot0;
+    return { ok: true, id, def: d.id, name: d.name, level: lv, maxLevel: tiers.length, capacity: cur.capacity, next: next ? { level: next.level, capacity: next.capacity, cost: next.cost } : null, ports, portsUsed: used, inPorts, outPorts, ends,
+      potentialNow: pot0, potentialAfter: pot1, effectiveGain: Math.max(0, pot1 - pot0), limitNow: limitOf(cur.capacity), limitAfter: next ? limitOf(next.capacity) : limitOf(cur.capacity), actualFlow: s ? Math.round(s._in || 0) : null, saturated: !!(s && s._sat),
+      why: next ? null : (d.id === 'main_manifold' ? 'topTier' : 'topTier') };
+  }
+  function upgradeJoint(store, net, id) {
+    const info = jointInfo(store, net, id); if (!info.ok) return info; if (!info.next) return { ok: false, reason: 'max' }; const b = store.get(id), cost = info.next.cost;
+    if (store.cash !== Infinity && store.cash < cost) return { ok: false, reason: 'cash', cost }; const from = info.level; b.lv = info.next.level; net.rev++; if (store.cash !== Infinity) store.cash -= cost;
+    return { ok: true, id, from, to: b.lv, cost, capacityBefore: info.capacity, capacityAfter: info.next.capacity };
+  }
   const REASON_RANK = { cash: 5, noRoute: 4, portTaken: 3, invalidProduct: 2, portRoles: 1, noPort: 0 };
   function planDirection(store, net, ts, src, dst, o) {
     const pairs = [], skip = o.skipProducts || null; for (const pa of portsOf(src)) if (canSend(pa) && !(skip && skip.has(pa.product))) for (const pb of portsOf(dst)) if (canTake(pb) && !(pa.role === 'both' && pb.role === 'both' && false) && B.productOk(pa.product, pb.product) && !B.refuses(pa, pb) && !B.refuses(pb, pa)) pairs.push({ pa, pb, d: Math.abs(pa.ax - pb.ax) + Math.abs(pa.ay - pb.ay) });
@@ -343,6 +366,7 @@
   }
 
   /* ------------------------------------------------------------ levels, safety helpers */
+  const jointCap = b => { const d = DEFS[b.d], t = CFG.JOINT_TYPES[d.id]; if (!t) return d.params.maxTotalFlow || d.params.maxFlow; const tiers = CFG.jointTiers(d.id), lv = Math.min(Math.max(1, b.lv | 0 || 1), tiers.length); return tiers[lv - 1].capacity; };
   const LV_CACHE = new Map(), levelOf = b => { const k = b.lv || 1; let v = LV_CACHE.get(k); if (!v) { v = Object.freeze(Object.assign({ level: 1, capacityMultiplier: 1, efficiencyMultiplier: 1, pressureMultiplier: 1, maintenanceMultiplier: 1 }, CFG.LEVELS[k])); LV_CACHE.set(k, v); } return v; };      // perf: one frozen object per level (it was a new object on every call, thousands of times per game hour); the values are the same
   function tankLevel(fill) { return fill <= 0.0005 ? 'EMPTY' : fill < SAFE.tankLow ? 'LOW' : fill < SAFE.tankHigh ? 'NORMAL' : fill < SAFE.tankNearFull ? 'HIGH' : fill < SAFE.tankFull - 1e-6 ? 'OVERFLOW_RISK' : 'FULL'; }
   function gasSafety(fill, pressureRatio, temp) {
@@ -472,12 +496,12 @@
           }
           case 'valve': {
             const mode = s.mode, open = mode === 'OPEN' ? 1 : mode === 'PARTIAL' ? s.opening : 0; s._off = Math.max(s._off || 0, f.r); if (open <= 0) { if (commit) s._shut = true; break; }
-            const lossP = 1 + 80 * Math.pow(1 - open, 2); acc = this.offer(b, 'OUT', { ...f, r: Math.min(f.r, def.params.maxFlow * open), p: f.p - lossP }, commit, vis);
+            const lossP = 1 + 80 * Math.pow(1 - open, 2); acc = this.offer(b, 'OUT', { ...f, r: Math.min(f.r, jointCap(b) * open), p: f.p - lossP }, commit, vis);
             if (commit && acc > 0) { s._in = (s._in || 0) + acc; }
             break;
           }
           case 'junction': {
-            const cap = def.params.maxTotalFlow, room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); const outs = notInExcept(def, port);
+            const cap = jointCap(b), room = Math.max(0, cap - (s._in || 0)); if (f.r > room + 1e-6) s._sat = true; s._off = Math.max(s._off || 0, f.r); const outs = notInExcept(def, port);
             acc = this.split(b, outs, { ...f, r: Math.min(f.r, room), p: f.p - 1 }, commit, vis); if (commit && acc > 0) { s._in = (s._in || 0) + acc; if (f.p > def.params.pressureLimit) s._hiP = true; }
             break;
           }
@@ -639,8 +663,8 @@
       if (t === 'well') { const ratio = s.reserve0 ? s.reserve / s.reserve0 : 0; return { top: 5, list: [I('Production', r0(s._out || 0), 'bbl/day'), I('Pressure', r0(s._p != null ? s._p : s.p0 * (.3 + .7 * ratio)), 'psi'), I('Reservoir Pressure', r0(((this.store.ts && b.field && this.store.ts.site && this.store.ts.site(b.field) || {}).pr == null ? 1 : this.store.ts.site(b.field).pr) * 100), '%'), I('Remaining Reserve', r0(s.reserve), 'bbl'), I('Water Cut', r0((s._wc != null ? s._wc : CFG.WELL.waterCutStart) * 100, 10), '%'), I('Gas', r0((s._out || 0) * (s._gas || CFG.WELL.gorStart)), 'boe/day'), I('Efficiency', r0(s._target ? (s._out || 0) / s._target * 100 : 0), '%')].concat(common) }; }
       if (t === 'pump') { const util = (s._in || 0) / def.params.maxFlow * 100; return { top: 6, list: [I('Flow In', r0(s._in || 0), 'bbl/day'), I('Flow Out', r0(s._in || 0), 'bbl/day'), I('Pressure In', r0(s.pIn || 0), 'psi'), I('Pressure Out', r0(s.pOut || s.pIn || 0), 'psi'), I('Boost', r0(s.boost * s.eff), 'psi'), I('Power', r0(s.power || 0, 10), 'kW')].concat([I('Efficiency', r0(s.eff * 100), '%'), I('Utilization', r0(util), '%')], common) }; }
       if (t === 'valve') return { top: 4, list: [I('Valve State', s.mode + (s.mode === 'PARTIAL' ? ' ' + Math.round(s.opening * 100) + '%' : '')), I('Opening', Math.round((s.mode === 'OPEN' ? 1 : s.mode === 'PARTIAL' ? s.opening : 0) * 100), '%'), I('Flow', r0(s._in || 0), 'bbl/day'), I('Max Flow', def.params.maxFlow, 'bbl/day'), I('Pressure Rating', def.params.pressureRating, 'psi')].concat(common) };
-      if (t === 'junction' && def.family === 'MANIFOLD') { const used = role => def.connections.filter(c => c.role === role && this.edgeOf(b, c.id)).length, fl = def.connections.filter(c => c.role === 'out').map(c => { const e = this.edgeOf(b, c.id); return e ? e.flow : 0; }); return { top: 8, list: [I('Flow', r0(s._in || 0), 'bbl/day'), I('Max Total Flow', def.params.maxTotalFlow, 'bbl/day'), I('Inputs Connected', used('in') + ' من ' + def.params.inputs), I('Outputs Connected', used('out') + ' من ' + def.params.outputs), I('Output 1 Flow', r0(fl[0]), 'bbl/day'), I('Output 2 Flow', r0(fl[1]), 'bbl/day'), I('Output 3 Flow', r0(fl[2]), 'bbl/day'), I('Pressure Limit', def.params.pressureLimit, 'psi')].concat(common) }; }
-      if (t === 'junction') return { top: 4, list: [I('Flow', r0(s._in || 0), 'bbl/day'), I('Max Total Flow', def.params.maxTotalFlow, 'bbl/day'), I('Pressure Limit', def.params.pressureLimit, 'psi'), I('Ports', 4)].concat(common) };
+      if (t === 'junction' && def.family === 'MANIFOLD') { const used = role => def.connections.filter(c => c.role === role && this.edgeOf(b, c.id)).length, fl = def.connections.filter(c => c.role === 'out').map(c => { const e = this.edgeOf(b, c.id); return e ? e.flow : 0; }); return { top: 8, list: [I('Flow', r0(s._in || 0), 'bbl/day'), I('Max Total Flow', jointCap(b), 'bbl/day'), I('Inputs Connected', used('in') + ' من ' + def.params.inputs), I('Outputs Connected', used('out') + ' من ' + def.params.outputs), I('Output 1 Flow', r0(fl[0]), 'bbl/day'), I('Output 2 Flow', r0(fl[1]), 'bbl/day'), I('Output 3 Flow', r0(fl[2]), 'bbl/day'), I('Pressure Limit', def.params.pressureLimit, 'psi')].concat(common) }; }
+      if (t === 'junction') return { top: 4, list: [I('Flow', r0(s._in || 0), 'bbl/day'), I('Max Total Flow', jointCap(b), 'bbl/day'), I('Pressure Limit', def.params.pressureLimit, 'psi'), I('Ports', 4)].concat(common) };
       if (t === 'tank') { const fill = s.vol / cap, gTop = this.groupOf(b) ? 4 : 0; return { top: 6 + gTop, list: [I('Level', r0(s.vol), 'bbl'), I('Capacity', cap, 'bbl'), I('Fill', r0(fill * 100, 10), '%'), I('Input Flow', r0(s._in || 0), 'bbl/day'), I('Output Flow', r0(s._out || 0), 'bbl/day'), I('Available Capacity', r0(cap - s.vol), 'bbl')].concat((() => { const gi = this.groupInfo(b); return gi ? [I('Group Tanks', gi.n), I('Group Capacity', r0(gi.capacity), 'bbl'), I('Group Stock', r0(gi.volume), 'bbl'), I('Group Free', r0(gi.free), 'bbl')] : []; })()).concat(def.product === P.CRUDE ? [I('Tank Type', TANK_KIND_AR[this.tankKind(b)] || ''), I('Purchased Oil', r0(s.bv || 0), 'bbl'), I('Produced Oil', r0(Math.max(0, s.vol - (s.bv || 0) - (s.wat || 0))), 'bbl')] : []).concat([I('Pressure', 14.7, 'psi'), I('Temperature', r0(s.temp, 10), '°C'), I('Level State', tankLevel(fill).replace(/_/g, ' ').toLowerCase())], common) }; }
       if (t === 'gas') { const fill = s.vol / cap; return { top: 6, list: [I('Current Level', r0(s.vol), 'boe'), I('Gas Capacity', cap, 'boe'), I('Fill', r0(fill * 100, 10), '%'), I('Pressure', r0(s.press || 15), 'psi'), I('Temperature', r0(s.temp, 10), '°C'), I('Safety', this.gasSafetyOf(b).replace(/_/g, ' ').toLowerCase())].concat([I('Max Pressure', def.params.maxPressure, 'psi'), I('Input', r0(s._in || 0), 'boe/day'), I('Output', r0(s._out || 0), 'boe/day')], common) }; }
       if (t === 'separator') return { top: 6, list: [I('Feed In', r0(s._in || 0), 'bbl/day'), I('Oil Out', r0(s._o || 0), 'bbl/day'), I('Gas Out', r0(s._g || 0), 'boe/day'), I('Water Out', r0(s._w || 0), 'bbl/day'), I('Utilization', r0((s._in || 0) / def.params.cap * 100), '%'), I('Capacity', def.params.cap, 'bbl/day')].concat(common) };
@@ -683,5 +707,5 @@
   }
 
   const TANK_KIND_AR = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
-  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, controlPoints, planReroute, commitReroute, undoReroute, planConnect, layConnect, flowModel, sizeFor, sizeNew, pipeAdvice, upgradeLines, pipeUpgradeOptions, upgradePipe, autoLinkTank, ADJ_GAP, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
+  return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, jointInfo, upgradeJoint, jointCap, controlPoints, planReroute, commitReroute, undoReroute, planConnect, layConnect, flowModel, sizeFor, sizeNew, pipeAdvice, upgradeLines, pipeUpgradeOptions, upgradePipe, autoLinkTank, ADJ_GAP, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });

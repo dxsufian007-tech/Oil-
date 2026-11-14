@@ -63,7 +63,11 @@
   const SEPARATOR = { cost: 2500000, op: 3500, maint: 1500, cap: 50000, w: 4, h: 3, oilSep: 0.94, gasSep: 0.92, waterSep: 0.88, minInletPsi: 30 };
   const SAFETY = { tankNearFull: 0.95, tankFull: 1.0, tankHigh: 0.8, tankLow: 0.2, gasHighPressure: 0.85, gasNearLimit: 0.95, gasHighTempC: 60, ambientC: 30 };
   const LEVELS = { 1: { capacityMultiplier: 1, efficiencyMultiplier: 1, pressureMultiplier: 1, maintenanceMultiplier: 1 } };   // architecture only: Level 1 exists, no upgrade system yet
+  /* JOINT UPGRADE tiers: NOT invented numbers. A joint (valve / junction / manifold) can be upgraded to the next PIPE capacity tier above its own (CFG.PIPES: 100,000 then 300,000), so a
+     joint is never narrower than the pipe it serves. Price to reach a tier = the joint's own price x (new capacity / old capacity - 1). PROPOSED, awaiting the owner's approval. */
+  const JOINT_TYPES = { valve: { key: 'maxFlow', base: VALVE.maxFlow, price: VALVE.cost }, junction: { key: 'maxTotalFlow', base: JUNCTION.maxTotalFlow, price: JUNCTION.cost }, main_manifold: { key: 'maxTotalFlow', base: MANIFOLD.maxTotalFlow, price: MANIFOLD.cost } };
+  const jointTiers = id => { const t = JOINT_TYPES[id]; if (!t) return null; const caps = Object.keys(PIPES).map(d => PIPES[d].capacity).sort((a, b) => a - b).filter(c => c > t.base); const out = [{ level: 1, capacity: t.base, cost: 0 }]; let prev = t.base; for (const c of caps) { out.push({ level: out.length + 1, capacity: c, cost: Math.round(t.price * (c / prev - 1)) }); prev = c; } return out; };
   const SIM = { dayRealSeconds: 12, tankHeadPsi: 60, frictionPsiPerTile: 0.5, frictionExp: 1.8 };
 
-  return { PRODUCTS, PRODUCT_LABEL, PRODUCT_COLOR, PIPES, PIPE_DEFAULT, TILE_METERS, TANK, REFINERY, WELL, PUMP, WATER_PUMP, WATER, VALVE, JUNCTION, MANIFOLD, SEPARATOR, SAFETY, LEVELS, SIM };
+  return { PRODUCTS, PRODUCT_LABEL, PRODUCT_COLOR, PIPES, PIPE_DEFAULT, TILE_METERS, TANK, REFINERY, WELL, PUMP, WATER_PUMP, WATER, VALVE, JUNCTION, MANIFOLD, SEPARATOR, SAFETY, LEVELS, SIM, JOINT_TYPES, jointTiers };
 });
