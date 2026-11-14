@@ -15,7 +15,7 @@ const SH = process.env.SHOTS;
   const snap = () => ev(() => JSON.stringify({ n: __lab.pipes.toJSON(), s: [...__lab.store.items.values()], cash: __lab.store.cash, ccash: __lab.company.cash, flows: [...__lab.pipes.lines.values()].map(L => [L.id, L.flow, L.open]) }));
   await ev(() => { __netdiag.st.mode = 'full'; __netdiag.select(__netdiag.st.rep.rca.groups.find(g => g.element.id === 6).rootNo); __netdiag.st.mode = 'full'; __netdiag.render(); }); await p.waitForTimeout(400);
   const s0 = await snap(); let t = await p.textContent('#ndPanel');
-  ok(/الحلول المقترحة/.test(t) && /اقتراح ومعاينة فقط/.test(t) && /افتح المسار/.test(t) && /احذف الأنبوب/.test(t) && /موصى به/.test(t), 'the root shows the proposed solutions, the recommended one, and says it is preview only');
+  ok(/الحلول المقترحة/.test(t) && /التغييرات الكبيرة توصيات فقط/.test(t) && /لا يغيّران اللعبة/.test(t) && /افتح المسار/.test(t) && /احذف الأنبوب/.test(t) && /موصى به/.test(t), 'the root shows the proposed solutions, the recommended one, and says: simple repairs need your approval, major changes are advice only, previews change nothing');
   ok(/مجاني/.test(t) && /يُسترد \$/.test(t), 'costs are shown: free for opening, a refund for deleting');
   await p.locator('#ndPanel .nd-op.rec > button').first().tap(); await p.waitForTimeout(300); t = await p.textContent('#ndPanel'); if (SH) await p.screenshot({ path: SH + '/p3a.png' });
   ok(/معاينة قبل الإصلاح/.test(t) && /مغلق/.test(t) && /مفتوح/.test(t) && /حتى [\d,]+ برميل/.test(t), 'tapping an option shows the before/after preview and the recovery');

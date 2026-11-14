@@ -34,6 +34,15 @@
     if (!bn && dstB != null) { let frontier = [dstB]; const vis = new Set([dstB]); for (let hop = 0; hop < 3 && !bn; hop++) { const nxt = []; for (const id of frontier) for (const L of copy.lines.values()) { if (!L.a || L.a.b !== id || !L.b || vis.has(L.b.b)) continue; vis.add(L.b.b); nxt.push(L.b.b); const f = flow(m1, L); if (f >= cap(L) * 0.98 && f > 0) { bn = { kind: 'PIPE', id: L.id, label: 'PIPE-' + L.id + ' بعد الوجهة', flow: r1(f), capacity: cap(L) }; break; } } frontier = nxt; } }
     out.bottleneck = bn; out.ok = true; return out;
   }
-  const api = { preview, LABEL };
+  /* READ-ONLY route of a recommended pipe action for the map overlay: the tiles the game's own planner would use.  Nothing is laid, nothing is stored. */
+  function route(env, a) {
+    try {
+      if (a.kind === 'LAY_PIPE') { const v = env.planPipe(env.store, env.net, env.ts, a.from, a.to, a.dia, { ignoreCash: true }); return v.ok ? { ok: true, tiles: v.path.map(p => [p[0], p[1]]), kind: 'NEW' } : { ok: false }; }
+      if (a.kind === 'CLOSE_PIPE') { const v = env.planClosePipe(env.store, env.net, env.ts, a.line, a.to, { ignoreCash: true }); return v.ok ? { ok: true, tiles: v.add.map(p => [p[0], p[1]]), kind: 'NEW' } : { ok: false }; }
+      if (a.kind === 'UPGRADE_PIPE') { const L = env.net.lines.get(a.line); return L ? { ok: true, tiles: L.path.map(p => [p[0], p[1]]), kind: 'WIDEN' } : { ok: false }; }
+    } catch (e) { }
+    return { ok: false };
+  }
+  const api = { preview, route, LABEL };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.OliFaultWhatIf = api;
 })(typeof window !== 'undefined' ? window : globalThis);

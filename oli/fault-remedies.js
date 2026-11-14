@@ -1,4 +1,5 @@
 /* Oli - fault-remedies.js : the REPAIR CATALOG (Phase 3).  PROPOSE AND PREVIEW ONLY: nothing here changes the game.
+ *   Every option carries `tier` ('SIMPLE' | 'MAJOR'), `advisory` (true = a recommendation only: no executor exists for it) and, for advisory ones, `manual` (the steps the player does by hand).
  *   forFault(f, env, rep) -> { code, role, refer, options: [ { id, titleAr, recommended, actions, cost, affordable, effect, preview, risks, notes } ] }
  * - actions are DECLARATIVE descriptors ({ kind: 'SET_LINE_OPEN', line }, { kind: 'DELETE_PIPE', line }, ...): they say what a later phase would do; no executor exists in this module.
  * - cost comes from the game's own prices (pipe $/tile by diameter, building cost, the 50% refund the game pays on demolition, planPipe's exact route price when a new pipe can be planned);
@@ -36,8 +37,21 @@
       if (days < 3) r.push(risk(days < 1 ? 'high' : 'warn', nameOf(env, b) + ' فيه مجال ' + nf(room) + ' برميل فقط: يمتلئ خلال ' + (days < 1 ? 'أقل من يوم' : days.toFixed(1) + ' يوم') + ' بالتدفق المستعاد، فيعود الحجب إن لم يُصرَّف المخزون.')); }
     return r; }
   const effectOf = rc => rc.bbl > 0 ? { recoverBblDay: rc.bbl, recoverUsdDay: rc.usd, wells: rc.wells, basis: 'حد أعلى: الإنتاج المفقود المنسوب لهذا السبب في آخر محاكاة (لا يُضمن كله)' } : { recoverBblDay: 0, recoverUsdDay: null, wells: 0, basis: 'لا إنتاج مفقود منسوب لهذا العطل' };
+  /* THE TIER TABLE (single source of truth).  SIMPLE = may be executed, only after the player's own approval (fault-repair.js).  Everything else is a MAJOR change = advice only.
+   * An action kind that is not listed here is MAJOR by default.  An option is SIMPLE only when ALL its actions are SIMPLE and it spends no money (a refund is not spending). */
+  const TIER = Object.freeze({ SET_LINE_OPEN: 'SIMPLE', SET_VALVE: 'SIMPLE', DELETE_PIPE: 'SIMPLE' });
+  const tierOf = kind => TIER[kind] === 'SIMPLE' ? 'SIMPLE' : 'MAJOR';
+  const optionTier = o => o.actions.length > 0 && !(o.cost && o.cost.pay > 0) && o.actions.every(a => tierOf(a.kind) === 'SIMPLE') ? 'SIMPLE' : 'MAJOR';
+  const manualSteps = o => { const out = [], pay = o.cost && o.cost.pay ? ' (التكلفة المتوقعة ' + usd(o.cost.pay) + ')' : '';
+    for (const a of o.actions) { if (a.kind === 'LAY_PIPE') out.push('افتح أداة مدّ الأنابيب، اختر القطر ' + a.dia + '، ثم اسحب من منفذ ' + a.from.port + ' في المنشأة #' + a.from.b + ' إلى منفذ ' + a.to.port + ' في المنشأة #' + a.to.b + pay + '، وراجع السعر الذي تعرضه اللعبة قبل التأكيد.');
+      else if (a.kind === 'CLOSE_PIPE') out.push('أغلق طرف PIPE-' + a.line + ' المفتوح بمدّه إلى منفذ ' + a.to.port + ' في المنشأة #' + a.to.b + pay + ' بأداة مدّ الأنابيب في اللعبة.');
+      else if (a.kind === 'UPGRADE_PIPE') out.push('ارفع قطر PIPE-' + a.line + ' إلى ' + a.to + ' من نصيحة الأنابيب في اللعبة (ترقية القطر)' + pay + '.');
+      else if (a.kind === 'DEMOLISH') out.push('اهدم المنشأة #' + a.id + ' من أداة الهدم في اللعبة (يُسترد ' + Math.round(REFUND * 100) + '% وفق قاعدة اللعبة).');
+      else if (a.kind === 'PLACE') out.push('ضع المنشأة الجديدة بنفسك من قائمة البناء.');
+      else out.push('نفّذ هذه الخطوة بنفسك من واجهة اللعبة العادية.'); }
+    if (!out.length) out.push('قرار إداري: لا خطوة آلية له، والتنفيذ بيدك.'); return out; };
   const mk = (id, titleAr, p) => Object.assign({ id, titleAr, recommended: false, actions: [], cost: money({}), affordable: true, effect: { recoverBblDay: 0, recoverUsdDay: null, wells: 0 }, preview: { changes: [], touches: [] }, risks: [], notes: [] }, p);
-  const fin = (env, o) => { o.affordable = env.cash === Infinity || env.cash >= o.cost.net; if (!o.affordable) o.risks.push(risk('warn', 'الرصيد الحالي لا يكفي لهذه الكلفة (' + usd(o.cost.net) + ').')); return o; };
+  const fin = (env, o) => { o.tier = optionTier(o); o.advisory = o.tier !== 'SIMPLE'; o.manual = o.advisory ? manualSteps(o) : []; o.affordable = env.cash === Infinity || env.cash >= o.cost.net; if (!o.affordable) o.risks.push(risk('warn', 'الرصيد الحالي لا يكفي لهذه الكلفة (' + usd(o.cost.net) + ').')); return o; };
   const pipeCap = (env, L, rc) => { const I = pipeInfo(env, L), after = I.flow + rc.bbl; return after > I.spec.capacity ? [risk('warn', 'التدفق المتوقع ' + nf(after) + ' برميل/يوم يفوق سعة القطر ' + I.dia + ' (' + nf(I.spec.capacity) + '): يُخنق الأنبوب ولن يُستعاد كل الإنتاج.')] : []; };
 
   /* ---------- the builders, by finding code ---------- */
@@ -117,6 +131,6 @@
   }
   /* the catalog of the whole report: every root cause (and every independent finding), bounded */
   function catalog(rep, env, o) { o = o || {}; const lim = o.limit || 40, out = []; for (const f of rep.faults) { if (out.length >= lim) break; if (f.rca && f.rca.role === 'SYMPTOM') continue; const r = forFault(f, env, rep); if (r.options.length) out.push({ no: f.no, code: f.code, remedy: r }); } return out; }
-  const api = { forFault, catalog, REFUND };
+  const api = { forFault, catalog, REFUND, TIER, tierOf, optionTier };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.OliFaultRemedies = api;
 })(typeof window !== 'undefined' ? window : globalThis);
