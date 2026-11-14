@@ -124,7 +124,7 @@
     tank(C, def, L) {
       const p = def.product, nm = prodName(C, p), SAFE = C.BC.SAFETY, o = {}, s = L ? L.s : null, cap = def.capacity.value;
       o.what = [infoOf(C, def.id).does || 'يخزّن ' + nm + '.', 'يقبل ' + nm + ' فقط؛ أي منتج آخر يُرفض.'];
-      if (p === 'CRUDE') o.what.push('نوعه يتحدد من توصيله: إن وصلته آبار فهو «مخزن إنتاج»، وإن لم يتصل بأنابيب فهو «تخزين تجاري» يقبل النفط المشترى.');
+      if (p === 'CRUDE' && !def.reserveOnly) o.what.push('نوعه يتحدد من توصيله: إن وصلته آبار فهو «مخزن إنتاج»، وإن لم يتصل بأنابيب فهو «تخزين تجاري» يقبل النفط المشترى.');
       if (ports(def).some(c => c.id === 'WATER_OUT')) o.what.push('له مخرج سفلي للماء المترسب يمكن توصيله بمضخة مياه.');
       o.how = ['ابنه قرب مصدره ووصّل أنبوباً إلى أحد منافذ الدخول وأنبوباً من أحد منافذ الخروج إلى الوجهة.', 'البيع من ☰ ← «بيع»: يُسحب من الخزانات.', 'الخزانات المتلاصقة من نفس المنتج تعمل مجموعة واحدة.'];
       o.in = [nm + ' من الأنابيب أو من الشراء.']; o.out = [nm + ' إلى الأنابيب الخارجة أو بالبيع.'];
@@ -214,13 +214,18 @@
     /* costs: build + daily operation + maintenance + variable */
     const K = [], O = C.EC && C.EC.OPERATING;
     K.push('البناء: ' + buildCost(C, def) + '.');
+    if (def.reserveOnly && C.EC && C.EC.reserveCostPreview) { const P = C.EC.reserveCostPreview(def, 1), Q = f => C.EC.reserveCostPreview(def, f).idle, M = v => '$' + n0(Math.round(v));
+      K.push('⚠️ قبل الشراء — تكلفة الإبقاء عليه (تشغيل + صيانة + تأمين + إدارة + عمالة + تخزين 0.015$ للبرميل يومياً):');
+      K.push('• فارغ: ' + M(Q(0).day) + ' يومياً · ' + M(Q(0).year) + ' سنوياً.');
+      for (const f of [0.25, 0.5, 0.75, 1]) K.push('• ممتلئ ' + Math.round(f * 100) + '%: ' + M(Q(f).day) + ' يومياً · ' + M(Q(f).year) + ' سنوياً.');
+      K.push('• مع تدفق كامل داخل/خارج: تُضاف نحو ' + M(P.busy.day - P.idle.day) + ' يومياً. يُبنى داخل مساحة الاحتياطي المفتوحة فقط، ولا يُرقّى ولا يتحول إلى تجاري.'); }
     if (def.operatingCost) K.push('التشغيل: حتى ' + money(def.operatingCost) + ' يومياً' + (O ? ' (' + pct(O.fixedShare) + ' منها ثابتة والباقي حسب الحمل)' : '') + '.');
     if (def.maintenanceCost) K.push('الصيانة: نحو ' + money(def.maintenanceCost) + ' يومياً، تُدفع تلقائياً (لا أعطال عشوائية ولا اهتلاك في اللعبة).');
     if (def.type === 'well' && C.EC && C.EC.VARIABLE) K.push('تكلفة الرفع: ' + money(C.EC.VARIABLE.liftingPerBbl) + ' لكل برميل منتج.');
     if (def.type === 'refinery' && C.EC && C.EC.MATERIAL_PRICE && C.EC.MATERIALS_REQUIRED !== false) K.push('الكيماويات ' + money(C.EC.MATERIAL_PRICE.CHEM) + ' للكغ (' + money(C.EC.MATERIAL_PRICE.CHEM * C.EC.MATERIAL_USE.CHEM.qty) + ' لكل برميل مكرَّر)، ومواد التشغيل ' + money(C.EC.MATERIAL_PRICE.OPS) + ' للوحدة (' + money(C.EC.MATERIAL_PRICE.OPS * C.EC.MATERIAL_USE.OPS.qty) + ' لكل برميل)' + (C.EC.MATERIALS_REQUIRED !== false ? ' — تُشترى مسبقاً وتُسحب من المخزون.' : ' — تُخصم تلقائياً من النقد، والمخزون المشترى (إن وُجد) يُستهلك أولاً.'));
     if (powerKW(C, def)) K.push('الكهرباء: حتى ' + n0(powerKW(C, def)) + ' كيلوواط من حصة شبكتك.');
     if (def.type === 'central') K.splice(0, K.length, 'المحطات المبنية مسبقاً جزء من الشبكة الممولة بقرض 100% (60 سنة · 6% · سماح سنتان).', 'صيانة وتشغيل الشبكة تُسجّل في حسابيها الخاصين ضمن التقرير المالي للشبكة.', 'نقطة ربط جديدة: ' + money(def.cost) + '.');
-    sec.cost = K;
+    sec.cost = K; if (def.reserveOnly) sec._open = ['cost'];
     return { sec, prof };
   }
   function generic(C, def) {
@@ -432,7 +437,7 @@
     let h = '<div class="hd"><span class="ic">' + doc.icon + '</span><div style="flex:1;min-width:0"><b>ℹ️ ' + esc(doc.name) + '</b><br><span class="pill t-' + tone + '">● ' + esc(doc.status.text) + '</span></div><button id="hlp-x" aria-label="إغلاق">✕</button></div><div class="bd" id="hlp-bd">';
     for (const x of doc.issues.filter(x => x.tone !== 'ok')) h += '<div class="iss t-' + x.tone + '">' + (x.tone === 'bad' ? '⛔ ' : x.tone === 'warn' ? '⚠️ ' : 'ℹ️ ') + x.t + (x.fix ? '<i>✔ الحل: ' + x.fix + '</i>' : '') + '</div>';
     if (!doc.issues.some(x => x.tone !== 'ok') && doc.issues.length) h += '<div class="iss t-ok">✅ ' + doc.issues[0].t + '</div>';
-    for (const [k, ic, t] of SECTIONS) { const L = doc.sec[k] || []; const op = openSet ? openSet.has(k) : (k === 'what' || k === 'state' || (k === 'fix' && doc.issues.some(x => x.tone !== 'ok'))); h += '<details data-k="' + k + '"' + (op ? ' open' : '') + '><summary>' + ic + ' ' + t + '</summary><ul>' + (L.length ? L : ['—']).map(x => '<li>' + x + '</li>').join('') + '</ul></details>'; }
+    for (const [k, ic, t] of SECTIONS) { const L = doc.sec[k] || []; const op = openSet ? openSet.has(k) : (k === 'what' || k === 'state' || (k === 'fix' && doc.issues.some(x => x.tone !== 'ok')) || (doc.sec._open || []).indexOf(k) >= 0); h += '<details data-k="' + k + '"' + (op ? ' open' : '') + '><summary>' + ic + ' ' + t + '</summary><ul>' + (L.length ? L : ['—']).map(x => '<li>' + x + '</li>').join('') + '</ul></details>'; }
     return h + '</div>';
   }
 

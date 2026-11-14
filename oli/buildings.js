@@ -36,7 +36,7 @@
       id: d.id, name: d.name, category: d.category, footprint: Object.freeze(d.footprint.slice()), cost: d.cost, maintenanceCost: d.maintenanceCost, buildTime: d.buildTime,
       connections: Object.freeze((d.connections || []).map(c => Object.freeze(Object.assign({ kind: 'pipe', required: true }, c)))),
       allowedTerrain: Object.freeze(d.allowedTerrain.slice()), maxSlope: d.maxSlope, capacity: Object.freeze(d.capacity), visual: d.visual,
-      zone: d.zone || null, requires: Object.freeze(d.requires || {}), clearance: d.clearance || 0, rotatable: d.rotatable !== false, status: d.status || STATUS.UNDER_CONSTRUCTION,
+      zone: d.zone || null, reserveOnly: !!d.reserveOnly, noUpgrade: !!d.noUpgrade, requires: Object.freeze(d.requires || {}), clearance: d.clearance || 0, rotatable: d.rotatable !== false, status: d.status || STATUS.UNDER_CONSTRUCTION,
       section: d.section || d.category, family: d.family || null, type: d.type || null, size: d.size || null, product: d.product || null, params: d.params || null, operatingCost: d.operatingCost || 0, baseCost: d.baseCost || null, costPerBarrel: d.costPerBarrel || null, costRange: d.costRange || null,
       safetyZone: d.clearance || 0, level: Object.freeze({ level: 1, capacityMultiplier: 1, efficiencyMultiplier: 1, pressureMultiplier: 1, maintenanceMultiplier: 1 })
     });
@@ -80,12 +80,15 @@
     pt('OUTPUT_E', 'pipe', 'out', [w - 1, mid(h)], 0, { group: 'OUTPUT', required: false, product: prod }), pt('OUTPUT_S', 'pipe', 'out', [mid(w), h - 1], 2, { group: 'OUTPUT', required: false, product: prod }),
     pt('INPUT_E', 'pipe', 'in', [w - 1, other(h)], 0, { group: 'INPUT', product: prod }), pt('INPUT_S', 'pipe', 'in', [other(w), h - 1], 2, { group: 'INPUT', product: prod }),
     pt('OUTPUT_W', 'pipe', 'out', [0, other(h)], 1, { group: 'OUTPUT', required: false, product: prod }), pt('OUTPUT_N', 'pipe', 'out', [other(w), 0], 3, { group: 'OUTPUT', required: false, product: prod })];
+  /* the GIANT store: 4 ports per side at cells 3, 8, 13, 18 (in, out, in, out) = 8 inputs + 8 outputs; ids INPUT_<side><n> / OUTPUT_<side><n> */
+  const giantPorts = (w, h, prod) => { const o = [], at = [3, 8, 13, 18], sd = [['E', 0, i => [w - 1, i]], ['W', 1, i => [0, i]], ['S', 2, i => [i, h - 1]], ['N', 3, i => [i, 0]]];
+    for (const [nm, side, cell] of sd) for (let n = 0; n < 4; n++) { const inn = n % 2 === 0, k = (n >> 1) + 1; o.push(pt((inn ? 'INPUT_' : 'OUTPUT_') + nm + k, 'pipe', inn ? 'in' : 'out', cell(at[n]), side, inn ? { group: 'INPUT', product: prod } : { group: 'OUTPUT', required: false, product: prod })); } return o; };
   const VIS = { WATER: 'water_tank', CRUDE: 'crude_tank', GASOLINE: 'gasoline_tank', DIESEL: 'diesel_tank', JET_FUEL: 'jet_tank', GAS: 'gas_sphere' };
   for (const fam of Object.keys(CFG.TANK)) { const F = CFG.TANK[fam];
-    for (const k of ['S', 'M', 'L', 'C']) { const z = F.sizes[k], gas = fam === 'GAS'; if (!z) continue;
-      define({ id: F.prefix + '_' + k.toLowerCase(), name: F.name + ' (' + { S: 'small', M: 'medium', L: 'large', C: 'central' }[k] + ')', category: gas ? 'PRODUCT_STORAGE' : fam === 'CRUDE' ? 'CRUDE_STORAGE' : fam === 'WATER' ? 'WATER' : 'PRODUCT_STORAGE', section: fam === 'CRUDE' ? 'CRUDE STORAGE' : fam === 'WATER' ? 'WATER' : 'PRODUCT STORAGE', family: gas ? 'GAS_STORAGE' : 'TANK', type: gas ? 'gas' : 'tank', product: P[fam], size: k,
-        footprint: [z.w, z.h], cost: z.base + z.cap * (z.perBbl || F.perBbl), baseCost: z.base, costPerBarrel: z.perBbl || F.perBbl, maintenanceCost: z.maint, operatingCost: z.op, buildTime: 25 + z.w * 8, visual: VIS[fam], clearance: gas || k === 'L' || k === 'C' ? 1 : 0,
-        allowedTerrain: STABLE, maxSlope: gas ? 3 : 4, capacity: { value: z.cap, unit: gas ? 'boe' : 'bbl' }, params: Object.assign({ maxPressure: gas ? F.maxPressure[k] : 0 }, z), connections: tankPorts(z.w, z.h, P[fam]).concat(fam === 'CRUDE' && k !== 'S' ? [pt('WATER_OUT', 'pipe', 'out', [z.w - 1, z.h - 1], 0, { group: 'WATER', required: false, product: P.WATER })] : []) }); } }   // the bottom outlet of an oil tank (M / L / C): only the water that settled at the bottom can leave through it
+    for (const k of ['S', 'M', 'L', 'C', 'G']) { const z = F.sizes[k], gas = fam === 'GAS'; if (!z) continue;
+      define({ id: F.prefix + '_' + k.toLowerCase(), name: F.name + ' (' + { S: 'small', M: 'medium', L: 'large', C: 'central', G: 'giant' }[k] + ')', category: gas ? 'PRODUCT_STORAGE' : fam === 'CRUDE' ? 'CRUDE_STORAGE' : fam === 'WATER' ? 'WATER' : 'PRODUCT_STORAGE', section: fam === 'CRUDE' ? 'CRUDE STORAGE' : fam === 'WATER' ? 'WATER' : 'PRODUCT STORAGE', family: gas ? 'GAS_STORAGE' : 'TANK', type: gas ? 'gas' : 'tank', product: P[fam], size: k,
+        footprint: [z.w, z.h], cost: z.base + z.cap * (z.perBbl == null ? F.perBbl : z.perBbl), baseCost: z.base, costPerBarrel: z.perBbl == null ? F.perBbl : z.perBbl, reserveOnly: !!z.reserveOnly, noUpgrade: !!z.reserveOnly, maintenanceCost: z.maint, operatingCost: z.op, buildTime: 25 + z.w * 8, visual: VIS[fam], clearance: gas || k === 'L' || k === 'C' || k === 'G' ? 1 : 0,
+        allowedTerrain: STABLE, maxSlope: gas ? 3 : 4, capacity: { value: z.cap, unit: gas ? 'boe' : 'bbl' }, params: Object.assign({ maxPressure: gas ? F.maxPressure[k] : 0 }, z), connections: (k === 'G' ? giantPorts(z.w, z.h, P[fam]) : tankPorts(z.w, z.h, P[fam])).concat(fam === 'CRUDE' && k !== 'S' ? [pt('WATER_OUT', 'pipe', 'out', [z.w - 1, z.h - 1], 0, { group: 'WATER', required: false, product: P.WATER })] : []) }); } }   // the bottom outlet of an oil tank (M / L / C): only the water that settled at the bottom can leave through it
   define({ id: 'separator', name: 'Separator', category: 'PROCESSING', section: 'PROCESSING', family: 'SEPARATOR', type: 'separator', footprint: [CFG.SEPARATOR.w, CFG.SEPARATOR.h], cost: CFG.SEPARATOR.cost, maintenanceCost: CFG.SEPARATOR.maint, operatingCost: CFG.SEPARATOR.op, buildTime: 60, visual: 'separator',
     allowedTerrain: SOLID, maxSlope: 3, capacity: { value: CFG.SEPARATOR.cap, unit: 'bbl/day' }, params: CFG.SEPARATOR,
     connections: [pt('MIXTURE_IN', 'pipe', 'in', [0, 1], 1, { product: P.CRUDE }), pt('OIL_OUT', 'pipe', 'out', [CFG.SEPARATOR.w - 1, 1], 0, { product: P.CRUDE }), pt('GAS_OUT', 'pipe', 'out', [2, 0], 3, { required: false, product: P.GAS }), pt('WATER_OUT', 'pipe', 'out', [2, CFG.SEPARATOR.h - 1], 2, { required: false, product: P.WATER })] });
@@ -231,6 +234,7 @@
         if (x < o.x + ow + c && x + w > o.x - c && y < o.y + oh + c && y + h > o.y - c) return fail('CLEARANCE', 'tooClose', { with: o.id });
       }
       if (ts.reserveRule) { const rr = ts.reserveRule(def, x, y, w, h); if (rr) { if (!rr.ok) return fail('ZONE', rr.reason, { zone: 'RESERVE' }); if (!rr.infra) res.reserve = true; } }
+      if (def.reserveOnly && !res.reserve) return fail('ZONE', 'giantReserveOnly', { zone: 'RESERVE' });      // the giant store exists in the Strategic Reserve only (inside the open area), never as commercial storage
       if (def.zone) { const z = ts.zoneAt(def.zone, x, y, w, h); if (!z) return fail('ZONE', 'needsZone', { zone: def.zone }); res.zoneId = z.id || null; }
       if (def.requires.oilField) {
         const s = ts.oilFieldAt(x, y); if (!s || s.kind !== 'FIELD') return fail('OIL', 'noOilField');
