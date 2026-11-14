@@ -10,6 +10,7 @@
 (function (root) {
   'use strict';
   const nodeReq = typeof require === 'function' && typeof module !== 'undefined';
+  const FG = nodeReq ? require('./fault-graph.js') : root.OliFaultGraph;
   const BD = nodeReq ? require('./buildings.js') : root.OliBuildings, CF = nodeReq ? require('./building-config.js') : root.OliBuildingConfig;
   const DEFS = BD.DEFS, worldPoints = BD.worldPoints, compatible = BD.compatible, PIPES = CF.PIPES, ANY = '*';
 
@@ -90,8 +91,11 @@
           effect: 'لا يمر عبره أي تدفق (المحاكاة تتجاهل الخطوط ذات الطرف المفتوح)' + (hb ? '؛ المنفذ ' + have.port + ' في ' + nameOf(hb) + ' يبقى بلا مسار.' : '.'), fix: 'أكمل الأنبوب بتوصيل طرفه الحر بالمنفذ الصحيح (أو احذفه إن كان بقايا).', evidence: { line: L.id, openEnd: missing } });
         continue; }
       for (const end of ['a', 'b']) { const ref = L[end], b = ends[end];
-        if (!b) { flag({ code: 'MISSING_BUILDING', severity: 'CRITICAL', element: me, x: (end === 'a' ? first : last)[0], y: (end === 'a' ? first : last)[1], prev: end === 'b' ? endLabel(L.a, L) : null, next: end === 'a' ? endLabel(L.b, L) : null,
-            cause: 'الطرف ' + (end === 'a' ? 'الأول' : 'الأخير') + ' من ' + pipeLabel(L) + ' يشير إلى المنشأة #' + ref.b + ' وهي غير موجودة في المخزن (حُذفت دون حذف الأنبوب).', effect: 'الأنبوب لا يحمل أي تدفق.', fix: 'احذف هذا الأنبوب أو أعد توصيله بمنشأة قائمة.', evidence: { line: L.id, missing: ref.b } }); continue; }
+        if (!b) { const oe = end === 'a' ? 'b' : 'a', ob = ends[oe], op = ob && L[oe] ? ports.get(pk(L[oe].b, L[oe].port)) : null, stranded = !!(ob && op && op.required !== false);      // the engine ignores a pipe with a missing end (industry.js): the severity follows what the pipe's OTHER end loses, not the fact itself
+          flag({ code: 'MISSING_BUILDING', severity: !ob ? 'LOW' : stranded ? 'CRITICAL' : 'MEDIUM', element: me, x: (end === 'a' ? first : last)[0], y: (end === 'a' ? first : last)[1], prev: end === 'b' ? endLabel(L.a, L) : null, next: end === 'a' ? endLabel(L.b, L) : null,
+            cause: 'الطرف ' + (end === 'a' ? 'الأول' : 'الأخير') + ' من ' + pipeLabel(L) + ' يشير إلى المنشأة #' + ref.b + ' وهي غير موجودة في المخزن (حُذفت دون حذف الأنبوب).',
+            effect: !ob ? 'بقايا أنبوب: لا يحمل تدفقاً ولا يعطّل أي منشأة قائمة (طرفاه كلاهما بلا منشأة).' : stranded ? 'الأنبوب لا يحمل أي تدفق، ويترك المنفذ ' + L[oe].port + ' في ' + nameOf(ob) + ' بلا مسار.' : 'الأنبوب لا يحمل أي تدفق (المنفذ ' + L[oe].port + ' في ' + nameOf(ob) + ' اختياري فلا يتعطل شيء).',
+            fix: !ob ? 'احذف هذا الأنبوب لتنظيف الشبكة (اختياري: لا أثر له على الإنتاج).' : 'احذف هذا الأنبوب أو أعد توصيله بمنشأة قائمة.', evidence: { line: L.id, missing: ref.b, leftover: !ob } }); continue; }
         const p = ports.get(pk(ref.b, ref.port));
         if (!p) { flag({ code: 'BAD_PORT', severity: 'CRITICAL', element: me, x: (end === 'a' ? first : last)[0], y: (end === 'a' ? first : last)[1], prev: null, next: null,
             cause: 'الأنبوب ' + pipeLabel(L) + ' يستخدم المنفذ «' + ref.port + '» في ' + nameOf(b) + ' وهذا المنفذ غير موجود (أو محجوز) في تعريف هذه المنشأة.', effect: 'الأنبوب لا يحمل أي تدفق.', fix: 'أعد توصيل الأنبوب بمنفذ صحيح من ' + DEFS[b.d].name + '.', evidence: { line: L.id, port: ref.port } }); continue; }
@@ -248,18 +252,41 @@
             evidence: { out: s._out, target: s._target, culprit: known ? tr.culprit.label : null } }); } }
     }
 
+    /* ---------- one pipe, one finding: the same structural fault found on BOTH ends of the same pipe is merged (the second end only adds its place and its cause) ---------- */
+    for (const code of ['MISSING_BUILDING', 'BAD_PORT', 'WRONG_POINT']) { const byEl = new Map(); for (const f of faults) if (f.code === code && f.element.type === 'PIPE') { const a = byEl.get(f.element.id); if (a) a.push(f); else byEl.set(f.element.id, [f]); }
+      for (const [, g] of byEl) { if (g.length < 2) continue; const m = g[0], rest = g.slice(1); m.merged = g.length; m.locations = g.map(f => ({ x: f.x, y: f.y })); m.next = m.next || rest[0].next; m.prev = m.prev || rest[0].prev; m.severity = g.reduce((a, f) => sevOf(f.severity) < sevOf(a) ? f.severity : a, 'LOW'); m.sev = m.severity;
+        m.cause = code === 'MISSING_BUILDING' ? 'طرفا ' + m.element.label + ' يشيران إلى منشأتين غير موجودتين (' + g.map(f => '#' + f.evidence.missing).join(' و') + ') — حُذفتا دون حذف الأنبوب.' : g.map(f => f.cause).join(' ');
+        m.evidence = Object.assign({}, m.evidence, { ends: g.map(f => f.evidence), missing: code === 'MISSING_BUILDING' ? g.map(f => f.evidence.missing) : undefined, leftover: code === 'MISSING_BUILDING' ? g.every(f => f.evidence.leftover) : undefined });
+        if (code === 'MISSING_BUILDING' && g.every(f => f.evidence.leftover)) { m.effect = 'بقايا أنبوب: لا يحمل تدفقاً ولا يعطّل أي منشأة قائمة (طرفاه كلاهما بلا منشأة).'; m.fix = 'احذف هذا الأنبوب لتنظيف الشبكة (اختياري: لا أثر له على الإنتاج).'; }
+        for (const f of rest) faults.splice(faults.indexOf(f), 1); } }
+
     /* ---------- numbering: by severity, then by id ---------- */
     const grp = f => f.indicator ? 2 : f.confirmed ? 0 : 1;
     faults.sort((a, b) => grp(a) - grp(b) || sevOf(a.severity) - sevOf(b.severity) || a.id - b.id);
     faults.forEach((f, i) => { f.no = i + 1; });
     for (const f of faults) if (f.code === 'BLOCKED') { f.cause = f.cause.replace(/رقم ([\d، ]+)/, (m, ids) => 'رقم ' + ids.split('، ').map(id => { const o = faults.find(z => z.id === +id); return o ? o.no : id; }).join('، ')); }
+    /* ---------- root-cause analysis (read-only): which fault causes which symptom, what lies after it, how much production is lost (each well counted once) ---------- */
+    let rca = null; try { rca = FG ? FG.analyze({ faults, crudePrice: opts.crudePrice,
+      byId: id => byId.get(id), label: el => el.type === 'PIPE' ? 'PIPE-' + el.id : (byId.get(el.id) ? nameOf(byId.get(el.id)) : '#' + el.id),
+      wellLoss: id => { const b = byId.get(id), d = b && DEFS[b.d], nominal = d && d.capacity ? d.capacity.value : 0; if (solved && b && b.s && b.s._target != null) return { loss: Math.max(0, (b.s._target || 0) - (b.s._out || 0)), nominal, basis: 'engine' }; return { loss: nominal, nominal, basis: 'nominal' }; },
+      outLines: id => lines.filter(L => (L.a && L.a.b === id) || (L.b && L.b.b === id)).map(L => L.id),
+      downstream: (el, cap) => { const members = new Set(), items2 = [], seen = new Set(), st = []; let count = 0, truncated = false;
+        const push = k => { if (!seen.has(k)) { seen.add(k); st.push(k); } };
+        if (el.type === 'PIPE') { const L = net.lines.get ? net.lines.get(el.id) : lines.find(z => z.id === el.id); members.add('PIPE:' + el.id);
+          if (L) for (const e of [L.a, L.b]) { if (!e || !byId.get(e.b)) continue; const pr = (portsOf.get(e.b) || []).find(p => p.id === e.port); if (pr && pr.role === 'out') continue; push(pk(e.b, e.port) + '<'); } }
+        else { members.add('BUILDING:' + el.id); const b = byId.get(el.id); for (const p of (b && portsOf.get(b.id)) || []) if (p.role !== 'in') { const k = pk(b.id, p.id) + '>'; if (fwd.has(k)) push(k); } if (b && fwd.size) for (const k of nextNodes(pk(b.id, (portsOf.get(b.id) || [{ id: '' }])[0].id) + '<')) push(k); }
+        while (st.length) { const k = st.pop(); if (count >= cap) { truncated = true; break; }
+          if (k.endsWith('>')) { for (const e of fwd.get(k) || []) { if (e.line) members.add('PIPE:' + e.line.id); push(e.to); } }
+          else { const b = bOf(k); if (b && !members.has('BUILDING:' + b.id) && !(el.type === 'BUILDING' && b.id === el.id)) { members.add('BUILDING:' + b.id); count++; const dd = DEFS[b.d]; if (dd) items2.push({ type: 'BUILDING', id: b.id, label: nameOf(b), kind: dd.type }); } for (const k2 of nextNodes(k)) push(k2); } }
+        return { items: items2, count, truncated, members }; } }) : null; } catch (e) { rca = null; notes.push('تعذّر تحليل السبب الجذري: ' + e.message); }
+
     const confirmed = faults.filter(f => f.confirmed), warnings = faults.filter(f => !f.confirmed && !f.indicator), indicators = faults.filter(f => f.indicator);
     const dockEdges = [...dock].filter(([k, k2]) => k < k2).length, connections = lines.length + dockEdges, healthyLines = lines.filter(L => !lineProblem.has(L.id)).map(L => L.id);
     const healthyBuildings = items.filter(b => DEFS[b.d] && DEFS[b.d].type !== 'central' && !buildingProblem.has(b.id)).length, nb = items.filter(b => DEFS[b.d] && DEFS[b.d].type !== 'central').length;
     const total = lines.length + nb, healthy = healthyLines.length + healthyBuildings;
     const stats = { buildings: nb, lines: lines.length, docked: dockEdges, checked: total, connections, healthyConnections: healthyLines.length + dockEdges, faults: confirmed.length, warnings: warnings.length, indicators: indicators.length, critical: faults.filter(f => f.severity === 'CRITICAL').length,
       health: total ? Math.round(healthy / total * 1000) / 10 : 100, healthyElements: healthy, solved };
-    return { faults, stats, healthyLines, notes, SEV, OK_COLOR };
+    return { faults, stats, healthyLines, notes, SEV, OK_COLOR, rca };
   }
 
   const api = { run, SEV, OK_COLOR, KIND_AR };
