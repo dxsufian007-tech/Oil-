@@ -10,6 +10,7 @@
 (function (root) {
   'use strict';
   const nodeReq = typeof require === 'function' && typeof module !== 'undefined';
+  const FG = nodeReq ? require('./fault-graph.js') : root.OliFaultGraph;
   const BD = nodeReq ? require('./buildings.js') : root.OliBuildings, CF = nodeReq ? require('./building-config.js') : root.OliBuildingConfig;
   const DEFS = BD.DEFS, worldPoints = BD.worldPoints, compatible = BD.compatible, PIPES = CF.PIPES, ANY = '*';
 
@@ -264,13 +265,28 @@
     faults.sort((a, b) => grp(a) - grp(b) || sevOf(a.severity) - sevOf(b.severity) || a.id - b.id);
     faults.forEach((f, i) => { f.no = i + 1; });
     for (const f of faults) if (f.code === 'BLOCKED') { f.cause = f.cause.replace(/رقم ([\d، ]+)/, (m, ids) => 'رقم ' + ids.split('، ').map(id => { const o = faults.find(z => z.id === +id); return o ? o.no : id; }).join('، ')); }
+    /* ---------- root-cause analysis (read-only): which fault causes which symptom, what lies after it, how much production is lost (each well counted once) ---------- */
+    let rca = null; try { rca = FG ? FG.analyze({ faults, crudePrice: opts.crudePrice,
+      byId: id => byId.get(id), label: el => el.type === 'PIPE' ? 'PIPE-' + el.id : (byId.get(el.id) ? nameOf(byId.get(el.id)) : '#' + el.id),
+      wellLoss: id => { const b = byId.get(id), d = b && DEFS[b.d], nominal = d && d.capacity ? d.capacity.value : 0; if (solved && b && b.s && b.s._target != null) return { loss: Math.max(0, (b.s._target || 0) - (b.s._out || 0)), nominal, basis: 'engine' }; return { loss: nominal, nominal, basis: 'nominal' }; },
+      outLines: id => lines.filter(L => (L.a && L.a.b === id) || (L.b && L.b.b === id)).map(L => L.id),
+      downstream: (el, cap) => { const members = new Set(), items2 = [], seen = new Set(), st = []; let count = 0, truncated = false;
+        const push = k => { if (!seen.has(k)) { seen.add(k); st.push(k); } };
+        if (el.type === 'PIPE') { const L = net.lines.get ? net.lines.get(el.id) : lines.find(z => z.id === el.id); members.add('PIPE:' + el.id);
+          if (L) for (const e of [L.a, L.b]) { if (!e || !byId.get(e.b)) continue; const pr = (portsOf.get(e.b) || []).find(p => p.id === e.port); if (pr && pr.role === 'out') continue; push(pk(e.b, e.port) + '<'); } }
+        else { members.add('BUILDING:' + el.id); const b = byId.get(el.id); for (const p of (b && portsOf.get(b.id)) || []) if (p.role !== 'in') { const k = pk(b.id, p.id) + '>'; if (fwd.has(k)) push(k); } if (b && fwd.size) for (const k of nextNodes(pk(b.id, (portsOf.get(b.id) || [{ id: '' }])[0].id) + '<')) push(k); }
+        while (st.length) { const k = st.pop(); if (count >= cap) { truncated = true; break; }
+          if (k.endsWith('>')) { for (const e of fwd.get(k) || []) { if (e.line) members.add('PIPE:' + e.line.id); push(e.to); } }
+          else { const b = bOf(k); if (b && !members.has('BUILDING:' + b.id) && !(el.type === 'BUILDING' && b.id === el.id)) { members.add('BUILDING:' + b.id); count++; const dd = DEFS[b.d]; if (dd) items2.push({ type: 'BUILDING', id: b.id, label: nameOf(b), kind: dd.type }); } for (const k2 of nextNodes(k)) push(k2); } }
+        return { items: items2, count, truncated, members }; } }) : null; } catch (e) { rca = null; notes.push('تعذّر تحليل السبب الجذري: ' + e.message); }
+
     const confirmed = faults.filter(f => f.confirmed), warnings = faults.filter(f => !f.confirmed && !f.indicator), indicators = faults.filter(f => f.indicator);
     const dockEdges = [...dock].filter(([k, k2]) => k < k2).length, connections = lines.length + dockEdges, healthyLines = lines.filter(L => !lineProblem.has(L.id)).map(L => L.id);
     const healthyBuildings = items.filter(b => DEFS[b.d] && DEFS[b.d].type !== 'central' && !buildingProblem.has(b.id)).length, nb = items.filter(b => DEFS[b.d] && DEFS[b.d].type !== 'central').length;
     const total = lines.length + nb, healthy = healthyLines.length + healthyBuildings;
     const stats = { buildings: nb, lines: lines.length, docked: dockEdges, checked: total, connections, healthyConnections: healthyLines.length + dockEdges, faults: confirmed.length, warnings: warnings.length, indicators: indicators.length, critical: faults.filter(f => f.severity === 'CRITICAL').length,
       health: total ? Math.round(healthy / total * 1000) / 10 : 100, healthyElements: healthy, solved };
-    return { faults, stats, healthyLines, notes, SEV, OK_COLOR };
+    return { faults, stats, healthyLines, notes, SEV, OK_COLOR, rca };
   }
 
   const api = { run, SEV, OK_COLOR, KIND_AR };
