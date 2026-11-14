@@ -57,8 +57,8 @@
     const cn = env.cn(), el = document.getElementById('cn-body'); if (!cn || !el) return; const CLS = env.CEN.CLASS, rep = env.company.centralReport && env.company.centralReport(), c = chInfo(sel);
     let h = '<div id="cn-chips">' + env.CEN.CHANNELS.map(k => { const i = chInfo(k); return '<button data-ch="' + k + '" class="' + (k === sel ? 'on' : '') + '" style="--c:' + env.CEN.COLOR[k] + '"><span style="color:' + env.CEN.COLOR[k === 'CRUDE' ? 'CRUDE' : k] + ';text-shadow:0 0 2px #fff">●</span> ' + NAME[k] + ' · ' + (ST[i.status] || i.status) + '</button>'; }).join('') + '</div>';
     h += '<table><tr><td>الحالة</td><td style="color:' + seg(c).cls + '">' + (ST[c.status] || c.status) + (c.hasFault ? ' · مقطع مقطوع' : '') + '</td></tr>'
-      + '<tr><td>التدفق الآن</td><td>' + num(c.flow, 0) + ' bbl/يوم</td></tr><tr><td>السعة التصميمية للمقطع</td><td>' + CLS.capacity.toLocaleString() + ' bbl/يوم</td></tr>'
-      + '<tr><td>الضغط (متوسط مرجّح)</td><td>' + num(c.pressure, 0) + ' psi (الأقصى ' + CLS.maxPressure + ')</td></tr>'
+      + '<tr><td>التدفق الآن</td><td>' + num(c.flow, 0) + ' bbl/يوم</td></tr><tr><td>السعة التصميمية للمقطع</td><td>' + CLS.capacity.toLocaleString('en-US') + ' bbl/يوم</td></tr>'
+      + '<tr><td>الضغط (متوسط مرجّح)</td><td>' + num(c.pressure, 0) + ' psi <span class="es-sm">(الأقصى ' + CLS.maxPressure + ' psi)</span></td></tr>'
       + '<tr><td>الاتجاه</td><td>' + (c.dir > 0 ? 'من الشمال/الغرب نحو الجنوب/الشرق (a→b)' : c.dir < 0 ? 'عكس اتجاه الرسم (b→a)' : c.flow > 0 ? 'متوازن' : 'لا حركة') + '</td></tr>'
       + '<tr><td>الكمية داخل الشبكة</td><td>' + num(c.qty, 0) + ' bbl</td></tr><tr><td>المضخات</td><td>' + c.pumpsOk + ' / ' + c.pumps + ' سليمة</td></tr><tr><td>إجمالي ما نُقل</td><td>' + num(c.moved, 0) + ' bbl</td></tr></table>'
       + '<div><button class="act" id="cn-open">' + (c.state === 'CLOSED' ? '▶ فتح القناة' : '⏸ إغلاق القناة') + '</button><button class="act" id="cn-pump">' + (c.pumpsOk < c.pumps ? '🔧 إصلاح المضخات' : '⚠ تعطيل مضخات القناة') + '</button></div>'
