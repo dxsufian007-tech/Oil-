@@ -32,4 +32,6 @@ for (const label of [1, 2, 5]) { const gm = game(1e6), co = gm.co; co.setSpeed(c
   { const x = game(1e6).co, d = JSON.parse(JSON.stringify(x.toJSON())); delete d.speed; delete d.lastSpeed; const y = game(1e6).co; y.fromJSON(d); T('13b a save with no speed field starts at x1', y.speed === 0.5, y.speed); }
   T('13 a save with speed 5 loads with speed 5 (same rate as before)', b.speed === 5 && b.lastSpeed === 5);
   const old = JSON.parse(JSON.stringify(j)); T('14 the only new save field is speedRef = 1 (a marker; older versions ignore it)', old.speedRef === 1 && !('speedUnit' in old)); }
+/* pacing when the device is behind the chosen speed (timing only: every game hour is still computed in full and in order) */
+{ const TT = EC.TIME; T('15 behind-the-speed pacing: bigger slice and share than the normal live pacing, same for the moving / still map', TT.behindHours > 0 && TT.behindBudgetMs > TT.liveBudgetMs && TT.behindBudgetStillMs > TT.liveBudgetStillMs && TT.behindShare > TT.liveShare && TT.behindShareStill > TT.liveShareStill && TT.behindShareStill < 1 && TT.behindHours < TT.liveBacklogHours, TT); }
 console.log(fail ? '\nSPEED DEFINITION TESTS FAILED (' + fail + ')' : '\nSPEED DEFINITION TESTS PASSED (' + pass + ' checks)'); process.exit(fail ? 1 : 0);
