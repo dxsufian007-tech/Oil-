@@ -1,0 +1,30 @@
+name: OLI EMPIRE official release 1.4 (publishes the already-built, already-verified candidate APK)
+
+# Owner-approved on 2026-11-15 ("الاثنان معاً"). Publishes the candidate APK built by official-candidate-apk.yml (versionCode 401, package com.oli.olicentral, fixed key) as a GitHub Release.
+# It re-verifies the SHA-256 and the signing key before publishing. Runs once when this file is pushed to main (or by hand).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/official-release-14.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: official-candidate-apk-build
+      - name: Verify checksum and signing key, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          F=OliEmpire-final-7881026-r1.apk
+          test "$(sha256sum $F | cut -d' ' -f1)" = "bc06d954335547c07320910146c7a479fa61a958d5b620d11cdbfb9503392a1b" || { echo "checksum mismatch"; exit 1; }
+          BT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+          ${BT}apksigner verify --print-certs $F | tee /tmp/certs.txt
+          grep -qi "SHA-256 digest: 3f5e924227aef8c5d1783ae6677db8b9b0a36a1c7b086b457133e6a4375e1aaf" /tmp/certs.txt || { echo "APK is NOT signed with the fixed key"; exit 1; }
+          gh release create official-1.4-7881026-r1 $F $F.sha256 --repo "$GITHUB_REPOSITORY" --target c65821696e3f0099e5e4fbfb57eb4d254b67f58a --title "OLI EMPIRE 1.4 (7881026): giant reserve tank, auto reserve selling, pipe and joint upgrades" --notes "versionName 1.4-7881026, versionCode 401, package com.oli.olicentral, official fixed key. SHA-256 bc06d954335547c07320910146c7a479fa61a958d5b620d11cdbfb9503392a1b. Built 2026-11-14 by CI (npm test + key check). Not tested on a real Android device. Rollback: branch backup/main-before-release-1.4 (6527ac7)."
