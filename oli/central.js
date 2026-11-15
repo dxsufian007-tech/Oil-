@@ -264,7 +264,7 @@
       let got = 0, remaining = want, guard = 0; const sid = d.s.id, db = d.b, dp = d.port;
       while (remaining > EPS && guard++ < 6) {
         const pl = this.plan(ch, srcId, sid, remaining, f.p, commit ? null : over); if (!pl) break;
-        const probeAcc = sim.offer(db, dp, { ...f, r: pl.r, p: pl.p }, commit, vis);
+        const fr0 = f.r, fp0 = f.p; f.r = pl.r; f.p = pl.p; const probeAcc = sim.offer(db, dp, f, commit, vis); f.r = fr0; f.p = fp0;      // perf: same flow object, rate / pressure set for the call and put back (no copy)
         if (probeAcc <= EPS) break;
         if (commit) this._apply(ch, pl, probeAcc);
         got += probeAcc; remaining -= probeAcc; if (probeAcc < pl.r - 1e-6) break;

@@ -455,7 +455,7 @@
       if (e.lvl && f.sv != null && this.ensure(farB).vol != null) { const fs = this.ensure(farB), fd = DEFS[farB.d], fc = fd.capacity.value * levelOf(farB).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
       const ratio = r / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * (e.lr === ratio ? e.lp : (e.lp = Math.pow(ratio, SIM.frictionExp), e.lr = ratio, e.lp)) * (e.line && CFG.PIPES[e.line.dia] ? CFG.PIPES[e.line.dia].fric : 1); let p = f.p - loss;
       if (p < 0) { r *= Math.max(0, f.p / (loss || 1)); p = 0; if (commit) e.lowP = true; }
-      if (r <= 1e-9) return 0; const acc = this.accept(farB, farP, { ...f, r, p }, commit, vis);
+      if (r <= 1e-9) return 0; const fr0 = f.r, fp0 = f.p; f.r = r; f.p = p; const acc = this.accept(farB, farP, f, commit, vis); f.r = fr0; f.p = fp0;      // perf: the far device gets this same flow object with the new rate / pressure for the length of the call (no copy per hop); it is put back before anything else reads it
       if (commit && acc > 0) { e.flow += acc; e.p = p; e.prod = f.prod; if (e.line) e.line.flow = e.flow; if (p > e.maxP) e.hiP = true; }
       return acc;
     }
