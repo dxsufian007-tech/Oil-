@@ -10,7 +10,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   await ev(() => { localStorage.clear(); __lab.reset(); __lab.company.speed = 0; }); await p.waitForTimeout(350); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 });
   await p.locator('#eh-menu').tap(); await p.locator('#es-tabs [data-tab=market]').tap();
   let body = await p.textContent('#es-body'); const px0 = await ev(() => __lab.company.market.price.CRUDE);
-  ok(await p.locator('[data-mk=sec] button').count() === 3 && /سوق خام برنت/.test(body) && /سوق المنتجات النفطية/.test(body) && /التداول والعمق/.test(body), 'the market screen offers Brent crude, oil products and the trading desk (S2)');
+  ok(await p.locator('[data-mk=sec] button').count() === 4 && /سوق خام برنت/.test(body) && /سوق المنتجات النفطية/.test(body) && /التداول والعمق/.test(body), 'the market screen offers Brent crude, oil products, the trading desk (S2) and the analytics (S4)');
   ok(body.includes('$' + px0.toFixed(2)) && /خام برنت/.test(await p.textContent('[data-mk=price]')), 'the price card shows the name and the price used for trading ($' + px0.toFixed(2) + ')');
   ok(/\+|-/.test(await p.textContent('[data-mk=price]')) && /%/.test(await p.textContent('[data-mk=price]')), 'the price card shows the daily change, the percent change and the direction');
   ok(await p.locator('[data-mk=chart] svg[data-mk-chart]').count() === 1 && await p.locator('[data-mk-chart] rect[data-act=mkSel]').count() > 10, 'a large candlestick chart of the game\'s own price is shown');

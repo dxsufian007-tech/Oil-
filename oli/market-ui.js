@@ -4,15 +4,15 @@
  * Reading order (five seconds): price card -> candlestick chart -> last 3 news -> three indicators -> trade buttons -> (advanced details).
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./oil-engine.js'), require('./news-data.js'));
-  else root.OliMarketUI = factory(root.OliOilEngine, root.OliNews);
-})(typeof self !== 'undefined' ? self : this, function (OE, NEWS) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./oil-engine.js'), require('./news-data.js'), require('./market-analytics.js'), require('./brent-history.js'));
+  else root.OliMarketUI = factory(root.OliOilEngine, root.OliNews, root.OliMarketAnalytics, root.OliBrentHistory);
+})(typeof self !== 'undefined' ? self : this, function (OE, NEWS, AN, BH) {
   'use strict';
   const UP = '#3ccf7a', DN = '#e5584d', GRID = '#33404f', TXT = '#9aa7b4', GOLD = '#f0b429';
   const FR = { D: 'يومي', W: 'أسبوعي', M: 'شهري', Y: 'سنوي' }, SPAN = { D: 60, W: 52, M: 24, Y: 6 }, PO = ['GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS', 'BYPRODUCT'];
   const NAME = { CRUDE: 'خام برنت', GASOLINE: 'البنزين', DIESEL: 'الديزل', JET_FUEL: 'وقود الطائرات', GAS: 'الغاز المسال', BYPRODUCT: 'المنتجات الثانوية' };
   const LV = { LOW: 'منخفض', NORMAL: 'طبيعي', HIGH: 'مرتفع' }, DIRA = { UP: '▲ صعود', DOWN: '▼ هبوط', NEUTRAL: '● محايد' }, POW = { STRONG: 'قوي', MEDIUM: 'متوسط', WEAK: 'ضعيف' }, ST = { active: 'نشط', ended: 'انتهى' };
-  const st = { dk: { side: 'BUY', type: 'MARKET', qty: 100000, price: null, msg: '' }, sec: 'brent', prod: 'GASOLINE', frame: 'D', span: SPAN.D, off: 0, sel: null, log: false, more: false };
+  const st = { a: { src: 'REAL', frame: 'Y', span: 27, off: 0, sel: null, sma: true }, dk: { side: 'BUY', type: 'MARKET', qty: 100000, price: null, msg: '' }, sec: 'brent', prod: 'GASOLINE', frame: 'D', span: SPAN.D, off: 0, sel: null, log: false, more: false };
   const f2 = v => (+v).toFixed(2), pc = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%', fm = v => (+v).toLocaleString('en-US', { maximumFractionDigits: 0 });
   const col = v => v > 0.00005 ? UP : v < -0.00005 ? DN : TXT, ar = v => v > 0.00005 ? '▲' : v < -0.00005 ? '▼' : '●';
   const btn = (act, v, label, on, extra) => '<button data-act="' + act + '"' + (v != null ? ' data-v="' + v + '"' : '') + ' class="' + (on ? 'on' : '') + '"' + (extra || '') + '>' + label + '</button>';
@@ -22,15 +22,19 @@
     p = p || sym(); const rows = co && co.market.gc ? (co.market.gc[p] || []) : [], all = OE.groupOHLC(rows, st.frame);
     const end = Math.max(1, all.length - st.off), from = Math.max(0, end - st.span); return { all, list: all.slice(from, end), end };
   }
-  function chart(list, now) {
+  function chart(list, now, o) {
+    o = o || {};
     const W = 340, H = 230, pl = 6, pr = 44, pt = 10, pb = 22; if (!list.length) return '<div class="es-sm">لا توجد شموع في هذه الفترة.</div>';
     let hi = Math.max.apply(null, list.map(c => c.h)), lo = Math.min.apply(null, list.map(c => c.l)); if (now != null) { hi = Math.max(hi, now); lo = Math.min(lo, now); }
     const pad = (hi - lo) * 0.06 || 1; hi += pad; lo = Math.max(0, lo - pad); const X = i => pl + (i + 0.5) * (W - pl - pr) / list.length, Y = v => pt + (hi - v) / (hi - lo) * (H - pt - pb), bw = Math.max(1, Math.min(14, (W - pl - pr) / list.length * 0.7));
     let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="display:block;direction:ltr;touch-action:manipulation" data-mk-chart="1">';
     for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4, y = Y(v); s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="' + GRID + '" stroke-width=".5"/><text x="' + (W - pr + 3) + '" y="' + (y + 3).toFixed(1) + '" font-size="9" fill="' + TXT + '">' + v.toFixed(v < 100 ? 1 : 0) + '</text>'; }
-    list.forEach((c, i) => { const x = X(i), up = c.c >= c.o, cc = up ? UP : DN, yo = Y(c.o), yc = Y(c.c), top = Math.min(yo, yc), hh = Math.max(1, Math.abs(yo - yc)), sel = st.sel === c.key;
+    if (o.line) s += '<polyline fill="none" stroke="' + GOLD + '" stroke-width="1.4" points="' + list.map((c, i) => X(i).toFixed(1) + ',' + Y(c.c).toFixed(1)).join(' ') + '"/>';
+    list.forEach((c, i) => { if (o.line) { s += '<rect data-act="' + (o.sel || 'mkSel') + '" data-v="' + c.key + '" x="' + (X(i) - (W - pl - pr) / list.length / 2).toFixed(1) + '" y="0" width="' + ((W - pl - pr) / list.length).toFixed(1) + '" height="' + (H - pb) + '" fill="transparent"/>'; return; } const x = X(i), up = c.c >= c.o, cc = up ? UP : DN, yo = Y(c.o), yc = Y(c.c), top = Math.min(yo, yc), hh = Math.max(1, Math.abs(yo - yc)), sel = st.sel === c.key;
       s += '<line x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + Y(c.h).toFixed(1) + '" y2="' + Y(c.l).toFixed(1) + '" stroke="' + cc + '" stroke-width="1"/><rect x="' + (x - bw / 2).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + hh.toFixed(1) + '" fill="' + cc + '"' + (sel ? ' stroke="#fff" stroke-width="1"' : '') + '/>'
-        + '<rect data-act="mkSel" data-v="' + c.key + '" x="' + (x - (W - pl - pr) / list.length / 2).toFixed(1) + '" y="0" width="' + ((W - pl - pr) / list.length).toFixed(1) + '" height="' + (H - pb) + '" fill="transparent"/>'; });
+        + '<rect data-act="' + (o.sel || 'mkSel') + '" data-v="' + c.key + '" x="' + (x - (W - pl - pr) / list.length / 2).toFixed(1) + '" y="0" width="' + ((W - pl - pr) / list.length).toFixed(1) + '" height="' + (H - pb) + '" fill="transparent"/>'; });
+    if (o.sma) o.sma.forEach((arr, k) => { const pts = []; arr.forEach((v, i) => { if (v != null) pts.push(X(i).toFixed(1) + ',' + Y(v).toFixed(1)); }); if (pts.length > 1) s += '<polyline fill="none" stroke="' + (k ? '#5aa9e6' : '#d48cff') + '" stroke-width="1.2" points="' + pts.join(' ') + '"/>'; });
+    if (o.marks) list.forEach((c, i) => { if (o.marks[c.key]) s += '<path d="M' + (X(i) - 3.5).toFixed(1) + ',' + (pt - 1) + ' L' + (X(i) + 3.5).toFixed(1) + ',' + (pt - 1) + ' L' + X(i).toFixed(1) + ',' + (pt + 6) + ' Z" fill="#ff9f43"/>'; });
     s += '<text x="' + pl + '" y="' + (H - 7) + '" font-size="9" fill="' + TXT + '">' + list[0].start + '</text><text x="' + (W - pr) + '" y="' + (H - 7) + '" font-size="9" fill="' + TXT + '" text-anchor="end">' + list[list.length - 1].end + '</text>';
     if (now != null) { const y = Y(now); s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="' + GOLD + '" stroke-width="1" stroke-dasharray="3 3"/><text x="' + (W - pr + 3) + '" y="' + (y - 2).toFixed(1) + '" font-size="9" fill="' + GOLD + '">' + now.toFixed(1) + '</text>'; }
     return s + '</svg>';
@@ -143,10 +147,36 @@
       + Object.keys(pos).map(k => { const r = pos[k]; return '<h5 style="margin-top:8px">مركز ' + NAME[k] + '</h5><div class="es-kv"><span>مشتريات / مبيعات</span><span dir="ltr">' + f0(r.bought) + ' / ' + f0(r.sold) + '</span></div><div class="es-kv"><span>متوسط الشراء / البيع</span><span dir="ltr">$' + f2(r.avgBuy) + ' / $' + f2(r.avgSell) + '</span></div><div class="es-kv"><span>الرسوم</span><span dir="ltr">$' + f0(r.fees) + '</span></div><div class="es-kv"><span>الربح المحقق</span><b dir="ltr" style="color:' + col(r.realised) + '">' + (r.realised >= 0 ? '+' : '') + '$' + f0(r.realised) + '</b></div><div class="es-kv"><span>غير المحقق · الكمية المتبقية ' + f0(r.remaining) + '</span><b dir="ltr" style="color:' + col(r.unrealised) + '">' + (r.unrealised >= 0 ? '+' : '') + '$' + f0(r.unrealised) + '</b></div>'; }).join('') + '</div>';
     return h;
   }
+
+  /* ---- S4 analytics: real Brent history (2000-2026, EIA) kept apart from the game's own simulated series; trend, reasons, forecasts ---- */
+  const UNC = { LOW: 'منخفض', MEDIUM: 'متوسط', HIGH: 'مرتفع' }, TRD = { UP: '▲ صاعد', DOWN: '▼ هابط', SIDE: '● عرضي', NA: 'لا بيانات كافية' };
+  function analysisCard(co) {
+    const a = st.a, real = a.src === 'REAL', ser = AN.seriesOf(real ? 'REAL' : 'SIM', co, BH), all = AN.candles(ser.rows, a.frame), end = Math.max(1, all.length - a.off), from = Math.max(0, end - a.span), list = all.slice(from, end), cur = co.market.price.CRUDE;
+    const c = list.find(x => x.key === a.sel) || list[list.length - 1], tr = AN.trend(all.slice(0, end)), e = co.market.engine;
+    const marks = {}; if (!real && e) for (const n of e.log) { const k = a.frame === 'D' ? n.date : null; for (const q of list) { if (a.frame === 'D' ? q.start === n.date : (n.date && n.date >= q.start && n.date <= q.end)) marks[q.key] = 1; } }
+    const sm = a.sma && list.length > 6 ? [AN.sma(list, Math.min(5, list.length - 1)), AN.sma(list, Math.min(12, list.length - 1))] : null;
+    let h = '<div class="es-card" data-mk="an"><h5>التحليلات · ' + ser.label + '</h5><div class="es-row" style="margin:0 0 6px">' + btn('mkASrc', 'REAL', 'تاريخ فعلي 2000–2026', real, ' style="flex:1"') + btn('mkASrc', 'SIM', 'محاكاة اللعبة', !real, ' style="flex:1"') + '</div>'
+      + '<div class="es-row" style="margin:0 0 6px">' + ['D', 'W', 'M', 'Y'].map(k => btn('mkAFrame', k, FR[k], a.frame === k)).join('') + '<span style="flex:1"></span>' + btn('mkANav', 'old', '◀') + btn('mkANav', 'new', '▶') + btn('mkAZoom', 'in', '＋') + btn('mkAZoom', 'out', '－') + '</div>';
+    h += chart(list, real ? null : cur, { line: real && a.frame === 'D', sma: sm, marks: !real ? marks : null, sel: 'mkASel' });
+    if (c) { const ch = c.c / c.o - 1; h += '<div class="es-sm" dir="ltr" style="text-align:center;margin-top:4px">' + c.start + (c.end !== c.start ? ' → ' + c.end : '') + ' · ' + (real && a.frame === 'D' ? 'السعر ' + f2(c.c) : 'فتح ' + f2(c.o) + ' · أعلى ' + f2(c.h) + ' · أدنى ' + f2(c.l) + ' · إغلاق ' + f2(c.c) + ' <b style="color:' + col(ch) + '">' + pc(ch) + '</b>') + '</div>'; }
+    h += '<div class="es-sm" style="margin-top:4px">' + (real ? 'مصدر البيانات: ' + ser.meta.source + ' · ' + ser.meta.from + ' → ' + ser.meta.to + ' (' + fm(ser.meta.count) + ' يوم تداول). سعر واحد لكل يوم، فلا يوجد حجم تداول حقيقي ولا أعلى/أدنى يومي؛ الشموع الأسبوعية والشهرية والسنوية مشتقة من الأسعار اليومية نفسها. لا تدخل هذه البيانات في محاكاة اللعبة.' : 'سعر المحاكاة داخل اللعبة (ليس تاريخاً حقيقياً) · ▼ البرتقالية = يوم فيه خبر · حجم التداول: ' + (c ? fm(c.v) : '0') + ' مليون برميل') + '</div>'
+      + '<div class="es-row" style="margin:6px 0 0">' + btn('mkASma', null, a.sma ? 'إخفاء المتوسطات' : 'إظهار المتوسطات', a.sma, ' style="flex:1"') + '</div>'
+      + (sm ? '<div class="es-sm"><span style="color:#d48cff">■</span> متوسط قصير · <span style="color:#5aa9e6">■</span> متوسط طويل</div>' : '') + '</div>';
+    h += '<div class="es-card" data-mk="trend"><h5>الاتجاه</h5><div class="es-kv"><span>قراءة الاتجاه (' + FR[a.frame] + ')</span><b style="color:' + (tr.dir === 'UP' ? UP : tr.dir === 'DOWN' ? DN : TXT) + '">' + TRD[tr.dir] + '</b></div>' + (tr.fast != null ? '<div class="es-kv"><span>المتوسط القصير / الطويل</span><span dir="ltr">' + f2(tr.fast) + ' / ' + f2(tr.slow) + '</span></div>' : '') + '</div>';
+    if (e) { const R = AN.reasons(e), DIRC = { UP: UP, DOWN: DN, FLAT: TXT }, DA = { UP: '▲', DOWN: '▼', FLAT: '●' };
+      h += '<div class="es-card" data-mk="why"><h5>لماذا السعر هنا؟ (السوق الحالي)</h5>' + R.items.map(i => '<div class="es-kv"><span>' + i.text + '</span><b style="color:' + DIRC[i.dir] + '">' + DA[i.dir] + '</b></div>').join('')
+        + '<div class="es-kv"><span>العرض / الطلب / المخزون</span><span>' + LV[R.supply] + ' / ' + LV[R.demand] + ' / ' + LV[R.stock] + '</span></div><div class="es-kv"><span>مستوى المخاطر</span><b>' + R.riskAr + '</b></div>'
+        + (R.active.length ? '<div class="es-sm" style="margin-top:4px">أحداث مؤثرة الآن:</div>' + R.active.map(x => '<div class="es-sm">• ' + x.text + ' (' + (x.regions || []).join('، ') + ') · متبقٍ ' + x.left + ' يوماً</div>').join('') : '<div class="es-sm">لا أحداث مؤثرة الآن.</div>') + '</div>';
+      const fc = a.fc && a.fc.day === e.lastDay ? a.fc.data : null;
+      h += '<div class="es-card" data-mk="fc"><h5>توقعات السعر</h5>' + (fc ? [7, 30, 90].map(d => { const x = fc.byDays[d]; return '<div style="padding:6px 0;border-top:1px solid ' + GRID + '"><div class="es-kv"><span>' + d + ' يوماً</span><b dir="ltr">$' + f2(x.low) + ' – $' + f2(x.high) + '</b></div><div class="es-kv"><span>الاتجاه · عدم اليقين</span><span style="color:' + (x.dir === 'UP' ? UP : x.dir === 'DOWN' ? DN : TXT) + '">' + TRD[x.dir] + ' · ' + UNC[x.uncertainty] + '</span></div></div>'; }).join('') + '<div class="es-sm">' + fc.note + '</div>' : '<div class="es-sm">احسب نطاق السعر المتوقع بعد 7 و30 و90 يوماً من محاكاة نسخة من السوق (لا يتغير شيء في السوق الفعلي).</div>')
+        + '<div class="es-row" style="margin-top:6px">' + btn('mkAFc', null, fc ? 'تحديث التوقعات' : 'احسب التوقعات', false, ' style="flex:1"') + '</div></div>'; }
+    return h;
+  }
   function html(co) {
     if (!co || !co.market.engine) return ''; const p = sym();
-    let h = '<div class="es-card" data-mk="sec"><div class="es-row" style="margin:0">' + btn('mkSec', 'brent', 'سوق خام برنت', st.sec === 'brent', ' style="flex:1"') + btn('mkSec', 'products', 'سوق المنتجات النفطية', st.sec === 'products', ' style="flex:1"') + btn('mkSec', 'desk', 'التداول والعمق', st.sec === 'desk', ' style="flex:1"') + '</div></div>';
+    let h = '<div class="es-card" data-mk="sec"><div class="es-row" style="margin:0">' + btn('mkSec', 'brent', 'سوق خام برنت', st.sec === 'brent', ' style="flex:1"') + btn('mkSec', 'products', 'سوق المنتجات النفطية', st.sec === 'products', ' style="flex:1"') + btn('mkSec', 'desk', 'التداول والعمق', st.sec === 'desk', ' style="flex:1"') + btn('mkSec', 'analysis', 'التحليلات', st.sec === 'analysis', ' style="flex:1"') + '</div></div>';
     if (st.sec === 'desk') return h + deskCard(co);
+    if (st.sec === 'analysis') return h + analysisCard(co);
     if (st.sec === 'products') h += productsList(co);
     h += priceCard(co, p) + chartCard(co, p) + newsCard(co, p) + indicators(co, p) + (p === 'CRUDE' ? companyCard(co) : '') + (st.sec === 'products' ? prodCosts(co, p) : '') + tradeCard(p);
     return h + moreCard(co);
@@ -162,6 +192,13 @@
     if (a === 'mkSel') { st.sel = v; return true; }
     if (a === 'mkLog') { st.log = !st.log; return true; }
     if (a === 'mkMore') { st.more = !st.more; return true; }
+    if (a === 'mkASrc') { st.a.src = v; st.a.frame = v === 'REAL' ? 'Y' : 'D'; st.a.span = v === 'REAL' ? 27 : SPAN.D; st.a.off = 0; st.a.sel = null; return true; }
+    if (a === 'mkAFrame') { const A = st.a; A.frame = v; A.span = A.src === 'REAL' ? ({ D: 260, W: 104, M: 120, Y: 27 })[v] : SPAN[v]; A.off = 0; A.sel = null; return true; }
+    if (a === 'mkANav') { const A = st.a, n = AN.candles(AN.seriesOf(A.src, co, BH).rows, A.frame).length, step = Math.max(1, Math.round(A.span / 2)); A.off = Math.max(0, Math.min(n - Math.min(n, A.span), A.off + (v === 'old' ? step : -step))); A.sel = null; return true; }
+    if (a === 'mkAZoom') { const A = st.a, n = AN.candles(AN.seriesOf(A.src, co, BH).rows, A.frame).length; A.span = Math.max(8, Math.min(v === 'in' ? Math.round(A.span / 1.5) : Math.round(A.span * 1.5), Math.max(8, n))); return true; }
+    if (a === 'mkASel') { st.a.sel = v; return true; }
+    if (a === 'mkASma') { st.a.sma = !st.a.sma; return true; }
+    if (a === 'mkAFc') { const e = co.market.engine; if (e) st.a.fc = { day: e.lastDay, data: AN.forecast(e, {}) }; return true; }
     if (a === 'mkDkProd') { st.dp = v; st.dk.price = null; st.dk.msg = ''; return true; }
     if (a === 'mkDkSide') { st.dk.side = v; st.dk.msg = ''; return true; }
     if (a === 'mkDkType') { st.dk.type = v; st.dk.msg = ''; return true; }
@@ -172,6 +209,6 @@
       else { r = co.deskMarket(d.side, p, d.qty); st.dk.msg = r.ok ? 'نُفّذ ' + Math.round(r.filled).toLocaleString('en-US') + ' بمتوسط $' + r.vwap.toFixed(2) + (r.partial ? ' · تنفيذ جزئي، المتبقي ' + Math.round(r.unfilled).toLocaleString('en-US') : '') : (RS[r.reason] || 'لم يُنفَّذ'); } return true; }
     return false;
   }
-  const ACTS = ['mkDkProd', 'mkDkSide', 'mkDkType', 'mkDkQty', 'mkDkPx', 'mkDkCancel', 'mkDkGo', 'mkSec', 'mkProd', 'mkFrame', 'mkNav', 'mkZoom', 'mkSel', 'mkLog', 'mkMore'];
+  const ACTS = ['mkASrc', 'mkAFrame', 'mkANav', 'mkAZoom', 'mkASel', 'mkASma', 'mkAFc', 'mkDkProd', 'mkDkSide', 'mkDkType', 'mkDkQty', 'mkDkPx', 'mkDkCancel', 'mkDkGo', 'mkSec', 'mkProd', 'mkFrame', 'mkNav', 'mkZoom', 'mkSel', 'mkLog', 'mkMore'];
   return { html, act, ACTS, state: st, view, chart, affects, NAME };
 });
