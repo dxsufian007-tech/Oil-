@@ -23,6 +23,7 @@
   const lerp = (a, b, t) => a + (b - a) * t;
   const hash = (a, b, c) => { let h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
   const EPS = 1e-6;
+  const NODES = new WeakMap();      // perf: hops array -> its station list (read-only, shared by the plans that use the route)
   const H_D = [], H_S = [], H_N = [];      // B5 scratch heap for _pathCore (never held across a call)
   const PH_U = [], PH_P = [];      // B3a scratch for _planHops (never held across a call)
   const NCH = CHANNELS.length, CI = Object.create(null); CHANNELS.forEach((c, i) => { CI[c] = i; });      // perf: a number per channel, so the per-step usage lives in typed arrays instead of string-keyed Maps
@@ -214,14 +215,14 @@
       r = Math.min(r, cap);
       for (let i = 0; i < n; i++) { const h = hops[i]; let pu = null; if (PL) for (let j = 0; j < PL.length; j++) { const p = PL[j]; if (p.seg === h.g.id && !p.fault && p.dir === h.dir) { pu = p; break; } } P[i] = pu; if (pu) r = Math.min(r, Math.max(0, PU.maxFlow - this.pusedOf(over, pu.id))); }
       if (r <= EPS) { for (let i = 0; i < n; i++) P[i] = null; return null; }
-      const nodes = new Array(n + 1); nodes[0] = hops[0].from; for (let i = 0; i < n; i++) nodes[i + 1] = hops[i].to;
-      const MINP = PU.minInletPsi, MAXP = CLASS.maxPressure; let pEnd = 0, stats = null;
+      let nodes = NODES.get(hops); if (nodes === undefined) { nodes = new Array(n + 1); nodes[0] = hops[0].from; for (let i = 0; i < n; i++) nodes[i + 1] = hops[i].to; NODES.set(hops, nodes); }      // perf: the station list of a route does not change while the route (the hops array) is the same one
+      const MINP = PU.minInletPsi, MAXP = CLASS.maxPressure; let pEnd = 0, stats = null; let lastRatio = -1, lastPow = 0;
       for (let it = 0; it < 6; it++) {
         let p = p0, ok = true; stats = [];
         for (let i = 0; i < n; i++) {
           const h = hops[i], pu = P[i], atStart = pu && pu.st === h.from;                                              // mounted at the start of the hop: it pushes into the pipe (before the friction); at the end: it pulls from the pipe (after it)
           if (atStart) { if (p >= MINP) { const add = Math.min(pu.boost * pu.eff, Math.max(0, MAXP - p)); stats.push([pu, p, p + add, true]); p += add; } else stats.push([pu, p, p, false]); }
-          const ratio = (U[i] + r) / CAPC, loss = h.g.path.length * FPT * Math.pow(ratio, FEXP) * FRIC;
+          const ratio = (U[i] + r) / CAPC; if (ratio !== lastRatio) { lastRatio = ratio; lastPow = Math.pow(ratio, FEXP); } const loss = h.g.path.length * FPT * lastPow * FRIC;      // perf: hops that carry the same load have the same ratio: one Math.pow for them (the same value)
           if (p - loss < 0) { r *= Math.max(0, p / (loss || 1)); ok = false; break; } p -= loss;
           if (pu && !atStart) { if (p >= MINP) { const add = Math.min(pu.boost * pu.eff, Math.max(0, MAXP - p)); stats.push([pu, p, p + add, true]); p += add; } else stats.push([pu, p, p, false]); }
         }
