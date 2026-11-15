@@ -24,7 +24,7 @@ const snap = g => JSON.stringify({ h: g.co.hours, cash: g.store.cash, bal: g.co.
   T('6d "N months later" follows real months', CAL.addMonths(0, 1) === 31 * 24 && CAL.addMonths(24 * 30, 1) === CAL.dayOf(2026, 2, 28) * 24 && CAL.addMonths(0, 12) === 365 * 24); }
 
 /* ---- 2. one full day, and the clock the company shows ---- */
-{ const g = rich(); const k0 = g.co.clock(); T('7 a new company shows 1 January 2026, speed x1, running', k0.year === 2026 && k0.month === 1 && k0.dayOfMonth === 1 && k0.hour === 0 && k0.speed === 1 && !k0.paused && g.co.dayIdx === 0, k0);
+{ const g = rich(); const k0 = g.co.clock(); T('7 a new company shows 1 January 2026, speed x1 (1 game hour per second = internal 0.5), running', k0.year === 2026 && k0.month === 1 && k0.dayOfMonth === 1 && k0.hour === 0 && k0.speed === 0.5 && !k0.paused && g.co.dayIdx === 0, k0);
   const d0 = g.co.days.length; g.co.advanceHours(24); const k1 = g.co.clock(); T('8 one whole day: 2 January, exactly one day closed, no double day', k1.dayOfMonth === 2 && k1.hour === 0 && g.co.dayIdx === 1 && g.co.days.length === d0 + 1 && g.co.days[g.co.days.length - 1].d === 0, [k1.text, g.co.days.length]);
   g.co.advanceHours(5); T('8b hours inside a day change only the time of day', g.co.clock().dayOfMonth === 2 && g.co.clock().hour === 5 && g.co.dayIdx === 1); }
 
@@ -49,12 +49,12 @@ const snap = g => JSON.stringify({ h: g.co.hours, cash: g.store.cash, bal: g.co.
 
 /* ---- 5. pause: nothing that depends on time moves ---- */
 { const g = rich(); g.co.advanceHours(30); const s0 = snap(g), prod0 = g.co.led.life.produced.CRUDE + g.co.led.life.produced.THRU, cl0 = g.co.clock().text, st0 = g.store.time;
-  const r = g.co.pause(); T('18 pausing sets speed 0 and remembers the old one', r.ok && g.co.speed === 0 && g.co.lastSpeed === 1 && g.co.clock().paused);
+  const r = g.co.pause(); T('18 pausing sets speed 0 and remembers the old one', r.ok && g.co.speed === 0 && g.co.lastSpeed === 0.5 && g.co.clock().paused);
   const n = g.co.run(100000); g.co.catchUp(Date.now() + 1e9); g.co.run(24 * 400);
   T('19 while paused run() and offline catch-up advance nothing: clock, cash, ledger, stock, market all unchanged', n === 0 && snap(g) === s0 && g.co.clock().text === cl0 && g.store.time === st0, g.co.clock().text);
   T('19b no production and no cost while paused', g.co.led.life.produced.CRUDE + g.co.led.life.produced.THRU === prod0);
-  g.co.resume(); const n2 = g.co.run(48); g.co.run(48); T('20 resuming continues at the same speed and the clock moves again', g.co.speed === 1 && g.co.hours > 30 + 40 && snap(g) !== s0 && g.co.led.life.produced.CRUDE > 0, g.co.hours);
-  g.co.togglePause(); T('20b toggle pauses', g.co.speed === 0); g.co.togglePause(); T('20c toggle resumes the speed before the pause', g.co.speed === 1);
+  g.co.resume(); const n2 = g.co.run(48); g.co.run(48); T('20 resuming continues at the same speed and the clock moves again', g.co.speed === 0.5 && g.co.hours > 30 + 40 && snap(g) !== s0 && g.co.led.life.produced.CRUDE > 0, g.co.hours);
+  g.co.togglePause(); T('20b toggle pauses', g.co.speed === 0); g.co.togglePause(); T('20c toggle resumes the speed before the pause', g.co.speed === 0.5);
   g.co.setSpeed(5); g.co.togglePause(); g.co.togglePause(); T('20d x5 is restored after pause and resume', g.co.speed === 5); }
 
 /* ---- 6. speeds: every system advances by the same ratio ---- */
@@ -67,7 +67,7 @@ const snap = g => JSON.stringify({ h: g.co.hours, cash: g.store.cash, bal: g.co.
   const c = rich(); for (let i = 0; i < 700; i++) c.co.run(1.37); T('24b fractional chunks keep the remainder and lose none of the time', Math.abs(c.co.hours + c.co.acc - 700 * 1.37) < 1e-6, [c.co.hours, c.co.acc]);
   const e = rich(); e.co.run(1e9); T('25 a huge jump is capped by the tick limit (no freeze) and never skips or repeats a day', e.co.hours <= EC.TIME.maxCatchUpHours && e.co.days.length === e.co.dayIdx && e.co.days.every((x, i) => x.d === i), [e.co.hours, e.co.days.length]);
   T('25b only legal speeds are accepted', !g0().co.setSpeed(3).ok && !g0().co.setSpeed(-1).ok && g0().co.setSpeed(2).ok); function g0() { return game(1e6); }
-  const f = game(1e6); f.co.setSpeed(10); T('25c faster stops at the top, slower stops at 0.5x', (f.co.faster(), f.co.speed === 10) && (() => { for (let i = 0; i < 9; i++) f.co.slower(); return f.co.speed === 0.5; })()); }
+  const f = game(1e6); f.co.setSpeed(2.5); T('25c faster stops at the top official speed (x5), slower stops at x1', (f.co.faster(), f.co.speed === 2.5) && (() => { for (let i = 0; i < 9; i++) f.co.slower(); return f.co.speed === 0.5; })()); }
 
 /* ---- 7. everything that depends on time uses this clock ---- */
 { const g = rich(); const m0 = JSON.stringify(g.co.market.price); g.co.pause(); g.co.run(500); T('26 market prices are frozen while paused', JSON.stringify(g.co.market.price) === m0);
@@ -83,7 +83,7 @@ const snap = g => JSON.stringify({ h: g.co.hours, cash: g.store.cash, bal: g.co.
 /* ---- 8. saving ---- */
 { const g = rich(); g.co.advanceHours(24 * 45 + 7); g.co.setSpeed(5); const j = JSON.parse(JSON.stringify(g.co.toJSON())); const g2 = game(500e6);
   const ok = g2.co.fromJSON(j); T('31 the date, the hour and the speed are saved and restored', ok && g2.co.hours === g.co.hours && g2.co.dayIdx === g.co.dayIdx && g2.co.speed === 5 && g2.co.lastSpeed === 5 && g2.co.clock().text === g.co.clock().text && g2.co.clock().text === '15/02/2026 07:00', g2.co.clock().text);
-  const p = rich(); p.co.advanceHours(100); p.co.pause(); const j2 = JSON.parse(JSON.stringify(p.co.toJSON())); const p2 = game(500e6); p2.co.fromJSON(j2); T('32 a game saved while paused is still paused after loading', p2.co.speed === 0 && p2.co.lastSpeed === 1 && p2.co.clock().paused && p2.co.resume().ok && p2.co.speed === 1);
+  const p = rich(); p.co.advanceHours(100); p.co.pause(); const j2 = JSON.parse(JSON.stringify(p.co.toJSON())); const p2 = game(500e6); p2.co.fromJSON(j2); T('32 a game saved while paused is still paused after loading', p2.co.speed === 0 && p2.co.lastSpeed === 0.5 && p2.co.clock().paused && p2.co.resume().ok && p2.co.speed === 0.5);
   const old = JSON.parse(JSON.stringify(g.co.toJSON())); delete old.lastSpeed; delete old.calStart; const o = game(500e6); o.co.fromJSON(old); T('33 an older save (no lastSpeed, no calendar field) still loads on the same hours', o.co.hours === g.co.hours && o.co.speed === 5 && o.co.lastSpeed === 5);
   g.co.advanceHours(24 * 20); g2.co.advanceHours(24 * 20); T('34 after loading, the calendar continues exactly where it was (the buildings are saved by the lab, not by the company)', g.co.hours === g2.co.hours && g.co.clock().text === g2.co.clock().text && g2.co.clock().text === '07/03/2026 07:00' && g.co.dayIdx === g2.co.dayIdx, [g.co.clock().text, g2.co.clock().text]);
   T('34b the saved calendar start is 1 January 2026', JSON.stringify(g.co.toJSON().calStart) === JSON.stringify({ year: 2026, month: 1, day: 1 })); }

@@ -525,7 +525,7 @@
     box.querySelector('.box').innerHTML = '<h3>WHILE YOU WERE AWAY</h3>' + rows.map(x => kv(x[0], x[1] + (x[2] ? ' <span class="es-sm">(' + x[2] + ')</span>' : ''))).join('')
       + kv('Produced', n0(r.producedCrude) + ' bbl crude · ' + n0(r.producedProducts) + ' bbl products') + kv('Sold', n0(r.sold) + ' bbl · ' + M(r.soldRevenue)) + kv('Operating cost', M(r.operatingCost)) + kv('Profit / Loss', '<b class="' + cl(r.profit) + '">' + sg(r.profit) + '</b>') + kv('Storage', Math.round(r.storagePct) + '%') + kv('Warnings', r.warnings)
       + '<div class="es-row"><button id="away-ok" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff">CONTINUE</button></div>'; box.classList.add('open'); CO.prevSpeed = CO.speed; CO.setSpeed(0); window.__awayShown = r;
-    $('away-ok').onclick = () => { box.classList.remove('open'); CO.clearAway(); CO.setSpeed(CO.prevSpeed > 0 ? CO.prevSpeed : 1); hud(); onChange(); };
+    $('away-ok').onclick = () => { box.classList.remove('open'); CO.clearAway(); CO.setSpeed(CO.prevSpeed > 0 ? CO.prevSpeed : CO.startSpeed()); hud(); onChange(); };
   }
   function showBank() {
     const b = $('eco-bank'); if (b.classList.contains('open')) return; b.classList.add('open'); b.querySelector('.box').innerHTML = '<h3>BANKRUPT</h3><div class="es-sm" style="margin-bottom:10px">Cash stayed negative for ' + EC.FINANCE.bankruptAfterDays + ' days. The company is insolvent.</div><div class="es-row"><button id="bank-new" class="danger">START A NEW COMPANY</button></div>'; $('bank-new').onclick = () => { b.classList.remove('open'); if (opts.restart) opts.restart(); hud(); };
@@ -564,7 +564,7 @@
     $('es-close').onclick = close; $('eh-menu').onclick = () => { open(); }; $('eh-cash').onclick = () => open('company'); $('eh-net').onclick = () => open('company'); $('eh-clock').onclick = () => open('market');
     $('eh-pause').onclick = () => { CO.togglePause(); hud(); onChange(); };
     $('tm-fast').onclick = () => { CO.faster(); hud(); onChange(); }; $('tm-slow').onclick = () => { CO.slower(); hud(); onChange(); };
-    $('eh-speed').onclick = () => { const sp = CO.officialSpeeds(), cur = CO.speed || CO.lastSpeed || 1, i = sp.findIndex(x => Math.abs(x - cur) < 1e-9); CO.setSpeed(sp[(i + 1) % sp.length]); hud(); onChange(); };
+    $('eh-speed').onclick = () => { CO.cycleSpeed(); hud(); onChange(); };
     for (const id of ['eco-hud', 'eco-sheet', 'eco-away']) for (const ev of ['pointerdown', 'touchstart']) $(id).addEventListener(ev, e => e.stopPropagation(), { passive: true });
     timer = setInterval(() => { hud(); pumpEvents(); if ($('eco-sheet').classList.contains('open')) render(false); }, 1000); hud();
     return api;
