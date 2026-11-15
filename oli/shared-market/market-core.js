@@ -6,14 +6,15 @@
 const crypto = require('crypto');
 const DEF = { feeRate: 0.002, tick: 0.01, maxOpen: 20, maxQty: 5e6, minQty: 1, startCash: 1e8, startOil: 0, maxPx: 1000, seedPrice: 80 };
 class SharedMarket {
-  constructor(cfg) {
-    this.cfg = Object.assign({}, DEF, cfg || {});
-    this.players = {}; this.orders = {}; this.nextOrder = 1; this.nextTrade = 1; this.trades = []; this.fees = 0; this.last = this.cfg.seedPrice;
+  constructor(cfg, chainKey) {
+    this.cfg = Object.assign({}, DEF, cfg || {}); this._key = String(chainKey || '');            // chain key is NEVER serialised: whoever edits the data file cannot re-sign the trade log
+    this.players = Object.create(null); this.orders = Object.create(null); this.nextOrder = 1; this.nextTrade = 1; this.trades = []; this.fees = 0; this.last = this.cfg.seedPrice;
     this.idem = new Map(); this.seq = 0; this.issuedCash = 0; this.issuedOil = 0; this.head = '0'.repeat(64);
   }
+  _h(o) { return crypto.createHmac('sha256', this._key).update(JSON.stringify(o)).digest('hex'); }
   _err(code, msg) { return { ok: false, code, error: msg }; }
   join(id) {
-    if (!/^[A-Za-z0-9_-]{2,32}$/.test(id || '')) return this._err('BAD_ID', 'bad player id');
+    if (typeof id !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{2,31}$/.test(id) || /^(__proto__|constructor|prototype)$/.test(id)) return this._err('BAD_ID', 'bad player id');
     if (!this.players[id]) { this.players[id] = { id, cash: this.cfg.startCash, oil: this.cfg.startOil, lockedCash: 0, lockedOil: 0, spent: 0, got: 0, feesPaid: 0 }; this.issuedCash += this.cfg.startCash; this.issuedOil += this.cfg.startOil; }
     return { ok: true, account: this.account(id) };
   }
@@ -62,7 +63,7 @@ class SharedMarket {
       if (bo.type === 'LIMIT') { const rel = q * bo.price * (1 + c.feeRate); buyer.lockedCash -= rel; bo.lock -= rel; }
       t.left -= q; m.left -= q; this.last = px;
       const tr = { id: this.nextTrade++, t: this.seq, buyer: buyer.id, seller: seller.id, qty: q, price: px, value, feeEach: fee, buyOrder: bo.id, sellOrder: so.id, taker: t.id, prev: this.head };
-      tr.hash = crypto.createHash('sha256').update(JSON.stringify(tr)).digest('hex'); this.head = tr.hash; this.trades.push(tr); t.fills.push({ q, p: px }); m.fills.push({ q, p: px });
+      tr.hash = this._h(tr); this.head = tr.hash; this.trades.push(tr); t.fills.push({ q, p: px }); m.fills.push({ q, p: px });
       if (m.left <= 0) this._close(m, 'FILLED');
     }
   }
@@ -94,12 +95,15 @@ class SharedMarket {
       if (Math.abs(lc - p.lockedCash) > 1e-3) bad.push('cash lock mismatch ' + p.id); if (Math.abs(lo - p.lockedOil) > 1e-6) bad.push('oil lock mismatch ' + p.id);
       if (p.lockedCash > p.cash + 1e-3 || p.lockedOil > p.oil + 1e-6) bad.push('lock exceeds balance ' + p.id);
     }
-    let h = '0'.repeat(64); for (const t of this.trades) { const { hash, ...r } = t; if (r.prev !== h || crypto.createHash('sha256').update(JSON.stringify(r)).digest('hex') !== hash) { bad.push('trade chain broken at ' + t.id); break; } h = hash; }
+    let h = '0'.repeat(64); for (const t of this.trades) { const { hash, ...r } = t; if (r.prev !== h || this._h(r) !== hash) { bad.push('trade chain broken at ' + t.id); break; } h = hash; }
+    const exp = Object.create(null); for (const p of ps) exp[p.id] = { cash: this.cfg.startCash, oil: this.cfg.startOil };
+    for (const t of this.trades) { const b = exp[t.buyer], se = exp[t.seller]; if (!b || !se) { bad.push('trade with unknown player ' + t.id); continue; } b.cash -= t.value + t.feeEach; b.oil += t.qty; se.cash += t.value - t.feeEach; se.oil -= t.qty; }
+    for (const p of ps) if (Math.abs(exp[p.id].cash - p.cash) > 1e-3 || Math.abs(exp[p.id].oil - p.oil) > 1e-6) bad.push('balance of ' + p.id + ' does not match the trade log');
     const sum = this.trades.reduce((s, t) => s + t.qty, 0), got = ps.reduce((s, p) => s + p.got, 0), sp = ps.reduce((s, p) => s + p.spent, 0);
     if (Math.abs(got - sp) > 1e-3 * Math.max(1, this.trades.length)) bad.push('spent != received'); if (!(sum >= 0)) bad.push('trade qty');
     return { ok: !bad.length, bad };
   }
   snapshot() { return JSON.stringify({ cfg: this.cfg, players: this.players, orders: this.orders, nextOrder: this.nextOrder, nextTrade: this.nextTrade, trades: this.trades, fees: this.fees, last: this.last, seq: this.seq, issuedCash: this.issuedCash, issuedOil: this.issuedOil, head: this.head, idem: [...this.idem] }); }
-  static restore(s) { const o = JSON.parse(s), m = new SharedMarket(o.cfg); for (const k of ['players', 'orders', 'nextOrder', 'nextTrade', 'trades', 'fees', 'last', 'seq', 'issuedCash', 'issuedOil', 'head']) m[k] = o[k]; m.idem = new Map(o.idem); return m; }
+  static restore(s, chainKey) { const o = JSON.parse(s), m = new SharedMarket(o.cfg, chainKey); m.players = Object.assign(Object.create(null), o.players); m.orders = Object.assign(Object.create(null), o.orders); for (const k of ['nextOrder', 'nextTrade', 'trades', 'fees', 'last', 'seq', 'issuedCash', 'issuedOil', 'head']) m[k] = o[k]; m.idem = new Map(o.idem); return m; }
 }
 module.exports = { SharedMarket, DEF };
