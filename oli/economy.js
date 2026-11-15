@@ -7,9 +7,9 @@
  * No DOM here (economy-ui.js is the screen).  Everything the player can tune is in economy-config.js.
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./buildings.js'), require('./building-config.js'), require('./industry.js'), require('./economy-config.js'), require('./ledger.js'), require('./game-calendar.js'), require('./oil-engine.js'), require('./bank.js'));
-  else root.OliEconomy = factory(root.OliBuildings, root.OliBuildingConfig, root.OliIndustry, root.OliEconomyConfig, root.OliLedger, root.OliCalendar, root.OliOilEngine, root.OliBank);
-})(typeof self !== 'undefined' ? self : this, function (B, BC, I, EC, LG, CAL, OE, BK) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./buildings.js'), require('./building-config.js'), require('./industry.js'), require('./economy-config.js'), require('./ledger.js'), require('./game-calendar.js'), require('./oil-engine.js'), require('./bank.js'), require('./order-book.js'));
+  else root.OliEconomy = factory(root.OliBuildings, root.OliBuildingConfig, root.OliIndustry, root.OliEconomyConfig, root.OliLedger, root.OliCalendar, root.OliOilEngine, root.OliBank, root.OliOrderBook);
+})(typeof self !== 'undefined' ? self : this, function (B, BC, I, EC, LG, CAL, OE, BK, OB) {
   'use strict';
   const DEFS = B.DEFS, SELL = EC.PRODUCTS, clamp = (v, a, b) => v < a ? a : v > b ? b : v, r2 = v => Math.round(v * 100) / 100;
   const hash = (a, b, c) => { let h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
@@ -415,6 +415,50 @@
       s.rel = Math.min(s.vol, (s.rel || 0) + vol); this._rlog('ORDER', { tank: b.id, product: def.product, qty: +qty, value: 0, note: 'أمر سحب يدوي: فُتح مخرج الخزان لهذه الكمية فقط' }); return { ok: true, qty: +qty, remaining: s.rel };
     }
     reserveStop(tankId) { const b = this.store.get(tankId); if (!b || !b.rs) return { ok: false, reason: 'tank' }; const s = this._rt(b), left = s.rel || 0; s.rel = 0; this._rlog('STOP', { tank: b.id, product: DEFS[b.d].product, qty: left, value: 0, note: 'أُغلق مخرج الخزان' }); return { ok: true, closed: left }; }
+
+    /* ================= TRADING DESK (S2): market and limit orders walked through the order book ================= 
+     * Every fill goes through the SAME buy() / sell() the game already uses (same books, cash, inventory, fees, supplier terms, market impact); the desk only decides the PRICE (the volume-weighted average
+     * of the book levels it walked) and how MUCH fills.  It keeps its own order and trade history.  Standing orders are made by the player only; none is created by itself or by loading a save. */
+    _dk() { return this.desk || (this.desk = { v: 1, nid: 0, tid: 0, orders: [], trades: [], day: -1 }); }
+    deskCfg() { return Object.assign({ maxOpen: 20, logMax: 400, minQty: 1, tradeMax: 400 }, this.cfg.DESK || {}, { ob: Object.assign({}, this.cfg.DESK && this.cfg.DESK.ob) }); }
+    deskCtx(p) { const e = this.market.engine; if (!e || !OE || !OE.REGIMES) return { cover: 1, vol: 1 }; const vol = (OE.REGIMES[e.regime] || { vol: 1 }).vol; let cover = 1;
+      if (p === 'CRUDE') cover = e.C / e.P.C0; else if (e.prod && e.prod[p] && OE.PRODUCTS[p]) cover = e.prod[p].S / (OE.PRODUCTS[p].dem * e.P.prodDays); return { cover, vol }; }
+    deskBook(p) { if (!SELL.includes(p)) return { ok: false, reason: 'product' }; const depth = this.cfg.MARKET.depth[p] || 100000, C = this.deskCfg(), b = OB.build(this.market.price[p], depth, this.deskCtx(p), C.ob, this._dk().real);
+      return Object.assign({ ok: true, product: p }, b); }
+    /* what an order would do: fills level by level, VWAP, slippage, partial fill, and (for a buy) the cash it needs.  opts: limit, maxSlip, supplier */
+    deskQuote(side, p, qty, opts) {
+      opts = opts || {}; if (side !== 'BUY' && side !== 'SELL') return { ok: false, reason: 'side' }; const bk = this.deskBook(p); if (!bk.ok) return bk; const q = Math.max(0, +qty || 0); if (!(q > 0)) return { ok: false, reason: 'qty' };
+      let cap = q; if (side === 'SELL') cap = Math.min(q, this.available(p)); else { const room = p === 'CRUDE' ? this.tradeRoom() : this.roomFor(p); if (p === 'CRUDE' && !this.tradeTanks().length) return { ok: false, reason: 'noTradeTank' }; cap = Math.min(q, Math.max(0, room)); if (!(cap > 0)) return { ok: false, reason: 'noRoom', room }; } const w = OB.walk(bk, side, cap, { limit: opts.limit, maxSlip: opts.maxSlip });
+      const out = Object.assign({ ok: true, product: p, book: { bestAsk: bk.bestAsk, bestBid: bk.bestBid, spreadPct: bk.spreadPct, source: bk.source }, haveStock: side === 'SELL' ? this.available(p) : null, requested: q }, w);
+      if (side === 'BUY' && w.filled > 0) { const bq = this.buyQuote(p, w.filled, opts.supplier || 'A', w.vwap); out.total = bq.total; out.fee = bq.fee; out.freight = bq.freight; out.landedUnit = bq.landedUnit; }
+      if (side === 'SELL' && w.filled > 0) { const fee = w.cost * this.cfg.FEES.spot; out.fee = fee; out.net = w.cost - fee; }
+      if (side === 'SELL' && q > cap + 1e-9) { out.limitedByStock = true; } return out;
+    }
+    _deskExec(side, p, qty, o) {          // fills as much of qty as the book (and the limit / slippage cap) allows and the company can take; returns { ok, filled, vwap, ... }
+      const qt = this.deskQuote(side, p, qty, o); if (!qt.ok) return qt; if (!(qt.filled > 0)) return { ok: false, reason: qt.reason || 'noLiquidity', quote: qt };
+      let r; if (side === 'BUY') r = this.buy(p, qt.filled, o.supplier || 'A', 'CASH', { ref: qt.vwap, desk: true }); else r = this.sell(p, qt.filled, 'DESK', { ref: qt.vwap, desk: true });
+      if (!r.ok) return { ok: false, reason: r.reason, quote: qt, detail: r };
+      const D = this._dk(), t = { id: ++D.tid, t: this.hours, day: this.dayIdx, side, product: p, qty: qt.filled, price: qt.vwap, gross: side === 'BUY' ? r.gross != null ? r.gross : qt.cost : r.gross, fee: side === 'BUY' ? (r.fee || 0) : r.fee, slip: qt.slippageVsMarket, levels: qt.levelsUsed, order: o.order || 0, kind: o.order ? 'LIMIT' : 'MARKET', profit: side === 'SELL' ? r.profit : 0, cost: side === 'SELL' ? r.cost : 0 };
+      D.trades.push(t); while (D.trades.length > this.deskCfg().tradeMax) D.trades.shift(); return { ok: true, filled: qt.filled, unfilled: Math.max(0, +qty - qt.filled), partial: qt.partial || qt.filled < +qty - 1e-9, vwap: qt.vwap, slippage: qt.slippageVsMarket, trade: t, result: r, quote: qt };
+    }
+    deskMarket(side, p, qty, opts) { if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync(); return this._deskExec(side, p, +qty, opts || {}); }
+    deskLimitCreate(side, p, qty, price, opts) {
+      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; if (side !== 'BUY' && side !== 'SELL') return { ok: false, reason: 'side' }; if (!SELL.includes(p)) return { ok: false, reason: 'product' }; const C = this.deskCfg(), D = this._dk(); qty = +qty; price = +price;
+      if (!(qty >= C.minQty) || !(price > 0) || !Number.isFinite(qty) || !Number.isFinite(price)) return { ok: false, reason: 'bad' }; if (D.orders.filter(o => o.status === 'OPEN' || o.status === 'PARTIAL').length >= C.maxOpen) return { ok: false, reason: 'max' };
+      const o = { id: ++D.nid, side, product: p, qty, remaining: qty, price, status: 'OPEN', day: this.dayIdx, t: this.hours, fills: [], supplier: (opts && opts.supplier) || 'A', maxSlip: opts && opts.maxSlip, note: '' }; D.orders.push(o); while (D.orders.length > C.logMax) { const i = D.orders.findIndex(x => x.status !== 'OPEN' && x.status !== 'PARTIAL'); if (i < 0) break; D.orders.splice(i, 1); }
+      this._deskMatch(o); return { ok: true, order: o };         // an order that already crosses the market fills at once (the crossing part); the rest waits
+    }
+    _deskMatch(o) {
+      if (o.status !== 'OPEN' && o.status !== 'PARTIAL') return null; this.sync(); const r = this._deskExec(o.side, o.product, o.remaining, { limit: o.price, maxSlip: o.maxSlip, supplier: o.supplier, order: o.id });
+      if (!r.ok) { o.note = r.reason; return r; } o.remaining = Math.max(0, o.remaining - r.filled); if (o.remaining < 1e-6) { o.remaining = 0; o.status = 'FILLED'; } else o.status = 'PARTIAL'; o.fills.push({ t: this.hours, qty: r.filled, price: r.vwap, trade: r.trade.id }); o.note = ''; return r;
+    }
+    deskCancel(id) { const o = this._dk().orders.find(x => x.id === +id); if (!o) return { ok: false, reason: 'none' }; if (o.status !== 'OPEN' && o.status !== 'PARTIAL') return { ok: false, reason: 'closed', status: o.status }; o.status = o.fills.length ? 'CANCELLED_PARTIAL' : 'CANCELLED'; o.closedAt = this.dayIdx; return { ok: true, order: o }; }
+    _deskDay() { const D = this._dk(); if (D.day === this.dayIdx) return; D.day = this.dayIdx; for (const o of D.orders) if (o.status === 'OPEN' || o.status === 'PARTIAL') this._deskMatch(o); }
+    deskOrders(filter) { return this._dk().orders.filter(o => !filter || (filter === 'open' ? (o.status === 'OPEN' || o.status === 'PARTIAL') : o.status === filter)); }
+    deskTrades() { return this._dk().trades; }
+    /* positions: per product - bought / sold through the desk, average buy and sell prices, fees, realised profit (from the real cost of what was sold), unrealised (market vs the company's own unit cost of the stock) */
+    deskPositions() { const out = {}; for (const t of this._dk().trades) { const r = out[t.product] || (out[t.product] = { product: t.product, bought: 0, buyValue: 0, sold: 0, sellValue: 0, fees: 0, realised: 0, trades: 0 }); r.trades++; r.fees += t.fee || 0; if (t.side === 'BUY') { r.bought += t.qty; r.buyValue += t.qty * t.price; } else { r.sold += t.qty; r.sellValue += t.qty * t.price; r.realised += t.profit || 0; } }
+      for (const k in out) { const r = out[k]; r.avgBuy = r.bought > 0 ? r.buyValue / r.bought : 0; r.avgSell = r.sold > 0 ? r.sellValue / r.sold : 0; r.remaining = this.available(k); r.marketPrice = this.market.price[k]; const bal = this.journal.bal, book = k === 'CRUDE' ? Math.max(0, bal.INV_CRUDE) + Math.max(0, bal.INV_CRUDE_BUY) : Math.max(0, bal[INVACC[k]]); r.bookValue = book; r.unrealised = r.remaining > 0 ? r.marketPrice * (k === 'CRUDE' ? this.crudeQ : 1) * r.remaining - book : 0; } return out; }
     /* ---- Automatic Reserve Selling: standing sell orders the PLAYER creates. Never created by itself (not by building a tank, not by loading a save); the price is checked once per economic day. ---- */
     reserveAutoList() { const A = this.reserve.auto; return A ? A.orders : []; }
     _autoCheck(o) { if (!o || !(o.price > 0)) return 'price'; if (o.mode !== 'qty' && o.mode !== 'pct') return 'mode'; if (!(o.amount > 0) || (o.mode === 'pct' && o.amount > 100)) return 'amount'; return null; }
@@ -594,10 +638,10 @@
 
     /* ---- purchasing (Phase 8): crude and products go into tanks, materials into stock pools; paid in cash or on credit; cost joins the stock (weighted average) ---- */
     supplierOf(id) { return this.cfg.SUPPLIERS.find(x => x.id === id) || null; }
-    buyQuote(item, qty, supplierId) {
+    buyQuote(item, qty, supplierId, refOv) {
       const sup = this.supplierOf(supplierId), isProd = SELL.includes(item);
       if (!sup || !(isProd || this.cfg.MATERIALS.includes(item))) return { ok: false, reason: 'item' };
-      const kind = item === 'CRUDE' ? 'crude' : isProd ? 'product' : 'material', q = Math.max(0, +qty || 0), ref = isProd ? this.market.price[item] : this.cfg.MATERIAL_PRICE[item], fm = this.market.costMult().freight;
+      const kind = item === 'CRUDE' ? 'crude' : isProd ? 'product' : 'material', q = Math.max(0, +qty || 0), ref = refOv > 0 && isProd ? refOv : isProd ? this.market.price[item] : this.cfg.MATERIAL_PRICE[item], fm = this.market.costMult().freight;
       const unit = ref * (1 + sup.premium), gross = q * unit, freight = q * sup.freightPerUnit[kind] * fm, fee = gross * sup.feeRate, total = gross + freight + fee;   // Purchase total = qty x unit price + freight + fees
       return { ok: true, item, isProd, supplier: sup.id, supplierName: sup.name, qty: q, refPrice: ref, unitPrice: unit, gross, freight, fee, total, landedUnit: q > 0 ? total / q : unit, creditDays: sup.creditDays };
     }
@@ -668,7 +712,7 @@
         s.matLim = lim; this.matLimit = Math.min(this.matLimit, lim); } } }
     buy(item, qty, supplierId, terms, opts) {
       if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; this.sync();
-      const qt = this.buyQuote(item, qty, supplierId); if (!qt.ok) return qt; if (!(qt.qty > 0)) return { ok: false, reason: 'nothingToBuy', quote: qt };
+      const qt = this.buyQuote(item, qty, supplierId, opts && opts.ref); if (!qt.ok) return qt; if (!(qt.qty > 0)) return { ok: false, reason: 'nothingToBuy', quote: qt };
       const credit = terms === 'CREDIT'; if (credit && !(qt.creditDays > 0)) return { ok: false, reason: 'noCredit', quote: qt };
       if (!credit && this.store.cash < qt.total) return { ok: false, reason: 'cash', quote: qt };
       if (item === 'CRUDE' && !this.tradeTanks().length) return { ok: false, reason: 'noTradeTank', quote: qt };           // bought oil needs a commercial or trade tank: never a tank fed by wells
@@ -705,13 +749,13 @@
     }
 
     /* ---- selling ---- */
-    quote(p, qty, src) {
-      const avail = p === 'CRUDE' && src ? this.crudeAvailable(src) : this.available(p), q = clamp(+qty || 0, 0, avail), mp = this.market.price[p], qm = p === 'CRUDE' ? this.crudeQ : 1, unit = mp * qm, gross = q * unit, fee = gross * this.cfg.FEES.spot;
+    quote(p, qty, src, refOv) {
+      const avail = p === 'CRUDE' && src ? this.crudeAvailable(src) : this.available(p), q = clamp(+qty || 0, 0, avail), mp = refOv > 0 ? refOv : this.market.price[p], qm = p === 'CRUDE' ? this.crudeQ : 1, unit = mp * qm, gross = q * unit, fee = gross * this.cfg.FEES.spot;
       return { product: p, available: avail, qty: q, marketPrice: mp, quality: qm, unitPrice: unit, gross, fee, net: gross - fee };      // GrossRevenue = Qty x Price ; NetRevenue = Gross - Fees
     }
     sell(p, qty, kind, opts) {                                                       // opts.source (crude only): 'OWN' = produced crude, 'BOUGHT' = bought crude, omitted = the mixture
       const src = p === 'CRUDE' && opts && opts.source ? opts.source : null; if (src && src !== 'OWN' && src !== 'BOUGHT') return { ok: false, reason: 'source' };
-      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; if (!SELL.includes(p)) return { ok: false, reason: 'product' }; const pl = this.bank.oilPledged(p); if (pl > 0) { const free = Math.max(0, this.available(p) - pl); if (kind === 'AUTO' || kind === 'RESCUE') qty = Math.min(qty, free); else if (qty > free + 1e-6) return { ok: false, reason: 'pledged', free }; } this.sync(); const qt = this.quote(p, qty, src); if (!(qty > 0) || qt.qty <= 1e-6) return { ok: false, reason: 'nothingToSell' }; if (qty > qt.available + 1e-6) return { ok: false, reason: 'notEnough', quote: qt };
+      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; if (!SELL.includes(p)) return { ok: false, reason: 'product' }; const pl = this.bank.oilPledged(p); if (pl > 0) { const free = Math.max(0, this.available(p) - pl); if (kind === 'AUTO' || kind === 'RESCUE') qty = Math.min(qty, free); else if (qty > free + 1e-6) return { ok: false, reason: 'pledged', free }; } this.sync(); const qt = this.quote(p, qty, src, opts && opts.ref); if (!(qty > 0) || qt.qty <= 1e-6) return { ok: false, reason: 'nothingToSell' }; if (qty > qt.available + 1e-6) return { ok: false, reason: 'notEnough', quote: qt };
       const got = this.removeFrom(p, qt.qty, p === 'CRUDE' ? (src || 'ALL') : undefined), take = this._lastTake, gross = got * qt.unitPrice, fee = gross * this.cfg.FEES.spot;
       this._post({ type: 'SALE_SPOT', flow: 'OP', desc: 'Spot sale · ' + p, src: kind || 'SPOT' }, [['CASH', gross], ['REV_SPOT', -gross]]);   // revenue exists only when the product is sold
       this._expense('fees', fee, 'Spot sale fee');
@@ -1050,6 +1094,7 @@
       const cash = this.store.cash; this.days.push(Object.assign({ d: this.dayIdx - 1 }, (() => { const c = calc(this.led.day, cash); return { revenue: c.revenue, expenses: c.expenses, profit: c.netProfit, cashIn: c.cash.in, cashOut: c.cash.out, storage: this.led.day.storage, opex: c.opex + c.variable }; })()));
       while (this.days.length > 60) this.days.shift(); this._finLog(cash); this.led.day = ledger(cash);
       this._refreshOffers();                                                          // expired offers leave, new ones take their place: there are always 3 to choose from
+      this._deskDay();                                                                // the player's standing limit orders (none unless he made one)
       this._autoReserveDay();                                                         // standing reserve sell orders the player made (none unless he made one)
     }
     _monthEnd() {
@@ -1369,7 +1414,7 @@
     toJSON() {
       this.settle();                                                         // a save never holds half an hour
       return { v: 2, central: this.central, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0, a.useStart == null ? null : a.useStart]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
-        autoBuy: this.autoBuy, whLv: this.whLv, matHist: this.matHist, pwState: { factor: this.pw.factor, stop: this.pwStop == null ? null : this.pwStop }, recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, reserve: this.reserve, water: this.water, netOil: this.netOil ? 1 : 0, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, bank: this.bank.toJSON(), speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
+        desk: this.desk || null, autoBuy: this.autoBuy, whLv: this.whLv, matHist: this.matHist, pwState: { factor: this.pw.factor, stop: this.pwStop == null ? null : this.pwStop }, recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, reserve: this.reserve, water: this.water, netOil: this.netOil ? 1 : 0, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, bank: this.bank.toJSON(), speed: this.speed, lastSpeed: this.lastSpeed, calStart: CAL.START, savedAt: this.lastSim };
     }
     fromJSON(d) {
       this._hg = null; this._restoreWear = true;
@@ -1381,7 +1426,7 @@
       this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.dlog = d.dlog || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSpeed = d.lastSpeed > 0 ? d.lastSpeed : (this.speed > 0 ? this.speed : 1); this.lastSim = d.savedAt == null ? null : d.savedAt;
       this.recv = (d.recv || []).map(r => Object.assign({ late: false, payOn: r.due }, r)); this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.purchases = d.purchases || []; this.nextPur = d.nextPur || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy; this.bsStart = d.bsStart || null;
       if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); this.qty2 = Object.assign({ BYPRODUCT: 0, RESIDUE: 0 }, d.qty2 || {}); }
-      this.water = Object.assign({ v: 1, produced: 0, sold: 0, revenue: 0, log: [], day: -1, today: 0 }, d.water || {}); this.water.auto = Object.assign({ on: false, reserve: 0, day: -1, used: {}, sold: 0 }, this.water.auto || {}); this.netOil = !!d.netOil; this.reserve = Object.assign({ v: 1, lv: 0, log: [] }, d.reserve || {}); if (this.reserve.auto && !Array.isArray(this.reserve.auto.orders)) delete this.reserve.auto; { const z = this.reserveZone(); this.reserve.lv = Math.max(0, Math.min(z ? z.levels.length - 1 : 0, this.reserve.lv | 0)); if (!Array.isArray(this.reserve.log)) this.reserve.log = []; } this._hookReserve();   // an old save has no reserve: it starts closed at level 0, with nothing moved into it
+      this.water = Object.assign({ v: 1, produced: 0, sold: 0, revenue: 0, log: [], day: -1, today: 0 }, d.water || {}); this.water.auto = Object.assign({ on: false, reserve: 0, day: -1, used: {}, sold: 0 }, this.water.auto || {}); this.netOil = !!d.netOil; this.reserve = Object.assign({ v: 1, lv: 0, log: [] }, d.reserve || {}); this.desk = d.desk && Array.isArray(d.desk.orders) && Array.isArray(d.desk.trades) ? Object.assign({ v: 1, nid: 0, tid: 0, day: -1 }, d.desk) : null; if (this.reserve.auto && !Array.isArray(this.reserve.auto.orders)) delete this.reserve.auto; { const z = this.reserveZone(); this.reserve.lv = Math.max(0, Math.min(z ? z.levels.length - 1 : 0, this.reserve.lv | 0)); if (!Array.isArray(this.reserve.log)) this.reserve.log = []; } this._hookReserve();   // an old save has no reserve: it starts closed at level 0, with nothing moved into it
       { const ab = this._abDefaults(), sv = d.autoBuy || {}; for (const m of c.MATERIALS) if (sv[m]) ab[m] = Object.assign(ab[m], sv[m]); ab.log = Array.isArray(sv.log) ? sv.log : []; this.autoBuy = ab; this.whLv = Object.assign({}, d.whLv || {}); this.matHist = d.matHist || {}; }      // saves from before auto-buy: the default settings, warehouse level 0
       this.bq = d.bq || 0; this.explLog = d.explLog || []; this.bprod = d.bprod || {}; this.tradeLog = d.tradeLog || []; this.nextTrade = d.nextTrade || 1; this.boughtUsed = d.boughtUsed || 0;
       if (!d.journal) this._migrate();                                                         // a save from before the journal: the company starts from an opening balance sheet of what it holds now

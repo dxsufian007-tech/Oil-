@@ -12,7 +12,7 @@
   const FR = { D: 'يومي', W: 'أسبوعي', M: 'شهري', Y: 'سنوي' }, SPAN = { D: 60, W: 52, M: 24, Y: 6 }, PO = ['GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS', 'BYPRODUCT'];
   const NAME = { CRUDE: 'خام برنت', GASOLINE: 'البنزين', DIESEL: 'الديزل', JET_FUEL: 'وقود الطائرات', GAS: 'الغاز المسال', BYPRODUCT: 'المنتجات الثانوية' };
   const LV = { LOW: 'منخفض', NORMAL: 'طبيعي', HIGH: 'مرتفع' }, DIRA = { UP: '▲ صعود', DOWN: '▼ هبوط', NEUTRAL: '● محايد' }, POW = { STRONG: 'قوي', MEDIUM: 'متوسط', WEAK: 'ضعيف' }, ST = { active: 'نشط', ended: 'انتهى' };
-  const st = { sec: 'brent', prod: 'GASOLINE', frame: 'D', span: SPAN.D, off: 0, sel: null, log: false, more: false };
+  const st = { dk: { side: 'BUY', type: 'MARKET', qty: 100000, price: null, msg: '' }, sec: 'brent', prod: 'GASOLINE', frame: 'D', span: SPAN.D, off: 0, sel: null, log: false, more: false };
   const f2 = v => (+v).toFixed(2), pc = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%', fm = v => (+v).toLocaleString('en-US', { maximumFractionDigits: 0 });
   const col = v => v > 0.00005 ? UP : v < -0.00005 ? DN : TXT, ar = v => v > 0.00005 ? '▲' : v < -0.00005 ? '▼' : '●';
   const btn = (act, v, label, on, extra) => '<button data-act="' + act + '"' + (v != null ? ' data-v="' + v + '"' : '') + ' class="' + (on ? 'on' : '') + '"' + (extra || '') + '>' + label + '</button>';
@@ -107,9 +107,45 @@
     const e = co.market.engine, d = OE.PRODUCTS[p], pr = co.market.price[p], cr = co.market.price.CRUDE, s = e.prod[p], row = (k, val) => '<div class="es-kv"><span>' + k + '</span><span dir="ltr">' + val + '</span></div>';
     return '<div class="es-card" data-mk="pcost"><h5>اقتصاد ' + NAME[p] + '</h5>' + row('هامش فوق الخام', (pr - cr >= 0 ? '+' : '') + f2(pr - cr)) + (d.floor ? row('أدنى سعر يغطي التكرير والنقل والتخزين', f2(cr + e.P.costFloor * Math.max(0.5, e.cost.energy))) : '') + row('مخزون المنتج', fm(s.S) + ' مليون برميل · ' + (s.S / (d.dem * e.P.prodDays) * 100).toFixed(0) + '% من الطبيعي') + row('الإمداد · الطلب', s.sup.toFixed(1) + ' · ' + s.dem.toFixed(1) + ' مليون برميل/يوم') + (e.rcOut > 0.005 ? row('تعطل التكرير', (e.rcOut * 100).toFixed(1) + '% (يقلل إمداد المنتجات)') : '') + '</div>';
   }
+
+  /* ---- S2 trading desk: depth, ticket, open orders, history and positions (all from company.desk*, nothing computed twice) ---- */
+  const DQ = [10000, 100000, 1000000, 5000000], SRCL = { SIM: 'سيولة محاكاة من عمق السوق (ليست أوامر لاعبين)', REAL: 'أوامر حقيقية', MIXED: 'أوامر حقيقية + سيولة محاكاة' };
+  const STAT = { OPEN: 'مفتوح', PARTIAL: 'جزئي', FILLED: 'منفذ', CANCELLED: 'ملغى', CANCELLED_PARTIAL: 'ملغى بعد تنفيذ جزئي' }, RS = { cash: 'الرصيد لا يكفي', noRoom: 'لا توجد سعة تخزين كافية', noTradeTank: 'يلزم خزان تجاري', noLiquidity: 'لا توجد سيولة', limit: 'السعر المحدد خارج نطاق السوق', notEnough: 'لا تملك هذه الكمية', pledged: 'الكمية مرهونة', bad: 'مدخلات غير صحيحة', max: 'بلغت الحد الأقصى للأوامر المفتوحة (20)', bankrupt: 'الشركة مفلسة' };
+  const dkProd = () => st.dp || 'CRUDE';
+  function deskCard(co) {
+    const d = st.dk, p = dkProd(), bk = co.deskBook(p); if (!bk.ok) return ''; const f0 = v => (+v).toLocaleString('en-US', { maximumFractionDigits: 0 }), mk = co.market.price[p];
+    if (d.price == null) d.price = Math.round(mk * 100) / 100;
+    const chips = ['CRUDE'].concat(PO.filter(x => x !== 'BYPRODUCT')).map(k => btn('mkDkProd', k, NAME[k], p === k, ' style="flex:1;min-width:64px"')).join('');
+    const rows = (list, c) => list.slice(0, 5).map(r => '<div class="es-kv" style="color:' + c + '"><span dir="ltr">' + f2(r.price) + '</span><span dir="ltr">' + f0(r.qty) + '</span></div>').join('') || '<div class="es-sm">لا توجد سيولة</div>';
+    let h = '<div class="es-card" data-mk="desk"><h5>عمق السوق · ' + NAME[p] + '</h5><div class="es-row" style="margin:0;flex-wrap:wrap;gap:4px">' + chips + '</div>'
+      + '<div class="es-sm" style="margin:6px 0">' + SRCL[bk.source] + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><div class="es-sm">الشراء (Bid) · السعر / الكمية</div>' + rows(bk.bids, UP) + '</div><div><div class="es-sm">البيع (Ask) · السعر / الكمية</div>' + rows(bk.asks, DN) + '</div></div>'
+      + '<div class="es-kv"><span>أفضل شراء / أفضل بيع</span><span dir="ltr">' + (bk.bestBid != null ? f2(bk.bestBid) : '—') + ' / ' + (bk.bestAsk != null ? f2(bk.bestAsk) : '—') + '</span></div>'
+      + '<div class="es-kv"><span>الفارق السعري</span><span dir="ltr">' + (bk.spreadPct != null ? (bk.spreadPct * 100).toFixed(3) + '%' : '—') + '</span></div>'
+      + '<div class="es-kv"><span>السيولة المتاحة (شراء / بيع)</span><span dir="ltr">' + f0(bk.liquidityAsk) + ' / ' + f0(bk.liquidityBid) + '</span></div></div>';
+    const q = co.deskQuote(d.side, p, d.qty, { limit: d.type === 'LIMIT' ? d.price : undefined });
+    h += '<div class="es-card" data-mk="ticket"><h5>أمر جديد</h5><div class="es-row" style="margin:0">' + btn('mkDkSide', 'BUY', 'شراء', d.side === 'BUY', ' style="flex:1"') + btn('mkDkSide', 'SELL', 'بيع', d.side === 'SELL', ' style="flex:1"') + '</div>'
+      + '<div class="es-row" style="margin:6px 0 0">' + btn('mkDkType', 'MARKET', 'فوري (Market)', d.type === 'MARKET', ' style="flex:1"') + btn('mkDkType', 'LIMIT', 'محدد (Limit)', d.type === 'LIMIT', ' style="flex:1"') + '</div>'
+      + '<div class="es-kv"><span>الكمية (برميل)</span><b dir="ltr">' + f0(d.qty) + '</b></div><div class="es-row" style="margin:0;flex-wrap:wrap;gap:4px">' + DQ.map(x => btn('mkDkQty', x, x >= 1e6 ? (x / 1e6) + 'M' : (x / 1e3) + 'K', d.qty === x, ' style="flex:1;min-width:60px"')).join('') + btn('mkDkQty', 'x2', '×2', false) + btn('mkDkQty', 'x.5', '÷2', false) + '</div>';
+    if (d.type === 'LIMIT') h += '<div class="es-kv"><span>السعر المحدد</span><b dir="ltr">$' + f2(d.price) + '</b></div><div class="es-row" style="margin:0">' + btn('mkDkPx', '-1', '−1%', false, ' style="flex:1"') + btn('mkDkPx', '-.1', '−0.1%', false, ' style="flex:1"') + btn('mkDkPx', 'mkt', 'السوق', false, ' style="flex:1"') + btn('mkDkPx', '.1', '+0.1%', false, ' style="flex:1"') + btn('mkDkPx', '1', '+1%', false, ' style="flex:1"') + '</div>';
+    if (q.ok) { h += '<div style="margin-top:6px;padding:8px;border-radius:10px;background:#1b2530"><div class="es-sm">معاينة قبل التنفيذ (لا يُخصم شيء)</div>'
+        + (q.filled > 0 ? '<div class="es-kv"><span>سينفذ</span><b dir="ltr">' + f0(q.filled) + ' من ' + f0(d.qty) + (q.partial || q.filled < d.qty - 1e-6 ? ' · جزئي' : '') + '</b></div><div class="es-kv"><span>متوسط السعر (VWAP)</span><b dir="ltr">$' + f2(q.vwap) + '</b></div><div class="es-kv"><span>الانزلاق عن السوق</span><b dir="ltr">' + (q.slippageVsMarket * 100).toFixed(3) + '%</b></div><div class="es-kv"><span>مستويات سعرية مستخدمة</span><b dir="ltr">' + q.levelsUsed + '</b></div>'
+          + (d.side === 'BUY' ? '<div class="es-kv"><span>الإجمالي مع النقل والرسوم</span><b dir="ltr">$' + f0(q.total) + '</b></div>' : '<div class="es-kv"><span>الصافي بعد الرسوم</span><b dir="ltr">$' + f0(q.net) + '</b></div><div class="es-kv"><span>المتاح لديك</span><span dir="ltr">' + f0(q.haveStock) + '</span></div>')
+          : '<div class="es-sm">' + (d.type === 'LIMIT' ? 'لا ينفذ الآن: السعر المحدد خارج نطاق السوق — يبقى الأمر مفتوحاً ويُفحص يومياً' : (RS[q.reason] || 'لا ينفذ')) + '</div>') + '</div>'; }
+    else h += '<div class="es-sm" style="margin-top:6px">' + (RS[q.reason] || 'لا يمكن التنفيذ') + '</div>';
+    h += '<button data-act="mkDkGo" style="width:100%;min-height:46px;margin-top:8px;font-weight:800">' + (d.type === 'LIMIT' ? 'وضع أمر محدد' : 'تنفيذ فوري') + '</button>' + (d.msg ? '<div class="es-sm" style="margin-top:6px;color:' + GOLD + '">' + d.msg + '</div>' : '') + '</div>';
+    const open = co.deskOrders('open'), all = co.deskOrders();
+    h += '<div class="es-card" data-mk="orders"><h5>الأوامر المفتوحة (' + open.length + ')</h5>' + (open.length ? open.map(o => '<div class="es-kv"><span>#' + o.id + ' ' + (o.side === 'BUY' ? 'شراء' : 'بيع') + ' ' + NAME[o.product] + ' · ' + f0(o.remaining) + ' @ $' + f2(o.price) + ' · ' + STAT[o.status] + (o.note ? ' · ' + (RS[o.note] || o.note) : '') + '</span>' + btn('mkDkCancel', o.id, 'إلغاء', false) + '</div>').join('') : '<div class="es-sm">لا توجد أوامر مفتوحة.</div>')
+      + (all.length > open.length ? '<div class="es-sm" style="margin-top:6px">آخر الأوامر المغلقة: ' + all.filter(o => o.status !== 'OPEN' && o.status !== 'PARTIAL').slice(-3).map(o => '#' + o.id + ' ' + STAT[o.status]).join(' · ') + '</div>' : '') + '</div>';
+    const tr = co.deskTrades().slice(-8).reverse(), pos = co.deskPositions();
+    h += '<div class="es-card" data-mk="trades"><h5>سجل الصفقات</h5>' + (tr.length ? tr.map(t => '<div class="es-kv"><span>' + (t.side === 'BUY' ? 'شراء' : 'بيع') + ' ' + NAME[t.product] + ' · ' + f0(t.qty) + ' @ $' + f2(t.price) + ' · ' + (t.kind === 'LIMIT' ? 'محدد' : 'فوري') + '</span><span dir="ltr" style="color:' + (t.side === 'SELL' ? col(t.profit) : TXT) + '">' + (t.side === 'SELL' ? (t.profit >= 0 ? '+' : '') + f0(t.profit) : 'رسوم ' + f0(t.fee)) + '</span></div>').join('') : '<div class="es-sm">لا توجد صفقات بعد.</div>')
+      + Object.keys(pos).map(k => { const r = pos[k]; return '<h5 style="margin-top:8px">مركز ' + NAME[k] + '</h5><div class="es-kv"><span>مشتريات / مبيعات</span><span dir="ltr">' + f0(r.bought) + ' / ' + f0(r.sold) + '</span></div><div class="es-kv"><span>متوسط الشراء / البيع</span><span dir="ltr">$' + f2(r.avgBuy) + ' / $' + f2(r.avgSell) + '</span></div><div class="es-kv"><span>الرسوم</span><span dir="ltr">$' + f0(r.fees) + '</span></div><div class="es-kv"><span>الربح المحقق</span><b dir="ltr" style="color:' + col(r.realised) + '">' + (r.realised >= 0 ? '+' : '') + '$' + f0(r.realised) + '</b></div><div class="es-kv"><span>غير المحقق · الكمية المتبقية ' + f0(r.remaining) + '</span><b dir="ltr" style="color:' + col(r.unrealised) + '">' + (r.unrealised >= 0 ? '+' : '') + '$' + f0(r.unrealised) + '</b></div>'; }).join('') + '</div>';
+    return h;
+  }
   function html(co) {
     if (!co || !co.market.engine) return ''; const p = sym();
-    let h = '<div class="es-card" data-mk="sec"><div class="es-row" style="margin:0">' + btn('mkSec', 'brent', 'سوق خام برنت', st.sec === 'brent', ' style="flex:1"') + btn('mkSec', 'products', 'سوق المنتجات النفطية', st.sec === 'products', ' style="flex:1"') + '</div></div>';
+    let h = '<div class="es-card" data-mk="sec"><div class="es-row" style="margin:0">' + btn('mkSec', 'brent', 'سوق خام برنت', st.sec === 'brent', ' style="flex:1"') + btn('mkSec', 'products', 'سوق المنتجات النفطية', st.sec === 'products', ' style="flex:1"') + btn('mkSec', 'desk', 'التداول والعمق', st.sec === 'desk', ' style="flex:1"') + '</div></div>';
+    if (st.sec === 'desk') return h + deskCard(co);
     if (st.sec === 'products') h += productsList(co);
     h += priceCard(co, p) + chartCard(co, p) + newsCard(co, p) + indicators(co, p) + (p === 'CRUDE' ? companyCard(co) : '') + (st.sec === 'products' ? prodCosts(co, p) : '') + tradeCard(p);
     return h + moreCard(co);
@@ -125,8 +161,16 @@
     if (a === 'mkSel') { st.sel = v; return true; }
     if (a === 'mkLog') { st.log = !st.log; return true; }
     if (a === 'mkMore') { st.more = !st.more; return true; }
+    if (a === 'mkDkProd') { st.dp = v; st.dk.price = null; st.dk.msg = ''; return true; }
+    if (a === 'mkDkSide') { st.dk.side = v; st.dk.msg = ''; return true; }
+    if (a === 'mkDkType') { st.dk.type = v; st.dk.msg = ''; return true; }
+    if (a === 'mkDkQty') { st.dk.qty = v === 'x2' ? Math.min(1e9, st.dk.qty * 2) : v === 'x.5' ? Math.max(1000, Math.round(st.dk.qty / 2)) : +v; st.dk.msg = ''; return true; }
+    if (a === 'mkDkPx') { const m = co.market.price[dkProd()]; st.dk.price = v === 'mkt' ? Math.round(m * 100) / 100 : Math.max(0.01, Math.round((st.dk.price || m) * (1 + +v / 100) * 100) / 100); st.dk.msg = ''; return true; }
+    if (a === 'mkDkCancel') { const r = co.deskCancel(+v); st.dk.msg = r.ok ? 'أُلغي الأمر #' + v : 'تعذّر الإلغاء'; return true; }
+    if (a === 'mkDkGo') { const d = st.dk, p = dkProd(); let r; if (d.type === 'LIMIT') { r = co.deskLimitCreate(d.side, p, d.qty, d.price); st.dk.msg = r.ok ? 'وُضع الأمر #' + r.order.id + ' · ' + (STAT[r.order.status]) + (r.order.fills.length ? ' · نُفّذ ' + Math.round(r.order.qty - r.order.remaining).toLocaleString('en-US') : '') : (RS[r.reason] || 'رُفض الأمر'); }
+      else { r = co.deskMarket(d.side, p, d.qty); st.dk.msg = r.ok ? 'نُفّذ ' + Math.round(r.filled).toLocaleString('en-US') + ' بمتوسط $' + r.vwap.toFixed(2) + (r.partial ? ' · تنفيذ جزئي، المتبقي ' + Math.round(r.unfilled).toLocaleString('en-US') : '') : (RS[r.reason] || 'لم يُنفَّذ'); } return true; }
     return false;
   }
-  const ACTS = ['mkSec', 'mkProd', 'mkFrame', 'mkNav', 'mkZoom', 'mkSel', 'mkLog', 'mkMore'];
+  const ACTS = ['mkDkProd', 'mkDkSide', 'mkDkType', 'mkDkQty', 'mkDkPx', 'mkDkCancel', 'mkDkGo', 'mkSec', 'mkProd', 'mkFrame', 'mkNav', 'mkZoom', 'mkSel', 'mkLog', 'mkMore'];
   return { html, act, ACTS, state: st, view, chart, affects, NAME };
 });
