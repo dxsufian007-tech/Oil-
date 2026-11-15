@@ -79,7 +79,7 @@ jobs:
           F=OliEmpire-s1s4-$SRC-r${{ github.run_number }}.apk; mkdir -p /tmp/out && cp $F /tmp/out/ && (cd /tmp/out && sha256sum $F > $F.sha256)
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          if git ls-remote --exit-code --heads origin market-s1s4-apk-build >/dev/null; then git fetch -q origin market-s1s4-apk-build && git checkout -q -B market-s1s4-apk-build FETCH_HEAD && git rm -rf --quiet --ignore-unmatch oli .github >/dev/null 2>&1 || true; else git checkout --orphan market-s1s4-apk-build && git rm -rf --quiet .; fi
+          if git ls-remote --exit-code --heads origin market-s1s4-apk-build >/dev/null; then git fetch -q origin market-s1s4-apk-build && git checkout -q -f -B market-s1s4-apk-build FETCH_HEAD && git rm -rf --quiet --ignore-unmatch oli .github >/dev/null 2>&1 || true; else git checkout --orphan market-s1s4-apk-build && git rm -rf --quiet .; fi
           cp /tmp/out/$F /tmp/out/$F.sha256 .; cp /tmp/audit.txt $F.audit.txt
           git add $F $F.sha256 $F.audit.txt
           git commit -q -m "OLI EMPIRE market S1-S4 candidate APK $SRC (not a release)"
