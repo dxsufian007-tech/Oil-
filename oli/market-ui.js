@@ -12,7 +12,7 @@
   const FR = { D: 'يومي', W: 'أسبوعي', M: 'شهري', Y: 'سنوي' }, SPAN = { D: 60, W: 52, M: 24, Y: 6 }, PO = ['GASOLINE', 'DIESEL', 'JET_FUEL', 'GAS', 'BYPRODUCT'];
   const NAME = { CRUDE: 'خام برنت', GASOLINE: 'البنزين', DIESEL: 'الديزل', JET_FUEL: 'وقود الطائرات', GAS: 'الغاز المسال', BYPRODUCT: 'المنتجات الثانوية' };
   const LV = { LOW: 'منخفض', NORMAL: 'طبيعي', HIGH: 'مرتفع' }, DIRA = { UP: '▲ صعود', DOWN: '▼ هبوط', NEUTRAL: '● محايد' }, POW = { STRONG: 'قوي', MEDIUM: 'متوسط', WEAK: 'ضعيف' }, ST = { active: 'نشط', ended: 'انتهى' };
-  const st = { a: { src: 'REAL', frame: 'Y', span: 27, off: 0, sel: null, sma: true }, dk: { side: 'BUY', type: 'MARKET', qty: 100000, price: null, msg: '' }, sec: 'brent', prod: 'GASOLINE', frame: 'D', span: SPAN.D, off: 0, sel: null, log: false, more: false };
+  const st = { a: { src: 'SIM', frame: 'D', span: 60, off: 0, sel: null, sma: true }, dk: { side: 'BUY', type: 'MARKET', qty: 100000, price: null, msg: '' }, sec: 'brent', prod: 'GASOLINE', frame: 'D', span: SPAN.D, off: 0, sel: null, log: false, more: false };
   const f2 = v => (+v).toFixed(2), pc = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%', fm = v => (+v).toLocaleString('en-US', { maximumFractionDigits: 0 });
   const col = v => v > 0.00005 ? UP : v < -0.00005 ? DN : TXT, ar = v => v > 0.00005 ? '▲' : v < -0.00005 ? '▼' : '●';
   const btn = (act, v, label, on, extra) => '<button data-act="' + act + '"' + (v != null ? ' data-v="' + v + '"' : '') + ' class="' + (on ? 'on' : '') + '"' + (extra || '') + '>' + label + '</button>';
@@ -148,18 +148,18 @@
     return h;
   }
 
-  /* ---- S4 analytics: real Brent history (2000-2026, EIA) kept apart from the game's own simulated series; trend, reasons, forecasts ---- */
+  /* ---- S4 analytics: the game's own simulated series (D/W/M/Y candles, SMA, news marks), trend, reasons, forecasts. The real-history button was removed from the UI (owner request); the historical data files and the analytics functions stay untouched ---- */
   const UNC = { LOW: 'منخفض', MEDIUM: 'متوسط', HIGH: 'مرتفع' }, TRD = { UP: '▲ صاعد', DOWN: '▼ هابط', SIDE: '● عرضي', NA: 'لا بيانات كافية' };
   function analysisCard(co) {
-    const a = st.a, real = a.src === 'REAL', ser = AN.seriesOf(real ? 'REAL' : 'SIM', co, BH), all = AN.candles(ser.rows, a.frame), end = Math.max(1, all.length - a.off), from = Math.max(0, end - a.span), list = all.slice(from, end), cur = co.market.price.CRUDE;
+    const a = st.a, ser = AN.seriesOf('SIM', co, BH), all = AN.candles(ser.rows, a.frame), end = Math.max(1, all.length - a.off), from = Math.max(0, end - a.span), list = all.slice(from, end), cur = co.market.price.CRUDE;
     const c = list.find(x => x.key === a.sel) || list[list.length - 1], tr = AN.trend(all.slice(0, end)), e = co.market.engine;
-    const marks = {}; if (!real && e) for (const n of e.log) { const k = a.frame === 'D' ? n.date : null; for (const q of list) { if (a.frame === 'D' ? q.start === n.date : (n.date && n.date >= q.start && n.date <= q.end)) marks[q.key] = 1; } }
+    const marks = {}; if (e) for (const n of e.log) { const k = a.frame === 'D' ? n.date : null; for (const q of list) { if (a.frame === 'D' ? q.start === n.date : (n.date && n.date >= q.start && n.date <= q.end)) marks[q.key] = 1; } }
     const sm = a.sma && list.length > 6 ? [AN.sma(list, Math.min(5, list.length - 1)), AN.sma(list, Math.min(12, list.length - 1))] : null;
-    let h = '<div class="es-card" data-mk="an"><h5>التحليلات · ' + ser.label + '</h5><div class="es-row" style="margin:0 0 6px">' + btn('mkASrc', 'REAL', 'تاريخ فعلي 2000–2026', real, ' style="flex:1"') + btn('mkASrc', 'SIM', 'محاكاة اللعبة', !real, ' style="flex:1"') + '</div>'
+    let h = '<div class="es-card" data-mk="an"><h5>التحليلات · ' + ser.label + '</h5><div class="es-row" style="margin:0 0 6px">' + btn('mkASrc', 'SIM', 'محاكاة اللعبة', true, ' style="flex:1"') + '</div>'
       + '<div class="es-row" style="margin:0 0 6px">' + ['D', 'W', 'M', 'Y'].map(k => btn('mkAFrame', k, FR[k], a.frame === k)).join('') + '<span style="flex:1"></span>' + btn('mkANav', 'old', '◀') + btn('mkANav', 'new', '▶') + btn('mkAZoom', 'in', '＋') + btn('mkAZoom', 'out', '－') + '</div>';
-    h += chart(list, real ? null : cur, { line: real && a.frame === 'D', sma: sm, marks: !real ? marks : null, sel: 'mkASel' });
-    if (c) { const ch = c.c / c.o - 1; h += '<div class="es-sm" dir="ltr" style="text-align:center;margin-top:4px">' + c.start + (c.end !== c.start ? ' → ' + c.end : '') + ' · ' + (real && a.frame === 'D' ? 'السعر ' + f2(c.c) : 'فتح ' + f2(c.o) + ' · أعلى ' + f2(c.h) + ' · أدنى ' + f2(c.l) + ' · إغلاق ' + f2(c.c) + ' <b style="color:' + col(ch) + '">' + pc(ch) + '</b>') + '</div>'; }
-    h += '<div class="es-sm" style="margin-top:4px">' + (real ? 'مصدر البيانات: ' + ser.meta.source + ' · ' + ser.meta.from + ' → ' + ser.meta.to + ' (' + fm(ser.meta.count) + ' يوم تداول). سعر واحد لكل يوم، فلا يوجد حجم تداول حقيقي ولا أعلى/أدنى يومي؛ الشموع الأسبوعية والشهرية والسنوية مشتقة من الأسعار اليومية نفسها. لا تدخل هذه البيانات في محاكاة اللعبة.' : 'سعر المحاكاة داخل اللعبة (ليس تاريخاً حقيقياً) · ▼ البرتقالية = يوم فيه خبر · حجم التداول: ' + (c ? fm(c.v) : '0') + ' مليون برميل') + '</div>'
+    h += chart(list, cur, { sma: sm, marks: marks, sel: 'mkASel' });
+    if (c) { const ch = c.c / c.o - 1; h += '<div class="es-sm" dir="ltr" style="text-align:center;margin-top:4px">' + c.start + (c.end !== c.start ? ' → ' + c.end : '') + ' · ' + ('فتح ' + f2(c.o) + ' · أعلى ' + f2(c.h) + ' · أدنى ' + f2(c.l) + ' · إغلاق ' + f2(c.c) + ' <b style="color:' + col(ch) + '">' + pc(ch) + '</b>') + '</div>'; }
+    h += '<div class="es-sm" style="margin-top:4px">' + ('سعر المحاكاة داخل اللعبة (ليس تاريخاً حقيقياً) · ▼ البرتقالية = يوم فيه خبر · حجم التداول: ' + (c ? fm(c.v) : '0') + ' مليون برميل') + '</div>'
       + '<div class="es-row" style="margin:6px 0 0">' + btn('mkASma', null, a.sma ? 'إخفاء المتوسطات' : 'إظهار المتوسطات', a.sma, ' style="flex:1"') + '</div>'
       + (sm ? '<div class="es-sm"><span style="color:#d48cff">■</span> متوسط قصير · <span style="color:#5aa9e6">■</span> متوسط طويل</div>' : '') + '</div>';
     h += '<div class="es-card" data-mk="trend"><h5>الاتجاه</h5><div class="es-kv"><span>قراءة الاتجاه (' + FR[a.frame] + ')</span><b style="color:' + (tr.dir === 'UP' ? UP : tr.dir === 'DOWN' ? DN : TXT) + '">' + TRD[tr.dir] + '</b></div>' + (tr.fast != null ? '<div class="es-kv"><span>المتوسط القصير / الطويل</span><span dir="ltr">' + f2(tr.fast) + ' / ' + f2(tr.slow) + '</span></div>' : '') + '</div>';
@@ -192,8 +192,8 @@
     if (a === 'mkSel') { st.sel = v; return true; }
     if (a === 'mkLog') { st.log = !st.log; return true; }
     if (a === 'mkMore') { st.more = !st.more; return true; }
-    if (a === 'mkASrc') { st.a.src = v; st.a.frame = v === 'REAL' ? 'Y' : 'D'; st.a.span = v === 'REAL' ? 27 : SPAN.D; st.a.off = 0; st.a.sel = null; return true; }
-    if (a === 'mkAFrame') { const A = st.a; A.frame = v; A.span = A.src === 'REAL' ? ({ D: 260, W: 104, M: 120, Y: 27 })[v] : SPAN[v]; A.off = 0; A.sel = null; return true; }
+    if (a === 'mkASrc') { st.a.src = 'SIM'; st.a.frame = 'D'; st.a.span = SPAN.D; st.a.off = 0; st.a.sel = null; return true; }
+    if (a === 'mkAFrame') { const A = st.a; A.frame = v; A.span = SPAN[v]; A.off = 0; A.sel = null; return true; }
     if (a === 'mkANav') { const A = st.a, n = AN.candles(AN.seriesOf(A.src, co, BH).rows, A.frame).length, step = Math.max(1, Math.round(A.span / 2)); A.off = Math.max(0, Math.min(n - Math.min(n, A.span), A.off + (v === 'old' ? step : -step))); A.sel = null; return true; }
     if (a === 'mkAZoom') { const A = st.a, n = AN.candles(AN.seriesOf(A.src, co, BH).rows, A.frame).length; A.span = Math.max(8, Math.min(v === 'in' ? Math.round(A.span / 1.5) : Math.round(A.span * 1.5), Math.max(8, n))); return true; }
     if (a === 'mkASel') { st.a.sel = v; return true; }
