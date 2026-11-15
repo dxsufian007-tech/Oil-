@@ -7,7 +7,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/404/.test(m.text())) errs.push(m.text()); });
   const ev = (f, a) => p.evaluate(f, a), port = srv.address().port;
   await p.goto('http://localhost:' + port + '/?lab=1&lang=en'); await p.waitForFunction(() => window.__lab && __lab.restored && window.__layers, null, { timeout: 90000 });
-  await ev(() => { localStorage.clear(); __lab.reset(); __lab.company.speed = 0; }); await p.waitForTimeout(350); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 });
+  await ev(() => { localStorage.clear(); __lab.reset(); __lab.company.setSpeed(0); }); await p.waitForTimeout(350); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 });
   await p.locator('#eh-menu').tap(); await p.locator('#es-tabs [data-tab=market]').tap();
   let body = await p.textContent('#es-body'); const px0 = await ev(() => __lab.company.market.price.CRUDE);
   ok(await p.locator('[data-mk=sec] button').count() === 4 && /سوق خام برنت/.test(body) && /سوق المنتجات النفطية/.test(body) && /التداول والعمق/.test(body), 'the market screen offers Brent crude, oil products, the trading desk (S2) and the analytics (S4)');

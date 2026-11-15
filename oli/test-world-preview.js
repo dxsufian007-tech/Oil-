@@ -32,8 +32,17 @@ const srv = http.createServer((q, r) => { const u = q.url.split('?')[0], f = pat
   const prod = await p.evaluate(() => __wp.world.allSites().filter(s => __wp.world.stateOf(s.id) === 'PRODUCING').length); ok(prod >= 2, 'producing fields exist in the demo state: ' + prod);
   await p.evaluate(() => { const w = __wp.world, s = w.allSites().find(s => w.stateOf(s.id) === 'PRODUCING'); __wp.goto(s.x, s.y, 0.7); }); await shot('09-producing-field');
   // pan + pinch-like zoom never throws and the frame stays cheap
-  const ms = await p.evaluate(() => { __wp.goto(800, 800, 0.35); const t = performance.now(); for (let i = 0; i < 30; i++) { __wp.cam.x += 3; __wp.draw(); } const m = (performance.now() - t) / 30; __wp.goto(800, 800, 1); const t2 = performance.now(); for (let i = 0; i < 30; i++) { __wp.cam.x += 1; __wp.draw(); } const c = (performance.now() - t2) / 30; __wp.goto(960, 640, 0.0045); const t3 = performance.now(); for (let i = 0; i < 30; i++) __wp.draw(); return { medium: m, close: c, far: (performance.now() - t3) / 30 }; });
-  console.log('draw ms per frame (desktop Chromium, software canvas):', JSON.stringify(ms)); ok(ms.medium < 40 && ms.close < 40 && ms.far < 40, 'frames stay cheap');
+  /* wall-clock timing is meaningless on a busy machine (many browsers on few cores).  Each frame is therefore measured NEXT TO a fixed CPU workload (a "unit"): both slow down together under load, so the ratio does not.  The limit is 40 ms on an idle machine = 40/UNIT units. */
+  const ms = await p.evaluate(() => {
+    const unit = () => { const t = performance.now(); let x = 0; for (let i = 0; i < 1e5; i++) x += Math.sqrt(i) * Math.sin(i); return performance.now() - t + (x > 1e18 ? 1 : 0); };
+    const burst = (n, f) => { let d = 0, u = 0; for (let i = 0; i < n; i++) { const t = performance.now(); f(); d += performance.now() - t; u += unit(); } return { ms: d / n, ratio: d / u }; };
+    const run = (n, f) => { let best = null; for (let k = 0; k < 10; k++) { const r = burst(n / 5, f); if (!best || r.ratio < best.ratio) best = r; } return best; };      // best of 10 short bursts: a load spike cannot fail it, a real slowdown (every burst slower) does
+    __wp.goto(800, 800, 0.35); const m = run(30, () => { __wp.cam.x += 3; __wp.draw(); }); __wp.goto(800, 800, 1); const c = run(30, () => { __wp.cam.x += 1; __wp.draw(); }); __wp.goto(960, 640, 0.0045); const f = run(30, () => __wp.draw());
+    return { medium: m.ms, close: c.ms, far: f.ms, rMedium: m.ratio, rClose: c.ratio, rFar: f.ratio };
+  });
+  console.log('draw ms per frame (desktop Chromium, software canvas):', JSON.stringify(ms));
+  const UNIT_IDLE = +process.env.UNIT_MS || 3.4, LIM = 40 / UNIT_IDLE; console.log('frame cost in CPU units: ' + [ms.rMedium, ms.rClose, ms.rFar].map(x => x.toFixed(1)).join(' / ') + ' (limit ' + LIM.toFixed(1) + ')');
+  ok(ms.rMedium < LIM && ms.rClose < LIM && ms.rFar < LIM, 'frames stay cheap (relative to the CPU speed at that moment)');
   ok(await p.evaluate(() => __wp.stats.imgs) > 0 && await p.evaluate(() => !__wp.stats.workerError), 'chunk images arrive from the worker: ' + await p.evaluate(() => __wp.stats.imgs));
   ok(errs.length === 0, 'no console errors: ' + errs.join('|')); console.log('WORLD PREVIEW TESTS PASSED (' + n + ' checks)'); await b.close(); srv.close();
 })().catch(e => { console.error(e); process.exit(1); });

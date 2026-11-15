@@ -8,7 +8,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   for (const [w, h] of [[412, 866], [360, 740], [768, 1024]]) {
     const p = await (await b.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: w < 700 })).newPage(); p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/404/.test(m.text())) errs.push(m.text()); });
     const ev = (f, a) => p.evaluate(f, a); await p.goto('http://localhost:' + srv.address().port + '/?lab=1&lang=en'); await p.waitForFunction(() => window.__lab && __lab.restored && window.__layers, null, { timeout: 90000 });
-    await ev(() => { localStorage.clear(); __lab.reset(); __lab.company.speed = 0; }); await p.waitForTimeout(350); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 });
+    await ev(() => { localStorage.clear(); __lab.reset(); __lab.company.setSpeed(0); }); await p.waitForTimeout(350); await ev(() => __lab.company.setSpeed(0)); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 });
     const dm = await ev(() => { __lab.store.cash = 5e9; return __lab.buildDemo(); }); if (!dm.ok) throw new Error('demo ' + JSON.stringify(dm).slice(0, 200)); await p.waitForTimeout(400); await ev(() => { const b0 = __lab.store.list()[0]; __wp.goto(b0.x, b0.y, .9); }); await p.waitForTimeout(600); await ev(() => { __lab.store.cash = 1e11; __lab.ts.sectorRule = null; const b0 = __lab.store.list()[0]; let placed = 0; for (let dy = -60; dy <= 60 && placed < 2; dy += 5) for (let dx = -60; dx <= 60 && placed < 2; dx += 5) { const v = __lab.store.validate('crude_tank_l', b0.x + dx, b0.y + dy, 0, {}); if (v.ok) { const r = __lab.store.place('crude_tank_l', b0.x + dx, b0.y + dy, 0, { instant: true }); if (r.ok) placed++; } } if (placed < 2) throw new Error('no spot for the tanks'); __lab.store.cash = 2e9; __lab.company.sync(); });
     await p.locator('#eh-menu').tap(); await p.locator('#es-tabs [data-tab=market]').tap(); await p.locator('[data-act=mkSec][data-v=desk]').tap();
     const px = '@' + w; let body = await p.textContent('#es-body');
@@ -16,11 +16,11 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
     ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no sideways scroll ' + px); if (SHOT) await p.screenshot({ path: path.join(SHOT, 's2-desk-' + w + '-1.png'), fullPage: false });
     const q0 = async () => (await p.textContent('[data-mk=ticket]')).replace(/[⁦-⁩]/g, '');
     ok(/معاينة قبل التنفيذ/.test(await q0()) && /متوسط السعر \(VWAP\)/.test(await q0()) && /الانزلاق/.test(await q0()), 'the ticket previews VWAP and slippage before anything is charged ' + px);
-    const cash0 = await ev(() => { __lab.company.sync(); return __lab.store.cash; });
+    const cash0 = await ev(() => { __lab.company.setSpeed(0); __lab.company.sync(); window.__n0 = __lab.company.journal.n; window.__h0 = __lab.company.hours; return __lab.store.cash; });
     await p.locator('[data-act=mkDkQty][data-v="1000000"]').tap(); const slip1 = +(/الانزلاق عن السوق([\d.\-]+)%/.exec(await q0()) || [])[1];
     await p.locator('[data-act=mkDkQty][data-v="10000"]').tap(); const slip0 = +(/الانزلاق عن السوق([\d.\-]+)%/.exec(await q0()) || [])[1];
     ok(slip1 > slip0, 'a bigger order shows a bigger slippage in the preview (' + slip0 + '% < ' + slip1 + '%) ' + px);
-    { const c1 = await ev(() => __lab.store.cash); ok(Math.abs(c1 - cash0) < 1, 'previewing charged nothing ' + px + ' (' + (c1 - cash0) + ')'); }
+    { const c1 = await ev(() => __lab.store.cash); ok(Math.abs(c1 - cash0) < 1, 'previewing charged nothing ' + px + ' (' + (c1 - cash0) + ' ' + (c1 - cash0 < -1 ? JSON.stringify(await ev(() => ({ dh: __lab.company.hours - __h0, sp: __lab.company.speed, ent: __lab.company.journal.log.slice(__n0 - __lab.company.journal.n).map(x => x.type + ':' + (x.desc || '')) }))) : '') + ')'); }
     await p.locator('[data-act=mkDkQty][data-v="100000"]').tap(); await p.locator('[data-act=mkDkGo]').tap(); body = await p.textContent('[data-mk=ticket]');
     ok(/نُفّذ 100,000 بمتوسط/.test(body), 'a market buy executes and reports the filled quantity and the average price ' + px);
     ok((await ev(() => __lab.company.deskTrades().length)) === 1 && (await ev(() => __lab.company.audit().ok)), 'one trade recorded and the audit passes ' + px);

@@ -8,7 +8,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
   for (const [w, h] of [[412, 866], [360, 740], [768, 1024]]) {
     const p = await (await b.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: w < 700 })).newPage(); p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/404/.test(m.text())) errs.push(m.text()); });
     const ev = (f, a) => p.evaluate(f, a); await p.goto('http://localhost:' + srv.address().port + '/?lab=1&lang=en'); await p.waitForFunction(() => window.__lab && __lab.restored && window.__layers, null, { timeout: 90000 });
-    await ev(() => { localStorage.clear(); __lab.reset(); __lab.company.speed = 0; }); await p.waitForTimeout(350); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 });
+    await ev(() => { localStorage.clear(); __lab.reset(); __lab.company.setSpeed(0); }); await p.waitForTimeout(350); await ev(() => __lab.company.setSpeed(0)); await p.waitForFunction(() => __wp.idle(), null, { timeout: 90000 });
     await p.locator('#eh-menu').tap(); await p.locator('#es-tabs [data-tab=market]').tap(); await p.locator('[data-act=mkSec][data-v=analysis]').tap(); const px = '@' + w, tx = async s => (await p.textContent(s)).replace(/[⁦-⁩]/g, '');
     let body = await tx('[data-mk=an]');
     ok(/تاريخ فعلي/.test(body) && /Energy Information Administration/.test(body) && /2000-01-04/.test(body) && /2026-11-11/.test(body) && /لا تدخل هذه البيانات في محاكاة اللعبة/.test(body), 'real history is labelled with its source, range and "not part of the simulation" ' + px);
