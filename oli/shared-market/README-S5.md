@@ -1,5 +1,7 @@
 # OLI shared world market (S5) - architecture, security, status
 
+> **FROZEN / DEFERRED (owner decision, Nov 15).** This is deferred project no. 1 (see `oli/DEFERRED.md` on the release branch). It is not part of the current release, is not merged with S1-S4, no server is deployed, and it must not be developed further until the owner explicitly re-opens it. The code stays here unchanged.
+
 ## Status (honest)
 - Implemented and tested LOCALLY with real HTTP: core, server, auth, client. 34 functional + 50 security checks.
 - NOT deployed. The game UI is NOT connected to it. Do not call S5 "online-ready" until: it is deployed behind TLS, the game client is wired to `client.js`, and a real multi-device test has been done.
