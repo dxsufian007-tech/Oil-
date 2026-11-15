@@ -1,0 +1,72 @@
+name: OLI device BENCHMARK APKs (original vs experimental)
+
+# The owner's request (Nov 15): measure the performance optimisation on his real phone, original vs experimental, same steps.
+# NOT a release. Nothing is merged. Two SEPARATE measurement apps (they install next to the game, never over it, and use their own storage):
+#   com.oli.benchorig  "OLI Bench A (orig)"  = release-candidate/market-s1-s4 at f61ff2b (the game code WITHOUT the optimisations) + the benchmark page
+#   com.oli.benchperf  "OLI Bench B (perf)"  = this branch (the game code WITH the 5 bit-identical optimisations) + the same benchmark page
+# The benchmark page (device-bench.js) imports the owner's save, runs x1/x2/x5/x10 in chunks of <= 110 s and exports the numbers.
+# Same fixed signing key as the other builds. Result: OliBench-A-orig-<sha>.apk and OliBench-B-perf-<sha>.apk on the branch bench-apk-build.
+on:
+  push:
+    branches: [experiment/perf-offer-planhops-test]
+    paths: ['.github/workflows/device-bench-apk.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Prepare the two source trees (A = original f61ff2b, B = this branch); both get this branch's benchmark page and build script
+        run: |
+          git worktree add /tmp/srcA f61ff2b
+          SRCB=$(git rev-parse --short=7 HEAD); echo "SRCB=$SRCB" >> $GITHUB_ENV
+          for f in device-bench.js build-www-map.js; do cp oli/$f /tmp/srcA/oli/$f; done
+          git -C /tmp/srcA log -1 --format=%h
+      - name: Build, check and collect both APKs
+        run: |
+          mkdir -p ~/.android /tmp/out; cp .github/signing/debug.keystore ~/.android/debug.keystore
+          BT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+          build() { # dir tag id name file
+            D=$1; TAG=$2; ID=$3; NAME="$4"; FILE=$5
+            ( cd $D/oli && npm ci >/dev/null 2>&1
+              OLI_DEMO=1 OLI_BENCH=1 OLI_BENCH_BUILD=$TAG node build-www-map.js
+              sed -i "s/\"appId\": \"com.oli.oilgame\"/\"appId\": \"$ID\"/; s/\"appName\": \"OLI EMPIRE\"/\"appName\": \"$NAME\"/" capacitor.config.json
+              npx cap sync android
+              sed -i "s/applicationId \"com.oli.oilgame\"/applicationId \"$ID\"/" android/app/build.gradle
+              sed -i "s/>OLI EMPIRE</>$NAME</g" android/app/src/main/res/values/strings.xml
+              grep -q "applicationId \"$ID\"" android/app/build.gradle || { echo "package id is not $ID"; exit 1; }
+              sed -i "s/versionCode [0-9]*/versionCode $((100 + ${{ github.run_number }}))/" android/app/build.gradle
+              sed -i "s/versionName \"[^\"]*\"/versionName \"bench-$TAG\"/" android/app/build.gradle
+              cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon --stacktrace )
+            cp $D/oli/android/app/build/outputs/apk/debug/app-debug.apk /tmp/out/$FILE
+            ${BT}apksigner verify --print-certs /tmp/out/$FILE | tee /tmp/certs.txt
+            grep -qi "SHA-256 digest: 3f5e924227aef8c5d1783ae6677db8b9b0a36a1c7b086b457133e6a4375e1aaf" /tmp/certs.txt || { echo "$FILE is NOT signed with the fixed key"; exit 1; }
+            ${BT}aapt dump badging /tmp/out/$FILE | head -3
+          }
+          build /tmp/srcA A com.oli.benchorig "OLI Bench A (orig)" OliBench-A-orig-f61ff2b.apk
+          build "$GITHUB_WORKSPACE" B com.oli.benchperf "OLI Bench B (perf)" OliBench-B-perf-$SRCB.apk
+          ls -l /tmp/out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OliBench-apks
+          path: /tmp/out/*.apk
+      - name: Publish on the branch bench-apk-build (earlier files kept)
+        run: |
+          git config user.name "github-actions"; git config user.email "actions@github.com"
+          if git ls-remote --exit-code --heads origin bench-apk-build >/dev/null; then git fetch -q origin bench-apk-build && git checkout -q -B bench-apk-build FETCH_HEAD && git rm -rf --quiet --ignore-unmatch oli .github >/dev/null 2>&1 || true; else git checkout --orphan bench-apk-build && git rm -rf --quiet .; fi
+          cp /tmp/out/*.apk .
+          git add OliBench-*.apk
+          git commit -q -m "OLI device benchmark APKs (A original, B perf; not a release)"
+          git push origin bench-apk-build
