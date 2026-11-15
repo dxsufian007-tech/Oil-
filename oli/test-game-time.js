@@ -58,7 +58,7 @@ const snap = g => JSON.stringify({ h: g.co.hours, cash: g.store.cash, bal: g.co.
   g.co.setSpeed(5); g.co.togglePause(); g.co.togglePause(); T('20d x5 is restored after pause and resume', g.co.speed === 5); }
 
 /* ---- 6. speeds: every system advances by the same ratio ---- */
-{ const SP = EC.TIME.speeds; T('21 the speeds are pause, 0.5x, 1x, 2x, 5x, 10x', JSON.stringify(SP) === JSON.stringify([0, 0.5, 1, 2, 5, 10]), SP);
+{ const SP = EC.TIME.speeds; T('21 the accepted internal speeds are the old ones (old saves stay valid) plus 2.5 (= the official x5)', JSON.stringify(SP) === JSON.stringify([0, 0.5, 1, 2, 2.5, 5, 10]), SP);
   const run = (sp, realS) => { const g = rich(); g.co.setSpeed(sp); let left = realS; const dt = EC.TIME.tickMs / 1000; while (left > 1e-9) { g.co.run(dt * (24 / EC.TIME.dayRealSeconds) * g.co.speed); left -= dt; } return g; };
   const base = run(1, 120); const hrs = {}; for (const sp of [0.5, 1, 2, 5, 10]) { const g = run(sp, 120); hrs[sp] = g.co.hours; }
   T('22 game time moves in proportion to speed (120 s of play; x1 = ' + (24 / EC.TIME.dayRealSeconds) + ' game hour(s) per real second)', Object.keys(hrs).every(sp => Math.abs(hrs[sp] - 120 * (24 / EC.TIME.dayRealSeconds) * sp) <= 1.0001), hrs);

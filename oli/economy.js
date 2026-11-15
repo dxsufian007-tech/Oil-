@@ -1361,8 +1361,14 @@
     pause() { return this.setSpeed(0); }
     resume() { return this.setSpeed(this.lastSpeed > 0 ? this.lastSpeed : 1); }
     togglePause() { return this.speed === 0 ? this.resume() : this.pause(); }
-    faster() { const sp = this.cfg.TIME.speeds.filter(x => x > 0), cur = this.speed || this.lastSpeed || 1, i = sp.indexOf(cur); return this.setSpeed(sp[Math.min(sp.length - 1, i < 0 ? 0 : i + 1)]); }
-    slower() { const sp = this.cfg.TIME.speeds.filter(x => x > 0), cur = this.speed || this.lastSpeed || 1, i = sp.indexOf(cur); return this.setSpeed(sp[Math.max(0, i < 0 ? 0 : i - 1)]); }
+    /* THE speed reference: a speed label xN means N game hours per real second (x1 = 1, x2 = 2, x5 = 5). `speed` itself keeps its old unit (1 = one game day per dayRealSeconds), so the clock, the saves and the offline catch-up are untouched;
+       hps() / speedOfHps() / speedLabel() convert, and officialSpeeds() are the values of the speed buttons. */
+    hps(v) { return (v == null ? this.speed : +v) * 24 / this.cfg.TIME.dayRealSeconds; }
+    speedOfHps(h) { return h * this.cfg.TIME.dayRealSeconds / 24; }
+    officialSpeeds() { return this.cfg.TIME.officialHps.map(h => this.speedOfHps(h)); }
+    speedLabel(v) { const h = this.hps(v); return String(+h.toFixed(2)); }
+    faster() { const sp = this.officialSpeeds(), cur = this.speed || this.lastSpeed || 1, nx = sp.find(x => x > cur + 1e-9); return this.setSpeed(nx === undefined ? cur : nx); }
+    slower() { const sp = this.officialSpeeds(), cur = this.speed || this.lastSpeed || 1; let pv = sp[0]; for (const x of sp) if (x < cur - 1e-9) pv = x; return this.setSpeed(pv); }
     /* live play: the time waits (capped) without running a game hour now - used by the frame-share pacing of the game loop */
     addTime(hours) { if (this.bankrupt || !(hours > 0) || this.speed === 0) return; this.acc = Math.min(this.acc + hours, this.cfg.TIME.liveBacklogHours || 4); }
     run(hours, budgetMs, clock) {                                                         // the lab calls this with real time x speed; whole hours only, the remainder waits for the next call

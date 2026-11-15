@@ -43,7 +43,7 @@
   const prodName = (C, p) => p && p !== '*' ? ((C.BC && C.BC.PRODUCT_LABEL[p]) || p) : 'منتج الخط';
   const nameOf = (C, id) => (C.GC && C.GC.INFO[id] && C.GC.INFO[id].name) || (C.B && C.B.DEFS[id] && C.B.DEFS[id].name) || id;
   const infoOf = (C, id) => (C.GC && C.GC.INFO[id]) || {};
-  const dayRealSec = C => (C.EC && C.EC.TIME && C.EC.TIME.dayRealSeconds) || 12;
+  const dayRealSec = C => 24;      // the speed reference: x1 = 1 game hour per real second, so one game day = 24 real seconds at x1
   function ports(def) { return (def.connections || []).filter(c => c.kind === 'pipe' && !c.reserved); }
   function portSummary(C, def) {
     const g = new Map(); for (const c of ports(def)) { const k = c.role + '|' + (c.product || '*'); g.set(k, (g.get(k) || 0) + 1); }

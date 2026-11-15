@@ -80,7 +80,7 @@
   }
   function rDashboard() {
     const s = CO.summary(), f = s.fin, bs = s.balance, lm = s.lastMonth, prev = s.months.length >= 2 ? s.months[s.months.length - 2] : null, last = s.months.length ? s.months[s.months.length - 1] : null, cl2 = CO.clock();
-    let h = '<div class="es-sm" style="margin-bottom:8px">' + cl2.weekdayName + ' ' + cl2.textAr + ' · ' + String(cl2.hour).padStart(2, '0') + ':00 · ' + (CO.speed === 0 ? 'الوقت متوقف' : 'السرعة ×' + CO.speed) + '</div>';
+    let h = '<div class="es-sm" style="margin-bottom:8px">' + cl2.weekdayName + ' ' + cl2.textAr + ' · ' + String(cl2.hour).padStart(2, '0') + ':00 · ' + (CO.speed === 0 ? 'الوقت متوقف' : 'السرعة ×' + CO.speedLabel()) + '</div>';
     h += '<div class="es-banner ' + (f.stage === 'NORMAL' ? '' : f.stage === 'WARNING' ? 'warn' : 'crit') + '" style="' + (f.stage === 'NORMAL' ? 'display:none' : '') + '">الحالة المالية: ' + (STAGE_AR[f.stage] || f.stage) + (f.negHours ? ' · ' + Math.floor(f.negHours / 24) + ' يوماً تحت الصفر' : '') + '</div>';
     const cashPrev = prev ? prev.cashEnd : null, cashCur = s.cash, netLast = last ? last.profit : null, netPrev = prev ? prev.profit : null;
     h += '<div class="es-grid">'
@@ -516,7 +516,7 @@
   function hud() {
     if (!CO) return; const s = CO.summary(), c = s.clock; $('eh-cash').lastChild.textContent = M(s.cash); $('eh-cash').lastChild.className = s.cash < 0 ? 'neg' : ''; const nt = $('eh-net').lastChild; nt.textContent = sg(s.dayNet); nt.className = s.dayNet > 0 ? 'pos' : s.dayNet < 0 ? 'neg' : '';
     { const inv = CO.inventory(), vol = inv.reduce((a, r) => a + r.volume + (r.water || 0), 0), cap = inv.reduce((a, r) => a + r.capacity, 0), pr = CO.productionRates(); const hp = $('eh-prod'), hs = $('eh-stor'); if (hp) { hp.lastChild.textContent = n0(pr.crude); hp.title = 'برميل نفط في اليوم'; } if (hs) { hs.lastChild.textContent = cap ? Math.round(vol / cap * 100) + '%' : '—'; hs.lastChild.className = cap && vol / cap > .9 ? 'neg' : ''; } }
-    $('eh-clock').firstChild.textContent = c.weekdayName + ' · ' + String(c.hour).padStart(2, '0') + ':00'; $('eh-clock').lastChild.textContent = c.textAr; $('eh-pause').textContent = CO.speed === 0 ? '▶' : '⏸'; $('eh-speed').textContent = CO.speed === 0 ? 'متوقف' : '×' + CO.speed; $('eh-speed').title = 'السرعة المختارة: ×1 = ساعة لعب كل ثانية. السرعة الفعلية والساعات المتراكمة في لوحة التشخيص (اضغط مطوّلًا على هذا الزر)';      /* the button shows the CHOSEN speed only; what the device really reaches is measured in the diagnostics panel (live-diag.js), never shown here as if it were reached */ $('eco-time').classList.toggle('paused', CO.speed === 0);
+    $('eh-clock').firstChild.textContent = c.weekdayName + ' · ' + String(c.hour).padStart(2, '0') + ':00'; $('eh-clock').lastChild.textContent = c.textAr; $('eh-pause').textContent = CO.speed === 0 ? '▶' : '⏸'; $('eh-speed').textContent = CO.speed === 0 ? 'متوقف' : '×' + CO.speedLabel(); $('eh-speed').title = 'السرعة المختارة: ×1 = ساعة لعب كل ثانية. السرعة الفعلية والساعات المتراكمة في لوحة التشخيص (اضغط مطوّلًا على هذا الزر)';      /* the button shows the CHOSEN speed only; what the device really reaches is measured in the diagnostics panel (live-diag.js), never shown here as if it were reached */ $('eco-time').classList.toggle('paused', CO.speed === 0);
     const n = CO.alerts().filter(x => x.level !== 'info').length, b = $('eh-badge'); b.textContent = n; b.style.display = n ? 'block' : 'none'; const bl = $('eco-bank'); if (CO.bankrupt && bl) showBank();
     const cs = $('cash'); if (cs) cs.textContent = '$' + Math.round(s.cash).toLocaleString('en-US');
   }
@@ -564,7 +564,7 @@
     $('es-close').onclick = close; $('eh-menu').onclick = () => { open(); }; $('eh-cash').onclick = () => open('company'); $('eh-net').onclick = () => open('company'); $('eh-clock').onclick = () => open('market');
     $('eh-pause').onclick = () => { CO.togglePause(); hud(); onChange(); };
     $('tm-fast').onclick = () => { CO.faster(); hud(); onChange(); }; $('tm-slow').onclick = () => { CO.slower(); hud(); onChange(); };
-    $('eh-speed').onclick = () => { const sp = EC.TIME.speeds.filter(x => x >= 1), cur = CO.speed || CO.lastSpeed || 1, i = sp.indexOf(cur); CO.setSpeed(sp[(i + 1) % sp.length]); hud(); onChange(); };
+    $('eh-speed').onclick = () => { const sp = CO.officialSpeeds(), cur = CO.speed || CO.lastSpeed || 1, i = sp.findIndex(x => Math.abs(x - cur) < 1e-9); CO.setSpeed(sp[(i + 1) % sp.length]); hud(); onChange(); };
     for (const id of ['eco-hud', 'eco-sheet', 'eco-away']) for (const ev of ['pointerdown', 'touchstart']) $(id).addEventListener(ev, e => e.stopPropagation(), { passive: true });
     timer = setInterval(() => { hud(); pumpEvents(); if ($('eco-sheet').classList.contains('open')) render(false); }, 1000); hud();
     return api;
