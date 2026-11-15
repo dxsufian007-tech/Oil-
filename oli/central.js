@@ -180,6 +180,7 @@
       return true;
     }
     _plPumpsSnap(e, l) {
+      if (this._plPumpsSame(e.pf, l)) return;      // perf: already holds exactly this snapshot (same fields, same Object.is test the lookup uses): nothing to write
       const n = l === undefined ? 0 : l.length, pf = e.pf; pf.length = 5 * n;
       for (let i = 0, j = 0; i < n; i++, j += 5) { const p = l[i]; pf[j] = p.fault; pf[j + 1] = p.dir; pf[j + 2] = p.seg; pf[j + 3] = p.boost; pf[j + 4] = p.eff; }
     }
