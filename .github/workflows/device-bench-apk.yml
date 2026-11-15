@@ -65,7 +65,7 @@ jobs:
       - name: Publish on the branch bench-apk-build (earlier files kept)
         run: |
           git config user.name "github-actions"; git config user.email "actions@github.com"
-          if git ls-remote --exit-code --heads origin bench-apk-build >/dev/null; then git fetch -q origin bench-apk-build && git checkout -q -B bench-apk-build FETCH_HEAD && git rm -rf --quiet --ignore-unmatch oli .github >/dev/null 2>&1 || true; else git checkout --orphan bench-apk-build && git rm -rf --quiet .; fi
+          if git ls-remote --exit-code --heads origin bench-apk-build >/dev/null; then git fetch -q origin bench-apk-build && git checkout -q -f -B bench-apk-build FETCH_HEAD && git rm -rf --quiet --ignore-unmatch oli .github >/dev/null 2>&1 || true; else git checkout -f --orphan bench-apk-build && git rm -rf --quiet .; fi
           cp /tmp/out/*.apk .
           git add OliBench-*.apk
           git commit -q -m "OLI device benchmark APKs (A original, B perf; not a release)"
