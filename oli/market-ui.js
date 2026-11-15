@@ -54,7 +54,8 @@
   function newsCard(co, p) {
     const e = co.market.engine; if (!e) return ''; const log = e.log.slice().reverse().filter(n => p === 'CRUDE' || affects(n, p)), shown = st.log ? log.slice(0, 40) : log.slice(0, 3);
     const item = n => '<div style="padding:6px 0;border-top:1px solid ' + GRID + '"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:13px">' + n.text + '</b><span style="white-space:nowrap;color:' + (n.dir === 'UP' ? UP : n.dir === 'DOWN' ? DN : TXT) + '">' + DIRA[n.dir] + '</span></div>'
-      + '<div class="es-sm">' + n.desc + '</div><div class="es-sm" style="color:' + TXT + '">التأثير: ' + POW[n.power] + ' · ' + ST[n.status] + ' · ' + (n.date || '') + '</div></div>';
+      + '<div class="es-sm">' + n.desc + '</div><div class="es-sm" style="color:' + TXT + '">التأثير: ' + POW[n.power] + ' · ' + ST[n.status] + ' · ' + (n.date || '') + '</div>'
+      + (n.regions ? '<div class="es-sm" style="color:' + TXT + '">المناطق: ' + n.regions.join('، ') + ' · ' + (n.status === 'active' ? 'المدة ' + n.days + ' يوماً · تنتهي بعد ' + Math.max(0, n.end - e.lastDay) + ' يوماً' : n.endReason === 'state' ? 'انتهت مبكراً: زالت الحالة التي سببتها' : 'انتهت بانتهاء مدتها (' + n.days + ' يوماً)') + '</div>' : '') + '</div>';
     return '<div class="es-card" data-mk="news"><h5>آخر الأخبار' + (p !== 'CRUDE' ? ' المؤثرة على ' + NAME[p] : '') + '</h5>' + (shown.length ? shown.map(item).join('') : '<div class="es-sm">لا أخبار مؤثرة حتى الآن.</div>') + (log.length > 3 ? '<div class="es-row" style="margin-top:6px">' + btn('mkLog', null, st.log ? 'إخفاء السجل' : 'السجل الكامل (' + log.length + ')', st.log) + '</div>' : '') + '</div>';
   }
   /* does a news item act on this product more than on the rest of the market? */
