@@ -77,16 +77,17 @@
         const lastAt = this.last[i]; if (lastAt != null && day - lastAt < Math.max(p.minCdDays, e.days * 1.5)) continue; if (e.rare && (day - this.rareLast < p.rareGapDays || this.active.some(a => NEWS.EVENTS[a.i].rare))) continue;
         const cl = this.catLast[e.cat]; if (cl != null && day - cl < p.catGapDays) continue;
         let pr = e.p / 365; if (e.b && st[e.b]) pr *= 3; if (this.rng.next() < pr) { pick = i; break; } }
-      if (pick == null) return null; return this._start(pick, day, date);
+      if (pick == null) return null; const pg = NEWS.EVENTS[pick].grp; if (pg && this.active.some(a => NEWS.EVENTS[a.i].grp === pg)) return null;      // the same shortage / decision is already counted: the new item of its group does not start (drawn after the pick, so the random stream is unchanged)
+      return this._start(pick, day, date);
     }
     _start(i, day, date) {
       const e = NEWS.EVENTS[i]; this.active.push({ i, start: day, days: e.days, f: 0 }); this.last[i] = day; this.catLast[e.cat] = day; if (e.rare) this.rareLast = day;
       this.x = clamp(this.x + this.P.newsJump * e.sent, -this.P.xMax, this.P.xMax);                                          // a sharp item moves the price at once (its sentiment x newsJump)
-      this.log.push({ id: e.id, day, date: date || null, cat: e.cat, text: e.text, desc: e.desc, dir: e.dir, power: e.power, days: e.days, status: 'active', end: day + e.days, x: r3(this.x), cover: r3(this.cover()) }); if (this.log.length > this.P.logMax) this.log.shift(); return e;
+      this.log.push({ id: e.id, day, date: date || null, regions: e.regions, cat: e.cat, text: e.text, desc: e.desc, dir: e.dir, power: e.power, days: e.days, status: 'active', end: day + e.days, x: r3(this.x), cover: r3(this.cover()) }); if (this.log.length > this.P.logMax) this.log.shift(); return e;
     }
     /* force an item (tests / scenario tools) */
     force(id, day, date) { const i = NEWS.EVENTS.findIndex(e => e.id === id); if (i < 0) return false; this.active = this.active.filter(a => a.i !== i); this._start(i, day == null ? this.lastDay : day, date); return true; }
-    _retire(day) { const live = []; for (const a of this.active) { if (day - a.start < a.days) live.push(a); else { const L = this.log.find(l => l.id === NEWS.EVENTS[a.i].id && l.day === a.start); if (L) L.status = 'ended'; } } this.active = live; }
+    _retire(day) { const live = [], st = this.state(); for (const a of this.active) { const e = NEWS.EVENTS[a.i], early = !!(e.endIf && !st[e.endIf] && day - a.start >= 2); if (day - a.start < a.days && !early) live.push(a); else { const L = this.log.find(l => l.id === e.id && l.day === a.start); if (L) { L.status = 'ended'; L.endReason = early ? 'state' : 'time'; if (early) L.endedDay = day; } } } this.active = live; }
     _pick(w) { let tot = 0; for (const k in w) tot += w[k]; let u = this.rng.next() * tot; for (const k in w) { u -= w[k]; if (u <= 0) return k; } return Object.keys(w)[0]; }
     _regime() {
       const p = this.P, cur = REGIMES[this.regime], w = Object.assign({}, cur.next), cov = this.C / p.C0;
@@ -185,7 +186,7 @@
       return { ind: this.indicators(), C: this.C, H: this.H, R: this.R, total: this.C + this.H + this.R, cover: this.C / p.C0, normal: p.C0, avg: this.avgC, coverDays: this.C / Math.max(1, this.flow.D), hoardShare: this.H / Math.max(1, this.C + this.H), hoardAge: this.Hage, held: this.held, heldAge: this.heldAge || 0, x: this.x, regime: this.regime, regimeAr: R.ar, drivers: this.drivers, flow: this.flow, news: this.newsSum, cost: this.cost, quota: this.quota, rcOut: this.rcOut,
         groups: GROUPS.map((g, i) => ({ id: g.id, ar: g.ar, out: this.out[i], cap: g.base * g.capX, util: this.util[i], outage: this.outage[i] })),
         levels: { supply: this.level(this.flow.P / p.D0 / (1 + (R.sup * 0))), demand: this.level(this.flow.D / p.D0), stock: this.level(this.C / p.C0) },
-        active: this.active.map(a => ({ id: NEWS.EVENTS[a.i].id, text: NEWS.EVENTS[a.i].text, desc: NEWS.EVENTS[a.i].desc, dir: NEWS.EVENTS[a.i].dir, cat: NEWS.EVENTS[a.i].cat, left: Math.max(0, a.days - (this.lastDay - a.start)), days: a.days, f: a.f })) };
+        active: this.active.map(a => ({ id: NEWS.EVENTS[a.i].id, text: NEWS.EVENTS[a.i].text, desc: NEWS.EVENTS[a.i].desc, dir: NEWS.EVENTS[a.i].dir, cat: NEWS.EVENTS[a.i].cat, regions: NEWS.EVENTS[a.i].regions, end: NEWS.EVENTS[a.i].end, left: Math.max(0, a.days - (this.lastDay - a.start)), days: a.days, f: a.f })) };
     }
     /* the company's real footprint, from the daily rows: averages over the last n days (30 = the month), shares of the world, and what it did to the price / to the other producers.  bbl/day */
     footprint(n) {

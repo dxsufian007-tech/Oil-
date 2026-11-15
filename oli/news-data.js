@@ -136,6 +136,8 @@
     ['نمو اقتصادي عالمي', { pd: { DIESEL: 1.6, BYPRODUCT: 1.8 } }], ['ركود', { pd: { JET_FUEL: 2, DIESEL: 1.5, BYPRODUCT: 1.8 } }], ['انكماش في النشاط الصناعي', { pd: { DIESEL: 2, BYPRODUCT: 2 } }],
     ['مراكز البيانات', { pd: { GAS: 1.2 } }], ['قيود بيئية جديدة', { ps: { DIESEL: 0.01 } }], ['سياسة تسعير الكربون', { pd: { GASOLINE: 2, DIESEL: 2 } }], ['اتفاق تجاري كبير', { pd: { DIESEL: 1.5, BYPRODUCT: 1.5 } }]
   ];
+  const REG = [[/الخليج|السعودية|هرمز|إيران|العراق|الإمارات|الكويت|الشرق الأوسط/, 'الشرق الأوسط'], [/روسيا|الروسي/, 'روسيا ودول الجوار'], [/الصين|الصيني/, 'الصين'], [/آسيا|الآسيوي|الهند/, 'آسيا'], [/أوروبا|الأوروبي|الأوروبية/, 'أوروبا'], [/أمريكا|الأمريكي|الأمريكية|المكسيك|الصخري|الولايات/, 'الأمريكتان'], [/أفريقيا|نيجيريا|ليبيا|الأفريقي/, 'أفريقيا']];
+  const GRPID = { N012: 'CHOKEPOINT', N073: 'CHOKEPOINT', N074: 'CHOKEPOINT', N080: 'CHOKEPOINT' };      // transport chokepoints: one at a time (the lost exports are counted once)
   const AR_PROD = { GASOLINE: 'البنزين', DIESEL: 'الديزل', JET_FUEL: 'وقود الطائرات', GAS: 'الغاز المسال', BYPRODUCT: 'المنتجات الثانوية' };
   L.forEach((x, i) => {
     x.id = 'N' + String(i + 1).padStart(3, '0'); x.rare = x.p <= 0.06; x.name = x.text; x.pd = null; x.ps = null; x.rc = 0;
@@ -146,6 +148,11 @@
     if (x.sent) parts.push((x.sent > 0 ? 'يرفع' : 'يخفض') + ' علاوة المخاطر في السعر'); if (x.hoard) parts.push(x.hoard > 0 ? 'يدفع إلى حبس المزيد من النفط' : 'يدفع إلى طرح النفط المحبوس'); if (x.rel) parts.push('سحب ' + x.rel + ' مليون برميل من الاحتياطي الاستراتيجي');
     if (x.rc) parts.push(x.rc > 0 ? 'يعطّل جزءًا من طاقة التكرير فيقلّ المعروض من المنتجات' : 'يضيف طاقة تكرير جديدة'); if (x.pd) parts.push('أثره أكبر على ' + Object.keys(x.pd).filter(k => x.pd[k] >= 2).map(k => AR_PROD[k]).join(' و'));
     if (x.cost) parts.push('يغيّر تكاليف ' + (x.cost.freight ? 'الشحن' : 'الطاقة')); x.desc = (parts.length ? parts.join('، ') : 'تأثيره محدود على السوق') + ' لمدة نحو ' + x.days + ' يومًا.';
+    /* S3 metadata: the regions it touches, its exclusivity group (two items of one group never act together - the same shortage is counted once), freight tied to the size of a transport loss, and how it ends */
+    { const R = [], has = re => re.test(x.text); for (const [re, name] of REG) if (has(re)) R.push(name); x.regions = R.length ? R : (x.cat === 'OPEC' ? ['الشرق الأوسط', 'روسيا ودول الجوار'] : ['عالمي']); }
+    x.grp = x.cat === 'OPEC' && x.sup ? 'OPEC_QUOTA' : x.cat === 'WAR' && x.sup <= -1.5 ? 'SUPPLY_SHOCK' : GRPID[x.id] || null;
+    if (x.cat === 'SHIP' && x.sup < 0 && !x.cost) x.cost = { freight: Math.round(Math.min(1.5, 1 + Math.max(0.02, 0.06 * Math.abs(x.sup))) * 1000) / 1000 };
+    x.endIf = x.rq || null; x.end = x.endIf ? 'تنتهي بانتهاء مدتها (نحو ' + x.days + ' يومًا) أو فور زوال الحالة التي سببتها' : 'تنتهي بانتهاء مدتها (نحو ' + x.days + ' يومًا) ويتلاشى أثرها تدريجيًا';
     Object.freeze(x);
   });
   return { CATS, EVENTS: Object.freeze(L), COUNT: L.length, AR_PROD };
