@@ -971,6 +971,7 @@
       // refineries may only run on the chemicals and operating materials on hand; the limit is set BEFORE the simulator draws crude, so no crude leaves the tanks without being processed
       this._autoBuy();                                                         // materials bought automatically first, so the refinery is not held back while the setting can restock it
       this._gateMaterials(items, dt); if (sl) yield;
+      { const d0 = CAL.fromHours(this.hours); S.monthKey = d0.year * 12 + d0.month; }                // the game month this step belongs to (the monthly decline reads it)
       yield* S.stepGen(dt, sl);
       const prod = PZERO(), refOut = { GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 }, crude = { operating: 0, maintenance: 0, energy: 0, lifting: 0 }, refin = { operating: 0, maintenance: 0, energy: 0, chem: 0, ops: 0 }, rf = { BYPRODUCT: 0, RESIDUE: 0, FUEL: 0, FLARED: 0 };
       let kw = 0, storageCost = 0, tankOpex = 0, tankMaint = 0, powerCost = 0, sepGas = 0, thruBuy = 0, rOps = 0, rStor = 0, Y = 0;
