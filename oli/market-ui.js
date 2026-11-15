@@ -64,7 +64,10 @@
     const e = co.market.engine, v = e.view(), L = v.levels, tot = v.C + v.H + v.R, mb = x => (+x).toLocaleString('en-US', { maximumFractionDigits: 1 });
     const cell = (k, num, unit, lv, sub) => '<div style="padding:8px 6px;border-radius:10px;background:#1b2530;text-align:center;min-width:0"><div class="es-sm">' + k + '</div><b dir="ltr" style="font-size:16px;color:#e8eef4">' + num + '</b> <span class="es-sm">' + unit + '</span><div style="color:' + (lv === 'NORMAL' ? '#cfd8e0' : lv === 'HIGH' ? GOLD : '#5aa9e6') + ';font-size:12px">' + LV[lv] + '</div>' + (sub ? '<div class="es-sm">' + sub + '</div>' : '') + '</div>';
     return '<div class="es-card" data-mk="ind"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' + cell('الإنتاج العالمي', mb(v.flow.P), 'مليون برميل/يوم', L.supply) + cell('الطلب العالمي', mb(v.flow.D), 'مليون برميل/يوم', L.demand)
-      + cell('المعروض التجاري', mb(v.C), 'مليون برميل', L.stock, 'يغطي ' + v.coverDays.toFixed(0) + ' يوماً من الاستهلاك') + cell('المخزون العالمي الكلي', mb(tot), 'مليون برميل', L.stock, 'تجاري + محتجز + استراتيجي') + '</div></div>';
+      + cell('المعروض التجاري', mb(v.C), 'مليون برميل', L.stock, 'يغطي ' + v.coverDays.toFixed(0) + ' يوماً من الاستهلاك') + cell('المخزون العالمي الكلي', mb(tot), 'مليون برميل', L.stock, 'تجاري + محتجز + استراتيجي')
+      + (() => { const I = v.ind, sg = x => (x >= 0 ? '+' : '') + mb(x), ST = { SURPLUS: 'فائض', DEFICIT: 'عجز', BALANCED: 'متوازن' };
+        return cell('الفائض / العجز اليومي', sg(I.balance), 'مليون برميل/يوم', I.state === 'BALANCED' ? 'NORMAL' : I.state === 'SURPLUS' ? 'HIGH' : 'LOW', ST[I.state]) + cell('تغير المخزون التجاري', sg(I.stockChange), 'مليون برميل/يوم', 'NORMAL', 'يومياً')
+          + cell('الاحتياطي الاستراتيجي', mb(I.reserve), 'مليون برميل', 'NORMAL', 'منفصل · لا يُعرض تلقائياً') + cell('الطاقة الإنتاجية', mb(I.capacity), 'مليون برميل/يوم', 'NORMAL', 'الاستغلال ' + (I.utilisation * 100).toFixed(1) + '% · غير مستغل ' + mb(I.idle)); })() + '</div></div>';
   }
   /* the company on the world market: shares of production and supply and what it offers, from the real daily rows */
   function companyCard(co) {

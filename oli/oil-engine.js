@@ -96,7 +96,7 @@
     }
     /* one game day.  day = days since the game began, month 1..12 */
     dayStep(day, month, date) {
-      const p = this.P, rng = this.rng, R0 = REGIMES[this.regime]; this.lastDay = day; this.xPrev = this.x; for (const k in this.prod) this.prod[k].yPrev = this.prod[k].y;
+      const p = this.P, rng = this.rng, R0 = REGIMES[this.regime]; this.lastDay = day; this._C0 = this.C; this.xPrev = this.x; for (const k in this.prod) this.prod[k].yPrev = this.prod[k].y;
       if (--this.regLeft <= 0) this._regime(); const R = REGIMES[this.regime];
       this._retire(day); this._spawn(day, month, date); const n = this._net(day);
       // supply: 4 groups; the OPEC+ quota follows the average price, shale answers the lagged price
@@ -121,6 +121,7 @@
       const T = this.C + this.H, share = clamp(this.h0 - p.hoardK * this.x + p.hoardNews * n.hoard, 0, p.hoardMaxShare), target = T * share;
       let flow = clamp(p.hoardRate * (target - this.H), -p.hoardDayMax * T, p.hoardDayMax * T); if (flow > this.C - p.floorC) flow = Math.max(0, this.C - p.floorC); if (-flow > this.H) flow = -this.H;
       const H1 = this.H + flow; this.Hage = flow > 0 && H1 > 0 ? ((this.Hage + 1) * this.H) / H1 : this.Hage + 1; if (H1 <= 1e-9) this.Hage = 0; this.H = H1; this.C -= flow; this.flow.hoardFlow = flow; if (flow > 0) this.cum.hoarded += flow; else this.cum.released -= flow;
+      this.dC = this.C - this._C0;                                                                           // the commercial stock's change over this day (balance + hoarding + reserve moves + the company's trades since the last day)
       if (this.held > 0) this.heldAge = (this.heldAge || 0) + 1; else this.heldAge = 0;
       // price: target from stock cover + today's gap + news + regime; momentum of the previous change; volatility of the regime; calculated randomness
       const cover = this.C / p.C0, inv = -p.beta * Math.log(Math.max(0.2, cover)), gap = p.gapSign * p.gapK * (P - D) / p.D0, xs = inv + gap + n.sent + R.sent;          // the company's own flows reach the price through the commercial stock C (the cover term) and through the answer of the other producers (resp, inside P)
@@ -173,9 +174,15 @@
     check() { const p = this.P, a = this.acct, want = p.C0 + p.H0 + p.R0 + a.prod - a.cons + a.ownSold + a.soldBought - a.bought + (a.coIn || 0) - (a.coOut || 0); return (this.C + this.H + this.R + (this.K || 0)) - want; }
     checkProduct(k) { const s = this.prod[k], d = PRODUCTS[k]; return s.S - (d.dem * this.P.prodDays + s.acct.sup - s.acct.dem + s.acct.ownSold - s.acct.bought); }
     level(r) { return r > 1.03 ? 'HIGH' : r < 0.97 ? 'LOW' : 'NORMAL'; }
+    /* S1 dashboard figures, all taken from the engine's own accounts (nothing typed in): production, demand, balance, stock change, capacity, idle capacity, utilisation, commercial vs strategic stock */
+    indicators() {
+      const p = this.P; let cap = 0, out = 0, lost = 0; GROUPS.forEach((g, i) => { const c = g.base * g.capX; cap += c; out += this.out[i]; lost += c * this.util[i] * this.outage[i]; });
+      const P = this.flow.P, D = this.flow.D, bal = P - D;
+      return { production: P, demand: D, balance: bal, state: Math.abs(bal) < 0.005 * p.D0 ? 'BALANCED' : bal > 0 ? 'SURPLUS' : 'DEFICIT', stockChange: this.dC || 0, commercial: this.C, hoarded: this.H, reserve: this.R, capacity: cap, utilisation: cap > 0 ? P / cap : 0, idle: Math.max(0, cap - P), outageLoss: lost, cover: this.C / p.C0, coverDays: this.C / Math.max(1, D) };
+    }
     view() {
       const p = this.P, R = REGIMES[this.regime];
-      return { C: this.C, H: this.H, R: this.R, total: this.C + this.H + this.R, cover: this.C / p.C0, normal: p.C0, avg: this.avgC, coverDays: this.C / Math.max(1, this.flow.D), hoardShare: this.H / Math.max(1, this.C + this.H), hoardAge: this.Hage, held: this.held, heldAge: this.heldAge || 0, x: this.x, regime: this.regime, regimeAr: R.ar, drivers: this.drivers, flow: this.flow, news: this.newsSum, cost: this.cost, quota: this.quota, rcOut: this.rcOut,
+      return { ind: this.indicators(), C: this.C, H: this.H, R: this.R, total: this.C + this.H + this.R, cover: this.C / p.C0, normal: p.C0, avg: this.avgC, coverDays: this.C / Math.max(1, this.flow.D), hoardShare: this.H / Math.max(1, this.C + this.H), hoardAge: this.Hage, held: this.held, heldAge: this.heldAge || 0, x: this.x, regime: this.regime, regimeAr: R.ar, drivers: this.drivers, flow: this.flow, news: this.newsSum, cost: this.cost, quota: this.quota, rcOut: this.rcOut,
         groups: GROUPS.map((g, i) => ({ id: g.id, ar: g.ar, out: this.out[i], cap: g.base * g.capX, util: this.util[i], outage: this.outage[i] })),
         levels: { supply: this.level(this.flow.P / p.D0 / (1 + (R.sup * 0))), demand: this.level(this.flow.D / p.D0), stock: this.level(this.C / p.C0) },
         active: this.active.map(a => ({ id: NEWS.EVENTS[a.i].id, text: NEWS.EVENTS[a.i].text, desc: NEWS.EVENTS[a.i].desc, dir: NEWS.EVENTS[a.i].dir, cat: NEWS.EVENTS[a.i].cat, left: Math.max(0, a.days - (this.lastDay - a.start)), days: a.days, f: a.f })) };
