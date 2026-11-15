@@ -63,7 +63,7 @@
     VARIABLE: { liftingPerBbl: 26, chemicalsPerBbl: 0.9 },                           // lifting cost per barrel produced at a well; refinery chemicals / catalyst per barrel processed
     LABOR: { salary: { operators: 3600, engineers: 8800, maintenance: 4400, managers: 13500 }, perManager: 60,   // per employee per month
       staff: { well: { operators: 2, maintenance: 1 }, pump_S: { operators: 2, maintenance: 1 }, pump_L: { operators: 3, engineers: 1, maintenance: 2 }, pump_C: { operators: 12, engineers: 4, maintenance: 6 }, valve: { operators: 0.25 }, junction: { operators: 0.25 }, manifold: { operators: 2, engineers: 1, maintenance: 1 },
-        tank_S: { operators: 1, maintenance: 1 }, tank_M: { operators: 2, maintenance: 1 }, tank_L: { operators: 4, maintenance: 2 }, tank_C: { operators: 14, engineers: 2, maintenance: 8 }, gas_S: { operators: 1, engineers: 1, maintenance: 1 }, gas_M: { operators: 2, engineers: 1, maintenance: 1 }, gas_L: { operators: 4, engineers: 2, maintenance: 2 },
+        tank_S: { operators: 1, maintenance: 1 }, tank_M: { operators: 2, maintenance: 1 }, tank_L: { operators: 4, maintenance: 2 }, tank_C: { operators: 14, engineers: 2, maintenance: 8 }, tank_G: { operators: 63, engineers: 9, maintenance: 36 }, gas_S: { operators: 1, engineers: 1, maintenance: 1 }, gas_M: { operators: 2, engineers: 1, maintenance: 1 }, gas_L: { operators: 4, engineers: 2, maintenance: 2 },
         separator: { operators: 6, engineers: 2, maintenance: 3 }, refinery_S: { operators: 30, engineers: 8, maintenance: 12, managers: 2 }, refinery_M: { operators: 80, engineers: 20, maintenance: 30, managers: 4 }, refinery_L: { operators: 220, engineers: 55, maintenance: 80, managers: 8 }, refinery_X: { operators: 500, engineers: 120, maintenance: 180, managers: 16 } } },
     FIXED: { insurancePerMonth: 0.0015, adminBase: 12000, adminPerAsset: 0.0003, infraPerYear: 0.008 },   // monthly: insurance on asset value, administration, pipeline upkeep (share of pipe value per year)
     // ---- employees (Phase 9). Staff needed = what the buildings require (LABOR.staff). extra = hires beyond that (negative = missing staff).
@@ -152,6 +152,15 @@
       loanMax: 20000000, loanRate: 0.18, loanTerm: 12, collateral: 1.0,               // rescue loan: at most loanMax, backed by assets + stock (collateral x amount), only in a financial crisis, one at a time
       costCutShare: 0.2, costCutMonths: 6 },                                          // cost cut: administration and tank operation 20% lower for 6 months
     ALERTS: { lowCashDays: 20, highOpexRatio: 0.9, lowMarginRatio: 0.05, highStorageRatio: 0.08, loanDueDays: 3, contractDays: 5, lowInventoryFill: 0.05, highInventoryFill: 0.9, priceMove: 0.035, cooldownDays: 3 },
-    OFFLINE: { capHours: 24, minSeconds: 60, gameDaysPerRealHour: 6, stepHours: 3 }  // away: at most capHours of real time count; each real hour = 6 game days (1/50 of the speed of playing); simulated in 3 h steps
+    OFFLINE: { capHours: 24, minSeconds: 60, gameDaysPerRealHour: 6, stepHours: 3 },  // away: at most capHours of real time count; each real hour = 6 game days (1/50 of the speed of playing); simulated in 3 h steps,
+    /* R1: what a reserve store costs to keep, shown BEFORE it is bought. Pure arithmetic over the same rules the books use (idle = nothing flowing; busy = in+out at full throughput). */
+    reserveCostPreview(def, fill) {
+      const O = this.OPERATING, M = this.MAINTENANCE, F = this.FIXED, L = this.LABOR, cap = def.capacity.value, v = Math.max(0, Math.min(1, fill == null ? 1 : fill)) * cap,
+        sk = L.staff['tank_' + def.size] || {}, heads = Object.keys(sk).reduce((a, k) => a + sk[k], 0), labor = (Object.keys(sk).reduce((a, k) => a + sk[k] * (L.salary[k] || 0), 0) + heads / L.perManager * L.salary.managers) * 12 / 365,   // staff pay + its share of managers (1 per perManager employees)
+        insurance = def.cost * F.insurancePerMonth * 12 / 365, admin = def.cost * F.adminPerAsset * 12 / 365, storage = v * this.STORAGE_COST[def.product];
+      const run = load => def.operatingCost * (O.fixedShare + (1 - O.fixedShare) * load) + def.maintenanceCost * (M.utilBase + M.utilSlope * load);
+      const mk = load => { const day = run(load) + insurance + admin + labor + storage; return { day, year: day * 365, run: run(load), insurance, admin, labor, storage }; };
+      return { fill: v / cap, volume: v, price: def.cost, idle: mk(0), busy: mk(1) };
+    }
   };
 });

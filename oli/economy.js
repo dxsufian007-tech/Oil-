@@ -394,16 +394,16 @@
       return { ok: true, product: p, available: avail, qty: q, marketPrice: mp, quality: qm, unitPrice: unit, gross, fee, net: gross - fee, avgCost: avg, estCost: q * avg, estProfit: gross - fee - q * avg };
     }
     /* sell a quantity YOU decide, by hand, out of the reserve (never automatic). Revenue, fee and cost of goods sold go through the same accounts as any spot sale. */
-    reserveSell(p, qty, tankId) {
-      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; if (!SELL.includes(p)) return { ok: false, reason: 'product' }; this.sync();
+    reserveSell(p, qty, tankId, meta) {
+      if (this.bankrupt) return { ok: false, reason: 'bankrupt' }; if (!SELL.includes(p)) return { ok: false, reason: 'product' }; if (!(meta && meta.auto)) this.sync();
       const qt = this.reserveSellQuote(p, qty, tankId); if (!(qty > 0) || qt.qty <= 1e-6) return { ok: false, reason: 'nothingToSell' }; if (qty > qt.available + 1e-6) return { ok: false, reason: 'notEnough', quote: qt };
       let left = qt.qty, got = 0, own = 0, bought = 0, cO = 0, cB = 0, qw = 0; const parts = [];
       for (const b of this.reserveTanksOf(p).filter(x => !tankId || x.id === tankId).sort((x, y) => this._rt(y).vol - this._rt(x).vol)) { if (left <= 1e-9) break; const r = this._drawReserve(b, left); if (r.net <= 0) continue; got += r.net; left -= r.net; own += r.own; bought += r.bought; cO += r.costO; cB += r.costB; qw += r.q * r.net; parts.push({ tank: b.id, qty: r.net }); }
       const unit = p === 'CRUDE' && got > 0 ? this.market.price[p] * qw / got : this.market.price[p], gross = got * unit, fee = gross * this.cfg.FEES.spot, cost = cO + cB;
-      this._post({ type: 'SALE_SPOT', flow: 'OP', desc: 'Strategic Reserve sale · ' + p, src: 'RESERVE' }, [['CASH', gross], ['REV_SPOT', -gross]]); this._expense('fees', fee, 'Spot sale fee (reserve)');
+      this._post({ type: 'SALE_SPOT', flow: 'OP', desc: 'Strategic Reserve sale · ' + p + (meta && meta.auto ? ' · auto order #' + meta.auto : ''), src: 'RESERVE' }, [['CASH', gross], ['REV_SPOT', -gross]]); this._expense('fees', fee, 'Spot sale fee (reserve)');
       if (cost > 0) this._post({ type: 'COGS', desc: 'Cost of reserve oil sold · ' + p }, [['COGS', cost], ['INV_RESERVE', -cost]]);
       this.market.sold(p, got); this._L(L => { L.sold[p] += got; L.soldRev += gross; }); this.market.engineSellReserve(p, p === 'CRUDE' ? { own, bought } : null, got);
-      this._rlog('SELL', { tank: parts.length === 1 ? parts[0].tank : 0, tanks: parts, product: p, qty: got, value: gross, revenue: gross, fee, cost, profit: gross - fee - cost, unit, note: 'بيع يدوي من الاحتياطي' });
+      this._rlog('SELL', { tank: parts.length === 1 ? parts[0].tank : 0, tanks: parts, product: p, qty: got, value: gross, revenue: gross, fee, cost, profit: gross - fee - cost, unit, note: meta && meta.auto ? 'بيع تلقائي — أمر رقم ' + meta.auto + ' (السعر وصل الهدف)' : 'بيع يدوي من الاحتياطي', auto: meta && meta.auto ? meta.auto : undefined });
       return { ok: true, product: p, qty: got, gross, fee, net: gross - fee, price: unit, cost, profit: gross - fee - cost, own, bought };
     }
     /* open the outlet of ONE reserve tank for exactly `qty` barrels: it flows through the pipe that is really connected, no faster than the pipe and the destination allow, then closes again by itself */
@@ -415,6 +415,32 @@
       s.rel = Math.min(s.vol, (s.rel || 0) + vol); this._rlog('ORDER', { tank: b.id, product: def.product, qty: +qty, value: 0, note: 'أمر سحب يدوي: فُتح مخرج الخزان لهذه الكمية فقط' }); return { ok: true, qty: +qty, remaining: s.rel };
     }
     reserveStop(tankId) { const b = this.store.get(tankId); if (!b || !b.rs) return { ok: false, reason: 'tank' }; const s = this._rt(b), left = s.rel || 0; s.rel = 0; this._rlog('STOP', { tank: b.id, product: DEFS[b.d].product, qty: left, value: 0, note: 'أُغلق مخرج الخزان' }); return { ok: true, closed: left }; }
+    /* ---- Automatic Reserve Selling: standing sell orders the PLAYER creates. Never created by itself (not by building a tank, not by loading a save); the price is checked once per economic day. ---- */
+    reserveAutoList() { const A = this.reserve.auto; return A ? A.orders : []; }
+    _autoCheck(o) { if (!o || !(o.price > 0)) return 'price'; if (o.mode !== 'qty' && o.mode !== 'pct') return 'mode'; if (!(o.amount > 0) || (o.mode === 'pct' && o.amount > 100)) return 'amount'; return null; }
+    reserveAutoCreate(o) {
+      o = o || {}; const rec = { product: 'CRUDE', price: +o.price, mode: o.mode, amount: +o.amount }, bad = this._autoCheck(rec); if (bad) return { ok: false, reason: bad };
+      const A = this.reserve.auto || (this.reserve.auto = { v: 1, nid: 0, orders: [] }); if (A.orders.length >= 10) return { ok: false, reason: 'max' };
+      const r = Object.assign(rec, { id: ++A.nid, on: o.on !== false, day: -1, runs: 0, sold: 0, revenue: 0, fees: 0, last: null, hist: [], made: this.hours }); A.orders.push(r); this._rlog('AUTO', { product: r.product, qty: 0, value: 0, note: 'أمر بيع تلقائي رقم ' + r.id + ' أنشأته أنت' + (r.on ? ' (فعال)' : ' (متوقف)') }); return { ok: true, order: r };
+    }
+    reserveAutoUpdate(id, patch) {
+      const o = this.reserveAutoList().find(x => x.id === id); if (!o) return { ok: false, reason: 'none' }; patch = patch || {}; const n = { price: patch.price != null ? +patch.price : o.price, mode: patch.mode || o.mode, amount: patch.amount != null ? +patch.amount : o.amount }, bad = this._autoCheck(n); if (bad) return { ok: false, reason: bad };
+      Object.assign(o, n); if (patch.on != null) o.on = !!patch.on; return { ok: true, order: o };
+    }
+    reserveAutoSet(id, on) { return this.reserveAutoUpdate(id, { on: !!on }); }
+    reserveAutoDelete(id) { const A = this.reserve.auto, i = A ? A.orders.findIndex(x => x.id === id) : -1; if (i < 0) return { ok: false, reason: 'none' }; A.orders.splice(i, 1); this._rlog('AUTO', { product: 'CRUDE', qty: 0, value: 0, note: 'حُذف أمر البيع التلقائي رقم ' + id }); return { ok: true }; }
+    reserveAutoTotals() { const t = { orders: 0, active: 0, sold: 0, revenue: 0, fees: 0 }; for (const o of this.reserveAutoList()) { t.orders++; if (o.on) t.active++; t.sold += o.sold; t.revenue += o.revenue; t.fees += o.fees; } return t; }
+    /* the daily cycle: each ACTIVE order is looked at once per economic day (o.day is saved, so a reload / save / restore never repeats the day). Price at or above the target -> sell once; below -> wait. Never touches commercial tanks: reserveSell draws only from reserve tanks. */
+    _autoReserveDay() {
+      const A = this.reserve.auto; if (!A || !A.orders.length || this.bankrupt) return;
+      for (const o of A.orders) { if (!o.on || o.day === this.dayIdx) continue; o.day = this.dayIdx;
+        const mp = this.market.price[o.product]; o.last = { day: this.dayIdx, price: mp, state: 'wait', qty: 0 }; if (!(mp >= o.price)) continue;
+        const avail = this.reserveStock(o.product); if (!(avail > 1e-6)) { o.last.state = 'empty'; continue; }
+        const want = o.mode === 'pct' ? avail * o.amount / 100 : o.amount, qty = Math.min(want, avail); if (!(qty > 1e-6)) { o.last.state = 'empty'; continue; }
+        const r = this.reserveSell(o.product, qty, undefined, { auto: o.id }); if (!r.ok) { o.last.state = r.reason; continue; }
+        o.runs++; o.sold += r.qty; o.revenue += r.gross; o.fees += r.fee; o.last = { day: this.dayIdx, price: r.price, state: r.qty < want - 1e-6 ? 'partial' : 'sold', qty: r.qty };
+        o.hist.push({ t: this.hours, day: this.dayIdx, price: r.price, qty: r.qty, revenue: r.gross, fee: r.fee }); while (o.hist.length > 30) o.hist.shift(); }
+    }
     /* what the reserve is worth at today's market prices (not booked: the books keep cost until a real sale) */
     reserveMarketValue() { let v = 0; for (const p of SELL) { const q = this.reserveStock(p); if (q > 0) v += q * (this.market.price[p] || 0); } return v; }
     /* the company on the world market: shares of production and supply, averages (day = last day, month = last 30 days), what it withheld, and the answer of the other producers */
@@ -1024,6 +1050,7 @@
       const cash = this.store.cash; this.days.push(Object.assign({ d: this.dayIdx - 1 }, (() => { const c = calc(this.led.day, cash); return { revenue: c.revenue, expenses: c.expenses, profit: c.netProfit, cashIn: c.cash.in, cashOut: c.cash.out, storage: this.led.day.storage, opex: c.opex + c.variable }; })()));
       while (this.days.length > 60) this.days.shift(); this._finLog(cash); this.led.day = ledger(cash);
       this._refreshOffers();                                                          // expired offers leave, new ones take their place: there are always 3 to choose from
+      this._autoReserveDay();                                                         // standing reserve sell orders the player made (none unless he made one)
     }
     _monthEnd() {
       this.fin.lateSalary = false; this.fin.missed = 0;                              // these flags describe the month that is closing
@@ -1354,7 +1381,7 @@
       this.lastMonth = d.lastMonth || null; this.days = d.days || []; this.prodHist = d.prodHist || []; this.dlog = d.dlog || []; this.crudeQ = d.crudeQ || 1; this.fin = Object.assign({ state: 'OK', stage: 'NORMAL', negHours: 0, emergencyAt: -1, missed: 0, lateSalary: false, score: 0, indicators: [] }, d.fin || {}); this.taxCarry = d.taxCarry || 0; this.bankrupt = !!d.bankrupt; this.speed = d.speed == null ? 1 : d.speed; this.lastSpeed = d.lastSpeed > 0 ? d.lastSpeed : (this.speed > 0 ? this.speed : 1); this.lastSim = d.savedAt == null ? null : d.savedAt;
       this.recv = (d.recv || []).map(r => Object.assign({ late: false, payOn: r.due }, r)); this.nextRecv = d.nextRecv || 1; this.months = d.months || []; this.mats = Object.assign(MZERO(), d.mats || {}); this.payables = d.payables || []; this.nextPay = d.nextPay || 1; this.purchases = d.purchases || []; this.nextPur = d.nextPur || 1; this.hr = HRZERO(); for (const r of HRROLES) this.hr[r] = Object.assign(this.hr[r], (d.hr || {})[r] || {}); this.cutUntil = d.cutUntil == null ? -1 : d.cutUntil; this.powerBuy = !!d.powerBuy; this.bsStart = d.bsStart || null;
       if (d.journal) { this.journal = Journal.fromJSON(d.journal); this.qty = Object.assign(PZERO(), d.qty || {}); this.qty2 = Object.assign({ BYPRODUCT: 0, RESIDUE: 0 }, d.qty2 || {}); }
-      this.water = Object.assign({ v: 1, produced: 0, sold: 0, revenue: 0, log: [], day: -1, today: 0 }, d.water || {}); this.water.auto = Object.assign({ on: false, reserve: 0, day: -1, used: {}, sold: 0 }, this.water.auto || {}); this.netOil = !!d.netOil; this.reserve = Object.assign({ v: 1, lv: 0, log: [] }, d.reserve || {}); { const z = this.reserveZone(); this.reserve.lv = Math.max(0, Math.min(z ? z.levels.length - 1 : 0, this.reserve.lv | 0)); if (!Array.isArray(this.reserve.log)) this.reserve.log = []; } this._hookReserve();   // an old save has no reserve: it starts closed at level 0, with nothing moved into it
+      this.water = Object.assign({ v: 1, produced: 0, sold: 0, revenue: 0, log: [], day: -1, today: 0 }, d.water || {}); this.water.auto = Object.assign({ on: false, reserve: 0, day: -1, used: {}, sold: 0 }, this.water.auto || {}); this.netOil = !!d.netOil; this.reserve = Object.assign({ v: 1, lv: 0, log: [] }, d.reserve || {}); if (this.reserve.auto && !Array.isArray(this.reserve.auto.orders)) delete this.reserve.auto; { const z = this.reserveZone(); this.reserve.lv = Math.max(0, Math.min(z ? z.levels.length - 1 : 0, this.reserve.lv | 0)); if (!Array.isArray(this.reserve.log)) this.reserve.log = []; } this._hookReserve();   // an old save has no reserve: it starts closed at level 0, with nothing moved into it
       { const ab = this._abDefaults(), sv = d.autoBuy || {}; for (const m of c.MATERIALS) if (sv[m]) ab[m] = Object.assign(ab[m], sv[m]); ab.log = Array.isArray(sv.log) ? sv.log : []; this.autoBuy = ab; this.whLv = Object.assign({}, d.whLv || {}); this.matHist = d.matHist || {}; }      // saves from before auto-buy: the default settings, warehouse level 0
       this.bq = d.bq || 0; this.explLog = d.explLog || []; this.bprod = d.bprod || {}; this.tradeLog = d.tradeLog || []; this.nextTrade = d.nextTrade || 1; this.boughtUsed = d.boughtUsed || 0;
       if (!d.journal) this._migrate();                                                         // a save from before the journal: the company starts from an opening balance sheet of what it holds now

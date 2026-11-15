@@ -19,7 +19,9 @@
   /* Stage 5: crude size C = the central store, 4,000,000 bbl (8x8, 30 per barrel on top of its base price) */
   const TANK = { // family: { sizes: { code: {w,h,cap,base,perBbl,op,maint,name}} }
     CRUDE: { prefix: 'crude_tank', name: 'Crude Tank', perBbl: 100, sizes: { S: { w: 2, h: 2, cap: 10000, base: 400000, op: 300, maint: 150 }, M: { w: 3, h: 3, cap: 50000, base: 1500000, op: 900, maint: 450 }, L: { w: 4, h: 4, cap: 250000, base: 4000000, op: 2500, maint: 1200 },
-      C: { w: 8, h: 8, cap: 4000000, base: 30000000, perBbl: 30, op: 25000, maint: 10000 } } },
+      C: { w: 8, h: 8, cap: 4000000, base: 30000000, perBbl: 30, op: 25000, maint: 10000 },
+      /* R1 (Strategic Reserve): the GIANT store, 80,000,000 bbl for exactly $3,000,000,000 (base only, nothing per barrel). 22x22, 8 inputs + 8 outputs. Reserve land only, never upgraded, never a commercial tank. op/maint = the central store scaled by capacity^0.75. */
+      G: { w: 22, h: 22, cap: 80000000, base: 3000000000, perBbl: 0, op: 236000, maint: 95000, reserveOnly: true } } },
     GASOLINE: { prefix: 'gasoline_tank', name: 'Gasoline Tank', perBbl: 120, sizes: { S: { w: 2, h: 2, cap: 10000, base: 500000, op: 360, maint: 180 }, M: { w: 3, h: 3, cap: 50000, base: 1800000, op: 1100, maint: 540 }, L: { w: 4, h: 4, cap: 250000, base: 4800000, op: 3000, maint: 1450 } , C: { w: 8, h: 8, cap: 4000000, base: 36000000, perBbl: 36, op: 30000, maint: 12000 } } },
     DIESEL: { prefix: 'diesel_tank', name: 'Diesel Tank', perBbl: 120, sizes: { S: { w: 2, h: 2, cap: 10000, base: 500000, op: 360, maint: 180 }, M: { w: 3, h: 3, cap: 50000, base: 1800000, op: 1100, maint: 540 }, L: { w: 4, h: 4, cap: 250000, base: 4800000, op: 3000, maint: 1450 } , C: { w: 8, h: 8, cap: 4000000, base: 36000000, perBbl: 36, op: 30000, maint: 12000 } } },
     JET_FUEL: { prefix: 'jet_tank', name: 'Jet Fuel Tank', perBbl: 130, sizes: { S: { w: 2, h: 2, cap: 10000, base: 600000, op: 400, maint: 200 }, M: { w: 3, h: 3, cap: 50000, base: 2000000, op: 1200, maint: 600 }, L: { w: 4, h: 4, cap: 250000, base: 5200000, op: 3300, maint: 1600 } , C: { w: 8, h: 8, cap: 4000000, base: 39000000, perBbl: 39, op: 32500, maint: 13000 } } },
@@ -61,7 +63,11 @@
   const SEPARATOR = { cost: 2500000, op: 3500, maint: 1500, cap: 50000, w: 4, h: 3, oilSep: 0.94, gasSep: 0.92, waterSep: 0.88, minInletPsi: 30 };
   const SAFETY = { tankNearFull: 0.95, tankFull: 1.0, tankHigh: 0.8, tankLow: 0.2, gasHighPressure: 0.85, gasNearLimit: 0.95, gasHighTempC: 60, ambientC: 30 };
   const LEVELS = { 1: { capacityMultiplier: 1, efficiencyMultiplier: 1, pressureMultiplier: 1, maintenanceMultiplier: 1 } };   // architecture only: Level 1 exists, no upgrade system yet
+  /* JOINT UPGRADE tiers: NOT invented numbers. A joint (valve / junction / manifold) can be upgraded to the next PIPE capacity tier above its own (CFG.PIPES: 100,000 then 300,000), so a
+     joint is never narrower than the pipe it serves. Price to reach a tier = the joint's own price x (new capacity / old capacity - 1). PROPOSED, awaiting the owner's approval. */
+  const JOINT_TYPES = { valve: { key: 'maxFlow', base: VALVE.maxFlow, price: VALVE.cost }, junction: { key: 'maxTotalFlow', base: JUNCTION.maxTotalFlow, price: JUNCTION.cost }, main_manifold: { key: 'maxTotalFlow', base: MANIFOLD.maxTotalFlow, price: MANIFOLD.cost } };
+  const jointTiers = id => { const t = JOINT_TYPES[id]; if (!t) return null; const caps = Object.keys(PIPES).map(d => PIPES[d].capacity).sort((a, b) => a - b).filter(c => c > t.base); const out = [{ level: 1, capacity: t.base, cost: 0 }]; let prev = t.base; for (const c of caps) { out.push({ level: out.length + 1, capacity: c, cost: Math.round(t.price * (c / prev - 1)) }); prev = c; } return out; };
   const SIM = { dayRealSeconds: 12, tankHeadPsi: 60, frictionPsiPerTile: 0.5, frictionExp: 1.8 };
 
-  return { PRODUCTS, PRODUCT_LABEL, PRODUCT_COLOR, PIPES, PIPE_DEFAULT, TILE_METERS, TANK, REFINERY, WELL, PUMP, WATER_PUMP, WATER, VALVE, JUNCTION, MANIFOLD, SEPARATOR, SAFETY, LEVELS, SIM };
+  return { PRODUCTS, PRODUCT_LABEL, PRODUCT_COLOR, PIPES, PIPE_DEFAULT, TILE_METERS, TANK, REFINERY, WELL, PUMP, WATER_PUMP, WATER, VALVE, JUNCTION, MANIFOLD, SEPARATOR, SAFETY, LEVELS, SIM, JOINT_TYPES, jointTiers };
 });

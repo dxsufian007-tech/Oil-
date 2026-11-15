@@ -26,7 +26,7 @@ console.log('1. every building in the game has a full help sheet before it is bu
   delete B.DEFS[fake]; }
 
 console.log('2. every placed building: live sheet, status and diagnosis');
-{ const g = game(5e9), ids = Object.keys(B.DEFS).filter(id => id !== 'central_station'); let x = 4, y = 4; const placed = [];
+{ const g = game(5e9), ids = Object.keys(B.DEFS).filter(id => id !== 'central_station' && !B.DEFS[id].reserveOnly); let x = 4, y = 4; const placed = [];   // the reserve-only giant cannot stand on this commercial test land (its sheet is tested in test-reserve-giant-ui.js)
   for (const id of ids) { const [w, h] = B.DEFS[id].footprint; if (x + w + 3 > 390) { x = 4; y += 16; } const v = g.store.place(id, x, y, 0, { instant: true }); if (v.ok) placed.push(v.building); x += w + 3; }
   for (const b of placed) g.sim.ensure(b); g.sim.step(0.05);
   const bad = placed.filter(b => { const d = H.building(ctx(g), b); return !full(d) || !clean(text(d)) || !d.issues.length; }).map(b => b.d);
