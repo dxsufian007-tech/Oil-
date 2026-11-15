@@ -122,13 +122,13 @@
   const run = { active: false, stop: false, results: [], phase: null, endAt: 0, name: '', note: '', temp0: '', temp1: '' };
   const camState = { on: false, t0: 0, cx: 0, cy: 0 };
   function camStep(t) { if (!camState.on) return; requestAnimationFrame(camStep); const k = (t - camState.t0) / 1000, z = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(k / 20 * Math.PI * 2)); WP().goto(camState.cx + Math.cos(k / 9) * 28, camState.cy + Math.sin(k / 13) * 18, z); }
-  async function runScenario(mode, ui) {
+  async function runScenario(mode, ui, only) {
     if (run.active) return; run.active = true; run.stop = false; run.results = []; const scale = mode === 'quick' ? 0.08 : 1; let wake = null; try { wake = await navigator.wakeLock.request('screen'); } catch (_) { }
     try {
       ui.say('تجهيز مشهد الاختبار…'); await buildScene(ui.say); if (!SC.built || !SC.chains.length) { ui.say('⚠ تعذّر تجهيز مضخات (الأرض)'); }
       camState.cx = SC.cam ? SC.cam.x : L().fieldSites()[0].x; camState.cy = SC.cam ? SC.cam.y : L().fieldSites()[0].y;
       L().company.setSpeed(1); feed('multi'); ui.say('إحماء 20 ثانية…'); await sleep(Math.max(3000, 20000 * scale));
-      const list = FULL.filter(p => mode !== 'quick' || true);
+      const list = FULL.filter(p => !only || only.includes(p.id));      // `only` (optional list of phase ids) lets a test run a few phases at a time; the player's panel never passes it
       for (const ph of list) {
         if (run.stop) break; const secs = Math.max(6, Math.round(ph.sec * scale)); L().company.setSpeed(ph.speed); feed(ph.feed); WP().goto(camState.cx, camState.cy, .6); await sleep(1500);
         const p = rec = newPhase(ph.id, ph.title, ph.speed); run.phase = ph; run.endAt = now() + secs * 1000; if (ph.cam) { camState.on = true; camState.t0 = now(); requestAnimationFrame(camStep); }
