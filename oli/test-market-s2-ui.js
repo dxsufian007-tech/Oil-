@@ -20,7 +20,7 @@ let n = 0; const ok = (c, m) => { assert(c, m); n++; console.log('  ok  ' + m); 
     await p.locator('[data-act=mkDkQty][data-v="1000000"]').tap(); const slip1 = +(/الانزلاق عن السوق([\d.\-]+)%/.exec(await q0()) || [])[1];
     await p.locator('[data-act=mkDkQty][data-v="10000"]').tap(); const slip0 = +(/الانزلاق عن السوق([\d.\-]+)%/.exec(await q0()) || [])[1];
     ok(slip1 > slip0, 'a bigger order shows a bigger slippage in the preview (' + slip0 + '% < ' + slip1 + '%) ' + px);
-    ok(Math.abs((await ev(() => __lab.store.cash)) - cash0) < 1, 'previewing charged nothing ' + px);
+    { const c1 = await ev(() => __lab.store.cash); ok(Math.abs(c1 - cash0) < 1, 'previewing charged nothing ' + px + ' (' + (c1 - cash0) + ')'); }
     await p.locator('[data-act=mkDkQty][data-v="100000"]').tap(); await p.locator('[data-act=mkDkGo]').tap(); body = await p.textContent('[data-mk=ticket]');
     ok(/نُفّذ 100,000 بمتوسط/.test(body), 'a market buy executes and reports the filled quantity and the average price ' + px);
     ok((await ev(() => __lab.company.deskTrades().length)) === 1 && (await ev(() => __lab.company.audit().ok)), 'one trade recorded and the audit passes ' + px);
