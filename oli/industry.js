@@ -21,6 +21,7 @@
   const DC = new Map(); const dcOf = def => { let c = DC.get(def.id); if (c) return c; const byId = new Map(); for (const z of def.connections) byId.set(z.id, z);
     c = { byId, ids: def.connections.map(z => z.id), outs: def.connections.filter(z => z.role === 'out').map(z => z.id), notIn: def.connections.filter(z => z.role !== 'in').map(z => z.id), notInExcept: new Map(),
       tankOuts: def.connections.filter(z => z.role === 'out' && z.id !== 'WATER_OUT').map(z => z.id) }; DC.set(def.id, c); return c; };
+  const EMPTY = Object.freeze({}), FZ_TANK = ['vol', 'wat', 'bv', 'total', 'arr', 'arrBv', 'arrW', 'dep', 'depBv', 'depW', 'rel'], FZ_SEP = ['total', 'slop', 'flared'], FZ_REF = ['crude', 'flared'], FZ_SITE = ['remainingReserve', 'produced', 'pr', 'gain'];      // experiment: the accumulators the weekly freeze replays
   const notInExcept = (def, port) => { const c = dcOf(def); let a = c.notInExcept.get(port); if (!a) { a = c.notIn.filter(id => id !== port); c.notInExcept.set(port, a); } return a; };
   const eco = b => (b.s && b.s.ecoEff != null) ? b.s.ecoEff : 1;       // Phase 3 hook: the economy layer (power, condition, crude quality) writes b.s.ecoEff; 1 = unchanged Phase 2 behaviour
 
@@ -376,7 +377,7 @@
 
   /* ------------------------------------------------------------ the simulator */
   class Sim {
-    constructor(store, net) { this.store = store; this.net = net; this._cv = 0; this._fxr = null; this.edges = new Map(); this._el = []; this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => this.net.productAt(x, y); store.cenAt = (x, y) => this.net.centralAt(x, y); }
+    constructor(store, net) { this.store = store; this.net = net; this._cv = 0; this._fxr = null; this.fz = null; this.fzDays = 0; this.fzTol = 0; this.fzLook = 2; this.fzStats = { solved: 0, replayed: 0 }; this.edges = new Map(); this._el = []; this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => this.net.productAt(x, y); store.cenAt = (x, y) => this.net.centralAt(x, y); }
 
     /* ---- state per building (kept in b.s, saved with the game) ---- */
     ensure(b) {
@@ -610,6 +611,84 @@
       }
       for (const e of this._el) if (e.line) { e.line.flow = e.flow; e.line.over = e.over; e.line.lowP = e.lowP; e.line.hiP = e.hiP; e.line.pressure = e.p || 0; }
       this.lastStep = dt;
+    }
+    /* ================= EXPERIMENT: weekly flow freeze (branch experiment/weekly-flow-freeze; OFF unless cfg.TIME.flowFreezeDays > 0) =================
+       At the start of each game week (and right after any event) the whole network is SOLVED exactly as before (stepGen) and the hour's effect on every accumulator is recorded
+       (tank stock, field reserve, refinery output, channel volume...).  The following hours REPLAY that effect instead of solving again, as long as a cheap check says nothing that
+       matters has changed: structure (buildings, pipes), the control inputs of every building (state, level, valve, throttle, material limit, power factor), the central network
+       (pumps, faults, channels), and no tank / field is close to full / empty / dry.  Any change (or the end of the week) = a normal solve at once.
+       Stock keeps moving every hour (the recorded in / out flow is applied); only the flow RATES are frozen.  The equations themselves are not touched. */
+    _fzInputs(items, out) {
+      let n = 0; const num = out.num, str = out.str;
+      for (let i = 0; i < items.length; i++) { const b = items[i], s = b.s || EMPTY; num[n++] = b.c; num[n++] = b.lv || 0; num[n++] = s.ecoEff == null ? 1 : s.ecoEff; num[n++] = s.opLimit == null ? -1 : s.opLimit; num[n++] = s.matLim == null ? -1 : s.matLim; num[n++] = s.opening == null ? -1 : s.opening; num[n++] = s.eff == null || DEFS[b.d].type !== 'pump' ? -1 : s.eff; num[n++] = s.rel || 0; str[i] = b.st; str[items.length + i] = s.mode; }
+      out.n = n;
+    }
+    _fzSame(items, rec) {
+      const num = rec.num, str = rec.str, tol = this.fzTol || 0; let n = 0;
+      for (let i = 0; i < items.length; i++) { const b = items[i], s = b.s || EMPTY; if (b.st !== str[i] || s.mode !== str[items.length + i]) return 1;
+        const a0 = b.c, a1 = b.lv || 0, a2 = s.ecoEff == null ? 1 : s.ecoEff, a3 = s.opLimit == null ? -1 : s.opLimit, a4 = s.matLim == null ? -1 : s.matLim, a5 = s.opening == null ? -1 : s.opening, a6 = s.eff == null || DEFS[b.d].type !== 'pump' ? -1 : s.eff, a7 = s.rel || 0;
+        if (a0 !== num[n] || a1 !== num[n + 1] || a3 !== num[n + 3] || a5 !== num[n + 5] || a7 !== num[n + 7]) return 1;
+        if (tol ? (Math.abs(a2 - num[n + 2]) > tol || Math.abs(a4 - num[n + 4]) > tol || Math.abs(a6 - num[n + 6]) > tol) : (a2 !== num[n + 2] || a4 !== num[n + 4] || a6 !== num[n + 6])) return 2; n += 8; }
+      return 0;
+    }
+    _fzCentralSig() { const cn = this.net.central; if (!cn) return 0; let h = cn.rev | 0; const mix = v => { h = (Math.imul(h, 31) + (v | 0)) | 0; };
+      for (const p of cn.pumps.values()) { mix(p.fault ? 1 : 0); mix(p.dir); mix(String(p.seg).length); mix(Math.round((p.boost || 0) * 1000)); mix(Math.round((p.eff || 0) * 1000)); }
+      for (const g of cn.seg.values()) for (const c in g.fault) mix(g.fault[c] ? c.charCodeAt(0) : 0);
+      for (const c in cn.ch) { const x = cn.ch[c]; mix(x.state === 'OPEN' ? 1 : 2); mix(x.fault ? 1 : 0); } return h; }
+    _fzCode(vol, cap) { return vol <= 1e-6 ? 1 : vol >= cap * 0.999 ? 2 : 0; }
+    _fzCheck(dt, wk, items) {
+      const fz = this.fz; if (!fz) return 'start'; if (fz.wk !== wk) return 'week'; if (Math.abs(fz.dt - dt) > 1e-12) return 'dt'; if (this.dirty()) return 'structure';
+      if (fz.items.length !== items.length) return 'structure'; for (let i = 0; i < items.length; i++) if (items[i] !== fz.items[i]) return 'structure';
+      const k = this._fzSame(items, fz); if (k) return k === 1 ? 'state' : 'inputs'; if (this._fzCentralSig() !== fz.csig) return 'central';
+      const R = fz.rg; for (let i = 0; i < R.length; i += 3) if (this._fzCode(R[i].vol, R[i + 1]) !== R[i + 2]) { this._fzLast = R[i]; return 'regime'; }
+      if (fz.lvl && fz.ph.length < 2) return 'pair';      // tank-to-tank levelling flows swing from hour to hour (they go back and forth): two solved hours are recorded and replayed in turn
+      const T = fz.ph[fz.i % fz.ph.length].thr; for (let i = 0; i < T.length; i += 4) { const o = T[i], key = T[i + 1], d = T[i + 2], lim = T[i + 3], v = o[key] + this.fzLook * d; if (d > 0 ? v > lim : v < lim) { this._fzLast = o; return 'limit'; } }
+      return null;
+    }
+    *stepFreezeGen(dt, sl, hours) {
+      const items = this.store.list(), wk = Math.floor(hours / (24 * this.fzDays)), why = this._fzCheck(dt, wk, items), st = this.fzStats;
+      if (why === null) { this._fzReplay(dt); st.replayed++; return; }
+      st[why] = (st[why] || 0) + 1; st.solved++; const rec = this._fzSnap(items); yield* this.stepGen(dt, sl);
+      if (why === 'pair') { const ph = this._fzPhase(rec, items); if (ph.same) { this.fz.ph.push(ph); this.fz.i = 0; } else this.fz = null; } else {
+        this._fzRecord(rec, items, dt, wk);
+      }
+    }
+    _fzSnap(items) {
+      const o = [], k = [], v = [], T = DEFS, cn = this.net.central;
+      for (const b of items) { const s = b.s; if (!s) continue; const t = T[b.d].type;
+        if (t === 'tank' || t === 'gas') for (const f of FZ_TANK) { if (typeof s[f] === 'number') { o.push(s); k.push(f); v.push(s[f]); } }
+        else if (t === 'well') { if (typeof s.total === 'number') { o.push(s); k.push('total'); v.push(s.total); } if (!s.shared && typeof s.reserve === 'number') { o.push(s); k.push('reserve'); v.push(s.reserve); } }
+        else if (t === 'separator') for (const f of FZ_SEP) { if (typeof s[f] === 'number') { o.push(s); k.push(f); v.push(s[f]); } }
+        else if (t === 'refinery') { for (const f of FZ_REF) if (typeof s[f] === 'number') { o.push(s); k.push(f); v.push(s[f]); } if (s.made) for (const f in s.made) if (typeof s.made[f] === 'number') { o.push(s.made); k.push(f); v.push(s.made[f]); } } }
+      const ts = this.store.ts; if (ts && ts.site) for (const b of items) { if (T[b.d].type !== 'well' || !b.s || !b.s.shared) continue; const site = ts.site(b.field); if (site && !o.includes(site)) for (const f of FZ_SITE) if (typeof site[f] === 'number') { o.push(site); k.push(f); v.push(site[f]); } }
+      if (cn) for (const c in cn.ch) { o.push(cn.ch[c]); k.push('moved'); v.push(cn.ch[c].moved || 0); }
+      const rg = []; for (const b of items) { const t = T[b.d].type; if ((t === 'tank' || t === 'gas') && b.s && typeof b.s.vol === 'number') { const cap = T[b.d].capacity.value * levelOf(b).capacityMultiplier; rg.push(b.s, cap, this._fzCode(b.s.vol, cap)); } }      // the regime of every tank at the START of the solved hour: empty / normal / full decide what it can give and take
+      return { o, k, v, rg, t: this.time, ct: cn ? cn.time : 0 };
+    }
+    _fzPhase(rec, items) {      // the deltas and the limits of one solved hour
+      const { o, k, v } = rec, n = o.length, d = new Float64Array(n), T = [];
+      for (let i = 0; i < n; i++) d[i] = o[i][k[i]] - v[i];
+      const cap = new Map(); for (const b of items) { const t = DEFS[b.d].type; if ((t === 'tank' || t === 'gas') && b.s) cap.set(b.s, DEFS[b.d].capacity.value * levelOf(b).capacityMultiplier); }
+      for (let i = 0; i < n; i++) { const dv = d[i], obj = o[i], key = k[i]; if (dv === 0) continue;
+        if (key === 'vol') { if (dv > 0) T.push(obj, key, dv, (cap.get(obj) || Infinity) * 0.999); else T.push(obj, key, dv, 1e-6); }
+        else if (key === 'reserve') { if (dv < 0) T.push(obj, key, dv, 0.5 + 1e-6); }
+        else if (key === 'remainingReserve') { if (dv < 0) T.push(obj, key, dv, 1e-3); } }
+      const us = []; for (const b of items) { const st = b.s; if (!st) continue; for (const q in st) if (q.charCodeAt(0) === 95) us.push(st, q, st[q]); }      // the per-hour values of this solved hour (_in, _out, _p...): the economy reads them (load, cost, output), so each replayed hour puts back the ones of its own phase
+      const el = this._el, ef = new Array(el.length * 5), ep = new Array(el.length); for (let i = 0; i < el.length; i++) { const e = el[i]; ef[i * 5] = e.flow; ef[i * 5 + 1] = e.over; ef[i * 5 + 2] = e.lowP; ef[i * 5 + 3] = e.hiP; ef[i * 5 + 4] = e.p; ep[i] = e.prod; }
+      return { d, thr: T, us, ef, ep, el, same: this.fz ? this.fz.o.length === n && this.fz.k.every((x, i) => x === k[i] && this.fz.o[i] === o[i]) : true };
+    }
+    _fzRecord(rec, items, dt, wk) {
+      let lvl = false; for (const e of this._el) if (e.lvl && e.flow > 0) lvl = true;
+      const ph = this._fzPhase(rec, items), sh = []; for (const b of items) if (b.s && b.s.shared && DEFS[b.d].type === 'well') sh.push(b);
+      const inp = { num: new Float64Array(items.length * 8), str: new Array(items.length * 2), n: 0 }; this._fzInputs(items, inp);
+      this.fz = { rg: rec.rg, wk, dt, o: rec.o, k: rec.k, ph: [ph], i: 0, lvl, items: items.slice(), num: inp.num, str: inp.str, csig: this._fzCentralSig(), shared: sh, ts: this.store.ts, refs: items.filter(b => DEFS[b.d].type === 'refinery' && b.s) };
+    }
+    _fzReplay(dt) {
+      const fz = this.fz, o = fz.o, k = fz.k, ph = fz.ph[fz.i % fz.ph.length], d = ph.d, cn = this.net.central; fz.i++; for (let i = 0; i < o.length; i++) { const dv = d[i]; if (dv !== 0) o[i][k[i]] += dv; }
+      if (fz.shared.length) { const ts = fz.ts; for (const b of fz.shared) { const site = ts.site(b.field); if (site) b.s.reserve = site.remainingReserve; } }
+      const us = ph.us; for (let i = 0; i < us.length; i += 3) us[i][us[i + 1]] = us[i + 2]; const el = ph.el, ef = ph.ef; if (el === this._el) for (let i = 0; i < el.length; i++) { const e = el[i]; e.flow = ef[i * 5]; e.over = ef[i * 5 + 1]; e.lowP = ef[i * 5 + 2]; e.hiP = ef[i * 5 + 3]; e.p = ef[i * 5 + 4]; e.prod = ph.ep[i]; if (e.line) { e.line.flow = e.flow; e.line.over = e.over; e.line.lowP = e.lowP; e.line.hiP = e.hiP; e.line.pressure = e.p || 0; } }
+      for (const b of fz.refs) b.s._flSeen = undefined;      // the solve clears every per-step value (the economy's _flSeen too): the replay leaves the same
+      this.time += dt; this.lastStep = dt; this.dt = dt; this._cv++; if (cn) { cn.time += dt; cn.dt = dt; }
     }
     run(days, h) { h = h || 0.05; for (let t = 0; t < days - 1e-9; t += h) this.step(Math.min(h, days - t)); }
     gasPressure(def, fill, b) { const mx = def.params.maxPressure * levelOf(b).pressureMultiplier; return 15 + (mx - 15) * Math.pow(clamp(fill, 0, 1.2), 1.3); }

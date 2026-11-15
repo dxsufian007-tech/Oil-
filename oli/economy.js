@@ -971,7 +971,7 @@
       // refineries may only run on the chemicals and operating materials on hand; the limit is set BEFORE the simulator draws crude, so no crude leaves the tanks without being processed
       this._autoBuy();                                                         // materials bought automatically first, so the refinery is not held back while the setting can restock it
       this._gateMaterials(items, dt); if (sl) yield;
-      yield* S.stepGen(dt, sl);
+      S.fzDays = C.TIME.flowFreezeDays | 0; S.fzTol = C.TIME.flowFreezeTol || 0; if (S.fzDays > 0) yield* S.stepFreezeGen(dt, sl, this.hours); else yield* S.stepGen(dt, sl);      // experiment: weekly flow freeze (off by default)
       const prod = PZERO(), refOut = { GASOLINE: 0, DIESEL: 0, JET_FUEL: 0, GAS: 0 }, crude = { operating: 0, maintenance: 0, energy: 0, lifting: 0 }, refin = { operating: 0, maintenance: 0, energy: 0, chem: 0, ops: 0 }, rf = { BYPRODUCT: 0, RESIDUE: 0, FUEL: 0, FLARED: 0 };
       let kw = 0, storageCost = 0, tankOpex = 0, tankMaint = 0, powerCost = 0, sepGas = 0, thruBuy = 0, rOps = 0, rStor = 0, Y = 0;
       for (const b of items) { if (sl && (++Y & 255) === 0) yield;
@@ -1428,6 +1428,7 @@
         desk: this.desk || null, autoBuy: this.autoBuy, whLv: this.whLv, matHist: this.matHist, pwState: { factor: this.pw.factor, stop: this.pwStop == null ? null : this.pwStop }, recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, reserve: this.reserve, water: this.water, netOil: this.netOil ? 1 : 0, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, bank: this.bank.toJSON(), speed: this.speed, lastSpeed: this.lastSpeed, speedRef: 1, calStart: CAL.START, savedAt: this.lastSim };
     }
     fromJSON(d) {
+      if (this.sim) this.sim.fz = null;      // experiment: a loaded game starts with no recorded week (the first hour solves)
       this._hg = null; this._restoreWear = true;
       if (!d || (d.v !== 1 && d.v !== 2)) return false; const c = this.cfg;
       this.central = d.central || null; this.hours = d.hours || 0; this.dayIdx = d.dayIdx || 0; this.bank = BK.Bank.fromJSON(d.bank, c, d.dayIdx || 0);   // an old save has no `bank`: the banks open fresh on today's day
