@@ -2,7 +2,7 @@ name: OLI device BENCHMARK APKs (original vs experimental)
 
 # The owner's request (Nov 15): measure the performance optimisation on his real phone, original vs experimental, same steps.
 # NOT a release. Nothing is merged. Two SEPARATE measurement apps (they install next to the game, never over it, and use their own storage):
-#   com.oli.benchorig  "OLI Bench A (orig)"  = release-candidate/market-s1-s4 at f61ff2b (the game code WITHOUT the optimisations) + the benchmark page
+#   com.oli.benchorig  "OLI Bench A (orig)"  = the commit fe3fdc3 (the version installed on the owner phone: About page Version 1.0.0, Commit fe3fdc3) (the game code WITHOUT the optimisations) + the benchmark page
 #   com.oli.benchperf  "OLI Bench B (perf)"  = this branch (the game code WITH the 5 bit-identical optimisations) + the same benchmark page
 # The benchmark page (device-bench.js) imports the owner's save, runs x1/x2/x5/x10 in chunks of <= 110 s and exports the numbers.
 # Same fixed signing key as the other builds. Result: OliBench-A-orig-<sha>.apk and OliBench-B-perf-<sha>.apk on the branch bench-apk-build.
@@ -28,9 +28,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - name: Prepare the two source trees (A = original f61ff2b, B = this branch); both get this branch's benchmark page and build script
+      - name: Prepare the two source trees (A = original fe3fdc3, B = this branch); both get this branch's benchmark page and build script
         run: |
-          git worktree add /tmp/srcA f61ff2b
+          git worktree add /tmp/srcA fe3fdc3
           SRCB=$(git rev-parse --short=7 HEAD); echo "SRCB=$SRCB" >> $GITHUB_ENV
           for f in device-bench.js build-www-map.js; do cp oli/$f /tmp/srcA/oli/$f; done
           git -C /tmp/srcA log -1 --format=%h
@@ -55,7 +55,7 @@ jobs:
             grep -qi "SHA-256 digest: 3f5e924227aef8c5d1783ae6677db8b9b0a36a1c7b086b457133e6a4375e1aaf" /tmp/certs.txt || { echo "$FILE is NOT signed with the fixed key"; exit 1; }
             ${BT}aapt dump badging /tmp/out/$FILE | head -3
           }
-          build /tmp/srcA A com.oli.benchorig "OLI Bench A (orig)" OliBench-A-orig-f61ff2b.apk
+          build /tmp/srcA A com.oli.benchorig "OLI Bench A (orig)" OliBench-A-orig-fe3fdc3.apk
           build "$GITHUB_WORKSPACE" B com.oli.benchperf "OLI Bench B (perf)" OliBench-B-perf-$SRCB.apk
           ls -l /tmp/out
       - uses: actions/upload-artifact@v4
