@@ -419,7 +419,7 @@
     /* ================= TRADING DESK (S2): market and limit orders walked through the order book ================= 
      * Every fill goes through the SAME buy() / sell() the game already uses (same books, cash, inventory, fees, supplier terms, market impact); the desk only decides the PRICE (the volume-weighted average
      * of the book levels it walked) and how MUCH fills.  It keeps its own order and trade history.  Standing orders are made by the player only; none is created by itself or by loading a save. */
-    _dk() { return this.desk || (this.desk = { v: 1, nid: 0, tid: 0, orders: [], trades: [], day: -1 }); }
+    _dk() { return this.desk || (this.desk = { v: 1, nid: 0, tid: 0, day: -1, orders: [], trades: [] }); }
     deskCfg() { return Object.assign({ maxOpen: 20, logMax: 400, minQty: 1, tradeMax: 400 }, this.cfg.DESK || {}, { ob: Object.assign({}, this.cfg.DESK && this.cfg.DESK.ob) }); }
     deskCtx(p) { const e = this.market.engine; if (!e || !OE || !OE.REGIMES) return { cover: 1, vol: 1 }; const vol = (OE.REGIMES[e.regime] || { vol: 1 }).vol; let cover = 1;
       if (p === 'CRUDE') cover = e.C / e.P.C0; else if (e.prod && e.prod[p] && OE.PRODUCTS[p]) cover = e.prod[p].S / (OE.PRODUCTS[p].dem * e.P.prodDays); return { cover, vol }; }
