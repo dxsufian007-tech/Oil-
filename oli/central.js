@@ -23,6 +23,7 @@
   const lerp = (a, b, t) => a + (b - a) * t;
   const hash = (a, b, c) => { let h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
   const EPS = 1e-6;
+  const PHC = new WeakMap();      // perf: hops array -> the hops that have a pump of the channel on their segment
   const NODES = new WeakMap();      // perf: hops array -> its station list (read-only, shared by the plans that use the route)
   const H_D = [], H_S = [], H_N = [];      // B5 scratch heap for _pathCore (never held across a call)
   const PH_U = [], PH_P = [];      // B3a scratch for _planHops (never held across a call)
@@ -213,7 +214,12 @@
       const ci = CI[ch], UA = this._used, fastU = ci !== undefined && !(over && over.size), PL = this._pxList(ch);
       let cap = Infinity; for (let i = 0; i < n; i++) { const h = hops[i], u = fastU && h.ix !== undefined ? (UA[h.ix * NCH + ci] || 0) : this.usedOf(over, h.g.id, ch); U[i] = u; cap = Math.min(cap, CAPC - u); }
       r = Math.min(r, cap);
-      for (let i = 0; i < n; i++) { const h = hops[i]; let pu = null; if (PL) for (let j = 0; j < PL.length; j++) { const p = PL[j]; if (p.seg === h.g.id && !p.fault && p.dir === h.dir) { pu = p; break; } } P[i] = pu; if (pu) r = Math.min(r, Math.max(0, PU.maxFlow - this.pusedOf(over, pu.id))); }
+      for (let i = 0; i < n; i++) P[i] = null;
+      if (PL !== undefined && PL.length > 0) {      // perf: only the hops whose segment carries a pump of this channel are searched (the list is remembered per route and re-checked against the pumps' segments on every call); the search itself and the order of the r clamps are unchanged
+        let ent = PHC.get(hops), ok = ent !== undefined && ent.pl === PL && ent.segs.length === PL.length; if (ok) for (let j = 0; j < PL.length; j++) if (PL[j].seg !== ent.segs[j]) { ok = false; break; }
+        if (!ok) { const idx = []; for (let i = 0; i < n; i++) { const id = hops[i].g.id; for (let j = 0; j < PL.length; j++) if (PL[j].seg === id) { idx.push(i); break; } } ent = { pl: PL, segs: PL.map(p => p.seg), idx }; PHC.set(hops, ent); }
+        const ix = ent.idx; for (let k = 0; k < ix.length; k++) { const i = ix[k], h = hops[i]; let pu = null; for (let j = 0; j < PL.length; j++) { const p = PL[j]; if (p.seg === h.g.id && !p.fault && p.dir === h.dir) { pu = p; break; } } P[i] = pu; if (pu) r = Math.min(r, Math.max(0, PU.maxFlow - this.pusedOf(over, pu.id))); }
+      }
       if (r <= EPS) { for (let i = 0; i < n; i++) P[i] = null; return null; }
       let nodes = NODES.get(hops); if (nodes === undefined) { nodes = new Array(n + 1); nodes[0] = hops[0].from; for (let i = 0; i < n; i++) nodes[i + 1] = hops[i].to; NODES.set(hops, nodes); }      // perf: the station list of a route does not change while the route (the hops array) is the same one
       const MINP = PU.minInletPsi, MAXP = CLASS.maxPressure; let pEnd = 0, stats = null; let lastRatio = -1, lastPow = 0;
