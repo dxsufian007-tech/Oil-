@@ -395,7 +395,7 @@
     /* ---- the graph: pipeline edges + directly docked ports ---- */
     build() {
       this._kindCache = null;                                                   // tank kinds depend only on the pipe graph: they are recomputed once per rebuilt graph, not on every call
-      const store = this.store, net = this.net, E = new Map(); this.edges = E; const edge = (ka, kb, L) => { const sp = L ? lineSpec(L) : { length: 0, capacity: 1e12, maxPressure: 1e9 }; const ia = ka.indexOf(':'), ib = kb.indexOf(':'), e = { a: ka, b: kb, ab: +ka.slice(0, ia), ap: ka.slice(ia + 1), bb: +kb.slice(0, ib), bp: kb.slice(ib + 1), line: L || null, tiles: L ? L.path.length : 0, cap: sp.capacity, maxP: sp.maxPressure, flow: 0, over: false, lowP: false }; E.set(ka, e); E.set(kb, e); };
+      const store = this.store, net = this.net, E = new Map(); this.edges = E; const edge = (ka, kb, L) => { const sp = L ? lineSpec(L) : { length: 0, capacity: 1e12, maxPressure: 1e9 }; const ia = ka.indexOf(':'), ib = kb.indexOf(':'), e = { a: ka, b: kb, ab: +ka.slice(0, ia), ap: ka.slice(ia + 1), bb: +kb.slice(0, ib), bp: kb.slice(ib + 1), line: L || null, tiles: L ? L.path.length : 0, cap: sp.capacity, maxP: sp.maxPressure, flow: 0, over: false, lowP: false, lr: -1, lp: 0 }; E.set(ka, e); E.set(kb, e); };
       for (const L of net.lines.values()) { if (!L.a || !L.b || L.open === false) continue; if (!store.get(L.a.b) || !store.get(L.b.b)) continue; edge(pk(L.a.b, L.a.port), pk(L.b.b, L.b.port), L); }
       const pts = new Map(); for (const b of store.items.values()) for (const p of B.worldPoints(b)) if (p.kind === 'pipe' && !p.reserved) pts.set(b.id + ':' + p.id, p);
       for (const [k, p] of pts) { if (E.has(k)) continue; const o = store.at(p.ax, p.ay); if (!o || o.id === p.buildingId) continue; for (const q of B.worldPoints(o)) if (q.x === p.ax && q.y === p.ay && q.ax === p.x && q.ay === p.y && B.compatible(p, q) && !E.has(pk(o.id, q.id))) { edge(k, pk(o.id, q.id), null); break; } }
@@ -453,7 +453,7 @@
       if (e.int) return 0;                                                  // a link INSIDE a tank group: no oil is pushed through it (the group draws and fills as one unit)
       const room = e.cap - e.flow; let r = Math.min(f.r, room);
       if (e.lvl && f.sv != null && this.ensure(farB).vol != null) { const fs = this.ensure(farB), fd = DEFS[farB.d], fc = fd.capacity.value * levelOf(farB).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r = Math.min(r, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r <= 1e-9) return 0; } if (f.r > room + 1e-9) e.over = true; if (r <= 1e-9) return 0;   // level out: only from the fuller tank (by fill %), and never past the point where both stand at the same %
-      const ratio = r / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * Math.pow(ratio, SIM.frictionExp) * (e.line && CFG.PIPES[e.line.dia] ? CFG.PIPES[e.line.dia].fric : 1); let p = f.p - loss;
+      const ratio = r / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * (e.lr === ratio ? e.lp : (e.lp = Math.pow(ratio, SIM.frictionExp), e.lr = ratio, e.lp)) * (e.line && CFG.PIPES[e.line.dia] ? CFG.PIPES[e.line.dia].fric : 1); let p = f.p - loss;
       if (p < 0) { r *= Math.max(0, f.p / (loss || 1)); p = 0; if (commit) e.lowP = true; }
       if (r <= 1e-9) return 0; const acc = this.accept(farB, farP, { ...f, r, p }, commit, vis);
       if (commit && acc > 0) { e.flow += acc; e.p = p; e.prod = f.prod; if (e.line) e.line.flow = e.flow; if (p > e.maxP) e.hiP = true; }
