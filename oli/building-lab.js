@@ -380,7 +380,11 @@
   function fieldSites() { const out = []; for (const r of world.regions) for (const q of world.regionSites(r.id)) if (q.kind === 'FIELD' && (world.stateOf(q.id) === 'DRILLABLE' || world.stateOf(q.id) === 'PRODUCING')) out.push(q); return out; }
   function spotsFor(id, r) {
     const out = [], [w, h] = dims(id, r), c = WP.toTile(WP.VW() / 2, WP.VH() * .38), focus = (state.sel && STORE.get(state.sel)) || STORE.get(STORE.nextId - 1); let ox = Math.round(c.x), oy = Math.round(c.y), R = 26;
-    if (B.DEFS[id].type === 'well') { const f = fieldSites().sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0]; if (!f) return out; ox = Math.round(f.x); oy = Math.round(f.y); R = 16; }
+    if (B.DEFS[id].domain === 'sea') {                                            /* offshore buildings: jump to the right place at sea, not to the land around the camera */
+      const decks = STORE.list().filter(b => b.d === 'offshore_platform'), near = (a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y);
+      if (id === 'offshore_platform') { const f = fieldSites().filter(q => q.offshore && !decks.some(b => Math.hypot(b.x + 2 - q.x, b.y + 2 - q.y) < 6)).sort(near)[0]; if (!f) return out; ox = Math.round(f.x); oy = Math.round(f.y); R = 6; }
+      else { const dk = decks.sort(near)[0]; if (!dk) return out; ox = dk.x + 2; oy = dk.y + 2; R = id === 'offshore_well' ? 5 : 22; }
+    } else if (B.DEFS[id].type === 'well') { const f = fieldSites().sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0]; if (!f) return out; ox = Math.round(f.x); oy = Math.round(f.y); R = 16; }
     else if (focus && Math.hypot(focus.x - c.x, focus.y - c.y) < 60) { ox = focus.x + 3; oy = focus.y; }   // next to the building the player is working on, if it is on screen
     if (B.DEFS[id].type === 'refinery') {                                       // a refinery must sit inside a refinery zone: search the zone nearest to the view
       let z = null, zd = Infinity; for (const r of world.regions) for (const q of world.refineryZones(r.id)) { const d = Math.hypot(q.x + q.w / 2 - c.x, q.y + q.h / 2 - c.y); if (d < zd) { zd = d; z = q; } }
@@ -394,9 +398,16 @@
     return out;
   }
   function startBuild(id, again) {
-    if (!again) { cancelAll(true); state.spotIdx = 0; } const r = state.rot[id] || 0, list = spotsFor(id, r);
+    if (!again) { cancelAll(true); state.spotIdx = 0; } const r = state.rot[id] || 0;
+    if (B.DEFS[id].domain === 'sea') {                                            /* offshore: fly the camera to the field / platform first so that part of the map is loaded, then look for spots */
+      const decks = STORE.list().filter(b => b.d === 'offshore_platform'), cc = WP.toTile(WP.VW() / 2, WP.VH() * .38), dd = (a, b) => Math.hypot(a.x - cc.x, a.y - cc.y) - Math.hypot(b.x - cc.x, b.y - cc.y);
+      const tg = id === 'offshore_platform' ? fieldSites().filter(q => q.offshore && !decks.some(b => Math.hypot(b.x + 2 - q.x, b.y + 2 - q.y) < 6)).sort(dd)[0] : decks.map(b => ({ x: b.x + 2, y: b.y + 2 })).sort(dd)[0];
+      if (tg && Math.hypot(tg.x - cc.x, tg.y - cc.y) > 14 && !state.seaTry) { state.seaTry = 1; WP.goto(tg.x, tg.y, 1.6); toast('🌊 ننتقل إلى الموقع البحري…'); setTimeout(() => { state.seaTry = 0; startBuild(id, true); }, 900); return true; }
+    }
+    const list = spotsFor(id, r);
     if (!list.length) {
       const [w0, h0] = dims(id, r), cx = Math.round(cam.x - w0 / 2), cy = Math.round(cam.y - h0 / 2), v = STORE.validate(id, cx, cy, r, {});
+      if (B.DEFS[id].domain === 'sea') { const dk = STORE.list().some(b => b.d === 'offshore_platform'); const m = id === 'offshore_platform' ? (fieldSites().some(q => q.offshore) ? 'كل الحقول البحرية المكتشفة عليها منصة بالفعل — اكتشف حقلاً بحرياً آخر' : 'لا يوجد حقل بحري مكتشف بعد. اضغط على حقل بحري في البحر (غرب الساحل، قطاع F1) ثم اكتشفه واستكشفه حتى يصبح قابلاً للحفر، ثم ابنِ المنصة') : !dk ? 'ابنِ منصة بحرية أولاً — هذا المبنى يُبنى بجانب المنصة' : 'لا توجد فتحة صالحة بجانب المنصة (كل فتحات الآبار مشغولة أو المكان محجوز)'; toast(m); return false; }
       if (/^sector/.test(v.reason || '')) { state.pending = { def: id, x: cx, y: cy, r, verdict: v, snapped: false, aligned: false }; state.sel = null; $('info').dataset.hk = 'd:' + id; $('info').innerHTML = '<h4>' + nameOf(id) + '</h4><span class="k">' + why(v) + '</span>'; showBar(); toast(why(v)); WP.markDirty(); return false; }      // the sector forbids it here: show the red verdict and WHY, so the player knows where it belongs
       toast('لا يوجد مكان مناسب قريب. حرّك الخريطة ثم جرّب مرة أخرى.'); return false;
     }
