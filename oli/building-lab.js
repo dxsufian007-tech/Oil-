@@ -263,6 +263,7 @@
   $('info').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.id === 'bDig') { startBuild('oil_well'); return; }
+    if (b.id === 'bSea') { startBuild(b.dataset.id); return; }
     if (b.id === 'bStartWell') { const w = STORE.get(state.sel); if (w) { SIM.ensure(w).started = true; toast('🛢️ بدأ الإنتاج'); save(); showBuilding(w.id); } return; }
     if (b.id === 'bStopWell') { const w = STORE.get(state.sel); if (w) { SIM.ensure(w).started = false; toast('تم إيقاف الإنتاج'); save(); showBuilding(w.id); } return; }
     if (b.id === 'bLineValve') { const id = +b.dataset.id, L = pipes.lines.get(id); if (!L) return; I.setLineOpen(pipes, id, L.open === false); save(); toast(L.open === false ? '⛔ أُغلق الخط' : '✅ فُتح الخط'); if (state.pipeSel) showPipe(state.pipeSel.x, state.pipeSel.y); WP.markDirty(); return; }
@@ -377,14 +378,18 @@
 
   /* ------------------------------------------------------------ game flow: "build" from a card, suggested spots, one-tap pipes, the field card */
   const free = (pp) => !pipes.lines || ![...pipes.lines.values()].some(L => [L.a, L.b].some(e => e && e.b === pp.b && e.port === pp.port));
-  function fieldSites() { const out = []; for (const r of world.regions) for (const q of world.regionSites(r.id)) if (q.kind === 'FIELD' && (world.stateOf(q.id) === 'DRILLABLE' || world.stateOf(q.id) === 'PRODUCING')) out.push(q); return out; }
+  function openSeaFields() {                                                    /* the offshore fields have no discovery screen yet: they are open for drilling from the start (the player pays for the platform, not for a survey) */
+    const sea = []; for (const r of world.regions) for (const q of world.regionSites(r.id)) if (q.offshore && world.stateOf(q.id) === 'UNDISCOVERED') sea.push(q.id);
+    if (sea.length) { const snap = world.progressSnapshot(); for (const id of sea) snap.push([id, 'DRILLABLE']); world.restoreProgress(snap); }
+  }
+  function fieldSites() { openSeaFields(); const out = []; for (const r of world.regions) for (const q of world.regionSites(r.id)) if (q.kind === 'FIELD' && (world.stateOf(q.id) === 'DRILLABLE' || world.stateOf(q.id) === 'PRODUCING')) out.push(q); return out.filter(q => !q.offshore).concat(out.filter(q => q.offshore)); }
   function spotsFor(id, r) {
     const out = [], [w, h] = dims(id, r), c = WP.toTile(WP.VW() / 2, WP.VH() * .38), focus = (state.sel && STORE.get(state.sel)) || STORE.get(STORE.nextId - 1); let ox = Math.round(c.x), oy = Math.round(c.y), R = 26;
     if (B.DEFS[id].domain === 'sea') {                                            /* offshore buildings: jump to the right place at sea, not to the land around the camera */
       const decks = STORE.list().filter(b => b.d === 'offshore_platform'), near = (a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y);
       if (id === 'offshore_platform') { const f = fieldSites().filter(q => q.offshore && !decks.some(b => Math.hypot(b.x + 2 - q.x, b.y + 2 - q.y) < 6)).sort(near)[0]; if (!f) return out; ox = Math.round(f.x); oy = Math.round(f.y); R = 6; }
       else { const dk = decks.sort(near)[0]; if (!dk) return out; ox = dk.x + 2; oy = dk.y + 2; R = id === 'offshore_well' ? 5 : 22; }
-    } else if (B.DEFS[id].type === 'well') { const f = fieldSites().sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0]; if (!f) return out; ox = Math.round(f.x); oy = Math.round(f.y); R = 16; }
+    } else if (B.DEFS[id].type === 'well') { const f = fieldSites().filter(q => !q.offshore).sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0]; if (!f) return out; ox = Math.round(f.x); oy = Math.round(f.y); R = 16; }
     else if (focus && Math.hypot(focus.x - c.x, focus.y - c.y) < 60) { ox = focus.x + 3; oy = focus.y; }   // next to the building the player is working on, if it is on screen
     if (B.DEFS[id].type === 'refinery') {                                       // a refinery must sit inside a refinery zone: search the zone nearest to the view
       let z = null, zd = Infinity; for (const r of world.regions) for (const q of world.refineryZones(r.id)) { const d = Math.hypot(q.x + q.w / 2 - c.x, q.y + q.h / 2 - c.y); if (d < zd) { zd = d; z = q; } }
@@ -493,6 +498,10 @@
   function showField(f) {
     helpField = f; $('info').dataset.hk = 'f';
     const n = STORE.list().filter(b => B.DEFS[b.d].type === 'well' && Math.hypot(b.x - f.x, b.y - f.y) < 14).length;
+    if (f.offshore) {                                                              /* a sea field is developed with a platform, then offshore wells */
+      const dk = STORE.list().some(b => b.d === 'offshore_platform' && Math.hypot(b.x + 2 - f.x, b.y + 2 - f.y) < 6), nw = STORE.list().filter(b => b.d === 'offshore_well' && Math.hypot(b.x - f.x, b.y - f.y) < 8).length;
+      $('info').innerHTML = '<h4>🌊 حقل بحري · ' + f.id + '</h4><span class="k">احتياطي مقدَّر: ' + Math.round((f.estimatedReserve || f.initialReserve) / 1e6).toLocaleString('en-US') + ' مليون برميل. ' + (dk ? 'المنصة مبنية' + (nw ? ' وفيها ' + nw + ' بئر.' : '، ابنِ الآبار البحرية عليها.') : 'ابنِ المنصة البحرية أولاً (' + fmt$(B.DEFS.offshore_platform.cost) + ')، ثم الآبار والمضخة والفاصل.') + '</span><div class="row"><button id="bSea" data-id="' + (dk ? 'offshore_well' : 'offshore_platform') + '" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800;min-height:46px">' + (dk ? '🛢️ بناء بئر بحري' : '🏝️ بناء منصة بحرية') + '</button></div>'; WP.markDirty(); return;
+    }
     $('info').innerHTML = '<h4>⛰️ حقل نفط' + (f.sector ? ' · ' + f.sector : '') + '</h4><span class="k">يمكنك الحفر هنا. ' + (n ? 'لديك ' + n + ' بئر في هذا الحقل.' : 'لا توجد آبار في هذا الحقل بعد.') + ' تكلفة البئر من ' + fmt$(B.DEFS.oil_well.cost) + '.</span><div class="row"><button id="bDig" data-fx="' + f.x + '" data-fy="' + f.y + '" style="background:#2f9e5a;border-color:#2f9e5a;color:#fff;font-weight:800;min-height:46px">🛢️ حفر بئر</button></div>'; WP.markDirty();
   }
 
