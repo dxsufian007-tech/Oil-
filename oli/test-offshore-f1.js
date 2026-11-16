@@ -83,6 +83,8 @@ T('5e the subsea lines cross ' + seaTiles.length + ' sea tiles and ' + inland + 
 console.log('     line lengths (tiles): ' + len.join(', '));
 /* the coast side: ordinary consumers on the central network (a crude tank, a gas sphere, a water tank), exactly what a land cluster feeds */
 const sinks = { CRUDE: attach(g, 'crude_tank_c', ['F7', 'FS', 'F8'], 'CRUDE', 'in', 0, 36), GAS: attach(g, 'gas_sphere_m', ['F7', 'FS', 'F8'], 'GAS', 'in', 0, 36), WATER: attach(g, 'water_tank_m', [...g.cn.st.keys()], 'WATER', 'in', 0, 36) };
+if (process.env.SINK2) sinks.CRUDE2 = attach(g, 'crude_tank_c', [...g.cn.st.keys()].filter(k => !['F7','FS','F8'].includes(k)), 'CRUDE', 'in', 0, 36);
+console.log('     SINK2 ' + (sinks.CRUDE2 ? sinks.CRUDE2.__st : 'null'));
 T('5j a consumer of each product is wired to the central network on the coast side', !!(sinks.CRUDE && sinks.GAS && sinks.WATER), [!!sinks.CRUDE, !!sinks.GAS, !!sinks.WATER]);
 for (const w of wells) g.sim.ensure(w);
 run(g, 40, 0.05);
