@@ -104,9 +104,11 @@ console.log('6. save / load');
   T('6a a save with offshore buildings loads in this build without losing a building', rr.report.loaded === g.store.list().length && rr.report.dropped.length === 0, rr.report);
   T('6b the field state is restored from the progress snapshot', Array.isArray(prog) && prog.some(p => p[0] === P7.id));
   const n2 = I.PipeNet.fromJSON(g2.ts.W, nj); T('6c the pipe lines (including the subsea ones) load', n2.lines.size === g.net.lines.size, [n2.lines.size, g.net.lines.size]);
-  const old = require('/tmp/wt-base/oli/buildings.js'), oldTs = old.fromWorld(world), ro = old.BuildingStore.fromJSON(oldTs, sj);
+  const OLDDIR = process.env.OLD_BUILD_DIR || '/tmp/wt-base/oli';
+  if (!fs.existsSync(OLDDIR + '/buildings.js')) console.log('  skip 6d/6e: no old build at ' + OLDDIR + ' (set OLD_BUILD_DIR)'); else {
+  const old = require(OLDDIR + '/buildings.js'), oldTs = old.fromWorld(world), ro = old.BuildingStore.fromJSON(oldTs, sj);
   const droppedOff = ro.report.dropped.filter(s => /unknownType/.test(s)).length;
   T('6d the OLD build opens the new save without crashing and drops exactly the 11 offshore buildings (deck, 8 wells, pump, separator); every land building stays', droppedOff === 11 && ro.report.loaded === g.store.list().length - 11, ro.report);
-  { let err = null, n = 0; try { const oi = require('/tmp/wt-base/oli/industry.js'), onet = oi.PipeNet.fromJSON(oldTs.W, nj), osim = new oi.Sim(ro.store, onet); for (let i = 0; i < 10; i++) osim.step(0.05); n = onet.lines.size; } catch (e) { err = String(e && e.message || e); }
-    T('6e the old build runs the simulation on that save (lines whose building is gone stay as dead ends, nothing crashes)', err === null, err); } }
+  { let err = null, n = 0; try { const oi = require(OLDDIR + '/industry.js'), onet = oi.PipeNet.fromJSON(oldTs.W, nj), osim = new oi.Sim(ro.store, onet); for (let i = 0; i < 10; i++) osim.step(0.05); n = onet.lines.size; } catch (e) { err = String(e && e.message || e); }
+    T('6e the old build runs the simulation on that save (lines whose building is gone stay as dead ends, nothing crashes)', err === null, err); } } }
 console.log(pass + ' passed, ' + fail + ' failed'); if (fail) process.exit(1);
