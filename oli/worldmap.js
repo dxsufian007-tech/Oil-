@@ -53,10 +53,11 @@
     SECTOR_PROFILE: {                                                               // m = size-class richness, dp = deep-reservoir boost, lq / hq = share of heavy / light crude
       A1: { m: 1.6, dp: .45, lq: .25, hq: .20 }, A2: { m: 1.6, dp: .15, lq: .10, hq: .45 }, A3: { m: 1.0, dp: .05, lq: .20, hq: .20 }, A4: { m: .6, dp: .10, lq: .55, hq: .05 },
       A5: { m: 1.6, dp: .20, lq: .25, hq: .25 }, A6: { m: 1.0, dp: .40, lq: .30, hq: .15 }, A7: { m: 1.0, dp: .15, lq: .30, hq: .30 } },
-    F1_SLOTS: [[48, 90], [44, 250], [73, 410], [48, 570], [44, 730], [61, 890], [60, 1050], [81, 1200]],   // prepared offshore-platform places (data only: sea tiles, >= 44 tiles from the shore)
+    F1_SLOTS: [[48, 90], [44, 250], [73, 410], [48, 570], [44, 730], [61, 890], [60, 1050], [81, 1200],
+      [42, 170], [40, 330], [56, 490], [42, 650], [38, 810], [52, 970], [44, 1130], [64, 1260]],   // prepared offshore-platform places (data only: sea tiles, >= 44 tiles from the shore)
     /* OFFSHORE (F1) - prototype data, branch feature/offshore-f1. One oil field per prepared platform slot, generated with the SAME field formulas as the land (pickType / reserve / pressure / props); a neutral profile (as A3), geology score GEOLOGY.
      * PLATFORM: the deck is DECK[0] x DECK[1] tiles and its CENTRE is the slot; the eight WELL_SLOTS are tiles (relative to the deck's top-left cell) that touch the deck edge - the player builds, docks / pipes and upgrades the wells. */
-    OFFSHORE: { PRICES: { deck: 2.0e9, well: 5.5e8, pump: 3.0e8, separator: 2.5e8 }, RES_MULT:10, WELL_TARGET:30000, WELL_PSI:2500, PUMP_FLOW:300000, SEP_CAP:300000, PROFILE: { m: 1.0, dp: .05, lq: .2, hq: .2 }, GEOLOGY: 0.6, DECK: [5, 5], WELL_SLOTS: [[1, -1], [3, -1], [1, 5], [3, 5], [-1, 1], [-1, 3], [5, 1], [5, 3]] },
+    OFFSHORE: { PRICES: { deck: 2.0e9, well: 5.5e8, pump: 3.0e8, separator: 2.5e8 }, RES_MULT:10, EXTRA_RES: [8e8, 7e9], WELL_TARGET:30000, WELL_PSI:2500, PUMP_FLOW:300000, SEP_CAP:300000, PROFILE: { m: 1.0, dp: .05, lq: .2, hq: .2 }, GEOLOGY: 0.6, DECK: [5, 5], WELL_SLOTS: [[1, -1], [3, -1], [1, 5], [3, 5], [-1, 1], [-1, 3], [5, 1], [5, 3]] },
     SLOPE_K: 3,                                                                     // slope units per "maxSlope" step (slope values are 0..~45, 90% below 20)
     ELEV_LEVELS: 8,                                                             // elevation is also reported as a coarse level 0..7 (the "height" concept)
     /* ---- oil fields (Phase 3): five size classes, the design ranges of the oil-system spec x RESERVE_SCALE (0.25 = the middle option between the nominal ranges and a heavily shrunk world;
@@ -295,7 +296,7 @@
       CONFIG.F1_SLOTS.forEach((sl, i) => {
         const x = sl[0], y = sl[1], rid = regionIdAt(x, y), PR = OF.PROFILE, rng = mulberry32((seed ^ 0x0ff5) + i * 7919), p = OF.GEOLOGY, t0 = tile(x, y); if (!t0 || t0.terrain !== 'WATER_WADI') return;
         const typeKey = pickType(rng, p, PR.m), spec = CONFIG.OILFIELD[typeKey], radius = Math.max(6, Math.round(spec.radius[0] + rng() * (spec.radius[1] - spec.radius[0])));
-        const u = rng(), reserve = Math.round(spec.reserve[0] * Math.pow(spec.reserve[1] / spec.reserve[0], u)) * OF.RES_MULT, big = typeKey === 'LARGE' || typeKey === 'MAJOR', deep = rng() < Math.min(.9, (big ? .5 : .15) + PR.dp * .5), depth = Math.round(spec.depth[0] + (spec.depth[1] - spec.depth[0]) * clamp01((deep ? .55 : .0) + rng() * (deep ? .45 : .5)));
+        const u = rng(), reserve = i >= 8 ? Math.round(OF.EXTRA_RES[0] * Math.pow(OF.EXTRA_RES[1] / OF.EXTRA_RES[0], rng())) : Math.round(spec.reserve[0] * Math.pow(spec.reserve[1] / spec.reserve[0], u)) * OF.RES_MULT, big = typeKey === 'LARGE' || typeKey === 'MAJOR', deep = rng() < Math.min(.9, (big ? .5 : .15) + PR.dp * .5), depth = Math.round(spec.depth[0] + (spec.depth[1] - spec.depth[0]) * clamp01((deep ? .55 : .0) + rng() * (deep ? .45 : .5)));
         const q = rng(), quality = q < PR.lq ? 'LOW' : q < 1 - PR.hq ? 'MEDIUM' : 'HIGH', pr = Math.round(spec.pressure[0] + (spec.pressure[1] - spec.pressure[0]) * clamp01(.35 * u + .65 * rng()));
         const n = (sectorSites().get(rid) || []).length + (byRegion.has(rid) ? byRegion.get(rid).length : 0), id = 'F' + rid + '-' + n, err = .15 + rng() * .25, bias = (rng() * 2 - 1) * err;
         const pr2 = mulberry32((seed ^ 0x0f1e1d) + rid * 7919 + n * 131), FP = CONFIG.FIELD_PROPS, pn = clamp01((pr - spec.pressure[0]) / Math.max(1, spec.pressure[1] - spec.pressure[0]));

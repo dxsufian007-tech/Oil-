@@ -16,8 +16,8 @@ console.log('1. the land is untouched');
   T('1d only the four new ids are new', Object.keys(B.DEFS).filter(k => OFF.has(k)).length === 4); }
 
 console.log('2. the eight sea fields');
-const seaF = world.allSites().filter(s => s.offshore);
-T('2a eight fields, one per slot, ids appended after the land ids of their region', seaF.length === 8 && seaF.every((s, i) => s.slot === i && s.x === SL[i][0] && s.y === SL[i][1]), seaF.map(s => s.id));
+const seaF = world.allSites().filter(s => s.offshore).sort((a, b) => a.slot - b.slot);
+T('2a sixteen fields (8 original + 8 added with 0.8-7B reserve), one per slot, ids appended after the land ids of their region', seaF.length === 16 && seaF.slice(8).every(s => s.initialReserve >= 8e8 && s.initialReserve <= 7e9) && seaF.every((s, i) => s.slot === i && s.x === SL[i][0] && s.y === SL[i][1]), seaF.map(s => s.id));
 T('2b every field sits on water inside sector F1, radius covers the whole platform ring', seaF.every(s => world.tile(s.x, s.y).terrain === 'WATER_WADI' && world.sectorAt(s.x, s.y) === 'F1' && s.radius >= 6));
 T('2c every field has the land field properties (reserve, pressure, quality, water cut, capacity, decline)', seaF.every(s => s.initialReserve > 0 && s.pressurePotential > 0 && s.props && s.props.capacity > 0 && s.props.decline > 0));
 T('2d all eight well slots of every platform are inside the field radius', seaF.every(s => OC.WELL_SLOTS.every(([a, b]) => Math.hypot(s.x - DW / 2 + 0.5 - (s.x - (DW >> 1) + a), s.y - DH / 2 + 0.5 - (s.y - (DH >> 1) + b)) <= s.radius + 0.01) && !!world.oilFieldAt(s.x - (DW >> 1) + OC.WELL_SLOTS[0][0], s.y - (DH >> 1) + OC.WELL_SLOTS[0][1])));
