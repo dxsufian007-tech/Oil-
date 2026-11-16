@@ -32,14 +32,15 @@
   const DEFS = {};
   function define(d) {
     if (!d.id || !Array.isArray(d.footprint)) throw new Error('definition needs id + footprint');
-    const f = Object.freeze({
+    const f0 = ({
       id: d.id, name: d.name, category: d.category, footprint: Object.freeze(d.footprint.slice()), cost: d.cost, maintenanceCost: d.maintenanceCost, buildTime: d.buildTime,
       connections: Object.freeze((d.connections || []).map(c => Object.freeze(Object.assign({ kind: 'pipe', required: true }, c)))),
       allowedTerrain: Object.freeze(d.allowedTerrain.slice()), maxSlope: d.maxSlope, capacity: Object.freeze(d.capacity), visual: d.visual,
       zone: d.zone || null, reserveOnly: !!d.reserveOnly, noUpgrade: !!d.noUpgrade, requires: Object.freeze(d.requires || {}), clearance: d.clearance || 0, rotatable: d.rotatable !== false, status: d.status || STATUS.UNDER_CONSTRUCTION,
       section: d.section || d.category, family: d.family || null, type: d.type || null, size: d.size || null, product: d.product || null, params: d.params || null, operatingCost: d.operatingCost || 0, baseCost: d.baseCost || null, costPerBarrel: d.costPerBarrel || null, costRange: d.costRange || null,
       safetyZone: d.clearance || 0, level: Object.freeze({ level: 1, capacityMultiplier: 1, efficiencyMultiplier: 1, pressureMultiplier: 1, maintenanceMultiplier: 1 })
-    });
+    }); if (d.domain) f0.domain = d.domain;      // offshore (sea) definitions only; every land definition keeps its exact old shape
+    const f = Object.freeze(f0);
     for (const c of f.connections) {                                  // a definition error must never reach a player: every port sits on a real edge cell
       const [cx, cy] = c.cell, [w, h] = f.footprint, onEdge = (c.side === 0 && cx === w - 1) || (c.side === 1 && cx === 0) || (c.side === 2 && cy === h - 1) || (c.side === 3 && cy === 0);
       if (!onEdge || cx < 0 || cy < 0 || cx >= w || cy >= h) throw new Error('connection ' + c.id + ' of ' + f.id + ' is not on an edge cell');
@@ -92,6 +93,18 @@
   define({ id: 'separator', name: 'Separator', category: 'PROCESSING', section: 'PROCESSING', family: 'SEPARATOR', type: 'separator', footprint: [CFG.SEPARATOR.w, CFG.SEPARATOR.h], cost: CFG.SEPARATOR.cost, maintenanceCost: CFG.SEPARATOR.maint, operatingCost: CFG.SEPARATOR.op, buildTime: 60, visual: 'separator',
     allowedTerrain: SOLID, maxSlope: 3, capacity: { value: CFG.SEPARATOR.cap, unit: 'bbl/day' }, params: CFG.SEPARATOR,
     connections: [pt('MIXTURE_IN', 'pipe', 'in', [0, 1], 1, { product: P.CRUDE }), pt('OIL_OUT', 'pipe', 'out', [CFG.SEPARATOR.w - 1, 1], 0, { product: P.CRUDE }), pt('GAS_OUT', 'pipe', 'out', [2, 0], 3, { required: false, product: P.GAS }), pt('WATER_OUT', 'pipe', 'out', [2, CFG.SEPARATOR.h - 1], 2, { required: false, product: P.WATER })] });
+  /* ---- OFFSHORE (F1), prototype of branch feature/offshore-f1.  Sea buildings are DATA CLONES of the land ones (same type / family / params / ports, so the simulation code and every equation is the same code path);
+   *  only the domain (water tiles, sector F1) differs.  PRICES ARE PLACEHOLDERS = the land price; nothing is adopted until the owner approves a price table (see the cost study).
+   *  The platform deck: 5x5, eight well inlets (two per side, each facing one of the eight WELL_SLOTS tiles), one mixture outlet on the east side.  It is a manifold-class joint (type 'junction', params of CFG.MANIFOLD).
+   *  The wells are built by the player on the eight slots (requires.platformSlot); nothing is created automatically. */
+  const OFFC = (typeof OliWorld !== 'undefined' ? OliWorld : require('./worldmap.js')).CONFIG.OFFSHORE;
+  { const OF = OFFC, M = CFG.MANIFOLD, [dw, dh] = OF.DECK, ins = [[1, 0, 3], [3, 0, 3], [1, dh - 1, 2], [3, dh - 1, 2], [0, 1, 1], [0, 3, 1], [dw - 1, 1, 0], [dw - 1, 3, 0]];
+    define({ id: 'offshore_platform', name: 'Offshore Platform (deck)', category: 'EXTRACTION', section: 'EXTRACTION', family: 'MANIFOLD', type: 'junction', domain: 'sea', footprint: [dw, dh], cost: M.cost, maintenanceCost: M.maint, operatingCost: M.op, buildTime: 80, visual: 'main_manifold',
+      allowedTerrain: [], maxSlope: 99, capacity: { value: M.maxTotalFlow, unit: 'bbl/day' }, params: Object.assign({}, M, { id: 'offshore_platform', inputs: 8, outputs: 1 }), requires: { oilField: true, atSite: [-(dw >> 1), -(dh >> 1)] }, rotatable: false, noUpgrade: true,
+      connections: ins.map(([cx, cy, sd], i) => pt('INPUT_' + (i + 1), 'pipe', 'in', [cx, cy], sd, { group: 'INPUT', required: false, product: '*' })).concat([pt('OUTPUT_1', 'pipe', 'out', [dw - 1, 2], 0, { group: 'OUTPUT', required: false, product: '*' })]) });
+    const W0 = DEFS.oil_well; define(Object.assign({}, W0, { id: 'offshore_well', name: 'Offshore Well', domain: 'sea', allowedTerrain: [], maxSlope: 99, requires: { oilField: true, platformSlot: true }, connections: W0.connections.map(c => Object.assign({}, c)) }));
+    for (const [from, id, name] of [['pump_station_l', 'offshore_pump', 'Offshore Pump Station'], ['separator', 'offshore_separator', 'Offshore Separator']]) { const B0 = DEFS[from]; define(Object.assign({}, B0, { id, name, domain: 'sea', allowedTerrain: [], maxSlope: 99, connections: B0.connections.map(c => Object.assign({}, c)) })); }
+  }
   for (const k of ['S', 'M', 'L', 'X']) { const z = CFG.REFINERY.sizes[k];
     define({ id: z.id, name: z.name, category: 'PROCESSING', section: 'PROCESSING', family: 'REFINERY', type: 'refinery', size: k, footprint: [z.w, z.h], cost: z.cost, maintenanceCost: z.maint, operatingCost: z.op, buildTime: 120 + z.w * 20, visual: 'refinery',
       allowedTerrain: FLAT, maxSlope: 2, capacity: { value: z.cap, unit: 'bbl/day' }, zone: 'REFINERY', clearance: 1, params: z,
@@ -150,7 +163,7 @@
     E: { allow: SHARED.concat(pick(/^water_pump_/), pick(/^water_tank_/), pick(/^pump_station_/), ['separator']), mult: {},
       perks: ['محطات سحب وضخ وتخزين ومعالجة المياه', 'تزويد القطاعات المحتاجة للمياه', 'معالجة المياه المصاحبة وإعادة تدوير مياه الصناعة'], needs: ['مضخات الماء على مياه أو أرض مناسبة'] },
     /* F1 is prepared, not filled: the OFFSHORE family below is reserved for the sea buildings of a later phase (none exists yet, so nothing can be built here today). A def with domain:'sea' is built on sea tiles ONLY and the sector F alone lists it; land buildings are refused here. No extraction or sea economy is implemented. */
-    F: { allow: OFFSHORE_FAMILY, mult: {}, perks: ['منصات استخراج بحرية', 'منشآت مساندة بحرية', 'أنابيب بحرية ومحطات ربط ساحلية', 'قواعد بناء بحرية منفصلة عن اليابسة'], needs: ['للمنشآت البحرية فقط (على الماء)', 'المباني البرية غير مسموحة هنا', 'تصميم المنشآت البحرية في مرحلة لاحقة'] }
+    F: { allow: OFFSHORE_FAMILY.concat(['offshore_well', 'offshore_pump', 'offshore_separator']), mult: {}, perks: ['منصات استخراج بحرية', 'منشآت مساندة بحرية', 'أنابيب بحرية ومحطات ربط ساحلية', 'قواعد بناء بحرية منفصلة عن اليابسة'], needs: ['للمنشآت البحرية فقط (على الماء)', 'المباني البرية غير مسموحة هنا', 'تصميم المنشآت البحرية في مرحلة لاحقة'] }
   };
   const SECTOR_HOME = k => { const o = []; for (const q in SECTOR_RULES) if (SECTOR_RULES[q].allow.indexOf(k) >= 0 && SHARED.indexOf(k) < 0) o.push(q); return o; };
   const sectorsOfFootprint = (world, x, y, w, h) => { const set = new Set(); for (const [i, j] of [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1], [(w - 1) >> 1, (h - 1) >> 1]]) set.add(world.sectorAt(x + i, y + j)); return [...set]; };
@@ -162,7 +175,7 @@
     CFG = CFG || (typeof OliWorld !== 'undefined' ? OliWorld.CONFIG : require('./worldmap.js').CONFIG);
     return { W: world.W, H: world.H, tile: (x, y) => { const t = world.tile(x, y); if (!t || t.terrain === 'WATER_WADI' || t.terrain === 'ROCKY_PLATEAU' || !world.reserveZoneOfWorld) return t; const z = world.reserveZoneOfWorld();
         return z && x >= z.x && y >= z.y && x < z.x + z.w && y < z.y + z.h && (t.slope > 0 || t.terrain === 'VALLEY' || t.terrain === 'SAND_DUNES') ? Object.assign({}, t, { terrain: 'FLAT_DESERT', slope: 0 }) : t; },   // the reserve land is graded level: slopes, valley floor and dunes inside it count as flat desert for building
-      terrain: CFG.TERRAIN, slopeK: CFG.SLOPE_K, oilFieldAt: (x, y) => world.oilFieldAt(x, y), stateOf: id => world.stateOf(id),
+      terrain: CFG.TERRAIN, slopeK: CFG.SLOPE_K, seaAt: (x, y) => { const t = world.tile(x, y); return !!t && t.terrain === 'WATER_WADI' && !!world.sectorAt && world.sectorAt(x, y) === 'F1'; }, oilFieldAt: (x, y) => world.oilFieldAt(x, y), stateOf: id => world.stateOf(id),
       /* the Strategic Reserve zone: a storage-only place. Tanks fully inside the AREA OPEN SO FAR become reserve tanks (b.rs = 1); other plant is refused inside it; ground outside it is untouched */
       reserve: () => (world.reserveZoneOfWorld ? world.reserveZoneOfWorld() : null), reserveLevel: () => 0, region: () => (world.reserveRegionOfWorld ? world.reserveRegionOfWorld() : null),
       /* the reserve LAND is the whole reserve region when the world has one (C3), else the fixed zone. Inside it only reserve tanks (in the OPEN area of the zone), pumps, valves and junctions may be built; wells, refineries and every commercial building are refused. Checked at placement only: what is already built stays. */
@@ -241,6 +254,8 @@
         const st = ts.stateOf(s.id); if (st !== 'DRILLABLE' && st !== 'PRODUCING') return fail('OIL', st === 'DEPLETED' ? 'depleted' : 'notDrillable', { field: s.id, fieldState: st });
         res.field = s.id; res.fieldState = st;
       }
+      if (def.requires.atSite) { const s0 = ts.oilFieldAt(x, y), [ox, oy] = def.requires.atSite; if (!s0 || x !== s0.x + ox || y !== s0.y + oy) return fail('RULE', 'platformAtSlot', { at: s0 ? [s0.x + ox, s0.y + oy] : null }); }      // the deck stands exactly on its field's slot (its centre = the slot)
+      if (def.requires.platformSlot) { let hit = null; for (const o of this.query(x - 6, y - 6, x + 7, y + 7)) if (o.d === 'offshore_platform') for (const sl of OFFC.WELL_SLOTS) if (o.x + sl[0] === x && o.y + sl[1] === y) hit = o; if (!hit) return fail('RULE', 'needsPlatformSlot'); res.platform = hit.id; }      // an offshore well stands on one of the eight slots of a built deck
       if (def.requires.unique) for (const o of this.items.values()) if (o.d === defId && o.id !== opts.ignoreId) return fail('RULE', 'alreadyBuilt', { with: o.id });
       if (def.requires.adjacentTo) {                                                 // pump jack: its LINK port must face the footprint of a free oil well
         const L = conns.find(c => c.kind === 'link'); const wb = L && this.at(x + L.ax, y + L.ay);

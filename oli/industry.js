@@ -76,8 +76,10 @@
   /* L-free routing on the tile grid: BFS around buildings, water, other pipes (and their neighbours); returns the path of tiles or null */
   function route(store, net, ts, from, to, opts) {
     opts = opts || {}; const W = store.W, margin = opts.margin || 14, x0 = Math.min(from[0], to[0]) - margin, x1 = Math.max(from[0], to[0]) + margin, y0 = Math.min(from[1], to[1]) - margin, y1 = Math.max(from[1], to[1]) + margin;
+    /* SEA CROSSING (F1): a line may occupy a water tile only when it touches the sea - one of its two end tiles is itself a sea tile (the access tile of a sea building) - and only tiles of the sea (sector F1, west of the coast line). Inland water (lakes, wadis) stays closed for every line. */
+    const seaOk = !!ts.seaAt && (ts.seaAt(from[0], from[1]) || ts.seaAt(to[0], to[1]));
     const own = opts.own || new Set(), acc = new Set(); for (const o of store.query(x0, y0, x1, y1)) for (const p of B.worldPoints(o)) if (p.kind === 'pipe' && !p.reserved) acc.add(key(W, p.ax, p.ay)); const okTile = (x, y, end) => {
-      if (x < 0 || y < 0 || x >= W || y >= store.H) return false; if (opts.block && opts.block.has(key(W, x, y))) return false; const t = ts.tile(x, y); if (!t) return false; { const td = ts.terrain[t.terrain]; if (!td || !(td.buildable || (opts.allowSea && td.offshore))) return false; } if (store.at(x, y)) return false;
+      if (x < 0 || y < 0 || x >= W || y >= store.H) return false; if (opts.block && opts.block.has(key(W, x, y))) return false; const t = ts.tile(x, y); if (!t) return false; { const td = ts.terrain[t.terrain]; if (!td || !(td.buildable || (opts.allowSea && td.offshore) || (seaOk && !td.buildable && ts.seaAt(x, y)))) return false; } if (store.at(x, y)) return false;
       { const ln = net.lineAt(x, y); if (ln && ln.id !== opts.ignoreLine) return false; } if (net.centralAt(x, y)) return false; if (!end && acc.has(key(W, x, y))) return false; return true; };
     if (!okTile(from[0], from[1], true) || !okTile(to[0], to[1], true)) return null;
     const idx = (x, y) => (y - y0) * (x1 - x0 + 1) + (x - x0), prev = new Map(), q = [from], seen = new Set([idx(from[0], from[1])]); let head = 0, guard = 0;
