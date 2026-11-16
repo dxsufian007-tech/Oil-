@@ -36,7 +36,7 @@
   function fieldProfile(store, b) {
     const ts = store.ts; if (!b.field || !ts || !ts.take || !ts.site) return null; const site = ts.site(b.field); if (!site || site.kind !== 'FIELD' || !site.props) return null;
     const pr = wellProfile(b.x, b.y);       // the rate and the pressure of a single well stay what they always were (the economy keeps its balance); the field only adds the shared reserve, the capacity limit and its own water cut
-    return { site, nominal: pr.production, p0: pr.pressure };
+    return { site, nominal: site.offshore ? WORLDCFG().OFFSHORE.WELL_TARGET : pr.production, p0: site.offshore ? WORLDCFG().OFFSHORE.WELL_PSI : pr.pressure };
   }
   const priceOf = (def, x, y) => def.type === 'well' ? wellProfile(x, y).cost : def.cost;
 

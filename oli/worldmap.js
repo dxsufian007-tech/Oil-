@@ -56,7 +56,7 @@
     F1_SLOTS: [[48, 90], [44, 250], [73, 410], [48, 570], [44, 730], [61, 890], [60, 1050], [81, 1200]],   // prepared offshore-platform places (data only: sea tiles, >= 44 tiles from the shore)
     /* OFFSHORE (F1) - prototype data, branch feature/offshore-f1. One oil field per prepared platform slot, generated with the SAME field formulas as the land (pickType / reserve / pressure / props); a neutral profile (as A3), geology score GEOLOGY.
      * PLATFORM: the deck is DECK[0] x DECK[1] tiles and its CENTRE is the slot; the eight WELL_SLOTS are tiles (relative to the deck's top-left cell) that touch the deck edge - the player builds, docks / pipes and upgrades the wells. */
-    OFFSHORE: { PROFILE: { m: 1.0, dp: .05, lq: .2, hq: .2 }, GEOLOGY: 0.6, DECK: [5, 5], WELL_SLOTS: [[1, -1], [3, -1], [1, 5], [3, 5], [-1, 1], [-1, 3], [5, 1], [5, 3]] },
+    OFFSHORE: { RES_MULT:10, WELL_TARGET:30000, WELL_PSI:2500, PUMP_FLOW:300000, SEP_CAP:300000, PROFILE: { m: 1.0, dp: .05, lq: .2, hq: .2 }, GEOLOGY: 0.6, DECK: [5, 5], WELL_SLOTS: [[1, -1], [3, -1], [1, 5], [3, 5], [-1, 1], [-1, 3], [5, 1], [5, 3]] },
     SLOPE_K: 3,                                                                     // slope units per "maxSlope" step (slope values are 0..~45, 90% below 20)
     ELEV_LEVELS: 8,                                                             // elevation is also reported as a coarse level 0..7 (the "height" concept)
     /* ---- oil fields (Phase 3): five size classes, the design ranges of the oil-system spec x RESERVE_SCALE (0.25 = the middle option between the nominal ranges and a heavily shrunk world;
@@ -295,13 +295,13 @@
       CONFIG.F1_SLOTS.forEach((sl, i) => {
         const x = sl[0], y = sl[1], rid = regionIdAt(x, y), PR = OF.PROFILE, rng = mulberry32((seed ^ 0x0ff5) + i * 7919), p = OF.GEOLOGY, t0 = tile(x, y); if (!t0 || t0.terrain !== 'WATER_WADI') return;
         const typeKey = pickType(rng, p, PR.m), spec = CONFIG.OILFIELD[typeKey], radius = Math.max(6, Math.round(spec.radius[0] + rng() * (spec.radius[1] - spec.radius[0])));
-        const u = rng(), reserve = Math.round(spec.reserve[0] * Math.pow(spec.reserve[1] / spec.reserve[0], u)), big = typeKey === 'LARGE' || typeKey === 'MAJOR', deep = rng() < Math.min(.9, (big ? .5 : .15) + PR.dp * .5), depth = Math.round(spec.depth[0] + (spec.depth[1] - spec.depth[0]) * clamp01((deep ? .55 : .0) + rng() * (deep ? .45 : .5)));
+        const u = rng(), reserve = Math.round(spec.reserve[0] * Math.pow(spec.reserve[1] / spec.reserve[0], u)) * OF.RES_MULT, big = typeKey === 'LARGE' || typeKey === 'MAJOR', deep = rng() < Math.min(.9, (big ? .5 : .15) + PR.dp * .5), depth = Math.round(spec.depth[0] + (spec.depth[1] - spec.depth[0]) * clamp01((deep ? .55 : .0) + rng() * (deep ? .45 : .5)));
         const q = rng(), quality = q < PR.lq ? 'LOW' : q < 1 - PR.hq ? 'MEDIUM' : 'HIGH', pr = Math.round(spec.pressure[0] + (spec.pressure[1] - spec.pressure[0]) * clamp01(.35 * u + .65 * rng()));
         const n = (sectorSites().get(rid) || []).length + (byRegion.has(rid) ? byRegion.get(rid).length : 0), id = 'F' + rid + '-' + n, err = .15 + rng() * .25, bias = (rng() * 2 - 1) * err;
         const pr2 = mulberry32((seed ^ 0x0f1e1d) + rid * 7919 + n * 131), FP = CONFIG.FIELD_PROPS, pn = clamp01((pr - spec.pressure[0]) / Math.max(1, spec.pressure[1] - spec.pressure[0]));
         const props = { api: +(FP.api[quality][0] + pr2() * (FP.api[quality][1] - FP.api[quality][0])).toFixed(1), waterCut: +Math.min(FP.waterCut[1], FP.waterCut[0] + Math.pow(pr2(), 1.6) * (FP.waterCut[1] - FP.waterCut[0]) + (typeKey === 'MARGINAL' ? .08 : 0)).toFixed(3),
           extractCost: +((FP.extractBase + depth / 1000 * FP.extractPerKm + (quality === 'LOW' ? 2.5 : quality === 'HIGH' ? -1 : 0)) * (.85 + pr2() * .35)).toFixed(2),
-          capacity: Math.round(reserve / (365 * (FP.life[0] + (FP.life[1] - FP.life[0]) * (.6 * (1 - pn) + .4 * pr2())))), decline: +Math.min(FP.decline[1], FP.decline[0] + (1 - pn) * .14 + pr2() * .07 + (typeKey === 'MARGINAL' ? .04 : 0)).toFixed(3) };
+          capacity: Math.max(OF.WELL_SLOTS.length * OF.WELL_TARGET, Math.round(reserve / (365 * (FP.life[0] + (FP.life[1] - FP.life[0]) * (.6 * (1 - pn) + .4 * pr2()))))), decline: +Math.min(FP.decline[1], FP.decline[0] + (1 - pn) * .14 + pr2() * .07 + (typeKey === 'MARGINAL' ? .04 : 0)).toFixed(3) };
         const site = { id, kind: 'FIELD', regionId: rid, sector: 'F1', offshore: true, slot: i, x, y, radius, type: typeKey, initialReserve: reserve, remainingReserve: reserve, estimatedReserve: Math.round(reserve * (1 + bias)), estimateError: err,
           pressurePotential: pr, quality, props, depth, terrainType: t0.terrain, geologyScore: +p.toFixed(3), indicator: { dx: Math.round((rng() * 2 - 1) * radius * .5), dy: Math.round((rng() * 2 - 1) * radius * .5), r: Math.round(radius * 1.6 + 2) } };
         if (!byRegion.has(rid)) byRegion.set(rid, []); byRegion.get(rid).push(site);
