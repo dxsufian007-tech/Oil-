@@ -640,8 +640,9 @@
       const fz = this.fz; if (!fz) return 'start'; if (fz.wk !== wk) return 'week'; if (Math.abs(fz.dt - dt) > 1e-12) return 'dt'; if (this.dirty()) return 'structure';
       if (fz.items.length !== items.length) return 'structure'; for (let i = 0; i < items.length; i++) if (items[i] !== fz.items[i]) return 'structure';
       const k = this._fzSame(items, fz); if (k) return k === 1 ? 'state' : 'inputs'; if (this._fzCentralSig() !== fz.csig) return 'central';
-      const R = fz.rg; for (let i = 0; i < R.length; i += 3) if (this._fzCode(R[i].vol, R[i + 1]) !== R[i + 2]) { this._fzLast = R[i]; return 'regime'; }
+      const R = fz.rg; for (let i = 0; i < R.length; i += 4) if (this._fzCode(R[i].vol, R[i + 1]) !== R[i + 2]) { this._fzLast = R[i]; return 'regime'; }
       if (fz.lvl && fz.ph.length < 2) return 'pair';      // tank-to-tank levelling flows swing from hour to hour (they go back and forth): two solved hours are recorded and replayed in turn
+      const CL = fz.ph[fz.i % fz.ph.length].cl; for (let i = 0; i < CL.length; i += 3) if (Math.abs(CL[i].vol - CL[i + 1]) > CL[i + 2]) return 'content';
       const T = fz.ph[fz.i % fz.ph.length].thr; for (let i = 0; i < T.length; i += 4) { const o = T[i], key = T[i + 1], d = T[i + 2], lim = T[i + 3], v = o[key] + this.fzLook * d; if (d > 0 ? v > lim : v < lim) { this._fzLast = o; return 'limit'; } }
       return null;
     }
@@ -649,7 +650,7 @@
       const items = this.store.list(), wk = Math.floor(hours / (24 * this.fzDays)), why = this._fzCheck(dt, wk, items), st = this.fzStats;
       if (why === null) { this._fzReplay(dt); st.replayed++; return; }
       st[why] = (st[why] || 0) + 1; st.solved++; const rec = this._fzSnap(items); yield* this.stepGen(dt, sl);
-      if (why === 'pair') { const ph = this._fzPhase(rec, items); if (ph.same) { this.fz.ph.push(ph); this.fz.i = 0; } else this.fz = null; } else {
+      if (why === 'pair') { const ph = this._fzPhase(rec, items, dt); if (ph.same) { this.fz.ph.push(ph); this.fz.i = 0; } else this.fz = null; } else {
         this._fzRecord(rec, items, dt, wk);
       }
     }
@@ -662,10 +663,10 @@
         else if (t === 'refinery') { for (const f of FZ_REF) if (typeof s[f] === 'number') { o.push(s); k.push(f); v.push(s[f]); } if (s.made) for (const f in s.made) if (typeof s.made[f] === 'number') { o.push(s.made); k.push(f); v.push(s.made[f]); } } }
       const ts = this.store.ts; if (ts && ts.site) for (const b of items) { if (T[b.d].type !== 'well' || !b.s || !b.s.shared) continue; const site = ts.site(b.field); if (site && !o.includes(site)) for (const f of FZ_SITE) if (typeof site[f] === 'number') { o.push(site); k.push(f); v.push(site[f]); } }
       if (cn) for (const c in cn.ch) { o.push(cn.ch[c]); k.push('moved'); v.push(cn.ch[c].moved || 0); }
-      const rg = []; for (const b of items) { const t = T[b.d].type; if ((t === 'tank' || t === 'gas') && b.s && typeof b.s.vol === 'number') { const cap = T[b.d].capacity.value * levelOf(b).capacityMultiplier; rg.push(b.s, cap, this._fzCode(b.s.vol, cap)); } }      // the regime of every tank at the START of the solved hour: empty / normal / full decide what it can give and take
+      const rg = []; for (const b of items) { const t = T[b.d].type; if ((t === 'tank' || t === 'gas') && b.s && typeof b.s.vol === 'number') { const cap = T[b.d].capacity.value * levelOf(b).capacityMultiplier; rg.push(b.s, cap, this._fzCode(b.s.vol, cap), b.s.vol); } }      // the regime of every tank at the START of the solved hour: empty / normal / full decide what it can give and take
       return { o, k, v, rg, t: this.time, ct: cn ? cn.time : 0 };
     }
-    _fzPhase(rec, items) {      // the deltas and the limits of one solved hour
+    _fzPhase(rec, items, dt) {      // the deltas and the limits of one solved hour
       const { o, k, v } = rec, n = o.length, d = new Float64Array(n), T = [];
       for (let i = 0; i < n; i++) d[i] = o[i][k[i]] - v[i];
       const cap = new Map(); for (const b of items) { const t = DEFS[b.d].type; if ((t === 'tank' || t === 'gas') && b.s) cap.set(b.s, DEFS[b.d].capacity.value * levelOf(b).capacityMultiplier); }
@@ -673,13 +674,14 @@
         if (key === 'vol') { if (dv > 0) T.push(obj, key, dv, (cap.get(obj) || Infinity) * 0.999); else T.push(obj, key, dv, 1e-6); }
         else if (key === 'reserve') { if (dv < 0) T.push(obj, key, dv, 0.5 + 1e-6); }
         else if (key === 'remainingReserve') { if (dv < 0) T.push(obj, key, dv, 1e-3); } }
+      const cl = [], R = rec.rg; for (let i = 0; i < R.length; i += 4) { const t = R[i], v0 = R[i + 3]; if (v0 > 1e-6 && (t._out || 0) * dt >= v0 * 0.999) cl.push(t, v0, 0.05 * Math.max(v0, (t._in || 0) * dt)); }      // a tank that gave away ALL it held: its outflow follows its content, so it is only repeated while that content stays (within 5%) the same
       const us = []; for (const b of items) { const st = b.s; if (!st) continue; for (const q in st) if (q.charCodeAt(0) === 95) us.push(st, q, st[q]); }      // the per-hour values of this solved hour (_in, _out, _p...): the economy reads them (load, cost, output), so each replayed hour puts back the ones of its own phase
       const el = this._el, ef = new Array(el.length * 5), ep = new Array(el.length); for (let i = 0; i < el.length; i++) { const e = el[i]; ef[i * 5] = e.flow; ef[i * 5 + 1] = e.over; ef[i * 5 + 2] = e.lowP; ef[i * 5 + 3] = e.hiP; ef[i * 5 + 4] = e.p; ep[i] = e.prod; }
-      return { d, thr: T, us, ef, ep, el, same: this.fz ? this.fz.o.length === n && this.fz.k.every((x, i) => x === k[i] && this.fz.o[i] === o[i]) : true };
+      return { d, thr: T, cl, us, ef, ep, el, same: this.fz ? this.fz.o.length === n && this.fz.k.every((x, i) => x === k[i] && this.fz.o[i] === o[i]) : true };
     }
     _fzRecord(rec, items, dt, wk) {
       let lvl = false; for (const e of this._el) if (e.lvl && e.flow > 0) lvl = true;
-      const ph = this._fzPhase(rec, items), sh = []; for (const b of items) if (b.s && b.s.shared && DEFS[b.d].type === 'well') sh.push(b);
+      const ph = this._fzPhase(rec, items, dt), sh = []; for (const b of items) if (b.s && b.s.shared && DEFS[b.d].type === 'well') sh.push(b);
       const inp = { num: new Float64Array(items.length * 8), str: new Array(items.length * 2), n: 0 }; this._fzInputs(items, inp);
       this.fz = { rg: rec.rg, wk, dt, o: rec.o, k: rec.k, ph: [ph], i: 0, lvl, items: items.slice(), num: inp.num, str: inp.str, csig: this._fzCentralSig(), shared: sh, ts: this.store.ts, refs: items.filter(b => DEFS[b.d].type === 'refinery' && b.s) };
     }
