@@ -56,7 +56,7 @@
     F1_SLOTS: [[48, 90], [44, 250], [73, 410], [48, 570], [44, 730], [61, 890], [60, 1050], [81, 1200]],   // prepared offshore-platform places (data only: sea tiles, >= 44 tiles from the shore)
     /* OFFSHORE (F1) - prototype data, branch feature/offshore-f1. One oil field per prepared platform slot, generated with the SAME field formulas as the land (pickType / reserve / pressure / props); a neutral profile (as A3), geology score GEOLOGY.
      * PLATFORM: the deck is DECK[0] x DECK[1] tiles and its CENTRE is the slot; the eight WELL_SLOTS are tiles (relative to the deck's top-left cell) that touch the deck edge - the player builds, docks / pipes and upgrades the wells. */
-    OFFSHORE: { RES_MULT:10, WELL_TARGET:30000, WELL_PSI:2500, PUMP_FLOW:300000, SEP_CAP:300000, PROFILE: { m: 1.0, dp: .05, lq: .2, hq: .2 }, GEOLOGY: 0.6, DECK: [5, 5], WELL_SLOTS: [[1, -1], [3, -1], [1, 5], [3, 5], [-1, 1], [-1, 3], [5, 1], [5, 3]] },
+    OFFSHORE: { PRICES: { deck: 2.0e9, well: 5.5e8, pump: 3.0e8, separator: 2.5e8 }, RES_MULT:10, WELL_TARGET:30000, WELL_PSI:2500, PUMP_FLOW:300000, SEP_CAP:300000, PROFILE: { m: 1.0, dp: .05, lq: .2, hq: .2 }, GEOLOGY: 0.6, DECK: [5, 5], WELL_SLOTS: [[1, -1], [3, -1], [1, 5], [3, 5], [-1, 1], [-1, 3], [5, 1], [5, 3]] },
     SLOPE_K: 3,                                                                     // slope units per "maxSlope" step (slope values are 0..~45, 90% below 20)
     ELEV_LEVELS: 8,                                                             // elevation is also reported as a coarse level 0..7 (the "height" concept)
     /* ---- oil fields (Phase 3): five size classes, the design ranges of the oil-system spec x RESERVE_SCALE (0.25 = the middle option between the nominal ranges and a heavily shrunk world;

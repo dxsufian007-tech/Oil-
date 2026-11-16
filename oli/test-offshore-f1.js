@@ -58,7 +58,7 @@ console.log('4. sea crossing: only the sea, never inland water');
   const ts2 = mkts(false); p = I.route(new B.BuildingStore(ts2), new I.PipeNet(ts2.W), ts2, [10, 30], [80, 30], { margin: 30, allowSea: true }); T('4h the old explicit allowSea option without an offshore flag on the terrain still closes water (unchanged)', p !== null); }
 
 console.log('5. a full player-built chain on the real map (P7), 48 game hours');
-const g = mk(); world.restoreProgress([[P7.id, 'DRILLABLE']]);
+const g = mk(); g.store.cash = Infinity; world.restoreProgress([[P7.id, 'DRILLABLE']]);
 const put = (d, x, y) => { const r = g.store.place(d, x, y, 0, { instant: true, ignoreCash: true }); if (!r.ok) throw new Error('place ' + d + ' ' + x + ',' + y + ' ' + r.reason); return r.building; };
 const deck = put('offshore_platform', DX, DY), wells = OC.WELL_SLOTS.map(([a, b]) => put('offshore_well', DX + a, DY + b));
 T('5a deck + eight wells placed by "the player" (one call each)', !!deck && wells.length === 8 && wells.every(w => w.field === P7.id));

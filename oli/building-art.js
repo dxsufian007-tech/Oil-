@@ -79,6 +79,23 @@
 
   /* ---------------------------------------------------------------- the 14 drawings (local coordinates of the unrotated footprint, u east / v south, heights in tiles) */
   const ART = {
+    offshore_platform(p, o) {                                                     // 5x5 sea platform: four steel legs standing in the water, a grey deck, living quarters, derrick, helipad, flare boom, manifold header with eight dock stubs
+      const W = o.w, H = o.h, t = o.t || 0; p.flat(.02, .02, W - .02, H - .02, 0, 'rgba(40,110,160,.35)');
+      for (const [u, v] of [[.5, .5], [W - .5, .5], [.5, H - .5], [W - .5, H - .5], [W / 2, .5], [W / 2, H - .5]]) { p.cyl(u, v, 0, .2, 1.25, '#6b7782'); p.dot(u, v, .05, 3.2, 'rgba(255,255,255,.55)'); }
+      p.box(.12, .12, W - .12, H - .12, 1.25, 1.5, '#78838d', { top: '#aeb7bf' });
+      p.box(.35, .35, 1.7, 1.55, 1.5, 2.5, C.cream, { top: C.roof }); p.box(.5, 1.55, 1.5, 2.2, 1.5, 1.95, '#c9bfa6', { top: '#8d8472' });
+      p.flat(.45, H - 1.55, 1.75, H - .35, 1.52, '#2f3942'); p.dot(1.1, H - .95, 1.55, 6, C.yellow);
+      p.box(2.2, 1.9, 3.3, 3.0, 1.5, 2.1, C.steel, { top: '#a9b2ba' }); p.cyl(2.75, 2.45, 2.1, .12, 4.4, C.dark); p.line(2.2, 1.9, 1.52, 2.75, 2.45, 4.4, C.dark, 1.6); p.line(3.3, 3.0, 1.52, 2.75, 2.45, 4.4, C.dark, 1.6); p.dot(2.75, 2.45, 4.5, 3.2, C.red);
+      p.line(W - .6, .6, 1.5, W + .15, -.1, 3.1, C.steel, 3.6); p.dot(W + .15, -.1, 3.2, 3 + Math.sin(t * 9) * .8, 'rgba(255,160,40,.95)'); p.dot(W + .15, -.1, 3.5, 1.8 + Math.sin(t * 7 + 1), 'rgba(255,225,110,.9)');
+      for (let i = 0; i < 8; i++) { const [a, b] = [[1, 0], [3, 0], [1, H - 1], [3, H - 1], [0, 1], [0, 3], [W - 1, 1], [W - 1, 3]][i]; p.dot(a + .5, b + .5, 1.6, 3.4, C.yellow); }
+      p.line(1.4, H - .5, 1.6, W - .4, H - .5, 1.6, '#4f8fc0', 3.4);
+    },
+    offshore_well(p, o) {                                                         // 1x1 sea wellhead: steel pad on a leg, red christmas tree with yellow valve block, slim riser
+      p.cyl(.5, .5, 0, .12, .9, '#6b7782'); p.box(.08, .08, .92, .92, .9, 1.05, '#78838d', { top: '#aeb7bf' });
+      p.cyl(.5, .5, 1.05, .16, 1.5, C.red); p.box(.34, .34, .66, .66, 1.5, 1.66, C.yellow); p.cyl(.5, .5, 1.66, .06, 2.4, C.steel); p.dot(.5, .5, 2.45, 2.2, C.yellow); p.line(.5, .5, 1.3, 1.0, .5, 1.3, C.pipe, 3.2);
+    },
+    offshore_pump(p, o) { ART.pump_station(p, o); const W = o.w, H = o.h; p.box(.05, .05, W - .05, .22, 0, .16, '#2f7fb0'); p.box(.05, H - .22, W - .05, H - .05, 0, .16, '#2f7fb0'); },
+    offshore_separator(p, o) { ART.separator(p, o); const W = o.w, H = o.h; p.box(.05, .05, W - .05, .22, 0, .16, '#2f7fb0'); p.box(.05, H - .22, W - .05, H - .05, 0, .16, '#2f7fb0'); },
     oil_well(p, o) {                                                              // 1x1: gravel pad, wellhead tree with hand wheels, slim derrick
       p.flat(.04, .04, .96, .96, 0, '#8f8676'); p.flat(.2, .2, .8, .8, 0, '#6e675c', -.5);
       p.cyl(.5, .5, .2, 0, .12, C.dark); p.cyl(.5, .5, .085, .12, .7, C.yellow); p.cyl(.5, .5, .16, .38, .46, C.red); p.cyl(.5, .5, .12, .62, .7, C.red);

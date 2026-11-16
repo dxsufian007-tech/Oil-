@@ -38,7 +38,7 @@
     const pr = wellProfile(b.x, b.y);       // the rate and the pressure of a single well stay what they always were (the economy keeps its balance); the field only adds the shared reserve, the capacity limit and its own water cut
     return { site, nominal: site.offshore ? WORLDCFG().OFFSHORE.WELL_TARGET : pr.production, p0: site.offshore ? WORLDCFG().OFFSHORE.WELL_PSI : pr.pressure };
   }
-  const priceOf = (def, x, y) => def.type === 'well' ? wellProfile(x, y).cost : def.cost;
+  const priceOf = (def, x, y) => def.type === 'well' && !def.domain ? wellProfile(x, y).cost : def.cost;
 
   /* ------------------------------------------------------------ pipelines */
   const pk = (b, port) => b + ':' + port;

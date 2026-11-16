@@ -32,7 +32,7 @@ html[dir=rtl] body{direction:rtl}body{font-family:system-ui,'Noto Sans Arabic','
 body:not(.dev) .panel{bottom:72px!important}body:not(.dev) #buildbar{bottom:72px!important}#toast{top:148px!important;z-index:30}body:not(.dev) #g-nav{display:flex}body.dev #g-nav,body.dev #g-sheet,body.dev #g-guide{display:none!important}
 @media (max-height:620px){#g-sheet{max-height:70%}}`;
 
-  function cost(id) { const d = B.DEFS[id]; return d.type === 'well' ? 'يبدأ من ' + money(d.cost) : money(d.cost); }
+  function cost(id) { const d = B.DEFS[id]; return d.type === 'well' && !d.domain ? 'يبدأ من ' + money(d.cost) : money(d.cost); }
   function can(id) { return UNLOCK || (GC.INFO[id] ? GC.INFO[id].lv <= S.level : true); }
   function icon(id) {
     const cv = document.createElement('canvas'), d = B.DEFS[id]; if (!d || !window.OliBuildingArt) return null; const W = 58, H = 50; cv.width = W * 2; cv.height = H * 2; const g = cv.getContext('2d'), [fw, fh] = d.footprint, zz = Math.min(.42, 52 / ((fw + fh) * 32), 34 / ((fw + fh) * 16 + 60));
