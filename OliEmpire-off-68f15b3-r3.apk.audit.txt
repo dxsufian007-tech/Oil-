@@ -1,0 +1,4 @@
+=== AUDIT (from the APK file itself) ===
+package: name='com.oli.olicentral' versionCode='703' versionName='1.6-off-68f15b3'
+V2 Signer: certificate SHA-256 digest: 3f5e924227aef8c5d1783ae6677db8b9b0a36a1c7b086b457133e6a4375e1aaf
+cc9af6d91dba1dff995b1aef0560449ea4b801191be6ae5558226f67f8c0f993  OliEmpire-off-68f15b3-r3.apk
