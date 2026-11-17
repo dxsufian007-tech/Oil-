@@ -568,7 +568,7 @@
         for (const k in s) if (k.charCodeAt(0) === 95 && s[k] !== undefined) s[k] = undefined;      /* perf: the per-step values (_in, _out, ...) are cleared to undefined instead of deleted: same reads, same save (JSON drops undefined), but the objects keep a fast shape */ const ty = DEFS[b.d].type; if (ty === 'pump' || ty === 'separator' || ty === 'refinery') { s.pIn = 0; if (ty === 'pump') s.pOut = 0; } }
       const cn = this.net.central; if (cn) cn.begin(dt);
       const fieldGroups = new Map(), sharedWells = [];
-      for (const b of items) { if (sl && (++Y & 31) === 0) yield; if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
+      for (const b of items) { if (sl) yield; if (!this.ok(b)) continue;   /* a pause point before EVERY building: one well can cost many ms on a phone (its flow is solved through the central network), so a pause every 32 buildings let one slice run 100-240 ms past its budget */ const def = DEFS[b.d], s = b.s;
         if (def.type === 'well') {
           const fp = (s.shared || b.field) ? fieldProfile(store, b) : null, site = fp ? fp.site : null;
           if (fp && !s.shared) { s.shared = 1; s.nominal = fp.nominal; s.p0 = fp.p0; s.reserve0 = site.initialReserve; }       // a well of an older save: from now on it draws from its field
@@ -589,7 +589,7 @@
         }
       }
       const gdone = new Set();
-      for (const b of items) { if (sl && (++Y & 31) === 0) yield; if (!this.ok(b)) continue; const def = DEFS[b.d], s = b.s;
+      for (const b of items) { if (sl) yield; if (!this.ok(b)) continue;   /* a pause point before EVERY building: one well can cost many ms on a phone (its flow is solved through the central network), so a pause every 32 buildings let one slice run 100-240 ms past its budget */ const def = DEFS[b.d], s = b.s;
         if (def.type === 'tank' && this._gof.has(b.id)) { const g = this._gof.get(b.id); if (!gdone.has(g)) { gdone.add(g); this.stepGroup(g, dt); } continue; }
         if (def.type === 'tank' || def.type === 'gas') {
           if (def.product === P.CRUDE) this.drawBottomWater(b, [b]);     // reserve tanks too: only the settled WATER leaves (net oil, cost and quality of the reserve are untouched)
