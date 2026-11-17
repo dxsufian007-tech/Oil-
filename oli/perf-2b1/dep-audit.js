@@ -1,0 +1,9 @@
+// write-coverage audit: a probe-read field of a building / edge changed although its write stamp did not.  node dep-audit.js <gameDir> [hours]
+const dir=process.argv[2]||'/home/claude/oil-perf/oli', HRS=+process.argv[3]||24; process.chdir(dir); const fs=require('fs');
+const { I, B, world } = require(dir+'/test-central-kit.js'), E=require(dir+'/economy.js'); const d=JSON.parse(fs.readFileSync((process.env.SAVE||'/home/claude/dxsufian007-tech/oil-/oli/local-saves/realsave.json'),'utf8'));
+const ts=B.fromWorld(world); if(d.wd){world.restoreProgress(d.wd.p);world.restoreReserve(d.wd.r);world.restoreZones(d.wd.z);} const r0=B.BuildingStore.fromJSON(ts,d.store,{cash:d.cash}),store=r0.store;store.cash=d.cash;const net=I.PipeNet.fromJSON(ts.W,d.net),sim=new I.Sim(store,net),co=new E.Company(store,net,sim,{now:()=>1e12});co.fromJSON(d.eco);co.setSpeed(0);for(const b of store.list())sim.ensure(b);
+const cn=net.central; cn.setDeliverMode(1); cn.setDepMode(1); const C=Object.getPrototypeOf(cn).constructor;
+const F=['vol','_pend','_in','boost','eff','opLimit','matLim','mode','opening','wat'], mem=new Map(), viol={same:{},cross:{}}; let n=0;
+const fpOf=k=>{ if(typeof k==='number'){ const b=store.get(k); if(!b) return {gone:1}; const s=sim.ensure(b), o={st:b.st,c:b.c,lv:b.lv}; for(const f of F) o[f]=s[f]; return o; } return {cap:k.cap,flow:k.flow,lvl:k.lvl,int:k.int,tiles:k.tiles,dia:k.line&&k.line.dia}; };
+C.depAudit=(sim,rd)=>{ const ws=sim._ws; for(const k of rd){ n++; const cur=ws.get(k)|0, fp=fpOf(k), pr=mem.get(k); if(pr&&pr.stamp===cur){ for(const f in fp){ const a=pr.fp[f], b=fp[f]; if(!Object.is(a,b)&&!(a==null&&b==null)){ const bucket=pr.te===sim._te?viol.same:viol.cross, nm=(typeof k==='number'?'b.':'e.')+f; bucket[nm]=(bucket[nm]||0)+1; } } } mem.set(k,{stamp:cur,te:sim._te,fp}); } };
+co.advanceHours(1); co.advanceHours(HRS); console.log(JSON.stringify({hours:HRS,readsChecked:n,uncoveredSameOp:viol.same,uncoveredAcrossOps:viol.cross}));

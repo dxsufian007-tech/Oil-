@@ -33,7 +33,7 @@
     constructor(W) {
       this.W = W; this.st = new Map(); this.seg = new Map(); this.pumps = new Map(); this.at = new Map(); this.cen = new Set(); this.cov = new Set(); this.rev = 0; this.nextSt = 1; this.nextSeg = 1; this.nextPump = 1; this.time = 0;
       this.ch = {}; for (const c of CHANNELS) this.ch[c] = { state: 'OPEN', flow: 0, pressure: 0, qty: 0, moved: 0, dir: 0, fault: false, cap: CLASS.capacity, maxP: CLASS.maxPressure, status: 'READY' };
-      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcX = -1; this._plE = 0; this._plV = [0, 0, 0, 0, 0, 0]; this._plM = [null, null, null, null, null, null]; this._plRev = -1; this.plStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0 }; this._dmMode = CentralNet.dmDefault | 0; this._dv = 0; this._dmM = [null, null, null, null, null, null]; this._dmRev = -1; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
+      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcX = -1; this._plE = 0; this._plV = [0, 0, 0, 0, 0, 0]; this._plM = [null, null, null, null, null, null]; this._plRev = -1; this.plStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0 }; this._dmMode = CentralNet.dmDefault | 0; this._dv = 0; this._depMode = CentralNet.depDefault | 0; this._dpM = [null, null, null, null, null, null]; this._dpRev = -1; this._dp2 = [null, null, null, null, null, null]; this._dp2Rev = -1; this.depStats = CentralNet.newDepStats(); this._dmM = [null, null, null, null, null, null]; this._dmRev = -1; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
     }
     static k(W, x, y) { return y * W + x; }
     key(x, y) { return y * this.W + x; }
@@ -110,6 +110,32 @@
       const res = this._pathCore(ch, from, to, over, ban, bias); this._pcShadow(ch, from, to, over, ban, bias, res); return res;      // shadow: compare only
     }
     /* 0 = off (instant return to the plain computation), 1 = shadow (compare only), 2 = on.  Changing the mode empties the cache and resets its counters. */
+    /* 2b-1: dependency tracking of the deliver probe, SHADOW ONLY (0 = off, 1 = shadow: record what each probe read, compare with the stored answer when the dependency check says it is still valid, count differences; the stored answer is NEVER returned) */
+    setDepMode(m) { this._depMode = m === 1 ? 1 : 0; this.setDeliverMode(this._dmMode); for (let i = 0; i < 6; i++) { this._dpM[i] = null; this._dp2[i] = null; } this._dpRev = -1; this.depStats = CentralNet.newDepStats(); }
+    _depCheck(sim, ch, k, f, vis, rd, ms, probe, fx, coarseOk) {
+      if (CentralNet.depAudit) CentralNet.depAudit(sim, rd);      // test hook (null in the game)
+      const S = this.depStats, ci = CI[ch]; if (this._dpRev !== this.rev) { for (let i = 0; i < 6; i++) this._dpM[i] = null; this._dpRev = this.rev; }
+      let M = this._dpM[ci]; if (!M) M = this._dpM[ci] = new Map(); let e = M.get(k); S.calls++; S.ms += ms; if (coarseOk) S.coarseOk++;
+      let why = 0; const ws = sim._ws;
+      if (e === undefined) why = 1; else if (e.sim !== sim) why = 2; else if (e.te !== sim._te) why = 3; else if (e.ep !== this._plE) why = 4; else if (e.eb !== sim._eb) why = 5; else if (e.v !== this._plV[ci]) why = 6; else if (!sameFlow(f, e.f)) why = 7; else if (!sameVis(vis, e.vis)) why = 8; else if (!this._plPumpsSame(e.pf, this._pxList(ch))) why = 9;
+      else { const ks = e.keys, st = e.st; for (let i = 0; i < ks.length; i++) if ((ws.get(ks[i]) | 0) !== st[i]) { why = 10; break; } }
+      if (why === 0) { S.valid++; S.validMs += ms; if (!coarseOk) { S.validNew++; S.validNewMs += ms; } if (!sameProbe(probe, e.probe) || !sameFx(fx, e.fx)) { S.mismatch++; if (S.bad.length < 8) S.bad.push({ ch, k, reads: e.keys.length }); } } else S.why[why]++;
+      if (e === undefined) { e = { sim: null, te: 0, ep: 0, eb: null, v: 0, f: null, vis: null, pf: [], keys: null, st: null, probe: null, fx: null }; M.set(k, e); }
+      const keys = [...rd], st = new Array(keys.length); for (let i = 0; i < keys.length; i++) st[i] = ws.get(keys[i]) | 0; S.reads += keys.length;
+      e.sim = sim; e.te = sim._te; e.ep = this._plE; e.eb = sim._eb; e.v = this._plV[ci]; e.f = Object.assign({}, f); e.vis = vis ? [...vis] : []; e.keys = keys; e.st = st; e.probe = probe; e.fx = fx; this._plPumpsSnap(e, this._pxList(ch));
+      this._depCheck2(sim, ch, k, f, vis, keys, st, ms, probe, fx, coarseOk);
+    }
+    /* variant 2 (still shadow): the entry is also keyed by the flow (and the visited set), so different flows through the same station do not evict each other, and the top-level-operation epoch is NOT part of the validity: only the write stamps of what the probe read.  Whatever the stamps do not cover shows up as a mismatch. */
+    _depCheck2(sim, ch, k, f, vis, keys, st, ms, probe, fx, coarseOk) {
+      const S = this.depStats, ci = CI[ch], ws = sim._ws; let M = this._dp2[ci]; if (this._dp2Rev !== this.rev) { for (let i = 0; i < 6; i++) this._dp2[i] = null; this._dp2Rev = this.rev; M = null; } if (!M) M = this._dp2[ci] = new Map();
+      let fp = ''; for (const q in f) fp += q + ':' + f[q] + ','; if (vis) { fp += '|'; for (const x of vis) fp += x + ','; } const kk = k + '|' + fp; let e = M.get(kk); let why = 0;
+      if (e === undefined) why = 1; else if (e.sim !== sim) why = 2; else if (e.ep !== this._plE) why = 4; else if (e.eb !== sim._eb) why = 5; else if (e.v !== this._plV[ci]) why = 6; else if (!this._plPumpsSame(e.pf, this._pxList(ch))) why = 9;
+      else { const ks = e.keys, es = e.st; for (let i = 0; i < ks.length; i++) if ((ws.get(ks[i]) | 0) !== es[i]) { why = 10; break; } }
+      if (why === 0 && e.te === sim._te) { S.valid1b++; S.valid1bMs += ms; if (!coarseOk) { S.valid1bNew++; S.valid1bNewMs += ms; } if (!sameProbe(probe, e.probe) || !sameFx(fx, e.fx)) S.mismatch1b++; }      // 1b = flow-keyed entries, valid inside the same top-level operation only
+      if (why === 0) { S.valid2++; S.valid2Ms += ms; if (!coarseOk) { S.valid2New++; S.valid2NewMs += ms; } if (!sameProbe(probe, e.probe) || !sameFx(fx, e.fx)) { S.mismatch2++; if (S.bad2.length < 8) S.bad2.push({ ch, k, reads: e.keys.length, te: e.te, now: sim._te }); } } else S.why2[why]++;
+      if (e === undefined) { e = { sim: null, te: 0, ep: 0, eb: null, v: 0, pf: [], keys: null, st: null, probe: null, fx: null }; M.set(kk, e); if (M.size > 200000) { M.clear(); } }
+      e.sim = sim; e.te = sim._te; e.ep = this._plE; e.eb = sim._eb; e.v = this._plV[ci]; e.keys = keys; e.st = st; e.probe = probe; e.fx = fx; this._plPumpsSnap(e, this._pxList(ch));
+    }
     setDeliverMode(m) { this._dmMode = m | 0; for (let i = 0; i < 6; i++) this._dmM[i] = null; this._dmRev = -1; this._dv++; this._plE++; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; }
     setCacheMode(m) {
       m = m === 2 ? 2 : m === 1 ? 1 : 0; this.pcMode = m; this._plE++; this._plM = [null, null, null, null, null, null]; this.pcStats = null; for (let i = 0; i < NCH; i++) { this._pcA[i] = null; this._pcB[i] = null; } this._pcRev = -1;
@@ -308,11 +334,14 @@
       if (this._dmRev !== this.rev) { for (let i = 0; i < 6; i++) this._dmM[i] = null; this._dmRev = this.rev; }
       let M = this._dmM[ci]; if (!M) M = this._dmM[ci] = new Map(); const k = si * 4 + pi; let e = M.get(k); S.calls++;
       const ok = e !== undefined && e.sim === sim && e.cv === sim._cv && e.dv === this._dv && e.ep === this._plE && e.eb === sim._eb && sameFlow(f, e.f) && sameVis(vis, e.vis) && this._plPumpsSame(e.pf, this._pxList(ch));
-      if (ok && m === 2) { S.hit++; const fx = e.fx; if (fx.length) { S.replayed++; replayFx(sim, fx); } return e.probe; }
-      const cv = sim._cv, dv = this._dv, ep = this._plE, r = this._probeRec(sim, src, ch, f, vis, port), probe = r[0], fx = r[1];
+      if (ok && m === 2) { S.hit++; if (sim._rd && e.rdk) for (let i = 0; i < e.rdk.length; i++) sim._rd.add(e.rdk[i]); const fx = e.fx; if (fx.length) { S.replayed++; replayFx(sim, fx); } return e.probe; }
+      const cv = sim._cv, dv = this._dv, ep = this._plE; let r, rd = null, prevRd = null, t0 = 0;
+      if (this._depMode) { if (!sim._ws) sim._ws = new Map(); prevRd = sim._rd; rd = sim._rd = new Set(); t0 = performance.now(); }
+      try { r = this._probeRec(sim, src, ch, f, vis, port); } finally { if (rd) { sim._rd = prevRd; if (prevRd) for (const x of rd) prevRd.add(x); } }
+      const probe = r[0], fx = r[1]; if (rd) this._depCheck(sim, ch, k, f, vis, rd, performance.now() - t0, probe, fx, ok);
       if (ok) { S.verified++; if (!sameProbe(probe, e.probe) || !sameFx(fx, e.fx)) S.mismatch++; } else S.miss++;
       if (e === undefined) { e = { sim: null, cv: 0, dv: 0, ep: 0, eb: null, f: null, vis: null, probe: null, fx: null, pf: [] }; M.set(k, e); }
-      e.sim = sim; e.cv = cv; e.dv = dv; e.ep = ep; e.eb = sim._eb; e.f = Object.assign({}, f); e.vis = vis ? [...vis] : []; e.probe = probe; e.fx = fx; this._plPumpsSnap(e, this._pxList(ch));
+      e.sim = sim; e.cv = cv; e.dv = dv; e.ep = ep; e.eb = sim._eb; e.f = Object.assign({}, f); e.vis = vis ? [...vis] : []; e.probe = probe; e.fx = fx; e.rdk = rd ? [...rd] : null; this._plPumpsSnap(e, this._pxList(ch));
       return probe;
     }
     end() {
@@ -349,6 +378,13 @@
       for (const c of CHANNELS) { const x = d.ch && d.ch[c]; if (x) { n.ch[c].state = x.s || 'OPEN'; n.ch[c].fault = !!x.f; n.ch[c].moved = x.m || 0; } }
       return n;
     }
+  }
+  CentralNet.depAudit = null;
+  CentralNet.depDefault = 0;      // 2b-1: dependency-tracking shadow (0 = off: the game as in stage 1)
+  CentralNet.newDepStats = () => ({ calls: 0, ms: 0, coarseOk: 0, valid: 0, validMs: 0, validNew: 0, validNewMs: 0, mismatch: 0, reads: 0, bad: [], why: new Array(11).fill(0), valid1b: 0, valid1bMs: 0, valid1bNew: 0, valid1bNewMs: 0, mismatch1b: 0, valid2: 0, valid2Ms: 0, valid2New: 0, valid2NewMs: 0, mismatch2: 0, bad2: [], why2: new Array(11).fill(0) });
+  if (typeof process !== 'undefined' && process.env && process.env.OLI_DEP_SHADOW) {      // tests only: every network starts in the dependency shadow and the totals are printed at exit (never set in the game)
+    CentralNet.depDefault = 1; const all = []; const nc = CentralNet.newDepStats; CentralNet.newDepStats = () => { const x = nc(); all.push(x); return x; };
+    process.on('exit', () => { const t = { nets: all.length, calls: 0, valid: 0, validNew: 0, mismatch: 0, mismatch1b: 0, mismatch2: 0 }; for (const x of all) for (const k in t) if (k !== 'nets') t[k] += x[k] || 0; console.log('DEPSHADOW ' + JSON.stringify(t)); });
   }
   CentralNet.dmDefault = 2;      // B7: the deliver memo mode a NEW network starts in (2 = on, 1 = shadow: recompute and compare, 0 = off = the B6 code)
   const sameFlow = (a, b) => { let n = 0; for (const k in a) { n++; const x = a[k], y = b[k]; if (x !== y && !(typeof x === 'number' && Object.is(x, y))) return false; } let m = 0; for (const k in b) m++; return n === m; };
