@@ -6,7 +6,7 @@ const srv = http.createServer((q, r) => { const u = q.url.split('?')[0]; const f
 srv.listen(0, async () => {
   const b = await chromium.launch({ args: ['--enable-precise-memory-info', '--js-flags=--expose-gc'] }), ctx = await b.newContext({ viewport: { width: 412, height: 866 } }), p = await ctx.newPage(), cdp = await ctx.newCDPSession(p);
   p.on('console', m => { if (m.type() === 'error') console.error('PAGE', m.text()); }); p.on('pageerror', e => console.error('PAGEERR', e.message.slice(0, 200))); p.setDefaultTimeout(900000); await p.goto('http://localhost:' + srv.address().port + '/perf-scale5000/engine-page.html'); await cdp.send('Emulation.setCPUThrottlingRate', { rate: THR });
-  const info = await p.evaluate(([u, nd]) => window.runScene(u, 0, nd), ['/scene.json', ND]);
+  const info = await p.evaluate(([u, nd, cn]) => window.runScene(u, 0, nd, cn), ['/scene.json', ND, JSON.parse(process.env.CN || '{}')]);
   if (PROF) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 1000 }); await cdp.send('Profiler.start'); }
   const ts = await p.evaluate(n => window.timeHours(n), HRS); let prof = null; if (PROF) prof = (await cdp.send('Profiler.stop')).profile; const aft = await p.evaluate(() => window.after());
   const s = ts.slice().sort((x, y) => x - y), mean = ts.reduce((x, y) => x + y, 0) / ts.length; const out = { scene: path.basename(scene), throttle: THR, buildings: info.buildings, hours: HRS, loadMs: Math.round(info.loadMs), hourMs: { mean: +mean.toFixed(0), median: +s[s.length >> 1].toFixed(0), p95: +s[Math.floor(s.length * .95)].toFixed(0), max: +s[s.length - 1].toFixed(0) },
