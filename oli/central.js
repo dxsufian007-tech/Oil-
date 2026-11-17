@@ -305,6 +305,7 @@
       /* B7e: the same arithmetic and the same calls in the same order.  The probe-mode bookkeeping of what this probe already used (`over`, a Map with a string key per hop) is read ONLY by the next iteration of this loop, so it is
        * written only when there is a next iteration (the Map is created then; a caller's own Map is used as before); the flow copy is an object spread (same keys, same order as Object.assign({}, f, {r, p})). */
       let got = 0, remaining = want, guard = 0; const sid = d.s.id, db = d.b, dp = d.port;
+      if (!commit && CentralNet.rcvSkip !== 0 && sim.probeDead && sim.probeDead(db, dp, f, want)) return 0;      // S3: this receiver cannot take anything and the probe would change nothing: no route search (CentralNet.rcvSkip = 0 gives the old code)
       while (remaining > EPS && guard++ < 6) {
         const pl = this.plan(ch, srcId, sid, remaining, f.p, commit ? null : over); if (!pl) break;
         const fr0 = f.r, fp0 = f.p; f.r = pl.r; f.p = pl.p; const probeAcc = sim.offer(db, dp, f, commit, vis); f.r = fr0; f.p = fp0;      // perf: same flow object, rate / pressure set for the call and put back (no copy)
@@ -392,6 +393,7 @@
   const sameFx = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) { const x = a[i], y = b[i]; if (x !== y && !(typeof x === 'number' && Object.is(x, y))) return false; } return true; };
   const replayFx = (sim, fx) => { const R = sim._fxr; for (let i = 0; i < fx.length; i += 3) { const s = fx[i], t = fx[i + 1], v = fx[i + 2]; if (t === 0) s.pIn = v; else { s._blk = true; s._blkPort = v; } if (R) R.push(s, t, v); } };
   CentralNet.hopFreezeSkip = 1;      // S3: with shared hops (hopShare) every hop of a stored path is already frozen once, when its edge's hop object is created: the per-hop freeze loop is skipped (0 = the old loop)
+  CentralNet.rcvSkip = 1;
   CentralNet.trDefault = 0;      // S2b: the tree mode a NEW network starts in (0 off, 1 shadow, 2 on)
   CentralNet.trVerify = 16;      // S2b: in mode 2 every n-th tree answer is also computed the original way and compared
   CentralNet.hopShare = 1;       // S2a: 0 = the original per-search hop objects (instant fallback)

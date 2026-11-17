@@ -24,5 +24,5 @@ function run(ov) {
   }
   return { hs, log, tr: cn.trStats, inv: cn.pcStats && cn.pcStats.invalSat, N: cn._adjA && cn._adjA.length };
 }
-const a = run({ trDefault: 0, hopShare: 0, pcSparse: 0 }), b = run(Bj); let diff = 0, first = -1; for (let h = 0; h < H; h++) if (a.hs[h] !== b.hs[h]) { diff++; if (first < 0) first = h; }
+const a = run({ trDefault: 0, hopShare: 0, pcSparse: 0, rcvSkip: 0, hopFreezeSkip: 0 }), b = run(Bj); let diff = 0, first = -1; for (let h = 0; h < H; h++) if (a.hs[h] !== b.hs[h]) { diff++; if (first < 0) first = h; }
 console.log(JSON.stringify({ what: path.basename(what), hours: H, seed: SEED, capScale: CAP, B: Bj, hoursDifferent: diff, firstDiff: first, perturbations: a.log, perturbationsSame: JSON.stringify(a.log) === JSON.stringify(b.log), invalSatA: a.inv, invalSatB: b.inv, stations: b.N, trB: b.tr }));
