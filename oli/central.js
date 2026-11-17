@@ -33,7 +33,7 @@
     constructor(W) {
       this.W = W; this.st = new Map(); this.seg = new Map(); this.pumps = new Map(); this.at = new Map(); this.cen = new Set(); this.cov = new Set(); this.rev = 0; this.nextSt = 1; this.nextSeg = 1; this.nextPump = 1; this.time = 0;
       this.ch = {}; for (const c of CHANNELS) this.ch[c] = { state: 'OPEN', flow: 0, pressure: 0, qty: 0, moved: 0, dir: 0, fault: false, cap: CLASS.capacity, maxP: CLASS.maxPressure, status: 'READY' };
-      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcX = -1; this._plE = 0; this._plV = [0, 0, 0, 0, 0, 0]; this._plM = [null, null, null, null, null, null]; this._plRev = -1; this.plStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0 }; this._dmMode = CentralNet.dmDefault | 0; this._dv = 0; this._dmM = [null, null, null, null, null, null]; this._dmRev = -1; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
+      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcX = -1; this._plE = 0; this._plV = [0, 0, 0, 0, 0, 0]; this._plM = [null, null, null, null, null, null]; this._plRev = -1; this.plStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0 }; this._dmMode = CentralNet.dmDefault | 0; this._dv = 0; this._cmpMode = CentralNet.cmpDefault | 0; this._cmpIn = false; this.cmpStats = CentralNet.newCmpStats(); this._dmM = [null, null, null, null, null, null]; this._dmRev = -1; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
     }
     static k(W, x, y) { return y * W + x; }
     key(x, y) { return y * this.W + x; }
@@ -110,6 +110,34 @@
       const res = this._pathCore(ch, from, to, over, ban, bias); this._pcShadow(ch, from, to, over, ban, bias, res); return res;      // shadow: compare only
     }
     /* 0 = off (instant return to the plain computation), 1 = shadow (compare only), 2 = on.  Changing the mode empties the cache and resets its counters. */
+    /* 2b-2a SHADOW ONLY: the compiled probe (Sim.offerP / acceptP) runs first and writes nothing; the ORIGINAL then runs and is the only result the game uses.  Compared: the returned rate (Object.is) and every write the original made to the objects the compiled code read (against the writes it predicted).  Timing: the plan() calls (which stay original in both) are timed separately and left out of the comparison. */
+    setCmpMode(m) { this._cmpMode = m === 1 ? 1 : 0; this.cmpStats = CentralNet.newCmpStats(); }
+    _toStationP(sim, ch, srcId, d, want, f, vis, E, V, T) {
+      let got = 0, remaining = want, guard = 0, over = null; const sid = d.s.id, db = d.b, dp = d.port;
+      while (remaining > EPS && guard++ < 6) {
+        const t = performance.now(); const pl = this.plan(ch, srcId, sid, remaining, f.p, over); T.p += performance.now() - t; if (!pl) break;
+        const acc = sim.offerP(db, dp, f, pl.r, pl.p, vis, E, V); if (acc < 0) return -1;
+        if (acc <= EPS) break;
+        got += acc; remaining -= acc; if (acc < pl.r - 1e-6) break;
+        if (remaining > EPS && guard < 6) { if (!over) over = new Map(); for (const h of pl.hops) { const k = h.g.id + '|' + ch; over.set(k, (over.get(k) || 0) + acc); } for (const [pu, , , on] of pl.stats) if (on) over.set('P' + pu.id, (over.get('P' + pu.id) || 0) + acc); }
+      }
+      return got;
+    }
+    _cmpShadow(sim, ch, srcId, d, want, f, vis) {
+      const S = this.cmpStats, E = sim._E, V = sim._V, T = { p: 0 }; E.length = 0; V.length = 0; S.calls++;
+      const t0 = performance.now(); let c; try { c = this._toStationP(sim, ch, srcId, d, want, f, vis, E, V, T); } catch (x) { c = -2; S.errors++; }
+      const t1 = performance.now();
+      if (c < 0) { if (c === -1) S.fb++; this._cmpIn = true; try { return this.toStation(sim, ch, srcId, d, want, f, false, vis, null); } finally { this._cmpIn = false; } }
+      const pre = new Array(V.length); for (let i = 0; i < V.length; i++) pre[i] = Object.assign({}, V[i]);
+      const exp = pre.map(o => Object.assign({}, o)); for (let i = 0; i < E.length; i += 3) { const o = E[i], k = V.indexOf(o); if (k < 0) { S.effUnknown++; continue; } const x = exp[k], code = E[i + 2 - 1]; if (code === 0) x.over = true; else if (code === 1) x._off = Math.max(x._off || 0, E[i + 2]); else if (code === 2) x._sat = true; else x.pIn = E[i + 2]; }
+      const pt = { v: 0 }, self = this, PP = CentralNet.prototype.plan; this.plan = function (a, b, c2, d2, e, f2) { const t = performance.now(); const r = PP.call(self, a, b, c2, d2, e, f2); pt.v += performance.now() - t; return r; };
+      this._cmpIn = true; const t2 = performance.now(); let g; try { g = this.toStation(sim, ch, srcId, d, want, f, false, vis, null); } finally { this._cmpIn = false; delete this.plan; }
+      const t3 = performance.now();
+      S.handled++; S.origMs += (t3 - t2) - pt.v; S.cmpMs += (t1 - t0) - T.p; S.planMs += pt.v;
+      if (!Object.is(g, c)) { S.valueMismatch++; if (S.bad.length < 8) S.bad.push({ ch, want, g, c }); }
+      for (let i = 0; i < V.length; i++) { const a = V[i], x = exp[i]; for (const k in a) { if (k === 'lp' || k === 'lr') continue; if (!Object.is(a[k], x[k])) { S.effMismatch++; if (S.bad.length < 8) S.bad.push({ field: k, act: a[k], exp: x[k] }); break; } } for (const k in x) if (!(k in a) && x[k] !== undefined) { S.effMismatch++; break; } }
+      return g;
+    }
     setDeliverMode(m) { this._dmMode = m | 0; for (let i = 0; i < 6; i++) this._dmM[i] = null; this._dmRev = -1; this._dv++; this._plE++; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; }
     setCacheMode(m) {
       m = m === 2 ? 2 : m === 1 ? 1 : 0; this.pcMode = m; this._plE++; this._plM = [null, null, null, null, null, null]; this.pcStats = null; for (let i = 0; i < NCH; i++) { this._pcA[i] = null; this._pcB[i] = null; } this._pcRev = -1;
@@ -267,6 +295,7 @@
     }
     /* what the receiver at `d` can take of `want` (probe) or really takes (commit) */
     toStation(sim, ch, srcId, d, want, f, commit, vis, over) {
+      if (this._cmpMode !== 0 && !commit && over == null && vis && !this._cmpIn) return this._cmpShadow(sim, ch, srcId, d, want, f, vis);      // 2b-2a: SHADOW (off in the game)
       /* B7e: the same arithmetic and the same calls in the same order.  The probe-mode bookkeeping of what this probe already used (`over`, a Map with a string key per hop) is read ONLY by the next iteration of this loop, so it is
        * written only when there is a next iteration (the Map is created then; a caller's own Map is used as before); the flow copy is an object spread (same keys, same order as Object.assign({}, f, {r, p})). */
       let got = 0, remaining = want, guard = 0; const sid = d.s.id, db = d.b, dp = d.port;
@@ -350,6 +379,8 @@
       return n;
     }
   }
+  CentralNet.cmpDefault = 0;      // 2b-2a: compiled-probe shadow (0 = off: the game as in stage 1)
+  CentralNet.newCmpStats = () => ({ calls: 0, handled: 0, fb: 0, errors: 0, effUnknown: 0, valueMismatch: 0, effMismatch: 0, origMs: 0, cmpMs: 0, planMs: 0, bad: [] });
   CentralNet.dmDefault = 2;      // B7: the deliver memo mode a NEW network starts in (2 = on, 1 = shadow: recompute and compare, 0 = off = the B6 code)
   const sameFlow = (a, b) => { let n = 0; for (const k in a) { n++; const x = a[k], y = b[k]; if (x !== y && !(typeof x === 'number' && Object.is(x, y))) return false; } let m = 0; for (const k in b) m++; return n === m; };
   const sameVis = (v, arr) => { if (!v) return arr.length === 0; if (v.size !== arr.length) return false; let i = 0; for (const x of v) if (arr[i++] !== x) return false; return true; };

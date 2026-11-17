@@ -378,7 +378,7 @@
 
   /* ------------------------------------------------------------ the simulator */
   class Sim {
-    constructor(store, net) { this.store = store; this.net = net; this._cv = 0; this._fxr = null; this.edges = new Map(); this._el = []; this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => this.net.productAt(x, y); store.cenAt = (x, y) => this.net.centralAt(x, y); }
+    constructor(store, net) { this.store = store; this.net = net; this._cv = 0; this._E = []; this._V = []; this._fxr = null; this.edges = new Map(); this._el = []; this.builtRev = -1; this.time = 0; this.dt = 0.05; this.lastStep = 0; store.priceOf = priceOf; store.pipeAt = (x, y) => this.net.productAt(x, y); store.cenAt = (x, y) => this.net.centralAt(x, y); }
 
     /* ---- state per building (kept in b.s, saved with the game) ---- */
     ensure(b) {
@@ -512,6 +512,54 @@
           case 'refinery': acc = this.refine(b, s, def, f, commit, vis); break;
         }
       } finally { vis.delete(b.id); if (commit && acc > 0) this._cv++; }
+      return acc;
+    }
+    /* 2b-2a (SHADOW ONLY, never used by the game): offer() + accept() for commit = false, written without allocations for the common receivers.  Returns the accepted rate, or -1 = "not handled here" (the caller then uses the original code).
+     * The arithmetic is the SAME expressions in the SAME order as offer() / accept().  It writes NOTHING: the idempotent writes the original would make are recorded in E as (object, code, value) triples and every object it read is recorded in V:
+     *   code 0: edge.over = true   1: state._off = max(state._off || 0, value)   2: state._sat = true   3: state.pIn = value */
+    offerP(b, port, f, r, p, vis, E, V) {
+      if (r <= 1e-9) return 0; const e = this.edgeOf(b, port); if (!e) return 0; const fw = e.ab === b.id && e.ap === port, farB = this.store.get(fw ? e.bb : e.ab), farP = fw ? e.bp : e.ap; if (!farB) return 0;
+      if (e.int) return 0;
+      const room = e.cap - e.flow; let r1 = Math.min(r, room);
+      if (e.lvl && f.sv != null && this.ensure(farB).vol != null) { const fs = this.ensure(farB), fd = DEFS[farB.d], fc = fd.capacity.value * levelOf(farB).capacityMultiplier, fv = fs.vol + (fs._pend || 0); if (f.sv / f.sc <= fv / fc + 1e-9) return 0; r1 = Math.min(r1, Math.max(0, (f.sv - fv * f.sc / fc) / (1 + f.sc / fc)) / this.dt); if (r1 <= 1e-9) return 0; }
+      V.push(e); if (r > room + 1e-9) E.push(e, 0, 0); if (r1 <= 1e-9) return 0;
+      const ratio = r1 / e.cap, loss = e.tiles * SIM.frictionPsiPerTile * (e.lr === ratio ? e.lp : Math.pow(ratio, SIM.frictionExp)) * (e.line && CFG.PIPES[e.line.dia] ? CFG.PIPES[e.line.dia].fric : 1); let p1 = p - loss;
+      if (p1 < 0) { r1 *= Math.max(0, p / (loss || 1)); p1 = 0; }
+      if (r1 <= 1e-9) return 0;
+      return this.acceptP(farB, farP, f, r1, p1, vis, E, V);
+    }
+    acceptP(b, port, f, r, p, vis, E, V) {
+      const def = DEFS[b.d], s = this.ensure(b), c = dcOf(def).byId.get(port); if (!c || (c.role === 'out') || !this.ok(b)) return 0;
+      if (c.product !== ANY && c.product !== f.prod) return 0;
+      if (vis.has(b.id)) return 0; const ty = def.type;
+      if (ty !== 'tank' && ty !== 'gas' && ty !== 'pump' && ty !== 'valve' && ty !== 'junction' && ty !== 'separator') return -1;      // refinery, central (nested pass-through), anything else: the original
+      if (ty === 'tank' && this._gof.has(b.id)) return -1;                                                                         // tank groups: the original
+      vis.add(b.id); let acc = 0; V.push(s);
+      try {
+        if (ty === 'tank' || ty === 'gas') {
+          const cap = def.capacity.value * levelOf(b).capacityMultiplier, keep = ty === 'tank' && f.prod === P.CRUDE ? 1 - (f.gas || 0) : 1, avail = Math.max(0, cap - s.vol - (s._pend || 0)) / this.dt;
+          E.push(s, 1, r); acc = Math.min(r, (avail + 0) / keep);
+        } else if (ty === 'pump') {
+          const c0 = def.params, cap = c0.maxFlow * levelOf(b).capacityMultiplier; E.push(s, 1, r); E.push(s, 3, p);
+          if (p < c0.minInletPsi) return 0;
+          const room = Math.max(0, cap - (s._in || 0)); if (r > room + 1e-6) E.push(s, 2, 0); const boost = s.boost * levelOf(b).pressureMultiplier * s.eff * levelOf(b).efficiencyMultiplier * eco(b), outs = dcOf(def).outs;
+          if (outs.length > 1) return -1;
+          acc = this.offerP(b, outs[0] || 'OUTPUT', f, Math.min(r, room), p + boost, vis, E, V);
+        } else if (ty === 'valve') {
+          const mode = s.mode, open = mode === 'OPEN' ? 1 : mode === 'PARTIAL' ? s.opening : 0; E.push(s, 1, r); if (open <= 0) return 0;
+          const lossP = 1 + 80 * Math.pow(1 - open, 2); acc = this.offerP(b, 'OUT', f, Math.min(r, jointCap(b) * open), p - lossP, vis, E, V);
+        } else if (ty === 'junction') {
+          const cap = jointCap(b), room = Math.max(0, cap - (s._in || 0)); if (r > room + 1e-6) E.push(s, 2, 0); E.push(s, 1, r); const outs = notInExcept(def, port);
+          let one = null, n = 0; for (let i = 0; i < outs.length; i++) if (this.edgeOf(b, outs[i])) { one = outs[i]; n++; }
+          if (n === 0) return 0; if (n > 1) return -1;
+          acc = this.offerP(b, one, f, Math.min(r, room), p - 1, vis, E, V);
+        } else {                                                                                                                 // separator: only the early exits; everything after them is the original
+          const C = def.params, L = levelOf(b), cap = C.cap * L.capacityMultiplier, room = Math.max(0, cap - (s._in || 0)); if (r > room + 1e-6) E.push(s, 2, 0); E.push(s, 1, r); E.push(s, 3, p);
+          if (p < C.minInletPsi) return 0;
+          if (Math.min(r, room) <= 1e-9) return 0;
+          return -1;
+        }
+      } finally { vis.delete(b.id); }
       return acc;
     }
     portState(b, id) { const e = this.edgeOf(b, id); return e ? 'connected' : 'none'; }
