@@ -33,7 +33,7 @@
     constructor(W) {
       this.W = W; this.st = new Map(); this.seg = new Map(); this.pumps = new Map(); this.at = new Map(); this.cen = new Set(); this.cov = new Set(); this.rev = 0; this.nextSt = 1; this.nextSeg = 1; this.nextPump = 1; this.time = 0;
       this.ch = {}; for (const c of CHANNELS) this.ch[c] = { state: 'OPEN', flow: 0, pressure: 0, qty: 0, moved: 0, dir: 0, fault: false, cap: CLASS.capacity, maxP: CLASS.maxPressure, status: 'READY' };
-      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcX = -1; this._plE = 0; this._plV = [0, 0, 0, 0, 0, 0]; this._plM = [null, null, null, null, null, null]; this._plRev = -1; this.plStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0 }; this._dmMode = CentralNet.dmDefault | 0; this._dv = 0; this._dmM = [null, null, null, null, null, null]; this._dmRev = -1; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
+      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcT = [null, null, null, null, null, null]; this.trMode = CentralNet.trDefault | 0; this.trStats = { calls: 0, seen: 0, built: 0, served: 0, verified: 0, mismatch: 0, errors: 0, disabled: 0 }; this._pcX = -1; this._plE = 0; this._plV = [0, 0, 0, 0, 0, 0]; this._plM = [null, null, null, null, null, null]; this._plRev = -1; this.plStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0 }; this._dmMode = CentralNet.dmDefault | 0; this._dv = 0; this._dmM = [null, null, null, null, null, null]; this._dmRev = -1; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
     }
     static k(W, x, y) { return y * W + x; }
     key(x, y) { return y * this.W + x; }
@@ -106,13 +106,13 @@
     path(ch, from, to, over, ban, bias) {
       const m = this.pcMode;
       if (m === 0) return this._pathCore(ch, from, to, over, ban, bias);                  // cache off (the default): exactly the B1 path
-      if (m === 2) { const got = this._pcLookup(ch, from, to, over, ban, bias); if (got !== undefined) return got; const r = this._pathCore(ch, from, to, over, ban, bias); this._pcStore(r); return r; }      // cache on: a plain call answered from the cache when its entry is still valid
+      if (m === 2) { const got = this._pcLookup(ch, from, to, over, ban, bias); if (got !== undefined) return got; if (this.trMode && this._pcK >= 0 && this._pcX < 0 && !ban && !bias && !(over && over.size)) { const t = this._treeAnswer(ch, from, to, over, ban, bias); if (t !== undefined) { this._pcStore(t.r); return t.r; } } const r = this._pathCore(ch, from, to, over, ban, bias); this._pcStore(r); return r; }      // cache on: a plain call answered from the cache when its entry is still valid
       const res = this._pathCore(ch, from, to, over, ban, bias); this._pcShadow(ch, from, to, over, ban, bias, res); return res;      // shadow: compare only
     }
     /* 0 = off (instant return to the plain computation), 1 = shadow (compare only), 2 = on.  Changing the mode empties the cache and resets its counters. */
     setDeliverMode(m) { this._dmMode = m | 0; for (let i = 0; i < 6; i++) this._dmM[i] = null; this._dmRev = -1; this._dv++; this._plE++; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; }
     setCacheMode(m) {
-      m = m === 2 ? 2 : m === 1 ? 1 : 0; this.pcMode = m; this._plE++; this._plM = [null, null, null, null, null, null]; this.pcStats = null; for (let i = 0; i < NCH; i++) { this._pcA[i] = null; this._pcB[i] = null; } this._pcRev = -1;
+      m = m === 2 ? 2 : m === 1 ? 1 : 0; this.pcMode = m; this._plE++; this._plM = [null, null, null, null, null, null]; this.pcStats = null; for (let i = 0; i < NCH; i++) { this._pcA[i] = null; this._pcB[i] = null; this._pcT[i] = null; } this._pcRev = -1;
       for (const g of this.seg.values()) { if (m) { if (!Object.isFrozen(g.fault)) Object.freeze(g.fault); } else if (Object.isFrozen(g.fault)) g.fault = Object.assign({}, g.fault); }
       return m;
     }
@@ -135,11 +135,42 @@
       }
       const hops = []; let c = ti; while (c !== fi) { const e = prevE[c], pn = prevN[c]; hops.unshift({ g: e.g, dir: e.dir, from: this._nid[pn], to: this._nid[c], ix: e.ix }); c = pn; } return hops;
     }
+    /* ---- S2b: one search per (channel, source) for all its receivers.  The Dijkstra of _pathCore never changes the predecessor of a station once that station has been taken out of the queue (weights are tile lengths > 0, the update test is a strict <), so the path to ANY target equals the one an early-stopped search to that target would give, as long as the state is the same: the same graph (rev), the same saturation / fault state of the channel, no ban / bias / over.  Those are exactly the conditions under which the path cache already keeps its entries, and the tree is dropped wherever the path cache of the channel is dropped (_pcClearAll, _apply when a segment changes between free and saturated, setCacheMode).
+     * trMode 0 = off (the original code only), 1 = shadow (the original answer is returned; the tree answer is computed and compared), 2 = on (the tree answer is returned; every CentralNet.trVerify-th answer is also computed the original way and compared).  ANY difference or error switches the feature off for this network for good (trMode 0, trStats.disabled) and the original answer is used.  The first miss of a source is answered by the ordinary search (a tree is built only on the second miss of the same source, so a source with a single receiver costs exactly what it cost). */
+    setTreeMode(m) { this.trMode = m === 2 ? 2 : m === 1 ? 1 : 0; for (let i = 0; i < NCH; i++) this._pcT[i] = null; this.trStats = { calls: 0, seen: 0, built: 0, served: 0, verified: 0, mismatch: 0, errors: 0, disabled: 0 }; return this.trMode; }
+    _treeOff(why) { this.trMode = 0; for (let i = 0; i < NCH; i++) this._pcT[i] = null; this.trStats[why]++; this.trStats.disabled++; }
+    _treeBuild(ch, ci, fi) {
+      const A = this._adjA, N = A.length, U = this._used, dist = this._pd, prevE = this._pe, prevN = this._pn, done = this._pdone; dist.fill(Infinity, 0, N); prevE.fill(null, 0, N); done.fill(0, 0, N); dist[fi] = 0;
+      const HD = H_D, HS = H_S, HN = H_N; let hl = 0, seq = 0; HD[0] = 0; HS[0] = seq++; HN[0] = fi; hl = 1;
+      while (hl > 0) {
+        const d = HD[0], n = HN[0]; hl--;
+        if (hl > 0) { const xd = HD[hl], xs = HS[hl], xn = HN[hl]; let i = 0; for (;;) { let c = 2 * i + 1; if (c >= hl) break; const r = c + 1; if (r < hl && (HD[r] < HD[c] || (HD[r] === HD[c] && HS[r] < HS[c]))) c = r; if (HD[c] < xd || (HD[c] === xd && HS[c] < xs)) { HD[i] = HD[c]; HS[i] = HS[c]; HN[i] = HN[c]; i = c; } else break; } HD[i] = xd; HS[i] = xs; HN[i] = xn; }
+        if (done[n]) continue; done[n] = 1;
+        const es = A[n]; for (let k = 0; k < es.length; k++) { const e = es[k]; if (!this.segUp(e.g, ch)) continue; const used = U[e.ix * NCH + ci] || 0; if (CLASS.capacity - used <= EPS) continue; const nd = d + e.g.path.length * 1; if (nd < dist[e.tn]) { dist[e.tn] = nd; prevE[e.tn] = e; prevN[e.tn] = n; const sq = seq++; let i = hl++; while (i > 0) { const pa = (i - 1) >> 1; if (HD[pa] > nd || (HD[pa] === nd && HS[pa] > sq)) { HD[i] = HD[pa]; HS[i] = HS[pa]; HN[i] = HN[pa]; i = pa; } else break; } HD[i] = nd; HS[i] = sq; HN[i] = e.tn; } }
+      }
+      return { pe: prevE.slice(0, N), pn: prevN.slice(0, N) };
+    }
+    _treeHops(t, fi, ti) {
+      if (t.pe[ti] === null) return null; const hops = []; let c = ti, nh = 0; while (c !== fi) { const e = t.pe[c], pn = t.pn[c]; let h = e._h; if (h === undefined) h = e._h = Object.freeze({ g: e.g, dir: e.dir, from: this._nid[pn], to: this._nid[c], ix: e.ix }); hops[nh++] = h; c = pn; } return hops.reverse();
+    }
+    _sameHops(a, b) { if (a === b) return true; if (a === null || b === null || a.length !== b.length) return false; for (let i = 0; i < a.length; i++) { const x = a[i], y = b[i]; if (x.g !== y.g || x.dir !== y.dir || x.from !== y.from || x.to !== y.to || x.ix !== y.ix) return false; } return true; }
+    /* returns { r } (the hops array or null for "no path") or undefined (use the ordinary search) */
+    _treeAnswer(ch, from, to, over, ban, bias) {
+      const S = this.trStats; S.calls++;
+      try {
+        const ci = CI[ch]; this._graph(); const fi = this._nix.get(from), ti = this._nix.get(to); let T = this._pcT[ci]; if (!T) T = this._pcT[ci] = new Map(); let t = T.get(fi);
+        if (t === undefined) { T.set(fi, 1); S.seen++; return undefined; }
+        if (t === 1) { t = this._treeBuild(ch, ci, fi); T.set(fi, t); S.built++; }
+        const r = this._treeHops(t, fi, ti);
+        if (this.trMode === 1 || (S.served % (CentralNet.trVerify | 0 || 16)) === 0) { const o = this._pathCore(ch, from, to, over, ban, bias); S.verified++; if (!this._sameHops(r, o)) { S.mismatch++; this._treeOff('mismatch'); return { r: o }; } if (this.trMode === 1) return { r: o }; }
+        S.served++; return { r };
+      } catch (e) { this._treeOff('errors'); return undefined; }
+    }
     /* ---- B2 shadow cache (pcMode 1 = compare only; nothing is ever answered from it).
      * A cached path is valid while: the graph is the same (rev: stations, segments, pumps, faults and pump directions all bump it), nothing in this step has made a segment of the channel
      * saturated / free (_apply watches the capacity test of every hop it loads), and the call is the plain one (no ban, no bias, no `over`).  begin() starts a clean step. */
     _pcNewStats() { return { calls: 0, nonChannel: 0, ban: 0, bias: 0, over: 0, cacheable: 0, lookupHit: 0, miss: 0, verified: 0, mismatch: 0, first: [], clears: { begin: 0, rev: 0, fault: 0 }, invalSat: 0, entries: 0, tamper: 0 }; }
-    _pcClearAll(why) { for (let i = 0; i < NCH; i++) { this._pcA[i] = null; this._pcB[i] = null; } (this.pcStats || (this.pcStats = this._pcNewStats())).clears[why]++; }
+    _pcClearAll(why) { for (let i = 0; i < NCH; i++) { this._pcA[i] = null; this._pcB[i] = null; this._pcT[i] = null; } (this.pcStats || (this.pcStats = this._pcNewStats())).clears[why]++; }
     /* the cached answer for this exact call: undefined = unknown (miss or not cacheable), null = cached "no path", an array = the cached hops */
     _pcLookup(ch, from, to, over, ban, bias) {
       const st = this.pcStats || (this.pcStats = this._pcNewStats()); st.calls++; this._pcK = -1;
@@ -245,7 +276,7 @@
     begin(dt) { this._plE++; this._graph(); const need = Math.max(this._six.size, 1) * NCH; if (this._used && this._used.length >= need) { this._used.fill(0); this._net.fill(0); } else { this._used = new Float64Array(need); this._net = new Float64Array(need); } this._pused = new Map(); this._usedX = new Map(); this._netX = new Map(); if (this.pcMode) { this._pcClearAll('begin'); for (const g of this.seg.values()) if (!Object.isFrozen(g.fault)) { Object.freeze(g.fault); this.pcStats.tamper++; this._pcClearAll('fault'); } } this.dt = dt; this.time += dt; for (const p of this.pumps.values()) { p.flow = 0; p.pIn = 0; p.pOut = 0; p.lowIn = false; } this._chFlow = {}; this._chP = {}; this._chPw = {}; for (const c of CHANNELS) { this._chFlow[c] = 0; this._chP[c] = 0; this._chPw[c] = 0; } }
     _apply(ch, pl, acc) {
       this._dv++; if (CI[ch] !== undefined) this._plV[CI[ch]]++;      // B6: every use of this channel invalidates its memoised plans
-      for (const h of pl.hops) { if (CI[ch] === undefined) { const k = h.g.id + '|' + ch; this._usedX.set(k, (this._usedX.get(k) || 0) + acc); this._netX.set(k, (this._netX.get(k) || 0) + acc * h.dir); continue; } const i = this._ixOf(h.g.id) * NCH + CI[ch]; const was = this.pcMode ? CLASS.capacity - (this._used[i] || 0) <= EPS : false; this._used[i] = (this._used[i] || 0) + acc; this._net[i] = (this._net[i] || 0) + acc * h.dir; if (this.pcMode && was !== (CLASS.capacity - this._used[i] <= EPS)) { this._pcA[CI[ch]] = null; this._pcB[CI[ch]] = null; if (this.pcStats) this.pcStats.invalSat++; } }
+      for (const h of pl.hops) { if (CI[ch] === undefined) { const k = h.g.id + '|' + ch; this._usedX.set(k, (this._usedX.get(k) || 0) + acc); this._netX.set(k, (this._netX.get(k) || 0) + acc * h.dir); continue; } const i = this._ixOf(h.g.id) * NCH + CI[ch]; const was = this.pcMode ? CLASS.capacity - (this._used[i] || 0) <= EPS : false; this._used[i] = (this._used[i] || 0) + acc; this._net[i] = (this._net[i] || 0) + acc * h.dir; if (this.pcMode && was !== (CLASS.capacity - this._used[i] <= EPS)) { this._pcA[CI[ch]] = null; this._pcB[CI[ch]] = null; this._pcT[CI[ch]] = null; if (this.pcStats) this.pcStats.invalSat++; } }
       for (const [pu, pin, pout, on] of pl.stats) { pu.flow += on ? acc : 0; if (on) { this._pused.set(pu.id, (this._pused.get(pu.id) || 0) + acc); pu.pIn = pin; pu.pOut = pout; } else pu.lowIn = true; }
       this._chFlow[ch] += acc; this._chP[ch] += pl.p * acc; this._chPw[ch] += acc;
     }
@@ -360,6 +391,8 @@
   const sameProbe = (a, b) => { if (a === null || b === null) return a === b; if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i].d.s !== b[i].d.s || a[i].d.b !== b[i].d.b || a[i].d.port !== b[i].d.port || !Object.is(a[i].can, b[i].can)) return false; return true; };
   const sameFx = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) { const x = a[i], y = b[i]; if (x !== y && !(typeof x === 'number' && Object.is(x, y))) return false; } return true; };
   const replayFx = (sim, fx) => { const R = sim._fxr; for (let i = 0; i < fx.length; i += 3) { const s = fx[i], t = fx[i + 1], v = fx[i + 2]; if (t === 0) s.pIn = v; else { s._blk = true; s._blkPort = v; } if (R) R.push(s, t, v); } };
+  CentralNet.trDefault = 0;      // S2b: the tree mode a NEW network starts in (0 off, 1 shadow, 2 on)
+  CentralNet.trVerify = 16;      // S2b: in mode 2 every n-th tree answer is also computed the original way and compared
   CentralNet.hopShare = 1;       // S2a: 0 = the original per-search hop objects (instant fallback)
   CentralNet.pcSparse = 1;       // S2a: 0 = the original N x N path-cache arrays (instant fallback)
   CentralNet.pcDefault = 2;      // the path cache mode a NEW network starts in (2 = on, answers plain path calls from the cache; 0 = off = the B1 path, an instant fallback from the diagnostics panel)
