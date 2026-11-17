@@ -616,7 +616,13 @@
   function updateCash() { $('cash').textContent = fmt$(STORE.cash); EU.hud(); }
   /* test-only timing hook (window.__perfT exists only in the performance-test build): measures, never changes behaviour */
   function save() { const P = window.__perfT; if (!P) return save_(); const t = performance.now(); try { return save_(); } finally { P.save += performance.now() - t; P.saveN++; } }
-  function save_() { if (window.__noSave || !window.__lab || !window.__lab.restored || catching) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { if (COMPANY.settle) COMPANY.settle(); COMPANY.stamp(Date.now()); COMPANY.sync(); const out = JSON.stringify({ v: 2, store: STORE.toJSON({ live: true }), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } });
+  function save_() { if (window.__noSave || !window.__lab || !window.__lab.restored || catching) return;      /* never write before the saved game has been loaded: on a slow phone the autosave could overwrite it with an empty world */ try { if (COMPANY.settle) COMPANY.settle(); COMPANY.stamp(Date.now()); COMPANY.sync(); let out;
+      if (EC.TIME.saveCache === false || window.__saveCache === false || !COMPANY.toJSONString) out = JSON.stringify({ v: 2, store: STORE.toJSON({ live: true }), net: pipes.toJSON(), cash: STORE.cash, eco: COMPANY.toJSON(), guide: GU.toJSON(), wd: { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() } });
+      else {      /* the same text, byte for byte (same keys, same order, the same parts evaluated in the same order); only the economy part comes from toJSONString (its daily log is served from a cache while it has not changed) */
+        const st = STORE.toJSON({ live: true }), nt = pipes.toJSON(), cs = STORE.cash, es = COMPANY.toJSONString(!!window.__saveVerify), gu = GU.toJSON(), wd = { r: world.reserveSnapshot(), p: world.progressSnapshot(), z: world.zoneSnapshot() };
+        out = '{"v":2,"store":' + JSON.stringify(st) + ',"net":' + JSON.stringify(nt) + ',"cash":' + JSON.stringify(cs) + ',"eco":' + es + (gu === undefined ? '' : ',"guide":' + JSON.stringify(gu)) + ',"wd":' + JSON.stringify(wd) + '}';
+        if (window.__saveVerify && out !== JSON.stringify({ v: 2, store: st, net: nt, cash: cs, eco: COMPANY.toJSON(), guide: gu, wd })) throw new Error('save text differs from JSON.stringify');
+      }
       try { const now = Date.now(); if (now - bakAt > 60000) { const prev = localStorage.getItem(SAVE_KEY); if (prev && prev.length > 200) { localStorage.setItem(SAVE_KEY + '-bak', prev); bakAt = now; } } } catch (_) { }   /* a rolling copy of the previous good save (at most once a minute). perf: the previous save (megabytes) is read only when the copy is due, not on every save */
       localStorage.setItem(SAVE_KEY, out); window.__saveError = null; saveFailShown = false; } catch (e) { window.__saveError = String(e && e.message || e); if (!saveFailShown) { saveFailShown = true; try { toast('⚠ تعذّر حفظ اللعبة: ' + window.__saveError); } catch (_) { } } } }
   let bakAt = 0, saveFailShown = false, catching = false;
@@ -732,8 +738,14 @@
   }, EC.TIME.tickMs);
   /* autosave every 6 s - perf: not when nothing changed since the last save (a paused game), and spaced out when one save is costly (a very large company: at most ~2% of the time), yet at least once a minute */
   let asSig = '', asAt = 0, asCost = 0; const autoSig = () => (STORE.rev | 0) + '/' + pipes.rev + '/' + COMPANY.hours + '/' + COMPANY.journal.n + '/' + STORE.cash + '/' + STORE.items.size;
-  setInterval(() => { if (!(STORE.items.size || COMPANY.hours > 0)) return; const now = performance.now(), sg = autoSig(), gap = now - asAt; if (sg === asSig && gap < 60000) return; if (gap < Math.max(5500, asCost * 50) && gap < 60000) return;
-    const t = performance.now(); save(); asCost = performance.now() - t; asAt = performance.now(); asSig = autoSig(); }, 6000);                          // autosave: the company stamp is what the offline report measures from
+  /* autosave: when a game hour is open (the live game spreads one hour over several frames) the save waits for the end of that hour instead of finishing it at once (settle: 0.3 - 0.9 s on a phone); the hour boundary is announced by Company.onHourEnd.  After autosaveDeferMs without a boundary it falls back to the original save (settle).
+     Switch: EC.TIME.autosaveDeferMs = 0 (or window.__asDefer = false) = the original autosave.  Every other save (leaving the app, a player action, a new game) is untouched. */
+  let asPend = 0, asTimer = 0; const asRun = () => { asPend = 0; if (asTimer) { clearTimeout(asTimer); asTimer = 0; } const t = performance.now(); save(); asCost = performance.now() - t; asAt = performance.now(); asSig = autoSig(); };
+  COMPANY.onHourEnd = () => { if (asPend) asRun(); };
+  setInterval(() => { if (!(STORE.items.size || COMPANY.hours > 0)) return; if (asPend) return; const now = performance.now(), sg = autoSig(), gap = now - asAt; if (sg === asSig && gap < 60000) return; if (gap < Math.max(5500, asCost * 50) && gap < 60000) return;
+    const wait = window.__asDefer === false ? 0 : (EC.TIME.autosaveDeferMs | 0);
+    if (wait > 0 && COMPANY._hg) { asPend = now; asTimer = setTimeout(() => { if (asPend) asRun(); }, wait); return; }
+    asRun(); }, 6000);                          // autosave: the company stamp is what the offline report measures from
   document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); } else { simLast = performance.now(); const j = COMPANY.catchUpStart(Date.now()); if (j && j.job) runCatchUp(j, a => { if (a && a.ok) EU.showAway(a); save(); }); else if (j && j.ok) { EU.showAway(j); save(); } } });
   window.addEventListener('pagehide', () => save());
   EU.mount({ company: COMPANY, toast, onChange: () => save(), restart: () => newGame(), showZone: () => { const z = world.reserveZoneOfWorld(); if (z) { WP.goto(z.x + z.w / 2, z.y + z.h / 2, .5); toast('منطقة الاحتياطي الاستراتيجي (باللون الأصفر)'); } } });

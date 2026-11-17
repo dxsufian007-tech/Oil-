@@ -1386,7 +1386,8 @@
       while (!this.bankrupt) {
         if (!this._hg) { if (this.acc < 1 || n >= T.maxStepsPerTick) break; this._hg = this._tickGen(1, true); this.acc -= 1; }
         const g = this._hg; let done = false; for (;;) { if (g.next().done) { done = true; break; } if (now() - t0 >= budgetMs) break; }
-        if (!done) break; this._hg = null; n++; if (now() - t0 >= budgetMs) break; }
+        if (!done) break; this._hg = null; n++; if (this.onHourEnd) this.onHourEnd();      /* autosave: a deferred save runs here, between two whole hours, so it never has to finish an open hour at once (settle) */
+        if (now() - t0 >= budgetMs) break; }
       return n;
     }
 
@@ -1426,6 +1427,16 @@
       this.settle();                                                         // a save never holds half an hour
       return { v: 2, central: this.central, hours: this.hours, dayIdx: this.dayIdx, acc: this.acc, market: this.market.toJSON(), assets: [...this.assets].map(([id, a]) => [id, a.cost, a.t, a.dep || 0, a.useStart == null ? null : a.useStart]), loans: this.loans, nextLoan: this.nextLoan, closed: this.closed.slice(0, 10), contracts: this.contracts, history: this.history, offers: this.offers, nextContract: this.nextContract,
         desk: this.desk || null, autoBuy: this.autoBuy, whLv: this.whLv, matHist: this.matHist, pwState: { factor: this.pw.factor, stop: this.pwStop == null ? null : this.pwStop }, recv: this.recv, nextRecv: this.nextRecv, months: this.months, qty: this.qty, qty2: this.qty2, bq: this.bq, explLog: this.explLog, reserve: this.reserve, water: this.water, netOil: this.netOil ? 1 : 0, bprod: this.bprod, tradeLog: this.tradeLog, nextTrade: this.nextTrade, boughtUsed: this.boughtUsed, mats: this.mats, payables: this.payables, nextPay: this.nextPay, purchases: this.purchases, nextPur: this.nextPur, hr: this.hr, cutUntil: this.cutUntil, powerBuy: this.powerBuy, bsStart: this.bsStart, journal: this.journal.toJSON(), crng: this.crng.s, modes: this.modes, tier: this.tier, autoRepair: this.autoRepair, led: this.led, lastMonth: this.lastMonth, days: this.days, dlog: this.dlog, prodHist: this.prodHist, crudeQ: this.crudeQ, fin: this.fin, taxCarry: this.taxCarry, bankrupt: this.bankrupt, bank: this.bank.toJSON(), speed: this.speed, lastSpeed: this.lastSpeed, speedRef: 1, calStart: CAL.START, savedAt: this.lastSim };
+    }
+    /* The save text of toJSON(): BYTE-IDENTICAL to JSON.stringify(this.toJSON()).  Only one value is served from a cache: the daily financial log `dlog` (about a third of the save; it changes once a day: a row is appended, the oldest dropped).
+       The cached text is used only while the SAME array still has the same length and the same first and last rows (rows are never edited after they are written); anything else is stringified again.  cfg.TIME.saveCache === false = the plain JSON.stringify. */
+    toJSONString(verify) {
+      const o = this.toJSON(); if (this.cfg.TIME.saveCache === false) return JSON.stringify(o);
+      const dl = o.dlog; let ds; const c = this._dlC;
+      if (Array.isArray(dl) && c && c.a === dl && c.n === dl.length && c.f === dl[0] && c.l === dl[dl.length - 1]) ds = c.s; else { ds = JSON.stringify(dl); this._dlC = Array.isArray(dl) ? { a: dl, n: dl.length, f: dl[0], l: dl[dl.length - 1], s: ds } : null; }
+      let s = '{', first = true; for (const k of Object.keys(o)) { const v = o[k], t = k === 'dlog' && Array.isArray(v) ? ds : JSON.stringify(v); if (t === undefined) continue; s += (first ? '' : ',') + JSON.stringify(k) + ':' + t; first = false; }
+      s += '}'; if (verify && s !== JSON.stringify(o)) throw new Error('save text differs from JSON.stringify');
+      return s;
     }
     fromJSON(d) {
       this._hg = null; this._restoreWear = true;

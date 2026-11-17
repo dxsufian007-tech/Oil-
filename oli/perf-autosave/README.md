@@ -1,0 +1,3 @@
+Autosave (A) + (B). A: the autosave waits for the end of the open game hour (Company.onHourEnd) instead of settle(); fallback after EC.TIME.autosaveDeferMs (3000). B: Company.toJSONString() serves the daily log `dlog` from a cache, byte-identical to JSON.stringify(toJSON()).
+Switches: EC.TIME.autosaveDeferMs = 0 or window.__asDefer = false (original autosave); EC.TIME.saveCache = false or window.__saveCache = false (plain JSON.stringify). window.__saveVerify = true compares every save text with the original expression.
+Tests: SAVE=<save.json> node as-test.js <gameDir> [hours]; eod-browser.js (ROOT THR SECS SPEED VERIFY DEFER) measures the save stalls in the browser.

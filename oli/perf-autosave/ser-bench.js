@@ -1,0 +1,5 @@
+const dir='/home/claude/oil-perf/oli'; process.chdir(dir); const fs=require('fs');
+const { I, B, world } = require(dir+'/test-central-kit.js'), E=require(dir+'/economy.js'); const d=JSON.parse(fs.readFileSync((process.env.SAVE||'/home/claude/dxsufian007-tech/oil-/oli/local-saves/realsave.json'),'utf8'));
+const ts=B.fromWorld(world); if(d.wd){world.restoreProgress(d.wd.p);world.restoreReserve(d.wd.r);world.restoreZones(d.wd.z);} const r0=B.BuildingStore.fromJSON(ts,d.store,{cash:d.cash}),store=r0.store;store.cash=d.cash;const net=I.PipeNet.fromJSON(ts.W,d.net),sim=new I.Sim(store,net),co=new E.Company(store,net,sim,{now:()=>1e12});co.fromJSON(d.eco);co.setSpeed(0);for(const b of store.list())sim.ensure(b); co.advanceHours(2);
+const a=[],b=[]; for(let h=0;h<60;h++){ co.advanceHours(1); let t=performance.now(); const x=JSON.stringify(co.toJSON()); a.push(performance.now()-t); t=performance.now(); const y=co.toJSONString(); b.push(performance.now()-t); if(x!==y)throw 1; }
+const m=v=>{v=v.slice(5).sort((p,q)=>p-q);return v[v.length>>1].toFixed(2)}; console.log('Node eco text: original median',m(a),'ms  cached median',m(b),'ms');
