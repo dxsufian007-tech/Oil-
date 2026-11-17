@@ -145,7 +145,7 @@
       const b = STORE.get(id); state.sel = id; $('info').innerHTML = '<h4>' + (b ? nameOf(b.d) : '') + '</h4><span class="k">تعذّر عرض التفاصيل الكاملة: ' + String(e && e.message || e).slice(0, 90) + '</span>'; try { console.error('showBuilding', e && e.stack); } catch (_) {} WP.markDirty(); }
   }
   function showBuilding_(id) {
-    const b = STORE.get(id); if (!b) return; state.sel = id; $('info').dataset.hk = 'b:' + id; const d = B.DEFS[b.d], st = SIM.status(b), ind = SIM.indicators(b), warn = SIM.warnings(b), list = showAll ? ind.list : ind.list.slice(0, ind.top);
+    const b = STORE.get(id); if (!b) return; state.sel = id; $('info').dataset.hk = 'b:' + id; SIM.watchId = id; const d = B.DEFS[b.d], [st, ind, warn] = SIM.view(b, () => [SIM.status(b), SIM.indicators(b), SIM.warnings(b)]), list = showAll ? ind.list : ind.list.slice(0, ind.top);
     const lv = d.type === 'tank' ? SIM.levelStateOf(b) : d.type === 'gas' ? SIM.gasSafetyOf(b) : null;
     const stopped = d.type === 'well' && b.s && b.s.started === false && st !== 'UNDER_CONSTRUCTION', stTxt = stopped ? 'متوقف — اضغط «ابدأ الإنتاج»' : (STAR[st] || st);
     let h = '<h4>' + nameOf(b.d) + ' <span class="st" style="color:' + (stopped ? '#ffd27a' : STCOL[st] || '#fff') + '">● ' + stTxt + '</span></h4>';
