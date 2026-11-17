@@ -368,7 +368,13 @@
   }
 
   /* ------------------------------------------------------------ levels, safety helpers */
-  const jointCap = b => { const d = DEFS[b.d], t = CFG.JOINT_TYPES[d.id]; if (!t) return d.params.maxTotalFlow || d.params.maxFlow; const tiers = CFG.jointTiers(d.id), lv = Math.min(Math.max(1, b.lv | 0 || 1), tiers.length); return tiers[lv - 1].capacity; };
+  /* S3: CFG.jointTiers builds (Object.keys, map, sort, filter, new objects) on every call and jointCap runs for every valve / junction a flow passes: the tier list is kept per joint type and rebuilt whenever the pipe capacities or the joint's base value it was built from are not exactly the same any more (checked without allocating) */
+  const JT_CACHE = new Map();
+  const jointTiersCached = (id, t) => {
+    const c = JT_CACHE.get(id); if (c !== undefined && c.base === t.base && JT_CACHE.off !== true) { const src = c.src; let i = 0, same = true; for (const k in CFG.PIPES) { if (src[i++] !== CFG.PIPES[k].capacity) { same = false; break; } } if (same && i === src.length) return c.tiers; }
+    const tiers = CFG.jointTiers(id), src = []; for (const k in CFG.PIPES) src.push(CFG.PIPES[k].capacity); JT_CACHE.set(id, { base: t.base, src, tiers }); return tiers;
+  };
+  const jointCap = b => { const d = DEFS[b.d], t = CFG.JOINT_TYPES[d.id]; if (!t) return d.params.maxTotalFlow || d.params.maxFlow; const tiers = jointTiersCached(d.id, t), lv = Math.min(Math.max(1, b.lv | 0 || 1), tiers.length); return tiers[lv - 1].capacity; };
   const LV_CACHE = new Map(), levelOf = b => { const k = b.lv || 1; let v = LV_CACHE.get(k); if (!v) { v = Object.freeze(Object.assign({ level: 1, capacityMultiplier: 1, efficiencyMultiplier: 1, pressureMultiplier: 1, maintenanceMultiplier: 1 }, CFG.LEVELS[k])); LV_CACHE.set(k, v); } return v; };      // perf: one frozen object per level (it was a new object on every call, thousands of times per game hour); the values are the same
   function tankLevel(fill) { return fill <= 0.0005 ? 'EMPTY' : fill < SAFE.tankLow ? 'LOW' : fill < SAFE.tankHigh ? 'NORMAL' : fill < SAFE.tankNearFull ? 'HIGH' : fill < SAFE.tankFull - 1e-6 ? 'OVERFLOW_RISK' : 'FULL'; }
   function gasSafety(fill, pressureRatio, temp) {
