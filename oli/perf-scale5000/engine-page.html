@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><title>S1 engine page (no rendering)</title>
+<script src="../ar-dict.js"></script><script src="../ar.js"></script><script src="../worldmap.js"></script><script src="../building-config.js"></script><script src="../central.js"></script><script src="../central-plan.js"></script><script src="../buildings.js"></script><script src="../industry.js"></script><script src="../economy-config.js"></script><script src="../ledger.js"></script><script src="../game-calendar.js"></script><script src="../baserate.js"></script><script src="../loans-engine.js"></script><script src="../credit.js"></script><script src="../bonds.js"></script><script src="../bank.js"></script><script src="../news-data.js"></script><script src="../oil-engine.js"></script><script src="../order-book.js"></script><script src="../economy.js"></script>
+<script>
+window.runScene = async function (url, hours, nodrain) {
+  const TERR = { FLAT_DESERT: { buildable: true, buildCost: 1, maxSlope: 10 } }, ts = { W: 1920, H: 1280, tile: () => ({ terrain: 'FLAT_DESERT', slope: 0 }), terrain: TERR, slopeK: 1, oilFieldAt: () => ({ kind: 'FIELD', id: 1 }), stateOf: () => 'DRILLABLE', zoneAt: () => ({ id: 1 }), sectorAt: () => 'A' };
+  const d = await (await fetch(url)).json(), B = OliBuildings, I = OliIndustry, E = OliEconomy; const t0 = performance.now();
+  const store = B.BuildingStore.fromJSON(ts, d.store, { cash: d.cash }).store; store.cash = 1e15; const net = I.PipeNet.fromJSON(ts.W, d.net), sim = new I.Sim(store, net), co = new E.Company(store, net, sim, { now: () => 1e12 }); co.fromJSON(d.eco); co.sync(); co.speed = 0; const loadMs = performance.now() - t0;
+  const sinks = (d.meta.sinks || []).map(id => store.get(id)).filter(Boolean), drain = () => { if (!nodrain) for (const b of sinks) sim.ensure(b).vol = 0; };
+  for (let h = 0; h < 6; h++) { drain(); co.advanceHours(1); } if (window.gc) window.gc(); const heap0 = performance.memory ? performance.memory.usedJSHeapSize / 1048576 : 0;
+  window.__ready = { co, drain, store, net }; return { buildings: store.list().length, loadMs, heap0 };
+};
+window.timeHours = function (n) { const { co, drain } = window.__ready, ts = []; for (let h = 0; h < n; h++) { drain(); const a = performance.now(); co.advanceHours(1); ts.push(performance.now() - a); } return ts; };
+window.after = function () { const { co, store, net } = window.__ready; if (window.gc) window.gc(); const heap = performance.memory ? performance.memory.usedJSHeapSize / 1048576 : 0; const a = performance.now(); const txt = JSON.stringify({ store: store.toJSON(), net: net.toJSON(), eco: co.toJSON() }); return { heap, stringifyMs: performance.now() - a, KB: Math.round(txt.length / 1024) }; };
+</script>

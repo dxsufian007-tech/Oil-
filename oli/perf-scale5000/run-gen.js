@@ -1,0 +1,5 @@
+/* generate the flat benchmark scene up to 5000 buildings, saving checkpoints:  node run-gen.js <outDir> [target=5000]  (log lines to stdout) */
+const S = require('./gen-scene.js'), fs = require('fs'); const out = process.argv[2] || '/tmp/scenes', target = +process.argv[3] || 5000; fs.mkdirSync(out, { recursive: true });
+const t0 = Date.now(); const r = S.generate(target, { flat: true, minTrunk: 24, maxTrunk: 110, stall: +process.env.STALL || 400, passes: 6, useManifold: true, deadAfter: 150, localShare: +process.env.LOCALSHARE || 0, progress: true, checkpoints: [250, 500, 1000, 2000, 3000, 4000, 5000],
+  onCheckpoint: (n, g, log) => { fs.writeFileSync(out + '/scene-' + n + '.json', S.dump(g, log)); console.log('CHECKPOINT', n, 'saved', ((Date.now() - t0) / 1000).toFixed(0) + 's', JSON.stringify(log.modules), 'taps', log.taps); } });
+fs.writeFileSync(out + '/gen-final.json', JSON.stringify({ log: r.log, conn: S.connectivity(r.g), flows: S.flows(r.g) })); console.log('DONE', JSON.stringify({ buildings: r.log.buildings, modules: r.log.modules, taps: r.log.taps, stalled: r.log.stalled, reached: r.log.reachedTarget, fail: r.log.fail }));
