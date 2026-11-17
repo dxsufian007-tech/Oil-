@@ -461,6 +461,13 @@
       if (commit && acc > 0) { e.flow += acc; e.p = p; e.prod = f.prod; if (e.line) e.line.flow = e.flow; if (p > e.maxP) e.hiP = true; }
       return acc;
     }
+    /* S3: true when a PROBE (commit false) of offer(b, port, f) with a rate of at most `want` is certain to return 0 and to change nothing: the far end of the pipe is missing / not a receiving port / not operational / takes another product, or the pipe is a link inside a tank group.  It repeats, in the same order and with the same tests, only the first lines of offer() and accept() (which return before they write anything); anything not certain (a level-out pipe, a rate above what the pipe can still take: that sets e.over) answers false and the full code runs.  Used by the central network to skip the route search for receivers that cannot take anything. */
+    probeDead(b, port, f, want) {
+      const e = this.edgeOf(b, port); if (!e) return true; const fw = e.ab === b.id && e.ap === port, farB = this.store.get(fw ? e.bb : e.ab), farP = fw ? e.bp : e.ap; if (!farB) return true;
+      if (e.int) return true; if (e.lvl) return false; if (want > e.cap - e.flow + 1e-9) return false;
+      this.ensure(farB); const c = dcOf(DEFS[farB.d]).byId.get(farP); if (!c || c.role === 'out' || !this.ok(farB)) return true;
+      return c.product !== ANY && c.product !== f.prod;
+    }
     /* split a flow over several output ports (water-fill by what each can take) */
     split(b, ports, f, commit, vis) {
       const outs = ports.filter(pid => this.edgeOf(b, pid)); if (!outs.length) return 0;
