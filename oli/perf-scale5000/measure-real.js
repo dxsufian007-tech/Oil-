@@ -3,7 +3,7 @@
    X1/X2/X5 headroom (X1 = 1 game hour/s, X2 = 2, X5 = 5 -> budget 1000/500/200 ms per hour, frame share 0.78 as in the game), and (--prof) the CPU profile by file and function. */
 'use strict';
 const S = require('./gen-scene.js'), { PerformanceObserver } = require('perf_hooks'), inspector = require('inspector'), fs = require('fs'), B = require(require('path').resolve(__dirname, '..') + '/buildings.js');
-{ const ov = JSON.parse(process.env.CN || '{}'), CC = require(require('path').resolve(__dirname, '..') + '/central.js'); for (const k in ov) CC.CentralNet[k] = ov[k]; }
+{ const ov = JSON.parse(process.env.CN || '{}'), CC = require(require('path').resolve(__dirname, '..') + '/central.js'); for (const k in ov) { if (k.startsWith('Sim.')) require(require('path').resolve(__dirname, '..') + '/industry.js').Sim[k.slice(4)] = ov[k]; else CC.CentralNet[k] = ov[k]; } }
 const file = process.argv[2], HRS = +process.argv[3] || 24, PROF = process.argv.includes('--prof'), DRAIN = !process.argv.includes('--nodrain');
 const gc = () => { if (global.gc) global.gc(); }, mb = () => process.memoryUsage();
 const t0 = process.hrtime.bigint(); const g = file === "real" ? S.boot() : S.load(file); const loadMs = Number(process.hrtime.bigint() - t0) / 1e6; gc(); const heap0 = mb().heapUsed / 1048576;
