@@ -33,7 +33,7 @@
     constructor(W) {
       this.W = W; this.st = new Map(); this.seg = new Map(); this.pumps = new Map(); this.at = new Map(); this.cen = new Set(); this.cov = new Set(); this.rev = 0; this.nextSt = 1; this.nextSeg = 1; this.nextPump = 1; this.time = 0;
       this.ch = {}; for (const c of CHANNELS) this.ch[c] = { state: 'OPEN', flow: 0, pressure: 0, qty: 0, moved: 0, dir: 0, fault: false, cap: CLASS.capacity, maxP: CLASS.maxPressure, status: 'READY' };
-      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcT = [null, null, null, null, null, null]; this.trMode = CentralNet.trDefault | 0; this.trStats = { calls: 0, seen: 0, built: 0, served: 0, verified: 0, mismatch: 0, errors: 0, disabled: 0 }; this._pcX = -1; this._plE = 0; this._plV = [0, 0, 0, 0, 0, 0]; this._plM = [null, null, null, null, null, null]; this._plRev = -1; this.plStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0 }; this._dmMode = CentralNet.dmDefault | 0; this._dv = 0; this._dmM = [null, null, null, null, null, null]; this._dmRev = -1; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
+      this._used = null; this._net = null; this._adj = null; this._adjRev = -1; this._pused = new Map(); this._six = new Map(); this._usedX = null; this._netX = null; this.pcMode = 0; this.pcStats = null; this._pcA = [null, null, null, null, null, null]; this._pcB = [null, null, null, null, null, null]; this._pcT = [null, null, null, null, null, null]; this.trMode = CentralNet.trDefault | 0; this.dfMode = CentralNet.dfDefault | 0; this._dfM = [null, null, null, null, null, null]; this._dfRev = -1; this._dMask = 0; this.dfStats = CentralNet.newDfStats(); this.trStats = { calls: 0, seen: 0, built: 0, served: 0, verified: 0, mismatch: 0, errors: 0, disabled: 0 }; this._pcX = -1; this._plE = 0; this._plV = [0, 0, 0, 0, 0, 0]; this._plM = [null, null, null, null, null, null]; this._plRev = -1; this.plStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0 }; this._dmMode = CentralNet.dmDefault | 0; this._dv = 0; this._dmM = [null, null, null, null, null, null]; this._dmRev = -1; this.dmStats = { calls: 0, hit: 0, miss: 0, bypass: 0, verified: 0, mismatch: 0, replayed: 0 }; this._pcRev = -1; this._pcK = -1; this._pcCi = -1; this._pxCh = null; this._pxRev = -1; this._pxN = -1; if (CentralNet.pcDefault) this.pcMode = CentralNet.pcDefault;
     }
     static k(W, x, y) { return y * W + x; }
     key(x, y) { return y * this.W + x; }
@@ -304,6 +304,7 @@
     toStation(sim, ch, srcId, d, want, f, commit, vis, over) {
       /* B7e: the same arithmetic and the same calls in the same order.  The probe-mode bookkeeping of what this probe already used (`over`, a Map with a string key per hop) is read ONLY by the next iteration of this loop, so it is
        * written only when there is a next iteration (the Map is created then; a caller's own Map is used as before); the flow copy is an object spread (same keys, same order as Object.assign({}, f, {r, p})). */
+      if (this.dfMode) { const cj = CI[ch]; if (cj !== undefined) this._dMask |= 1 << cj; }
       let got = 0, remaining = want, guard = 0; const sid = d.s.id, db = d.b, dp = d.port;
       if (!commit && CentralNet.rcvSkip !== 0 && sim.probeDead && sim.probeDead(db, dp, f, want)) return 0;      // S3: this receiver cannot take anything and the probe would change nothing: no route search (CentralNet.rcvSkip = 0 gives the old code)
       while (remaining > EPS && guard++ < 6) {
@@ -338,7 +339,35 @@
       if (prev) for (let i = 0; i < rec.length; i++) prev.push(rec[i]);
       return [p, rec];
     }
+    setFineMode(m) { this.dfMode = m | 0; this._dfM = [null, null, null, null, null, null]; this._dfRev = -1; this.dfStats = CentralNet.newDfStats(); }
+    _dfFail(why, info) { this.dfMode = 0; this._dfM = [null, null, null, null, null, null]; this.dfStats.disabled++; this.dfStats.reason = why + ' ' + JSON.stringify(info); }
+    _dfValid(sim, fe, f, vis, ch) {
+      if (fe.ep !== sim._ep || fe.plE !== this._plE || fe.eb !== sim._eb || !sameFlow(f, fe.f) || !sameVis(vis, fe.vis) || !this._plPumpsSame(fe.pf, this._pxList(ch))) return false;
+      for (let c = 0; c < 6; c++) if ((fe.mask >> c & 1) && this._plV[c] !== fe.plV[c]) return false;
+      const bv = sim._bv, B = fe.b, VB = fe.vb, E = fe.e, VE = fe.ve; for (let i = 0; i < B.length; i++) if ((bv.get(B[i]) | 0) !== VB[i]) return false; for (let i = 0; i < E.length; i++) if ((E[i]._v | 0) !== VE[i]) return false; return true;
+    }
+    /* S5 SHADOW: the same answers as _probeMemo0 (the original), plus a dependency-tracked second memo that is only compared, never used */
     _probeMemo(sim, src, ch, f, vis, port) {
+      if (!this.dfMode) return this._probeMemo0(sim, src, ch, f, vis, port);
+      const ci = CI[ch], ports = PORTS[ch], DS = this.dfStats; this._graph(); const nix = this._nix, si = nix.get(src.id), pi = port === undefined ? 2 : ports.indexOf(port);
+      if (ci === undefined || si === undefined || pi < 0 || this._dmMode !== 2) { DS.bypass++; return this._probeMemo0(sim, src, ch, f, vis, port); }
+      sim._dfOn = true; DS.calls++; if (this._dfRev !== this.rev) { for (let i = 0; i < 6; i++) this._dfM[i] = null; this._dfRev = this.rev; } let F = this._dfM[ci]; if (!F) F = this._dfM[ci] = new Map();
+      const k = si * 4 + pi, fe = F.get(k); const TM = CentralNet.dfTiming !== 0, tv = TM ? process.hrtime.bigint() : 0n; const fineOk = fe !== undefined && this._dfValid(sim, fe, f, vis, ch); if (TM) DS.msValidate += Number(process.hrtime.bigint() - tv) / 1e6;
+      const outer = sim._dep, outerMask = this._dMask; sim._dep = { b: [], e: [] }; this._dMask = 0; const hb = this.dmStats.hit; let probe, rec, mask; const t0 = TM ? process.hrtime.bigint() : 0n;
+      try { probe = this._probeMemo0(sim, src, ch, f, vis, port); } finally { rec = sim._dep; mask = this._dMask; sim._dep = outer; this._dMask = outerMask; }
+      const ms = TM ? Number(process.hrtime.bigint() - t0) / 1e6 : 0;
+      if (this.dmStats.hit > hb) {      // the original memo answered: the dependencies of the stored computation become the dependencies of the caller
+        DS.coarseHit++; if (fe === undefined) { DS.noEntry++; if (outer) outer.bad = true; return probe; } if (!fineOk) DS.coarseHitFineStale++;
+        if (outer) { for (let i = 0; i < fe.b.length; i++) outer.b.push(fe.b[i]); for (let i = 0; i < fe.e.length; i++) outer.e.push(fe.e[i]); if (fe.bad) outer.bad = true; } this._dMask |= fe.mask; return probe;
+      }
+      DS.miss++; DS.msRecompute += ms; const ce = this._dmM[ci] && this._dmM[ci].get(k), fx = ce ? ce.fx : null;
+      if (fx === null) { DS.noEntry++; if (outer) outer.bad = true; return probe; }
+      if (fineOk) { DS.fineOkMiss++; DS.msSaveable += ms; if (sameProbe(probe, fe.probe) && sameFx(fx, fe.fx)) DS.agree++; else { DS.disagree++; this._dfFail('mismatch', { ch, src: src.id, port, nb: fe.b.length, ne: fe.e.length, mask: fe.mask, was: fe.probe && fe.probe.length, now: probe && probe.length }); return probe; } }
+      const nb = [...new Set(rec.b)], ne = [...new Set(rec.e)], bv = sim._bv, pf = { pf: [] }; this._plPumpsSnap(pf, this._pxList(ch));
+      F.set(k, { probe, fx, ep: sim._ep, plE: this._plE, eb: sim._eb, f: Object.assign({}, f), vis: vis ? [...vis] : [], pf: pf.pf, mask, plV: this._plV.slice(), b: nb, vb: nb.map(x => bv.get(x) | 0), e: ne, ve: ne.map(x => x._v | 0), bad: rec.bad === true });
+      DS.stored++; DS.depB += nb.length; DS.depE += ne.length; if (outer) { for (let i = 0; i < nb.length; i++) outer.b.push(nb[i]); for (let i = 0; i < ne.length; i++) outer.e.push(ne[i]); if (rec.bad) outer.bad = true; } this._dMask |= mask; return probe;
+    }
+    _probeMemo0(sim, src, ch, f, vis, port) {
       const S = this.dmStats, m = this._dmMode, ci = CI[ch], ports = PORTS[ch]; this._graph(); const nix = this._nix, si = nix.get(src.id), pi = port === undefined ? 2 : ports.indexOf(port);
       if (si === undefined || pi < 0) { S.bypass++; return this._probeRaw(sim, src, ch, f, vis, port); }
       if (this._dmRev !== this.rev) { for (let i = 0; i < 6; i++) this._dmM[i] = null; this._dmRev = this.rev; }
@@ -394,6 +423,9 @@
   const replayFx = (sim, fx) => { const R = sim._fxr; for (let i = 0; i < fx.length; i += 3) { const s = fx[i], t = fx[i + 1], v = fx[i + 2]; if (t === 0) s.pIn = v; else { s._blk = true; s._blkPort = v; } if (R) R.push(s, t, v); } };
   CentralNet.hopFreezeSkip = 1;      // S3: with shared hops (hopShare) every hop of a stored path is already frozen once, when its edge's hop object is created: the per-hop freeze loop is skipped (0 = the old loop)
   CentralNet.rcvSkip = 1;
+  CentralNet.dfTiming = 1;       // S5: 0 = no clock reads in the shadow (to measure the pure cost of the bookkeeping)
+  CentralNet.dfDefault = 0;      // S5: 0 = off, 1 = SHADOW of the dependency-tracked deliver memo (every answer is compared with the recomputed one; its results are never used)
+  CentralNet.newDfStats = () => ({ calls: 0, coarseHit: 0, coarseHitFineStale: 0, miss: 0, noEntry: 0, fineOkMiss: 0, agree: 0, disagree: 0, disabled: 0, reason: null, bypass: 0, depB: 0, depE: 0, stored: 0, msRecompute: 0, msSaveable: 0, msValidate: 0 });
   CentralNet.trDefault = 0;      // S2b: the tree mode a NEW network starts in (0 off, 1 shadow, 2 on)
   CentralNet.trVerify = 16;      // S2b: in mode 2 every n-th tree answer is also computed the original way and compared
   CentralNet.hopShare = 1;       // S2a: 0 = the original per-search hop objects (instant fallback)

@@ -22,7 +22,7 @@ function run(ov) {
     for (const b of sinks) { const s = g.sim.ensure(b); s.vol = 0; }
     g.co.advanceHours(1); hs.push(crypto.createHash('sha1').update(JSON.stringify({ s: g.store.toJSON(), n: g.net.toJSON(), e: g.co.toJSON() })).digest('hex').slice(0, 12));
   }
-  return { hs, log, tr: cn.trStats, inv: cn.pcStats && cn.pcStats.invalSat, N: cn._adjA && cn._adjA.length };
+  return { hs, log, tr: cn.trStats, df: cn.dfStats, inv: cn.pcStats && cn.pcStats.invalSat, N: cn._adjA && cn._adjA.length };
 }
 const a = run({ trDefault: 0, hopShare: 0, pcSparse: 0, rcvSkip: 0, hopFreezeSkip: 0 }), b = run(Bj); let diff = 0, first = -1; for (let h = 0; h < H; h++) if (a.hs[h] !== b.hs[h]) { diff++; if (first < 0) first = h; }
-console.log(JSON.stringify({ what: path.basename(what), hours: H, seed: SEED, capScale: CAP, B: Bj, hoursDifferent: diff, firstDiff: first, perturbations: a.log, perturbationsSame: JSON.stringify(a.log) === JSON.stringify(b.log), invalSatA: a.inv, invalSatB: b.inv, stations: b.N, trB: b.tr }));
+console.log(JSON.stringify({ what: path.basename(what), hours: H, seed: SEED, capScale: CAP, B: Bj, hoursDifferent: diff, firstDiff: first, perturbations: a.log, perturbationsSame: JSON.stringify(a.log) === JSON.stringify(b.log), invalSatA: a.inv, invalSatB: b.inv, stations: b.N, trB: b.tr, dfB: b.df }));

@@ -1,0 +1,5 @@
+/* S5 shadow run: node df-run.js <real|scene.json> <hours> [CN json];  prints the shadow statistics and the hour time. The deliver-memo answers used by the simulation are the original ones (dfMode 1 only compares). */
+const S=require('./gen-scene.js'),C=require('../central.js'),CN=C.CentralNet;Object.assign(CN,{hopShare:1,pcSparse:1,trDefault:0,rcvSkip:1,hopFreezeSkip:1,dfDefault:1},JSON.parse(process.env.CN||'{}'));
+const g=process.argv[2]==='real'?S.boot():S.load(process.argv[2]);const sk=(g.sinks||[]).map(id=>g.store.get(id)).filter(Boolean);const H=+process.argv[3]||12;const t0=Date.now();
+for(let h=0;h<H;h++){for(const b of sk)g.sim.ensure(b).vol=0;g.co.advanceHours(1);}
+const d=g.cn.dfStats;console.log(JSON.stringify(Object.assign({what:process.argv[2].split('/').pop(),hours:H,sec:(Date.now()-t0)/1000,dm:g.cn.dmStats},{df:d,pctFineOkOfMiss:+(100*d.fineOkMiss/Math.max(1,d.miss)).toFixed(1),pctOfAllCalls:+(100*d.fineOkMiss/Math.max(1,d.calls)).toFixed(1),avgDepB:+(d.depB/Math.max(1,d.stored)).toFixed(1),avgDepE:+(d.depE/Math.max(1,d.stored)).toFixed(1)})));
