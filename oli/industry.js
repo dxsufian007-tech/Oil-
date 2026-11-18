@@ -471,8 +471,11 @@
     probeDead(b, port, f, want) {
       const e = this.edgeOf(b, port); if (!e) return true; const fw = e.ab === b.id && e.ap === port, farB = this.store.get(fw ? e.bb : e.ab), farP = fw ? e.bp : e.ap; if (!farB) return true;
       if (e.int) return true; if (e.lvl) return false; if (want > e.cap - e.flow + 1e-9) return false;
-      this.ensure(farB); const c = dcOf(DEFS[farB.d]).byId.get(farP); if (!c || c.role === 'out' || !this.ok(farB)) return true;
-      return c.product !== ANY && c.product !== f.prod;
+      const fs = this.ensure(farB), fd = DEFS[farB.d], c = dcOf(fd).byId.get(farP); if (!c || c.role === 'out' || !this.ok(farB)) return true;
+      if (c.product !== ANY && c.product !== f.prod) return true;
+      /* S6 (approved: the saved `_off` of a tank that a skipped probe would have raised is no longer written): a tank / gas store that is full and not in a tank group answers 0 in accept() (avail = 0, no sibling room, keep > 0 so no 0/0) with no other write on a probe */
+      if (Sim.fullTankSkip !== 0 && (fd.type === 'tank' || fd.type === 'gas') && !(fd.type === 'tank' && this._gof.has(farB.id))) { const keep = fd.type === 'tank' && f.prod === P.CRUDE ? 1 - (f.gas || 0) : 1; if (keep > 0 && fd.capacity.value * levelOf(farB).capacityMultiplier - fs.vol - (fs._pend || 0) <= 0) return true; }
+      return false;
     }
     /* split a flow over several output ports (water-fill by what each can take) */
     split(b, ports, f, commit, vis) {
@@ -726,5 +729,6 @@
   }
 
   const TANK_KIND_AR = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
+  Sim.fullTankSkip = 1;      // S6: 0 = full tanks are probed as before (the old behaviour, instantly)
   return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, jointInfo, upgradeJoint, jointCap, controlPoints, planReroute, commitReroute, undoReroute, planConnect, layConnect, flowModel, sizeFor, sizeNew, pipeAdvice, upgradeLines, pipeUpgradeOptions, upgradePipe, autoLinkTank, ADJ_GAP, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });
