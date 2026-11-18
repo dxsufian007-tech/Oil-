@@ -69,6 +69,7 @@ jobs:
           F=OliBench-$SRC.apk; mkdir -p /tmp/out && cp $F /tmp/out/
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+          git reset -q --hard; git clean -fdq
           if git ls-remote --exit-code --heads origin bench-apk-build >/dev/null; then git fetch -q origin bench-apk-build && git checkout -q -B bench-apk-build FETCH_HEAD && git rm -rf --quiet --ignore-unmatch oli .github >/dev/null 2>&1 || true; else git checkout --orphan bench-apk-build && git rm -rf --quiet .; fi
           cp /tmp/out/$F .
           git add $F
