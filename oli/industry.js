@@ -577,12 +577,12 @@
        game hour over several frames (the push loops, where one building can move oil through a long chain, pause every 32 buildings).  A pause only stops the loop: the operations, their order and their numbers are exactly those of step(dt) (it is step(dt), run to the end).
        Nothing else may change the game while a step is paused - the company finishes the hour (settle) before any player action, save, pause or catch-up. */
     step(dt) { const g = this.stepGen(dt, false); g.next(); }      // one go: the generator never pauses (sl = false), a single resume runs it to the end
-    *stepGen(dt, sl) {
+    *_stepFull(dt, sl) {
       if (this.dirty()) this.build(); this.dt = dt = Math.max(1e-6, dt); const store = this.store; this.time += dt; let Y = 0; this._cv++; this._mid = !!sl;
       for (const e of this._el) { if (sl && (++Y & 1023) === 0) yield; e.flow = 0; e.over = false; e.lowP = false; e.hiP = false; }
-      const items = store.list(); for (const b of items) { if (sl && (++Y & 255) === 0) yield; const s = this.ensure(b); if (sl && b.id === this.watchId) { const d = {}; for (const k in s) if (k.charCodeAt(0) === 95 || k === 'pIn' || k === 'pOut') d[k] = s[k]; Object.defineProperty(s, '$d', { value: d, writable: true, configurable: true, enumerable: false }); }      /* display only: the values of the LAST finished step of the building on screen (the panel must not read a half-finished step) */
+      const items = this._only || store.list(); for (const b of items) { if (sl && (++Y & 255) === 0) yield; const s = this.ensure(b); if (sl && b.id === this.watchId) { const d = {}; for (const k in s) if (k.charCodeAt(0) === 95 || k === 'pIn' || k === 'pOut') d[k] = s[k]; Object.defineProperty(s, '$d', { value: d, writable: true, configurable: true, enumerable: false }); }      /* display only: the values of the LAST finished step of the building on screen (the panel must not read a half-finished step) */
         for (const k in s) if (k.charCodeAt(0) === 95 && s[k] !== undefined) s[k] = undefined;      /* perf: the per-step values (_in, _out, ...) are cleared to undefined instead of deleted: same reads, same save (JSON drops undefined), but the objects keep a fast shape */ const ty = DEFS[b.d].type; if (ty === 'pump' || ty === 'separator' || ty === 'refinery') { s.pIn = 0; if (ty === 'pump') s.pOut = 0; } }
-      const cn = this.net.central; if (cn) cn.begin(dt);
+      const cn = this.net.central; if (cn) cn.begin(dt); if (this._part) this._hyInject(this._part);      // HY: a partial hour re-offers what the rest of the network delivers (see _hyPartial)
       const fieldGroups = new Map(), sharedWells = [];
       for (const b of items) { if (sl) yield; if (!this.ok(b)) continue;   /* a pause point before EVERY building: one well can cost many ms on a phone (its flow is solved through the central network), so a pause every 32 buildings let one slice run 100-240 ms past its budget */ const def = DEFS[b.d], s = b.s;
         if (def.type === 'well') {
@@ -630,6 +630,69 @@
       this._mid = false;
       for (const e of this._el) if (e.line) { e.line.flow = e.flow; e.line.over = e.over; e.line.lowP = e.lowP; e.line.hiP = e.hiP; e.line.pressure = e.p || 0; }
       this.lastStep = dt;
+    }
+
+    /* ================= HYBRID HOUR (Sim.hybrid) =================
+     * The full network solve (wells -> pipes -> separators -> central network -> tanks / refineries) runs only when it has to ("refresh").  In between, an hour is a PARTIAL hour:
+     *   - the engine itself runs ONLY for tanks and gas stores (the buildings whose state moves hour to hour), so the split of the gas between the gas stores is still decided every hour from each store's own pressure and room;
+     *   - what the rest of the network delivers to them is re-offered where it enters the shared network (the separators' OIL / GAS / WATER outputs recorded at the last refresh), through the real routing, so the central network, the refineries and the pumps behind the separators are computed live;
+     *   - the buildings in front of the separators (wells, junctions, pumps, separators) repeat their last refreshed rates (display values and accumulated totals follow).
+     * A refresh is forced (never a tolerance) by: structure / status / level / setting changes, a well throttled by back-pressure, a refinery at its throttle limit, an injected flow that is not fully accepted, a well reservoir about to run out, a boundary the design does not cover (a source reaching a tank or refinery without a separator, a separator fed by a tank).  In between those, an error-controlled interval (Sim.hybridTol) decides how often the whole network is re-solved.  Nothing here is saved: after a load the first hours are plain full solves.  Sim.hybrid = 0 is the old code path, bit for bit. */
+    *stepGen(dt, sl) {
+      if (!Sim.hybrid) { yield* this._stepFull(dt, sl); return; }
+      if (this.dirty()) this.build(); dt = Math.max(1e-6, dt);
+      const H = this._hy || (this._hy = { n: 0, recs: [null, null], interval: 1, nextAt: 2, pend2: false, chg: 0, st: { full: 0, part: 0, why: {} } });
+      const h = H.n++; if (H.skip > 0) { H.skip--; H.st.full++; H.st.why.skip = (H.st.why.skip | 0) + 1; yield* this._stepFull(dt, sl); return; }      // backoff: a network that keeps needing full solves (refinery at its limit, throttled wells) is not recorded, so the hybrid costs nothing there
+      let rec = H.recs[h & 1], why = null;
+      if (rec && Math.abs(rec.dt - dt) > 1e-12) { H.recs = [null, null]; rec = null; why = 'dt'; }
+      if (rec) why = this._hyWhy(H, h, rec);
+      if (rec && !why) { if (this._hyPartial(dt, rec)) { H.st.part++; return; } why = 'short'; }
+      yield* this._hyRefresh(H, h, dt, sl, why);
+    }
+    hybridStats() { const H = this._hy; if (!H) return null; const t = H.st.full + H.st.part; return { hours: t, full: H.st.full, part: H.st.part, partShare: t ? H.st.part / t : 0, interval: H.interval, why: Object.assign({}, H.st.why) }; }
+    _hyLists() { const L = this._hyL, key = this.builtRev; if (L && L.key === key && L.n === this.store.items.size) return L; const D = [], S = []; for (const b of this.store.list()) { const t = DEFS[b.d].type; (t === 'tank' || t === 'gas' ? D : S).push(b); } return (this._hyL = { key, n: this.store.items.size, D, S }); }
+    _hySig() { let x = 0; for (const b of this.store.list()) { const s = b.s; x = (x * 31 + b.st.charCodeAt(0) + ((b.lv | 0) * 7) + (b.c < 1 ? 1 : 0) + (s ? Math.round((s.ecoEff == null ? 1 : s.ecoEff) * 100) * 13 + (s.boost != null ? Math.round(s.boost * 100) * 17 : 0) + (s.opLimit != null ? Math.round(s.opLimit * 1000) * 19 : 0) + (s.matLim != null ? Math.round(s.matLim * 1000) * 23 : 0) + (s.started ? 29 : 0) : 0)) | 0; } return x; }
+    _hySat(b) { const s = b.s; if (s._eff == null || s._in == null) return false; const lim = Math.min(Math.max(0, Math.min(1, s.opLimit == null ? 1 : s.opLimit)), s.matLim == null ? 1 : Math.max(0, Math.min(1, s.matLim))); return s._in >= 0.999 * this.capOf(b) * lim * s._eff - 1e-6; }
+    _hyWhy(H, h, rec) { if (H.pend2 || h >= H.nextAt) return 'adapt'; if (rec.rev !== this.builtRev) return 'struct'; if (this._hySig() !== rec.sig) return 'state'; if (rec.thr || rec.sat || rec.unsup) return 'crit'; return null; }
+    *_hyRefresh(H, h, dt, sl, why) {
+      if (why && why !== 'adapt') { H.recs = [null, null]; H.interval = 1; H.nextAt = h + 2; H.pend2 = false; }
+      const store = this.store, pre = new Map(), L = this._hyLists(); for (const b of L.S) { const s = this.ensure(b), o = {}; for (const k in s) { const v = s[k]; if (typeof v === 'number' && k.charCodeAt(0) !== 95) o[k] = v; } pre.set(b.id, o); }
+      const R = this._rec = { key: new Map(), unsup: false }, self = this, ownOffer = Sim.prototype.offer, ownAccept = Sim.prototype.accept;
+      this.offer = function (b, port, f, commit, vis) { const r = ownOffer.call(this, b, port, f, commit, vis); if (commit && r > 0 && DEFS[b.d].type === 'separator' && (port === 'GAS_OUT' || port === 'OIL_OUT' || port === 'WATER_OUT')) { const first = vis ? vis.values().next().value : null, fb = first != null ? store.get(first) : null; if (!fb || DEFS[fb.d].type !== 'well') R.unsup = true; else self._hyNote(R, b, port, f, r); } return r; };
+      this.accept = function (b, port, f, commit, vis) { const r = ownAccept.call(this, b, port, f, commit, vis); if (commit && r > 1e-9 && vis && !R.unsup) { const t = DEFS[b.d].type; if (t === 'tank' || t === 'gas' || t === 'refinery') { const fb = store.get(vis.values().next().value); if (fb && DEFS[fb.d].type === 'well') { let sep = false; for (const id of vis) { const x = store.get(id); if (x && DEFS[x.d].type === 'separator') { sep = true; break; } } if (!sep) R.unsup = true; } } } return r; };
+      try { yield* this._stepFull(dt, sl); } finally { delete this.offer; delete this.accept; this._rec = null; }
+      const rec = { dt, rev: this.builtRev, b: new Map(), v: new Map(), inj: [], sig: this._hySig(), thr: false, sat: false, unsup: R.unsup, e: [], el: this._el };
+      for (const b of store.list()) { const s = b.s, def = DEFS[b.d]; rec.v.set(b.id, [+(s._in || 0), +(s._out || 0), +(s._pend || 0)]); if (def.type === 'tank' || def.type === 'gas') continue;
+        const p0 = pre.get(b.id) || {}, acc = {}, cp = {}, und = {}; for (const k in s) { const v = s[k]; if (k.charCodeAt(0) === 95) { und[k] = v; continue; } if (typeof v !== 'number') continue; if (HY_ACC.has(k) && k in p0) acc[k] = v - p0[k]; else cp[k] = v; } rec.b.set(b.id, { acc, cp, und });
+        if (def.type === 'well' && s._target && (s._out || 0) < s._target * (1 - 1e-9) - 1e-9) rec.thr = true; if (def.type === 'refinery' && this._hySat(b)) rec.sat = true; }
+      for (const e of R.key.values()) rec.inj.push({ id: e.id, port: e.port, f: Object.assign({ prod: e.prod, r: e.r, p: e.p / e.r }, e.port === 'OIL_OUT' ? { oil: e.oil / e.r, gas: e.gas / e.r, wat: e.wat / e.r, bf: e.bf / e.r } : {}) });
+      for (const e of this._el) rec.e.push([e.flow, e.over, e.lowP, e.hiP, e.p]);
+      const old = H.recs[h & 1]; let num = 0, den = 1e-9; if (old) { for (const [id, x] of rec.v) { const y = old.v.get(id); if (!y) continue; for (let i = 0; i < 3; i++) { num += Math.abs(x[i] - y[i]); den += Math.abs(y[i]); } } H.chg = Math.max(H.chg || 0, num / den); } else H.chg = 1;
+      if (why === 'adapt' && !H.pend2) { H.pend2 = true; H.chg = num / den; } else if (H.pend2) { H.pend2 = false; H.interval = H.chg < Sim.hybridTol ? Math.min((H.interval || 1) * 2, Sim.hybridMaxInterval) : 1; H.nextAt = h + H.interval; H.chg = 0; }
+      if (rec.thr || rec.sat || rec.unsup) { H.back = Math.min((H.back || 4) * 2, 96); H.skip = H.back; H.recs = [null, null]; H.interval = 1; H.nextAt = h + H.back + 2; H.pend2 = false; } else { H.back = 0; H.recs[h & 1] = rec; }
+      H.st.full++; const w = why || 'start'; H.st.why[w] = (H.st.why[w] | 0) + 1;
+    }
+    _hyNote(R, b, port, f, r) { const key = b.id + ':' + port; let e = R.key.get(key); if (!e) { e = { id: b.id, port, r: 0, p: 0, oil: 0, gas: 0, wat: 0, bf: 0, prod: f.prod }; R.key.set(key, e); } e.r += r; e.p += r * (f.p || 0); e.oil += r * (f.oil == null ? 1 : f.oil); e.gas += r * (f.gas || 0); e.wat += r * (f.wat || 0); e.bf += r * (f.bf || 0); }
+    _hyInject(rec) { for (const e of rec.inj) { const sb = this.store.get(e.id); if (!sb) { this._partShort = true; continue; } const a = this.offer(sb, e.port, Object.assign({}, e.f), true, new Set([sb.id])); if (a < e.f.r * (1 - 1e-9) - 1e-12) this._partShort = true; } }
+    _hySnap() { const m = new Map(); for (const b of this.store.list()) { const s = b.s; if (!s) { m.set(b.id, null); continue; } const o = {}; for (const k in s) { const v = s[k]; o[k] = v && typeof v === 'object' ? (Array.isArray(v) ? v.slice() : Object.assign({}, v)) : v; } m.set(b.id, o); } return { m, el: this._el.map(e => [e.flow, e.over, e.lowP, e.hiP, e.p]), time: this.time, cv: this._cv }; }
+    _hyRestore(sn) { for (const b of this.store.list()) { const o = sn.m.get(b.id); if (!o) continue; const s = b.s; for (const k in s) if (!(k in o)) s[k] = undefined; for (const k in o) s[k] = o[k]; } this._el.forEach((e, i) => { const v = sn.el[i]; if (v) { e.flow = v[0]; e.over = v[1]; e.lowP = v[2]; e.hiP = v[3]; e.p = v[4]; } }); this.time = sn.time; this._cv = sn.cv; }
+    /* returns true when the hour was done, false when nothing was changed and a full solve must run */
+    _hyPartial(dt, rec) {
+      const store = this.store, { D, S } = this._hyLists(), wells = [];
+      for (const b of S) { if (DEFS[b.d].type !== 'well') continue; const r = rec.b.get(b.id); if (!r) return false; const s = b.s, fp = (s.shared || b.field) ? fieldProfile(store, b) : null, site = fp ? fp.site : null, oil = (r.und._out || 0) * dt * (1 - (r.und._wc || 0) - (r.und._gas || 0)); if (site && site.remainingReserve <= oil * 1.01 + 1) return false; wells.push([b, r, site, oil]); }
+      const snap = this._hySnap(), pre = new Array(S.length);
+      for (let i = 0; i < S.length; i++) { const b = S[i], s = this.ensure(b), o = {}; for (const k in s) { const v = s[k]; if (k.charCodeAt(0) === 95) { if (v !== undefined) s[k] = undefined; } else if (typeof v === 'number') o[k] = v; } pre[i] = o; const t = DEFS[b.d].type; if (t === 'pump' || t === 'separator' || t === 'refinery') { s.pIn = 0; if (t === 'pump') s.pOut = 0; } }
+      this._only = D; this._part = rec; this._partShort = false;
+      try { this._stepFull(dt, false).next(); } finally { this._only = null; this._part = null; }
+      let ok = !this._partShort; if (ok) for (const b of S) if (DEFS[b.d].type === 'refinery' && this._hySat(b)) { ok = false; break; }
+      if (!ok) { this._hyRestore(snap); return false; }
+      for (let i = 0; i < S.length; i++) { const b = S[i], s = b.s, t = DEFS[b.d].type, pr = pre[i];
+        if (s._off !== undefined || s._in !== undefined) { if (t === 'refinery') { s.eff = s._eff == null ? s.eff * .8 : s._eff; s.temp = s._temp == null ? Math.max(60, s.temp - 40 * dt * 10) : s._temp; } else if (t === 'pump') s.power = (s._in || 0) * (s.boost * s.eff) * 0.01269 / 1000 / Math.max(.01, s.eff); continue; }
+        const r = rec.b.get(b.id); if (!r) continue; for (const k in pr) s[k] = pr[k]; for (const k in r.und) s[k] = r.und[k]; for (const k in r.cp) s[k] = r.cp[k]; for (const k in r.acc) s[k] = (pr[k] || 0) + r.acc[k]; }
+      for (const [b, r, site, oil] of wells) if (site) { store.ts.take(site.id, oil); }
+      for (const [b, r, site] of wells) if (site) b.s.reserve = site.remainingReserve;
+      const el = this._el; for (let i = 0; i < el.length; i++) { const e = el[i], v = rec.e[i]; if (e.flow > 0 || !v || !(v[0] > 0)) continue; const fa = store.get(e.ab), fb = store.get(e.bb); if (!fa || !fb) continue; const ta = DEFS[fa.d].type, tb = DEFS[fb.d].type; if (HY_LIVE.has(ta) || HY_LIVE.has(tb)) continue; e.flow = v[0]; e.over = v[1]; e.lowP = v[2]; e.hiP = v[3]; e.p = v[4]; if (e.line) { e.line.flow = e.flow; e.line.over = e.over; e.line.lowP = e.lowP; e.line.hiP = e.hiP; e.line.pressure = e.p || 0; } }
+      return true;
     }
     run(days, h) { h = h || 0.05; for (let t = 0; t < days - 1e-9; t += h) this.step(Math.min(h, days - t)); }
     gasPressure(def, fill, b) { const mx = def.params.maxPressure * levelOf(b).pressureMultiplier; return 15 + (mx - 15) * Math.pow(clamp(fill, 0, 1.2), 1.3); }
@@ -729,6 +792,10 @@
   }
 
   const TANK_KIND_AR = { COMMERCIAL: 'تخزين تجاري (غير موصول)', PRODUCTION: 'مخزن إنتاج (موصول بالآبار)', TRADE: 'مخزن تجارة ونقل' };
+  const HY_ACC = new Set(['reserve', 'total', 'slop', 'vol', 'wat', 'bv', 'crude', 'arr', 'arrBv', 'arrW', 'dep', 'depBv', 'depW', 'rel']), HY_LIVE = new Set(['tank', 'gas', 'central', 'refinery']);
+  Sim.hybrid = 1;            // HY: 1 = hybrid hour (partial hours between error-controlled full solves); 0 = every hour is a full solve (the old behaviour, bit for bit).  The game switches it on in building-lab.js
+  Sim.hybridTol = 0.001;     // HY: the interval between full solves doubles (up to hybridMaxInterval hours) while the delivered flows change by less than this between two refreshes
+  Sim.hybridMaxInterval = 168;
   Sim.fullTankSkip = 1;      // S6: 0 = full tanks are probed as before (the old behaviour, instantly)
   return { TANK_KIND_AR, PipeNet, Sim, wellProfile, priceOf, planPipe, layPipe, planOpenPipe, layOpenPipe, planClosePipe, closePipe, jointInfo, upgradeJoint, jointCap, controlPoints, planReroute, commitReroute, undoReroute, planConnect, layConnect, flowModel, sizeFor, sizeNew, pipeAdvice, upgradeLines, pipeUpgradeOptions, upgradePipe, autoLinkTank, ADJ_GAP, setLineOpen, partnerOf, removeConnection, reaches, insertJunction, branchTo, autoDia, portsOf, canSend, canTake, route, networkProducts, lineSpec, tankLevel, gasSafety, levelOf, ANY, pk };
 });
